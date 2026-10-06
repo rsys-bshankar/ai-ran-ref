@@ -550,7 +550,7 @@ def _producers_for_type(db: Session, dme_type_id: uuid.UUID) -> list[DMEProducer
     """
     stmt = select(DMEProducer).join(DMEProducerType, DMEProducerType.producer_id == DMEProducer.producer_id).where(
         DMEProducerType.dme_type_id == dme_type_id)
-    return db.scalars(stmt).all()
+    return list(db.scalars(stmt).all())
 
 
 def _push_job_to_producers(db: Session, dme_type: DMEType, job: DataJob) -> None:

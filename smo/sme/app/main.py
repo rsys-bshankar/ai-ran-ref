@@ -321,7 +321,7 @@ def _assertion_failure(exc: jwt.PyJWTError) -> str:
     return "malformed or unverifiable JWT"
 
 
-def _verify_client_assertion(db: Session, inv: InvokerRegistration, body: AccessTokenRequest) -> str | None:
+def _verify_client_assertion(db: Session, inv: InvokerRegistration, body: AccessTokenRequest, assertion: str) -> str | None:
     """RFC 7523 `private_key_jwt`: None when the assertion authenticates the
     invoker, else why not. The JWT must be signed with the invoker's
     onboarded public key, name the invoker as both `iss` and `sub`, name
@@ -334,7 +334,7 @@ def _verify_client_assertion(db: Session, inv: InvokerRegistration, body: Access
     if key is None:
         return "invoker has no PEM public key to verify an assertion with"
     try:
-        claims = jwt.decode(body.client_assertion, key=key, algorithms=ASSERTION_ALGORITHMS,
+        claims = jwt.decode(assertion, key=key, algorithms=ASSERTION_ALGORITHMS,
                             audience=TOKEN_ENDPOINT_AUDIENCE, options={"require": list(REQUIRED_ASSERTION_CLAIMS)})
     except jwt.PyJWTError as exc:
         # A fixed message per failure kind, never the library's own text
@@ -432,7 +432,7 @@ def issue_access_token(body: AccessTokenRequest, db: Session = Depends(get_sessi
     if inv is None:
         return _token_error("invalid_client", "invoker not registered")
     if body.client_assertion is not None:
-        problem = _verify_client_assertion(db, inv, body)
+        problem = _verify_client_assertion(db, inv, body, body.client_assertion)
         if problem is not None:
             db.rollback()
             return _token_error("invalid_client", problem)

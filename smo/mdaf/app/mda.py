@@ -173,7 +173,8 @@ def create_mda_request(body: MDARequestBody, db: Session = Depends(get_session))
     if body.reportingMethod in ("NOTIFICATION", "FILE") and not body.reportingTarget:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
                                detail=f"reportingMethod {body.reportingMethod} needs a reportingTarget")
-    if body.startTime and body.stopTime and _aware(body.stopTime) <= _aware(body.startTime):
+    start, stop = _aware(body.startTime), _aware(body.stopTime)
+    if start and stop and stop <= start:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="stopTime must be after startTime")
     if body.mDAFunctionRef is not None:
         function = _get(db, MDAFunction, body.mDAFunctionRef, "MDAFunction")
@@ -325,10 +326,11 @@ def _deliver(db: Session, report: MDAFReport, view: dict) -> None:
     request's reportingMethod. Best-effort, like every notification here."""
     now = datetime.datetime.now(datetime.UTC)
     entries = _flat_entries(report)
+    candidates: list[MDARequest | None]
     if report.mda_request_id is not None:
         candidates = [db.get(MDARequest, report.mda_request_id)]
     else:
-        candidates = db.scalars(select(MDARequest)).all()
+        candidates = list(db.scalars(select(MDARequest)).all())
     for request in candidates:
         if request is None:
             continue
