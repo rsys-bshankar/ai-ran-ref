@@ -39,12 +39,26 @@ HISTORY_START = datetime.datetime(2026, 9, 1, tzinfo=datetime.UTC)
 LIVE_START = HISTORY_START + datetime.timedelta(days=3)
 
 
+def _mtls() -> bool:
+    return os.environ.get("SMO_MTLS", "off").lower() in ("on", "true", "1")
+
+
 def _url(service: str, path: str) -> str:
-    return f"http://{service}:8000{path}"
+    return f"{'https' if _mtls() else 'http'}://{service}:8000{path}"
+
+
+def _tls() -> dict:
+    """With SMO_MTLS=on the services are TLS-only and want a client certificate: present the runbook identity."""
+    if not _mtls():
+        return {}
+    import ssl
+    context = ssl.create_default_context(cafile=os.environ["SMO_MTLS_CA_FILE"])
+    context.load_cert_chain(os.environ["SMO_MTLS_CERT_FILE"], os.environ["SMO_MTLS_KEY_FILE"])
+    return {"verify": context}
 
 
 def call(verb: str, service: str, path: str, expect=(200, 201, 202, 204), **kw):
-    resp = getattr(httpx, verb)(_url(service, path), timeout=120.0, **kw)
+    resp = getattr(httpx, verb)(_url(service, path), timeout=120.0, **_tls(), **kw)
     if resp.status_code not in expect:
         raise SystemExit(f"{verb.upper()} {service}{path} → {resp.status_code}: {resp.text}")
     return resp.json() if resp.content else None
