@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.timeutil import as_utc
 from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
 from smo_shared.outbox import enqueue
 
@@ -302,7 +303,7 @@ def _request_matches(request: MDARequest, report: MDAFReport, entries: dict[str,
         filters = wanted.get("mDAOutputIEFilters") or []
         ok, gated = True, False
         for f in filters:
-            if f.get("timeOut") and datetime.datetime.fromisoformat(f["timeOut"].replace("Z", "+00:00")) <= now:
+            if f.get("timeOut") and as_utc(datetime.datetime.fromisoformat(f["timeOut"].replace("Z", "+00:00"))) <= now:
                 ok = False
                 break
             value = values.get(f["mDAOutputIEName"])

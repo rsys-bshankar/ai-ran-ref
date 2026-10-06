@@ -176,3 +176,30 @@ def test_report_list_total_false_has_no_total_and_a_has_more_flag(client):
     page = client.get("/mda-reports", params={"limit": 2, "total": "false"}).json()
     assert "total" not in page and len(page["items"]) == 2 and page["hasMore"] is True
     assert client.get("/mda-reports", params={"limit": 2, "offset": 2, "total": "false"}).json()["hasMore"] is False
+
+
+def test_a_filter_time_out_that_is_not_a_date_time_is_refused_when_the_request_is_made(client, monkeypatch):
+    """A garbage timeOut used to be stored and then fail every later POST /mda-reports with a 500."""
+    calls = _capture_webhooks(monkeypatch)
+    body = {"reportingMethod": "NOTIFICATION", "reportingTarget": "http://t/mda", "requestedMDAOutputs": [
+        {"mDAType": ES, "mDAOutputIEFilters": [{"mDAOutputIEName": "decision", "timeOut": "Ëâ"}]}]}
+    resp = client.post("/mda-requests", json=body)
+    assert resp.status_code == 422 and "timeOut" in str(resp.json()["detail"])
+    assert client.get("/mda-requests").json()["items"] == []
+    assert client.post("/mda-reports", json={"mDAOutputs": [{"mDAType": ES, "mDAOutputList": [
+        {"mDAOutputIEName": "decision", "mDAOutputIEValue": "SLEEP"}]}]}).status_code == 201
+    assert calls == []
+
+
+def test_a_filter_time_out_without_a_zone_is_read_as_utc(client, monkeypatch):
+    calls = _capture_webhooks(monkeypatch)
+    future = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)).replace(tzinfo=None).isoformat()
+    past = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)).replace(tzinfo=None).isoformat()
+    for target, time_out in (("http://future/mda", future), ("http://past/mda", past)):
+        assert client.post("/mda-requests", json={"reportingMethod": "NOTIFICATION", "reportingTarget": target,
+                                                  "requestedMDAOutputs": [{"mDAType": ES, "mDAOutputIEFilters": [
+                                                      {"mDAOutputIEName": "decision", "filterValue": "SLEEP",
+                                                       "timeOut": time_out}]}]}).status_code == 201
+    assert client.post("/mda-reports", json={"mDAOutputs": [{"mDAType": ES, "mDAOutputList": [
+        {"mDAOutputIEName": "decision", "mDAOutputIEValue": "SLEEP"}]}]}).status_code == 201
+    assert [url for url, _ in calls] == ["http://future/mda"]
