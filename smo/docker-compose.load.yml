@@ -1,0 +1,7 @@
+# The load lane (PR-V-8, .github/workflows/smo-load.yml): the gateway's per-caller rate limiter is off, so the numbers are the stack's and not the limiter's.
+# One caller (the load generator) would otherwise be refused after its burst of 200 (PR-SEC-8.2). The stress lane that tests the limiter itself leaves it on.
+#   docker compose -f docker-compose.yml -f docker-compose.load.yml up -d --build
+services:
+  r1-termination:
+    environment:
+      R1_RATE_PER_SECOND: "0"

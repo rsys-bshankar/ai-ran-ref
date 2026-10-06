@@ -1,0 +1,96 @@
+name: SMO load run
+
+# PR-V-8a: a weighted mix of the main gateway routes (service discovery, alarm list, KPI definitions, config job list and dry run, rApp instances, packages, data types, token)
+# at a fixed concurrency, from a one-shot container on the compose network, with the gateway's rate limiter off (smo/docker-compose.load.yml).
+# Reports requests/s and p50/p95/p99 per route, the CPU and memory of each container and Postgres connections; kept as an artifact and in the job summary. smo/scripts/load_run.py.
+# Nightly, on demand, and on a pull request that changes the runner or this workflow. Not a required check: the numbers are compared run against run (docs/PERFORMANCE.md).
+
+on:
+  schedule:
+    - cron: "47 2 * * *"
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Seconds under load (after a 5 s warm-up)"
+        default: "60"
+      concurrency:
+        description: "Calls in flight"
+        default: "20"
+  pull_request:
+    paths:
+      - ".github/workflows/smo-load.yml"
+      - "smo/scripts/load_run.py"
+      - "smo/docker-compose.load.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smo-load-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  load:
+    name: Load through the gateway
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DURATION: ${{ inputs.duration || '30' }}
+      CONCURRENCY: ${{ inputs.concurrency || '20' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Start the stack, rate limiter off
+        working-directory: smo
+        run: |
+          scripts/init_secrets.sh
+          cp .env.example .env
+          docker compose -f docker-compose.yml -f docker-compose.load.yml up -d --build
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8080/health > /dev/null 2>&1 && break
+            sleep 5
+          done
+
+      - name: Run the load
+        working-directory: smo
+        run: |
+          mkdir -p load-out
+          network=$(docker inspect "$(docker compose ps -q r1-termination)" --format '{{range $k, $_ := .NetworkSettings.Networks}}{{$k}}{{end}}')
+          docker run --rm --network "$network" --user "$(id -u):$(id -g)" \
+            -v "$PWD":/smo -w /smo \
+            -v "$PWD/secrets/enrollment_secret":/run/secrets/enrollment_secret:ro \
+            -e LOAD_OUT=/smo/load-out -e PIP_DISABLE_PIP_VERSION_CHECK=1 -e HOME=/tmp \
+            python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 \
+            sh -c 'pip install --quiet --user --require-hashes -r requirements/runtime.txt && python scripts/load_run.py --duration "$0" --concurrency "$1"' "$DURATION" "$CONCURRENCY"
+
+      - name: Container CPU and memory, Postgres connections
+        if: ${{ !cancelled() }}
+        working-directory: smo
+        run: |
+          mkdir -p load-out
+          {
+            echo; echo "### Containers after the run"; echo; echo '```'
+            docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'
+            echo '```'; echo
+            echo "### Postgres connections"; echo; echo '```'
+            docker compose exec -T postgres psql -U smo -d postgres -Atc "select datname, count(*) from pg_stat_activity group by 1 order by 2 desc" || true
+            echo '```'
+          } > load-out/containers.md
+          cat load-out/load-results.md load-out/containers.md >> "$GITHUB_STEP_SUMMARY" || cat load-out/containers.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Container logs on failure
+        if: ${{ failure() }}
+        working-directory: smo
+        run: docker compose logs --no-color --tail 80 r1-termination sme > load-out/logs.txt || true
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: load-results
+          path: smo/load-out
+          retention-days: 30
+
+      - name: Stop the stack
+        if: ${{ always() }}
+        working-directory: smo
+        run: docker compose -f docker-compose.yml -f docker-compose.load.yml down -v
