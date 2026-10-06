@@ -8,18 +8,23 @@
 #   ./start.sh --auto     the same, with no prompts and default load values (also used when stdin is not a terminal)
 #   ./start.sh --keep     do not clean up on exit (containers, images and secrets stay; remove them with
 #                         `docker compose -f ../../docker-compose.yml -f docker-compose.yml down -v --rmi local`)
+#   ./start.sh --reset    first delete an SMO stack that already exists (containers, networks, volumes including the
+#                         database, and the images built for it), without asking, then run the demo
+#   ./start.sh --delete   only delete an existing stack, the same way, and exit
 #
 # At each prompt: [Enter] runs the step, s skips it, q quits (and cleans up). Ctrl-C does the same.
 # Needs: Docker Engine with the Compose plugin, Python 3, free host port 8080.
 set -uo pipefail
 export PYTHONDONTWRITEBYTECODE=1   # nothing of ours is written into the source tree
 
-AUTO=0; KEEP=0
+AUTO=0; KEEP=0; RESET=0; DELETE_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --auto) AUTO=1 ;;
     --keep) KEEP=1 ;;
-    -h|--help) sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --reset) RESET=1 ;;
+    --delete) DELETE_ONLY=1 ;;
+    -h|--help) sed -n '2,/^# Needs:/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option $arg (see ./start.sh --help)" >&2; exit 2 ;;
   esac
 done
@@ -95,6 +100,7 @@ cleanup() {
   [ "$CLEANED" = 1 ] && return
   CLEANED=1
   trap - EXIT INT TERM
+  [ "$DELETE_ONLY" = 1 ] && return   # --delete has nothing of its own to clean up
   [ -n "$NARRATOR_PID" ] && kill "$NARRATOR_PID" 2>/dev/null
   if [ "$KEEP" = 1 ]; then
     title "Leaving everything in place (--keep)"
@@ -127,6 +133,17 @@ trap cleanup EXIT
 trap 'echo; warn "interrupted"; exit 130' INT TERM
 
 # ---------------------------------------------------------------- helpers for the steps
+delete_existing() {   # remove an SMO stack that was there before this script: containers, networks, volumes, built images
+  say "  deleting the existing stack (containers, networks, volumes including the database, images built for it)"
+  if compose down -v --remove-orphans --rmi local --timeout 20 >/dev/null 2>&1; then
+    local left; left="$(compose ps -aq 2>/dev/null | wc -l)"
+    [ "$left" -eq 0 ] && ok "the existing stack is deleted" || die "$left container(s) are still there after docker compose down"
+  else
+    die "docker compose down failed; check: docker compose -f ../../docker-compose.yml -f docker-compose.yml ps -a"
+  fi
+  say "    generated secret files in smo/secrets are not touched here (they are git-ignored and may belong to you)"
+}
+
 wait_healthy() {
   local deadline=$((SECONDS + 300)) svc id status
   for svc in "$@"; do
@@ -219,18 +236,30 @@ command -v docker >/dev/null 2>&1 || die "docker is required"
 docker info >/dev/null 2>&1 || die "the Docker daemon is not reachable"
 docker compose version >/dev/null 2>&1 || die "the Docker Compose plugin is required"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
+ok "docker, compose and python3 found"
+existing="$(compose ps -aq 2>/dev/null | wc -l)"
+if [ "$DELETE_ONLY" = 1 ]; then
+  if [ "$existing" -gt 0 ]; then delete_existing; else ok "there is no stack to delete"; fi
+  exit 0
+fi
+if [ "$existing" -gt 0 ]; then
+  warn "$existing container(s) of the SMO stack already exist. This script works on that stack and removes it, volumes included, when it exits."
+  if [ "$RESET" = 1 ]; then
+    delete_existing
+  elif [ "$AUTO" = 1 ]; then
+    die "refusing to continue unattended with an existing stack; use ./start.sh --reset to delete it first"
+  else
+    while :; do
+      read -r -p "  [d] delete it now and start fresh   [o] keep it, work on it and delete it on exit   [q] quit: " a || exit 0
+      case "$a" in d|D) delete_existing; break ;; o|O) break ;; q|Q|"") exit 0 ;; esac
+    done
+  fi
+fi
 python3 -c "
 import socket, sys
 s = socket.socket()
-sys.exit(1 if s.connect_ex(('127.0.0.1', 8080)) else 0)" && die "host port 8080 (R1 Termination) is already in use"
-ok "docker, compose, python3 found; port 8080 is free"
-existing="$(compose ps -aq 2>/dev/null | wc -l)"
-if [ "$existing" -gt 0 ]; then
-  warn "$existing container(s) of the SMO stack already exist. This script removes the whole stack, volumes included, when it exits."
-  [ "$AUTO" = 1 ] && die "refusing to continue unattended; remove it first: docker compose -f ../../docker-compose.yml -f docker-compose.yml down -v"
-  read -r -p "  Continue and let this script own (and later delete) that stack? [y/N] " a || exit 0
-  [ "$a" = y ] || [ "$a" = Y ] || exit 0
-fi
+sys.exit(1 if s.connect_ex(('127.0.0.1', 8080)) else 0)" && die "host port 8080 (R1 Termination) is in use by something that is not this stack; free it, or stop that process"
+ok "host port 8080 is free"
 WORK="$(mktemp -d)"
 [ -d "$SMO_DIR/secrets" ] && SECRETS_DIR_EXISTED=1
 ls "$SMO_DIR/secrets" 2>/dev/null | sort > "$WORK/secrets.before"

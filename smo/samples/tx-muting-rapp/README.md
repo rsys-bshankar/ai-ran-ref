@@ -458,11 +458,13 @@ cd smo/samples/tx-muting-rapp
 ./start.sh                   # interactive
 ./start.sh --auto            # no prompts, default load values (also what you get when stdin is not a terminal)
 ./start.sh --keep            # do not clean up on exit (see below)
+./start.sh --reset           # delete an SMO stack that already exists, then run the demo
+./start.sh --delete          # only delete an existing stack, and exit
 ```
 
 That is the whole interface: there is no other script to run. `start.sh` builds and starts the stack, walks you through the package lifecycle, the closed loop and the retirement, explains every step before it runs and every event while it happens, and removes everything it created when it exits.
 
-**Prerequisites:** Docker Engine with the Compose plugin, Python 3, git, and free host port 8080 (R1 Termination). The first run builds the images, which takes a few minutes. The script refuses to start if port 8080 is taken, and, if an SMO stack already exists, asks before it takes ownership of it (it removes the stack, volumes included, on exit); with `--auto` it refuses.
+**Prerequisites:** Docker Engine with the Compose plugin, Python 3, git, and free host port 8080 (R1 Termination). The first run builds the images, which takes a few minutes. If an SMO stack already exists (for example after `--keep` or an interrupted run), it offers three choices: **d** delete it now and start fresh, **o** work on it and delete it on exit, **q** quit. With `--auto` it refuses unless you pass `--reset`. `--reset` deletes the existing stack without asking and then runs the demo; `--delete` deletes it and exits. Only after that does the script check that host port 8080 is free, and it refuses to start if something other than this stack holds it. Deleting means `docker compose down -v --remove-orphans --rmi local`: containers, networks, volumes (the database included) and the images built for the stack. The secret files in `smo/secrets/` are not touched by a delete: they are git-ignored and may be yours.
 
 **At every step** you get a short explanation, then a prompt: `[Enter]` runs it, `s` skips it, `q` quits and cleans up. Ctrl-C does the same. A step that fails offers retry, continue or quit. Values for the load steps (PRB %, UEs) are asked with defaults.
 
@@ -492,7 +494,7 @@ Steps are named by group: **L** the CSAR lifecycle, **G** the gNB and the closed
 
 | Step | What it does | Needs | What you see |
 |---|---|---|---|
-| 0 | Checks docker, compose, python3, port 8080; looks for an existing stack | | `ok` lines |
+| 0 | Checks docker, compose, python3; looks for an existing stack (delete it, work on it or quit; `--reset` / `--delete`); then checks port 8080 | | `ok` lines |
 | 1 | Builds and starts the platform (R1 Termination, SME, DME, RAN NF OAM, its worker, Onboarding, rApp Management, NFO, FOCOM) and the gNB O1 adaptor simulator; builds, but does not start, the rApp; starts the narrator | 0 | every service `healthy` |
 | L1 | Builds the CSAR with `smo/samples/build_csar.py` into a temporary file | | package size and file list |
 | L2 | **Onboard**: serves the CSAR in the compose network; Onboarding fetches and validates it | 1, L1 | package `AVAILABLE`, descriptor id, capabilities |
@@ -687,7 +689,7 @@ After the package is `DELETING`, the same CSAR can be onboarded again.
 | Automatic or manual pass 502 / `evaluation.error` event | DME or RAN NF OAM unreachable, or R1 Termination refused the call (401 token, 403 role); the message names the call and the status | Check `docker compose ps`, the named service's logs, and that `sme` and `r1-termination` are healthy |
 | `VERIFY_FAILED` in a decision | The network side acknowledged but did not apply (step G7 does this on purpose) | The rApp retries once, then rolls a failed mute back to `MUTING_OFF`; the record shows `attempts` and `rollback` |
 | Instance stays `DEPLOYING` | `bootstrap-complete` was never sent | Run L5 |
-| `start.sh` says port 8080 is in use, or a stack exists | Another process or an earlier stack | Free the port, or remove the old stack (`docker compose ... down -v`) |
+| `start.sh` says port 8080 is in use, or a stack exists | Another process or an earlier stack | Free the port; for an earlier stack run `./start.sh --delete` (or `--reset` to delete it and run the demo) |
 
 ---
 
