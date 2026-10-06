@@ -8,8 +8,8 @@
 | R1 route / port | Is the R1 gateway itself: container `:8000`, host `:8080` in `docker-compose.yml`. Own routes: `GET /health`, `GET /live`, `GET /ready`, `GET /version`, `GET /bootstrap`; everything else is the catch-all proxy |
 | Depends on (over R1) | SME (`POST /oauth2/introspect`, direct to SME's address, not through itself); every module in `ROUTES` as a forwarding target |
 | Called by | rApps, the GUI BFF, `smo_shared.R1Client` in every module, the reference rApps |
-| Database tables | None (stateless) |
-| Unit tests | 30 passed (`tests/`, no DB, standalone) |
+| Database tables | None of its own. It writes the shared audit chain (`audit_log`, `audit_head`), reads RAN NF OAM's `rapp_kill`, and, with `R1_RATE_STORE=postgres`, keeps the limiter's buckets in the shared `rate_bucket` table |
+| Unit tests | `tests/`, SQLite, standalone (see 3.2) |
 | Status | Done. Token model is opaque-token introspection, not JWT/IdP signature checking; route-level test depth tracked by [OI-4](../OPEN_ITEMS.md) |
 
 ## 1. High-level design (HLD)
@@ -63,7 +63,7 @@ It calls only SME (introspection) and the chosen backend. It never reads a datab
 |---|---|
 | Token check by introspection against SME on every request | SME issues opaque, server-tracked tokens (no IdP in this build), so validity can only be asked, not verified from a signature. |
 | Fails closed: an unreachable SME, a missing or non-`Bearer` header, an empty token, or `active != true` all give `401 UNAUTHORIZED` | Unlike best-effort notifications elsewhere, this is a security gate. |
-| `/bootstrap`, the probes (`/health`, `/live`, `/ready`) and `/version` are unauthenticated | Bootstrap must work before a token exists, and an orchestrator probes without a token; all are assumed network-isolated. The probes are declared ahead of the catch-all, so it is answered locally and not treated as an unknown prefix. |
+| `/bootstrap`, the probes (`/health`, `/live`, `/ready`) and `/version` are unauthenticated | Bootstrap must work before a token exists (an rApp calls it to find SME's token endpoint), and an orchestrator probes without a token; all are assumed network-isolated (see "Why `/bootstrap` has no token" below for what it reveals and the controls that narrow who can ask). The probes are declared ahead of the catch-all, so it is answered locally and not treated as an unknown prefix. |
 | Unknown prefix is `404 NO_ROUTE` before any token check | Nothing is forwarded, nothing is learned about backends. |
 | Prefix is stripped before forwarding | No backend carries its own prefix in its routes. |
 | `X-Correlation-ID` is overridden with the request's own id (the caller's, or the one the middleware just assigned); `X-R1-Invoker-Id` is set to the introspected token's `client_id` (any inbound value is dropped; omitted when the token carries none) and `X-R1-Role` to the `role` SME records for that invoker, `internal` (an SMO module or the GUI, which presented the enrollment secret) or `rapp` (`PR-SEC-14`; an SME that reports none is read by the token's scope); all other headers except `Host` are forwarded verbatim, except `traceparent` / `tracestate`: a valid pair from the caller is passed on (an invalid one is dropped), and with `SMO_OTEL_ENDPOINT` set the gateway's own CLIENT span replaces the parent id (`PR-OBS-3`, `docs/OBSERVABILITY.md`) | One id threads the whole downstream fan-out of an inbound call (call flow 14). |
@@ -97,7 +97,7 @@ None: stateless.
 |---|---|---|---|
 | GET | `/version` | The gateway's build, `{module, version, buildSha, builtAt}` (PR-OBS-8.1); no auth. A backend's is `/<module>/version`, token-gated like any call | 200 |
 | GET | `/health` | Liveness of the gateway itself; no auth; an alias of `/live`. A backend's own probes are reached as `/<module>/health`, `/<module>/ready` and is token-gated like any call (the GUI BFF's `GET /modules/status` probes both). | none |
-| GET | `/bootstrap` | `{apiEndpoints: [...]}` with exactly two entries, `service-apis` (discovery) and `published-apis` (registration), each with `tokenEndPoint.uri` and `apiEndPoint.uri`; no auth, URI-stable. The URIs name SME on the compose network, or, with `R1_PUBLIC_BASE_URL` set (an origin, never taken from request headers), `<base>/sme/...` with the token endpoint at `<base>/sme/oauth2/token` (PR-SEC-1.6). | none |
+| GET | `/bootstrap` | `{apiEndpoints: [...]}` with exactly two entries, `service-apis` (discovery) and `published-apis` (registration), each with `tokenEndPoint.uri` and `apiEndPoint.uri`; no token (optionally the shared `X-Bootstrap-Key` header, `R1_BOOTSTRAP_KEY`, PR-SEC-9.3), URI-stable. The URIs name SME on the compose network, or, with `R1_PUBLIC_BASE_URL` set (an origin, never taken from request headers), `<base>/sme/...` with the token endpoint at `<base>/sme/oauth2/token` (PR-SEC-1.6). | 401 `UNAUTHORIZED` only when `R1_BOOTSTRAP_KEY` is set and the header is missing or wrong |
 | GET, POST, PUT, PATCH, DELETE | `/{prefix}/{rest}` | Authenticate, strip `/{prefix}`, forward method, headers, query string and body to `ROUTES[prefix]/{rest}`; return the upstream status, headers and body. | `404 NO_ROUTE` unknown prefix; `401 UNAUTHORIZED` token check failed |
 
 Notes:
@@ -153,6 +153,8 @@ Request-time order: route lookup (404) → bearer header present and non-empty (
 | `R1_MAX_BODY_OVERRIDES` | `/mlmr/models/*/artifact=52428800` | `<path-pattern>=<bytes>,...` caps that replace the default for matching paths (`*` matches anything); the default is the model artifact upload, 50 MiB like the GUI's nginx. Setting it replaces this default |
 | `R1_RATE_PER_SECOND` | `100` | Requests a second each caller (invoker id) may sustain; `0` turns the limiter off |
 | `R1_RATE_BURST` | `200` | Requests a caller may make at once before it is held to the rate |
+| `R1_RATE_STORE` | `memory` | Where the limiter's buckets live (PR-SEC-8.5, read once at start; anything else stops the service). `memory`: in each replica, so N replicas give a caller N x the budget. `postgres`: in the shared `rate_bucket` table, one budget for all replicas; see "The shared limiter" below. Compose passes `${R1_RATE_STORE:-memory}`; in the chart set `modules.r1-termination.env.R1_RATE_STORE` |
+| `R1_BOOTSTRAP_KEY` / `R1_BOOTSTRAP_KEY_FILE` | unset | A shared key `GET /bootstrap` must present as the header `X-Bootstrap-Key` (PR-SEC-9.3, read once at start; both set stops the service). Unset (the default): `/bootstrap` is open as before. The `_FILE` form reads a mounted secret (`smo_shared/secretfile.py`). Clients present it from `SMO_BOOTSTRAP_KEY[_FILE]` |
 | `SMO_ROLE_ENFORCEMENT` | `enforce` | `enforce`: an rApp is refused on the internal-only routes; `audit`: the same decision is counted (`smo_role_refusals_total`) and logged, then allowed (a rolling upgrade from a release with no enrollment). Anything else is `enforce` |
 | `R1_KILL_SWITCH` | `on` | `off`: the gateway does not refuse changes by a stopped rApp (RAN NF OAM still refuses its config jobs). On, it reads the `rapp_kill` table; see "The kill switch" below |
 | `R1_KILL_CACHE_SECONDS` | `3` | How long the gateway keeps what it read about one rApp: the delay between throwing the switch and the gateway acting on it |
@@ -168,9 +170,9 @@ The gateway answers with `JSONResponse` bodies of the form `{"title": ..., "stat
 | `title` | Status | When |
 |---|---|---|
 | `NO_ROUTE` | 404 | First path segment is not in `ROUTES` |
-| `UNAUTHORIZED` | 401 | No `Authorization` header, not `Bearer`, empty token, SME unreachable, or token not active |
+| `UNAUTHORIZED` | 401 | No `Authorization` header, not `Bearer`, empty token, SME unreachable, or token not active; on `GET /bootstrap`, a missing or wrong `X-Bootstrap-Key` when `R1_BOOTSTRAP_KEY` is set |
 | `PAYLOAD_TOO_LARGE` | 413 | The request body is larger than the cap for that path (`Content-Length`, or counted while streaming); the backend is not called |
-| `RATE_LIMITED` | 429 | The caller has used its request budget; `Retry-After` is the whole seconds to wait. Counted after authentication, so a refused unauthenticated request spends nobody's budget |
+| `RATE_LIMITED` | 429 | The caller has used its request budget (per replica, or across replicas with `R1_RATE_STORE=postgres`); `Retry-After` is the whole seconds to wait. Counted after authentication, so a refused unauthenticated request spends nobody's budget |
 | `ROLE_NOT_PERMITTED` | 403 | The caller's role is `rapp` and the route is one only SMO modules and operators may call (`smo_shared/roles.py` `INTERNAL_ONLY`: setting or removing a per-rApp limit, defining or removing a KPI, purging CM history); the backend is not called |
 | `UPSTREAM_TIMEOUT` | 504 | The backend did not answer within `R1_UPSTREAM_TIMEOUT_SECONDS` (`detail` names the route prefix) |
 | `UPSTREAM_UNAVAILABLE` | 502 | The backend could not be reached (connection refused, DNS failure, reset) |
@@ -181,7 +183,7 @@ Every other status and body is the backend's, passed through.
 
 - Opaque-token introspection instead of signed JWTs. SME checks a token's scope when it issues it (HISTORY.md OI-2-oauth2-scope), but the gateway does not enforce it.
 - Authentication only: no per-invoker or per-API authorization at the gateway. Routes map to modules, not to published APIs, so there is nothing here to match a scope against.
-- Rate limit and body cap are in place (`PR-SEC-8.1`, `8.2`); no retry or circuit breaking. The buckets are per process, so with N gateway replicas a caller has N times the rate until the shared store of `SEC-8.5`; unauthenticated requests are not limited here yet (`SEC-8.3`), and one rate applies to every route (`SEC-8.4`).
+- Rate limit and body cap are in place (`PR-SEC-8.1`, `8.2`, `8.5`); no retry or circuit breaking. By default the buckets are per process, so with N gateway replicas a caller has N times the rate; `R1_RATE_STORE=postgres` makes it one budget (the shared limiter below, which fails open). Unauthenticated requests are not limited here yet (`SEC-8.3`), and one rate applies to every route (`SEC-8.4`).
 - The upstream timeout is one value for every route (60 s), not per route or per call; a caller that sets its own longer timeout is still cut at 60 s.
 - Upstream response headers are forwarded verbatim, including those describing the encoding of the original body.
 - Test depth ([OI-4](../OPEN_ITEMS.md)).
@@ -198,6 +200,7 @@ cd smo/r1-termination && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 | Test file | Covers | Count |
 |---|---|---|
+| `tests/test_bootstrap_key_and_shared_limiter.py` | The bootstrap key (open by default; 401 without or with a wrong key, nothing revealed in the refusal; constant-time compare; from the environment or a file, never both; the declared optional header and 401) and the shared limiter at the gateway (default store is in-process; `postgres` builds the shared limiter, a bad value stops the service; 429 and the bucket row; a second replica over the same database sees the spent budget; a database error does not refuse and is logged; unauthenticated requests spend nothing) | 11 |
 | `tests/test_main.py` | Bootstrap content and its no-auth rule; route table covers every module; unknown prefix 404; proxy to the right backend; 401 for missing/non-bearer/inactive token; fail-closed when SME is unreachable; method, body and query forwarding; `Host` stripped, other headers kept; correlation id generated or kept; `traceparent` / `tracestate` forwarded when valid, dropped when not; upstream error status passthrough; bare-prefix path; `/dme-push` and `/dme-pull` routing; local `/health` | 20 |
 
 ### 3.3 What is not covered here
@@ -212,6 +215,24 @@ cd smo/r1-termination && PYTHONPATH=.:../shared python -m pytest tests/ -q
 - Call flows: [01 onboarding to deployment](../docs/call-flows/01-rapp-onboarding-to-deployment.md) (bootstrap), [14 correlation id](../docs/call-flows/14-correlation-id-propagation.md), [18 SME security lifecycle](../docs/call-flows/18-sme-trusted-invokers-lifecycle.md) (token and introspection)
 - OpenAPI: [`../docs/openapi/r1-termination.json`](../docs/openapi/r1-termination.json)
 - Related READMEs: [SME](../sme/README.md) (issues and introspects tokens), [DME](../dme/README.md)
+
+## Why `/bootstrap` has no token, and what it reveals (PR-SEC-9.1)
+
+`GET /bootstrap` is open because an rApp needs it to find SME's token endpoint *before* it has a token: there is no earlier step at which it could have authenticated, and the answer must not change across versions (a Foundational Platform LLD 4.1 contract). Reading the route, an unauthenticated caller learns exactly this and nothing else: two `apiEndpoints` entries, `service-apis` and `published-apis`, each with the OAuth2 token endpoint URI and the API base URI. Those are SME's address on the container network (`http://sme:8000/...`) or, with `R1_PUBLIC_BASE_URL` set, `<public base>/sme/...` and `<public base>/sme/oauth2/token`. It reveals the internal hostname of SME in the first form, that the platform is an SMO with a discovery and a registration API, and the shape of those paths. It reads no database, takes no input and returns no identity, token, secret, rApp or data; the addresses it names are ones every module and rApp is told anyway, and each of those endpoints still checks its own credentials (the token endpoint wants an invoker's client credentials, the API entries go through this gateway with a token). The cost of leaving it open is therefore disclosure of an address and a free probe of a live gateway, not access.
+
+Three controls narrow who can ask, from the network inwards; use the ones the deployment can enforce:
+
+1. **Network (SEC-9.2).** Helm `bootstrapNetworkPolicy.enabled` renders a NetworkPolicy limiting ingress to the gateway pods to the release's own pods plus the sources you list (`allowedSources`: the rApp namespaces, the ingress controller, a scraper). A NetworkPolicy selects pods and ports, not URL paths, so it limits who reaches the *whole gateway*, and `/bootstrap` with it; it cannot expose the rest of the gateway while hiding `/bootstrap`. It needs a CNI that enforces NetworkPolicy.
+2. **Ingress, per path (SEC-9.2).** Only the ingress sees the path. With ingress-nginx, `ingress.r1.bootstrapAllowedSourceRanges` adds an Ingress for the exact path `/bootstrap` with a `whitelist-source-range`, and `edge/nginx.conf` carries the equivalent commented `location = /bootstrap { allow ...; deny all; }` for the compose TLS edge.
+3. **A shared key (SEC-9.3).** `R1_BOOTSTRAP_KEY[_FILE]`: `GET /bootstrap` then needs `X-Bootstrap-Key` (compared with `hmac.compare_digest`; 401 `UNAUTHORIZED` otherwise, with no address in the body). Off by default. `smo_shared.R1Client` (so the SDK, the sample rApps and every module) sends it when `SMO_BOOTSTRAP_KEY[_FILE]` is set, and compose passes `R1_BOOTSTRAP_KEY` to the gateway and to every client in one setting. It is a shared secret every rApp holds, a gate against scanners and stray clients, not an identity: it does not tell rApps apart and a leaked copy works until rotated (set a new value everywhere and restart). It does not replace 1 or 2, and neither of those replaces the token check on everything else.
+
+## The shared limiter (PR-SEC-8.5)
+
+`R1_RATE_STORE=postgres` replaces the per-replica buckets with the table `rate_bucket` (migration `0028`, shared table, granted to the gateway's role only), so N replicas give a caller one budget. One statement per authenticated request does the whole token-bucket step atomically: `INSERT ... ON CONFLICT (caller) DO UPDATE ... RETURNING tokens, last_allowed`, where the update computes `refilled = LEAST(burst, tokens + GREATEST(0, now - refilled_at) * rate)` and then takes one token if `refilled >= 1`. It is the same bucket as the in-process one: burst, then `R1_RATE_PER_SECOND` a second, a refused request takes nothing, `Retry-After` is the whole seconds to the next token. Postgres locks the caller's row for the statement, so replicas serialise per caller and no update is lost; other callers are untouched. The query runs in the thread pool, not on the event loop.
+
+Exact limits of the approximation: (1) `now` is the replica's wall clock, stored as epoch seconds; clocks d seconds apart shift a caller's refill by at most rate x d once, a clock stepping back refills nothing (the elapsed time is floored at 0); NTP-synchronised nodes make this immaterial. The database clock is not used because the unit tests run on SQLite. (2) Each request costs one round trip and one row update; with the default `memory` store there is none. (3) A row is deleted once its bucket would be full again (each replica runs the purge at most every 60 s as part of a request, no scheduler), so the table is as large as the set of recently active callers; the unauthenticated paths touch it not at all.
+
+**It fails open.** If the statement fails (database down, no connection, a permission error), the request is not refused: the limiter is a fairness control, the gateway's token check does not use the table, and refusing every caller because the limiter's table is unreachable would turn a database outage into a total R1 outage. For the next 5 s the replica uses its own in-process bucket (so the budget degrades to N x rate, not to unlimited) and does not try the store again, which keeps an outage from adding a failed round trip or a pool wait to every request. The failure is logged (one line in 30 s) and counted: `smo_rate_store_errors_total` (statements that failed) and `smo_rate_store_fallbacks_total` (requests decided locally); alert on a non-zero rate of either. The kill switch makes the opposite choice (it fails closed) because it is a safety control.
 
 ## What an rApp may change (PR-SEC-14)
 

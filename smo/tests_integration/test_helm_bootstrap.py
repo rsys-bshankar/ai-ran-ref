@@ -1,0 +1,92 @@
+"""PR-SEC-9.2 / PR-SEC-8.5 in the Helm chart: /bootstrap exposure (a NetworkPolicy and a per-path ingress rule, both off by default) and the shared limiter's setting.
+
+The text tests read the chart's files and need no helm; the render tests need the `helm` binary and are skipped without it (CI's `helm` job has it).
+"""
+
+import json
+
+from test_helm_chart import CHART, COMPOSE, VALUES, _compose_services, _render, helm
+
+TEMPLATES = CHART / "templates"
+SOURCES = [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "rapps"}}}]
+
+
+def test_the_bootstrap_network_policy_is_off_by_default_and_the_template_is_gated_on_it():
+    assert VALUES["bootstrapNetworkPolicy"] == {"enabled": False, "allowedSources": []}
+    text = (TEMPLATES / "networkpolicy.yaml").read_text()
+    body = text.split("*/}}", 1)[1].strip()                                           # after the leading comment
+    assert body.startswith("{{- if .Values.bootstrapNetworkPolicy.enabled }}") and body.endswith("{{- end }}")     # the whole object is inside the switch
+    assert body.count("{{- end }}") == body.count("{{- if ") + body.count("{{- with ")
+    assert "kind: NetworkPolicy" in body and "app.kubernetes.io/name: r1-termination" in body
+    assert "policyTypes: [Ingress]" in body and ".Values.bootstrapNetworkPolicy.allowedSources" in body
+    assert "port: {{ $m.port }}" in body                                               # the gateway's port, per pod: a policy cannot name a path
+    assert VALUES["moduleDefaults"]["port"] == 8000 and "port" not in VALUES["modules"]["r1-termination"]
+
+
+def test_the_template_says_a_network_policy_is_not_per_path_and_where_the_per_path_rule_is():
+    text = (TEMPLATES / "networkpolicy.yaml").read_text()
+    assert "never URL paths" in text and "bootstrapAllowedSourceRanges" in text and "R1_BOOTSTRAP_KEY" in text
+
+
+def test_the_per_path_ingress_rule_is_off_by_default_and_exact_when_on():
+    assert VALUES["ingress"]["r1"]["bootstrapAllowedSourceRanges"] == [] and VALUES["ingress"]["enabled"] is False
+    text = (TEMPLATES / "ingress.yaml").read_text()
+    assert "{{- if and .host .bootstrapAllowedSourceRanges }}" in text
+    assert "path: /bootstrap" in text and "pathType: Exact" in text and "nginx.ingress.kubernetes.io/whitelist-source-range" in text
+    assert text.count("{{- end }}") == text.count("{{- if ") + text.count("{{- with ") + text.count("{{- range ")
+
+
+def test_the_gateway_settings_this_change_adds_are_the_same_in_compose_and_the_chart():
+    env = COMPOSE["services"]["r1-termination"]["environment"]
+    assert env["R1_RATE_STORE"] == "${R1_RATE_STORE:-memory}" and VALUES["modules"]["r1-termination"]["env"]["R1_RATE_STORE"] == "memory"
+    assert env["R1_BOOTSTRAP_KEY"] == "${R1_BOOTSTRAP_KEY:-}"                          # empty: off
+    callers = [name for name, service in _compose_services().items() if "R1_GATEWAY_URL" in (service.get("environment") or {})]
+    assert callers
+    for name in callers:                                                                  # every module and rApp that calls the gateway can present the key
+        assert COMPOSE["services"][name]["environment"]["SMO_BOOTSTRAP_KEY"] == "${R1_BOOTSTRAP_KEY:-}", name
+
+
+@helm
+def test_the_default_install_has_no_network_policy_and_no_bootstrap_ingress():
+    docs = _render("--set", "ingress.enabled=true", "--set", "ingress.r1.host=r1.example.com")
+    assert not [d for d in docs if d["kind"] == "NetworkPolicy"]
+    assert [d["metadata"]["name"] for d in docs if d["kind"] == "Ingress"] == ["r1"]
+
+
+@helm
+def test_the_bootstrap_network_policy_limits_the_gateway_pods_ingress_to_the_release_and_the_listed_sources():
+    policy = next(d for d in _render("--set", "bootstrapNetworkPolicy.enabled=true", "--set-json", f"bootstrapNetworkPolicy.allowedSources={json.dumps(SOURCES)}")
+                  if d["kind"] == "NetworkPolicy")
+    assert policy["spec"]["podSelector"]["matchLabels"]["app.kubernetes.io/name"] == "r1-termination"
+    assert policy["spec"]["policyTypes"] == ["Ingress"]
+    (rule,) = policy["spec"]["ingress"]
+    assert rule["ports"] == [{"protocol": "TCP", "port": 8000}]
+    assert rule["from"][0]["podSelector"]["matchLabels"]["app.kubernetes.io/part-of"] == "smo"
+    assert rule["from"][1:] == SOURCES
+
+
+@helm
+def test_the_bootstrap_network_policy_without_extra_sources_allows_only_the_release():
+    policy = next(d for d in _render("--set", "bootstrapNetworkPolicy.enabled=true") if d["kind"] == "NetworkPolicy")
+    assert len(policy["spec"]["ingress"][0]["from"]) == 1
+
+
+@helm
+def test_bootstrap_source_ranges_add_an_exact_path_ingress_with_the_whitelist():
+    docs = _render("--set", "ingress.enabled=true", "--set", "ingress.r1.host=r1.example.com", "--set", "ingress.r1.tlsSecretName=r1-tls",
+                   "--set", "ingress.className=nginx", "--set-json", 'ingress.r1.bootstrapAllowedSourceRanges=["10.0.0.0/8","192.168.1.0/24"]')
+    ingresses = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Ingress"}
+    assert set(ingresses) == {"r1", "r1-bootstrap"}
+    bootstrap = ingresses["r1-bootstrap"]
+    assert bootstrap["metadata"]["annotations"]["nginx.ingress.kubernetes.io/whitelist-source-range"] == "10.0.0.0/8,192.168.1.0/24"
+    (path,) = bootstrap["spec"]["rules"][0]["http"]["paths"]
+    assert path["path"] == "/bootstrap" and path["pathType"] == "Exact" and path["backend"]["service"]["name"] == "r1-termination"
+    assert bootstrap["spec"]["ingressClassName"] == "nginx" and bootstrap["spec"]["tls"][0]["secretName"] == "r1-tls"
+    assert "nginx.ingress.kubernetes.io/whitelist-source-range" not in (ingresses["r1"]["metadata"].get("annotations") or {})     # the rest of the host is unchanged
+
+
+@helm
+def test_the_shared_limiter_setting_reaches_the_gateway_pod():
+    docs = _render("--set", "modules.r1-termination.env.R1_RATE_STORE=postgres")
+    r1 = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "r1-termination")
+    assert {"name": "R1_RATE_STORE", "value": "postgres"} in r1["spec"]["template"]["spec"]["containers"][0]["env"]

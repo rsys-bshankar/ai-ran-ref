@@ -1172,7 +1172,41 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   does not work into a tmpfs, so the replay and the runbook need another way to serve packages first. The Helm chart (SEC-13.4, needs the
   chart). `seccomp`/`AppArmor` profiles, and image scanning (`PR-SEC-12`).
 
-### PR-SEC-8 — Rate and size limits (8.1, 8.2; 8.3–8.6 open)
+### PR-SEC-9 — Bootstrap exposure (9.1, 9.2, 9.3)
+
+- **Why it is open, and what it reveals (SEC-9.1).** Written in `r1-termination/README.md` ("Why `/bootstrap` has no token") and `SECURITY.md`, from the route itself:
+  `GET /bootstrap` takes no input, reads no database and returns two `apiEndpoints` entries (`service-apis`, `published-apis`), each the OAuth2 token endpoint URI and
+  the API base URI. Those are SME's address on the container network, or with `R1_PUBLIC_BASE_URL` the gateway's public address and `<base>/sme/oauth2/token`. It
+  is open because an rApp needs it to find SME before it has a token; what an unauthenticated caller gets is an internal hostname, the shape of two API paths and a
+  free probe of a live gateway: no identity, secret, token or data, and every endpoint it names still checks credentials.
+- **Network and ingress (SEC-9.2).** A NetworkPolicy selects pods and ports, not URL paths, so no NetworkPolicy can protect `/bootstrap` alone, and the chart says
+  so. What it can do: `bootstrapNetworkPolicy.enabled` (default false) renders `templates/networkpolicy.yaml`, limiting ingress to the `r1-termination` pods' port
+  to the release's own pods (the modules and the GUI backend call the gateway) plus `bootstrapNetworkPolicy.allowedSources` (raw NetworkPolicyPeers: the rApp
+  namespaces or pod labels, the ingress controller's namespace, a scraper). Once on it denies whatever it does not list, hence the off default. It needs a CNI
+  that enforces policy. The per-path control belongs to the ingress: `ingress.r1.bootstrapAllowedSourceRanges` (default empty) adds a second Ingress `r1-bootstrap`
+  for the Exact path `/bootstrap` with ingress-nginx's `whitelist-source-range` (an Exact path outranks the Prefix `/` of the `r1` Ingress, so nothing else
+  changes; ingress-nginx specific, other controllers need their own annotation), and `edge/nginx.conf` carries the equivalent `location = /bootstrap { allow ...;
+  deny all; ... }` as a commented block (the compose edge is not in the chart, and the development edge leaves `/bootstrap` open). Proof: `tests_integration/
+  test_helm_bootstrap.py`: text tests that need no helm (off by default, the whole template inside its switch, balanced template blocks, the Exact path and the
+  annotation, the compose and chart settings agree, every compose service that calls the gateway passes `SMO_BOOTSTRAP_KEY`) and helm render tests (skipped
+  locally without helm; the CI `helm` job runs them: no NetworkPolicy and no second Ingress by default, the policy's pod selector, port and sources, the exact-path
+  Ingress with the joined ranges, TLS and class).
+- **Optional shared key (SEC-9.3).** `R1_BOOTSTRAP_KEY` or `R1_BOOTSTRAP_KEY_FILE` (the repo's `smo_shared.secretfile.read_secret`, so a value and a file together stop
+  the service); read once at start; unset is today's behaviour exactly. Set, `GET /bootstrap` needs the header `X-Bootstrap-Key`, compared with
+  `hmac.compare_digest` on UTF-8 bytes (a non-ASCII header is simply wrong), else 401 `UNAUTHORIZED` with a body that names no address. The header is declared as an
+  optional parameter in `docs/openapi/r1-termination.json` (the 401 was already a declared response of every operation, and `check_breaking_changes.py` stays green:
+  an optional header is not a break). Clients: `smo_shared.R1Client._discover` sends it from `SMO_BOOTSTRAP_KEY[_FILE]` (the SDK and the four sample rApps reach
+  `/bootstrap` only through `R1Client`, so nothing in them changed); compose passes `${R1_BOOTSTRAP_KEY:-}` to the gateway and, as `SMO_BOOTSTRAP_KEY`, to every
+  service that sets `R1_GATEWAY_URL`, so one setting turns it on stack-wide; the chart has no value for it (an operator sets `modules.r1-termination.env.R1_BOOTSTRAP_KEY_FILE`
+  and `moduleDefaults.env.SMO_BOOTSTRAP_KEY_FILE` with a mounted Secret, because a key in `values.yaml` would sit in the Deployment). What it is not: an identity (every
+  rApp holds the same key, a leaked copy works until all are rotated), and not a replacement for the network controls. A client with no key against a gateway that
+  asks gets a logged 401 on discovery and its calls go out without a token, as for any failed token acquisition. Proof: `r1-termination/tests/
+  test_bootstrap_key_and_shared_limiter.py` (open by default and a sent key ignored; 401 for none, wrong, empty and a longer key with no address in the refusal; 200
+  with the key; constant-time compare called on bytes; environment and file forms, never both; the declared optional header and 401), `shared/tests/test_r1_client.py`
+  (no header unless configured; the header on `/bootstrap` only; the file form) and `sdk/tests/test_bootstrap_key.py` (the SDK over a real `R1Client` against a
+  gateway that asks for the key).
+
+### PR-SEC-8 — Rate and size limits (8.1, 8.2, 8.5; 8.3, 8.4, 8.6 open)
 
 - **Body cap (SEC-8.1).** `smo_shared/bodylimit.py` `BodySizeLimit`, an ASGI middleware, answers `413 PAYLOAD_TOO_LARGE` before the service reads a
   body over the cap: from `Content-Length` when there is one, and by counting bytes as they arrive when there is not (a chunked upload), so a caller
@@ -1185,8 +1219,8 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   token check, so an unauthenticated request spends nobody's budget (and is not limited here yet, SEC-8.3), and before the backend is called. `0` turns it
   off. Idle buckets are forgotten once they would be full, bounding the table by the callers active recently. Defaults are generous on purpose: the
   platform's own modules call through R1 constantly, each as its own invoker.
-- **A known limit, stated where it lives.** The buckets are in the process, so N gateway replicas give a caller N times the rate until `SEC-8.5` (a shared
-  store). `docs/ARCHITECTURE.md`'s process-state table has a row for it. The statelessness guard does not see it: it tracks classes defined in the
+- **A known limit, stated where it lives.** By default the buckets are in the process, so N gateway replicas give a caller N times the rate; `SEC-8.5` (below)
+  is the optional shared store that removes it. `docs/ARCHITECTURE.md`'s process-state table has a row for it. The statelessness guard does not see it: it tracks classes defined in the
   same module, not an instance of an imported one, so the row is by hand (a gap in the guard, noted rather than fixed here).
 - **Proof.** `shared/tests/test_bodylimit.py` (raw ASGI: exact at the cap, declared length refused before the app reads, chunked body stopped, overrides,
   a started response is not replaced) and `test_ratelimit.py` (fake clock: burst then rate, whole-second `Retry-After`, per-caller buckets, off at 0,
@@ -1194,8 +1228,41 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   caller does not starve another, unauthenticated requests spend no budget, 413 at 1 MiB and the artifact route's 50 MiB (and only that route), settings from
   the environment. Disabling the byte count, the refill clamp or the `>= 1` test each fails a test. The authorisation walk (`QA-6.1`) turns the limiter
   off: it makes thousands of requests as one caller.
-- **Not taken, still open.** SEC-8.3 a stricter limit on unauthenticated paths (`/bootstrap`, the 401s), SEC-8.4 limits per route class, SEC-8.5 the
-  shared store, SEC-8.6 the BFF login route; a per-route cap on the backends themselves (they are only reachable through R1).
+- **Shared limiter state (SEC-8.5).** `R1_RATE_STORE=postgres` (default `memory`, today's behaviour exactly; read once at start, any other value stops the
+  service) swaps `TokenBuckets` for `SharedTokenBuckets` (`smo_shared/ratelimit.py`), whose state is the table `rate_bucket(caller PK, tokens double, refilled_at
+  double, last_allowed bool)`, migration `0028`, a shared table granted to `smo_r1_termination` only (`migrations/table_owners.json`, `migrations/db_roles.json`),
+  expand-only (nothing reads it until an operator opts in, so the previous release is unaffected). **One statement per request**: `INSERT (caller, burst-1, now,
+  true) ON CONFLICT (caller) DO UPDATE SET last_allowed = refilled >= 1, tokens = CASE WHEN refilled >= 1 THEN refilled - 1 ELSE refilled END, refilled_at = now
+  RETURNING tokens, last_allowed` with `refilled = LEAST(burst, tokens + GREATEST(0, now - refilled_at) * rate)`. That is the in-process bucket exactly (burst,
+  refill at `rate`, a refused request takes nothing, `Retry-After` = `ceil((1 - tokens) / rate)` computed in the replica from the returned `tokens`), refill
+  arithmetic and decision atomic: Postgres locks the caller's row for the upsert, so replicas serialise per caller and nobody else waits. `last_allowed` exists
+  because `RETURNING` sees only the new row (Postgres 18's `RETURNING old.*` would not help SQLite, which runs the unit tests); SQLite gets the same statement with
+  `min`/`max` for `LEAST`/`GREATEST` (`ON CONFLICT ... RETURNING` needs SQLite 3.35). **Approximations, documented in the module docstring**: `now` is the
+  replica's `time.time()` (epoch seconds in a double), not the database clock, so replica clock skew d moves a refill by at most rate x d once, and a clock stepping
+  back refills nothing (`GREATEST(0, ...)`); the database clock was not used because the tests run on SQLite and a limiter that cannot be unit-tested was the worse
+  trade. The gateway runs the call in the thread pool (`run_in_threadpool`), since it is a database round trip on the hot path; the in-process limiter is still
+  called inline. **Purge**: each replica deletes the buckets that would be full again (`tokens + elapsed x rate >= burst`) at most once per 60 s from inside a
+  request (idempotent, so concurrent replicas are harmless; no scheduler, which the statelessness guard forbids), so the table stays the size of the recently
+  active callers, as `_forget_idle` does in memory. **Fail open, decided and documented**: a failed statement does not refuse the request. The limiter is a fairness
+  control and the gateway's token check does not use the table; failing closed would turn a database outage into a total R1 outage for every caller (the kill switch
+  fails closed because it is a safety control; this is not). During an outage the replica answers from its own in-process bucket for 5 s at a time (so the budget
+  degrades to N x rate, not to unlimited, and the store is not retried per request, which would add a connection wait to every call), logs one line in 30 s, and
+  counts `smo_rate_store_errors_total` and `smo_rate_store_fallbacks_total`. Not taken: a Redis store (a second stateful dependency for one counter, when Postgres is
+  already required), a fixed-window counter (admits 2 x burst across a window edge; the one-statement token bucket was not hard), advisory locks or
+  `SELECT ... FOR UPDATE` (two statements and a transaction where one upsert does), the database clock, and a per-statement timeout tighter than the engine's
+  (the 5 s back-off bounds the cost of an outage to one slow attempt per replica per 5 s). Proof: `shared/tests/test_ratelimit_shared.py` (SQLite, fake clocks:
+  the same sequences as the in-process tests, a refused request takes nothing, two limiters over one engine share one budget while two in-process ones give 5 each, off at
+  rate 0, burst below 1, a clock stepping back, the row's state, purge by itself once per interval and a failing purge ignored, fail-open to the local bucket with
+  the metrics and a single log line, back-off then retry, five threads on a file database never exceed the burst with zero statement errors);
+  `r1-termination/tests/test_bootstrap_key_and_shared_limiter.py` (the gateway over the shared store: 429 and the row, a second replica sees the spent budget,
+  a database error does not refuse, an unauthenticated request spends nothing, `R1_RATE_STORE` selects the class and a bad value stops the service);
+  `tests_integration/test_rate_limit_postgres.py` (Postgres only, the `migration-postgres` job: the statement is a token bucket on Postgres, three replicas with
+  their own pools and six threads on one caller get exactly the burst, purge); `test_table_owners.py` and `test_db_roles.py` (the table has an owner and the gateway's
+  role can use it and no other role can); `test_migrations.py` (head `0028`, up and down). Compose passes `${R1_RATE_STORE:-memory}`, the chart sets
+  `modules.r1-termination.env.R1_RATE_STORE: memory` (`test_helm_chart.py` holds the two together).
+- **Not taken, still open.** SEC-8.3 a stricter limit on unauthenticated paths (`/bootstrap`, the 401s), SEC-8.4 limits per route class, SEC-8.6 the BFF login route;
+  a per-route cap on the backends themselves (they are only reachable through R1). No multi-replica compose stress scenario of the shared mode yet (the Postgres
+  test covers the statement and the sharing, not the gateway under load).
 
 ### PR-SEC-4 — Secret management (4.1–4.3; 4.4–4.8 open)
 

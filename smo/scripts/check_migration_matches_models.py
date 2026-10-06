@@ -51,6 +51,7 @@ import smo_shared.module_identity  # noqa: E402,F401  (registers module_identity
 import smo_shared.single_runner  # noqa: E402,F401  (registers periodic_run on the shared Base)
 import smo_shared.outbox  # noqa: E402,F401  (registers notification_outbox on the shared Base)
 import smo_shared.audit  # noqa: E402,F401  (registers audit_log and audit_head)
+import smo_shared.ratelimit  # noqa: E402,F401  (registers rate_bucket)
 
 # Every module that persists to Postgres via smo_shared.db.Base — the two
 # mock (mock-o1-adaptor) has no models and aren't part

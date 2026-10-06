@@ -1,0 +1,30 @@
+{{- /* PR-SEC-9.2: who may reach R1 Termination at all. Off by default. A NetworkPolicy selects pods and ports, never URL paths, so it cannot protect /bootstrap alone:
+       this limits the whole gateway port to the pods of this release (the modules and the GUI backend call the gateway) plus `bootstrapNetworkPolicy.allowedSources`
+       (the rApp namespaces or pods, the ingress controller, a metrics scraper). The per-path rule for /bootstrap is at the ingress (`ingress.r1.bootstrapAllowedSourceRanges`)
+       and in the gateway itself (`R1_BOOTSTRAP_KEY`). Needs a CNI that enforces NetworkPolicy; with none, the object is accepted and does nothing. */}}
+{{- if .Values.bootstrapNetworkPolicy.enabled }}
+{{- $m := include "smo.module" (dict "root" $ "name" "r1-termination") | fromYaml }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: r1-termination-ingress
+  labels:
+    {{- include "smo.labels" (dict "root" $) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: r1-termination
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - { protocol: TCP, port: {{ $m.port }} }
+      from:
+        - podSelector:                      # every pod of this release: the modules and the GUI backend reach the gateway
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/part-of: smo
+        {{- with .Values.bootstrapNetworkPolicy.allowedSources }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}
