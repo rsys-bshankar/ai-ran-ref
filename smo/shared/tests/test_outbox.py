@@ -271,3 +271,29 @@ def test_a_delete_row_that_rolls_back_is_never_sent_and_an_unreachable_one_is_re
         when += datetime.timedelta(hours=1)
         drain(engine, now=when)
     assert rows(engine)[0].status == DEAD and set(deletes) == {"http://producer/jobs/3"}
+
+
+def test_a_destination_that_does_not_answer_does_not_hold_up_the_others(engine, monkeypatch):
+    """Rows go out oldest first; sending them one after the other made every row behind a dead subscriber wait its two-second timeout (V-9)."""
+    import time
+
+    monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
+    started = time.monotonic()
+    delivered_at = {}
+
+    def post(destination, json, timeout=5.0):
+        if "dead" in destination:
+            time.sleep(0.3)                                   # a subscriber that never answers: the call runs to its timeout
+            return None
+        delivered_at[destination] = time.monotonic() - started
+        return httpx.Response(200)
+
+    monkeypatch.setattr(webhook, "post_webhook", post)
+    with Session(engine) as db:
+        for i in range(8):
+            enqueue(db, f"http://dead/{i}", {"n": i})
+        enqueue(db, "http://healthy/cb", {"n": 99})
+        db.commit()
+    result = drain(engine)
+    assert result == {"sent": 1, "retry": 8, "dead": 0}
+    assert delivered_at["http://healthy/cb"] < 0.3 * 3, f"the healthy destination waited {delivered_at['http://healthy/cb']:.1f} s behind the dead ones"

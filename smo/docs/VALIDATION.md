@@ -38,7 +38,7 @@ Counts are test functions (`def test_`) at the time of writing: about 1,830 in t
 
 ## 7. Stress, soak and failure injection
 **Today**: HA lanes kill a worker, the job runner and the Postgres primary on kind and measure the write gap; nothing pushes past capacity.
-**Plan**: **V-9** stress on the V-8 harness: ramp to saturation, then hold (pool exhaustion must give 503 with `Retry-After`, never a hang or a wrong answer), burst past the R1 rate limiter, oversized bodies, a slow or dead webhook subscriber (QA-3.3), Postgres slow (`pg_sleep` injection) and unreachable (QA-3.1), SME down (QA-3.2), disk full on the package volume. **V-9b** a soak (nightly 6 h, release-candidate 24 h/72 h by hand: QA-5): memory, pool, file descriptors and outbox depth must be flat.
+**Plan**: **V-9** (SME down and the slow or dead subscriber are done: `stress_run.py probe --down-status 503`, `shared/tests/test_outbox.py`) stress on the V-8 harness: ramp to saturation, then hold (pool exhaustion must give 503 with `Retry-After`, never a hang or a wrong answer), burst past the R1 rate limiter, oversized bodies, a slow or dead webhook subscriber (QA-3.3), Postgres slow (`pg_sleep` injection) and unreachable (QA-3.1), SME down (QA-3.2), disk full on the package volume. **V-9b** a soak (nightly 6 h, release-candidate 24 h/72 h by hand: QA-5): memory, pool, file descriptors and outbox depth must be flat.
 
 ## 8. Upgrade tests
 **Today**: previous release to this commit with data kept (compose); previous release's code on this schema and its runbook; `helm upgrade` of this chart on kind with every module rolling; a mixed-version note in the changelog.
