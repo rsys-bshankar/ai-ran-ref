@@ -10,9 +10,13 @@ The report has, per route and overall: requests, requests/s, p50 / p95 / p99 / m
 
 GitHub's runners vary from night to night: compare a run with the previous one on the same kind of runner, never with an absolute figure.
 
+## Data volume (V-8b)
+
+`scripts/load_seed.py --elements N` loads N managed elements with 10 alarms and 5 performance files each (COPY, as the database owner; `--clean` removes them). The load workflow takes `elements` (1000, 10000 or 100000) when run by hand and seeds before the load, so the alarm and PM routes are measured against a table of that size, not an empty one. The nightly run seeds 1000.
+
 ## Not yet covered
 
-- The data volumes: an empty-ish database is measured today. A seed script for 1k / 10k / 100k managed elements, cells, PM records and alarms is next (V-8b).
+- Cells, managed objects and KPI results are not seeded yet (V-8b seeds managed elements, alarms and performance files).
 - Stress, saturation and failure injection (V-9) and the soak (V-9b).
 - Baseline numbers per release: recorded here once the seeded run exists.
 
