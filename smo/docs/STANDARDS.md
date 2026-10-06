@@ -16,6 +16,7 @@ SMO_Wave_10_Consolidated.docx (Wave 10 v1.0, canonical over `[W10]`).
 - [Frozen decisions](#frozen-decisions)
 - [Standards compliance](#standards-compliance): [TS 28.105](#ts-28105) · [TS 28.104](#ts-28104) · [TS 28.312](#ts-28312)
 - [Runtime realization](#runtime-realization)
+- Related: the release of every specification this build is checked against is the table in [`../../specs/README.md`](../../specs/README.md#specification-release-table-std-21); the security and privacy mapping is in [CONTROL_MATRIX.md](CONTROL_MATRIX.md), [PRIVACY.md](PRIVACY.md) and [DATA_RESIDENCY.md](DATA_RESIDENCY.md)
 
 ## Frozen decisions
 
@@ -37,6 +38,8 @@ Resolved without a decision:
 - **Lifecycle states** in `[W49]`/`[W10]` are subsets of the real FSM, not a gap.
 
 ## Standards compliance
+
+Which release of each spec the matrices refer to (the version in the spec file, and every other spec the code cites) is recorded in [`../../specs/README.md`](../../specs/README.md#specification-release-table-std-21); the releases are mixed (TS 28.105 at 19.5.0, TS 28.104 and TS 28.312 at 20.0.0).
 
 All three matrices are generated from the spec YAML in `specs/5G_APIs/`, and
 the generator checks that every attribute marked Compliant appears by name in
