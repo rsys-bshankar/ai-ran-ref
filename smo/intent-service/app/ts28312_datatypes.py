@@ -176,7 +176,8 @@ class SchedulingTime(BaseModel):
     @model_validator(mode="after")
     def _form(self):
         window = self.startTime is not None or self.endTime is not None
-        weekly, monthly = self.daysOfWeek is not None, self.daysOfMonth is not None
+        days_of_week, days_of_month = self.daysOfWeek, self.daysOfMonth
+        weekly, monthly = days_of_week is not None, days_of_month is not None
         if not (window or self.timeIntervals is not None or weekly or monthly):
             raise ValueError("SchedulingTime is empty")
         if window and (self.timeIntervals is not None or weekly or monthly):
@@ -185,9 +186,9 @@ class SchedulingTime(BaseModel):
             raise ValueError("daysOfWeek and daysOfMonth are alternatives")
         if window:
             TimeWindow(startTime=self.startTime, endTime=self.endTime)
-        if weekly and (any(d not in DAYS for d in self.daysOfWeek) or len(set(self.daysOfWeek)) != len(self.daysOfWeek)):
+        if days_of_week is not None and (any(d not in DAYS for d in days_of_week) or len(set(days_of_week)) != len(days_of_week)):
             raise ValueError(f"daysOfWeek are unique values of {', '.join(DAYS)}")
-        if monthly and (any(not 0 <= d <= 31 for d in self.daysOfMonth) or len(set(self.daysOfMonth)) != len(self.daysOfMonth)):
+        if days_of_month is not None and (any(not 0 <= d <= 31 for d in days_of_month) or len(set(days_of_month)) != len(days_of_month)):
             raise ValueError("daysOfMonth are unique integers 0..31")
         return self
 
