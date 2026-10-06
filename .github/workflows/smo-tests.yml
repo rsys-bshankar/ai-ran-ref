@@ -497,6 +497,108 @@ jobs:
         working-directory: smo
         run: docker compose down -v
 
+  # PR-SEC-2: mutual TLS between the services (docker-compose.mtls.yml). Every service requires a client certificate from the development CA
+  # (scripts/mtls_certs.py), every call between modules presents one, and the whole runbook replays over it; a client with no certificate, or with one
+  # from another CA, is refused by every service, and plain http gets no answer.
+  compose-mtls:
+    name: Mutual TLS between the services replays the runbook and refuses a client without a certificate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.mtls.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: docker-compose.mtls.yml is structurally valid
+        working-directory: smo
+        run: docker compose config --quiet
+
+      - name: Create the secret files, .env and the certificates
+        working-directory: smo
+        run: |
+          scripts/init_secrets.sh
+          cp .env.example .env
+          pip install -q cryptography
+          python3 scripts/mtls_certs.py init
+          python3 scripts/mtls_certs.py status
+
+      - name: docker compose up --build, mTLS on
+        working-directory: smo
+        env:
+          GUI_COOKIE_SECURE: "false"
+        run: |
+          docker compose up -d --build
+          for i in $(seq 1 60); do
+            [ "$(docker compose ps -a migrate --format json | jq -rs '.[0] | "\(.State) \(.ExitCode)"')" = "exited 0" ] && break
+            sleep 3
+          done
+          # the health check of every mTLS service is `python -m smo_shared.mtls probe`: all of them become healthy over TLS with their own certificate
+          for i in $(seq 1 60); do
+            unhealthy=$(docker compose ps --format json | jq -rs '[.[] | select(.Health != "" and .Health != "healthy") | .Service] | join(" ")')
+            [ -z "$unhealthy" ] && break
+            sleep 5
+          done
+          [ -z "$unhealthy" ] || { echo "::error::not healthy: $unhealthy"; exit 1; }
+
+      - name: Every service requires a client certificate and refuses one without, or from another CA
+        working-directory: smo
+        run: docker compose exec -T r1-termination python3 - < scripts/compose_mtls_check.py
+
+      - name: The expiry metric is exported
+        working-directory: smo
+        run: |
+          docker compose exec -T sme python3 -c "
+          import ssl, urllib.request
+          from smo_shared import mtls
+          body = urllib.request.urlopen('https://localhost:8000/metrics', context=mtls.client_context(), timeout=10).read().decode()
+          lines = [l for l in body.splitlines() if l.startswith('smo_mtls_cert_not_after_timestamp_seconds')]
+          print(*lines, sep='\n')
+          assert len(lines) == 2"
+
+      - name: Replay DEMO_RUNBOOK §2-§27 over mutual TLS
+        working-directory: smo
+        # The runbook's driver is a client like any other: it presents the `runbook` certificate. Notification destinations inside the stack are https://
+        # in this mode (tests_integration/test_demo_runbook.py); the demo-consumer receiver stays plain HTTP, as an external system would be.
+        run: |
+          docker run --rm --network smo_default --network-alias demo-consumer \
+            -e SMO_E2E_LIVE=1 -e SMO_MTLS=on -e SMO_MTLS_CERT_FILE=/mtls/tls.crt -e SMO_MTLS_KEY_FILE=/mtls/tls.key -e SMO_MTLS_CA_FILE=/mtls/ca.crt \
+            -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
+            -v "$PWD/..:/work" -v "$PWD/certs/mtls/runbook:/mtls:ro" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c '
+              pip install -q --require-hashes -r requirements/dev.txt &&
+              pip install -q --no-deps -e shared &&
+              python -m pytest tests_integration/test_demo_runbook.py -v -p no:cacheprovider'
+
+      - name: Rotation with no downtime, tried once (PR-SEC-2.5)
+        working-directory: smo
+        run: |
+          # new leaf certificates from the same CA, then each service restarted in turn while the gateway keeps answering
+          python3 scripts/mtls_certs.py renew
+          for svc in sme dme rapp-mgmt; do
+            docker compose up -d --no-deps --force-recreate "$svc"
+            for i in $(seq 1 30); do
+              [ "$(docker compose ps "$svc" --format json | jq -rs '.[0].Health')" = "healthy" ] && break
+              sleep 3
+            done
+            docker compose exec -T r1-termination python3 -c "
+          import httpx
+          from smo_shared import mtls
+          assert httpx.get('https://r1-termination:8000/live', verify=mtls.client_context(), timeout=10).status_code == 200"
+          done
+          # the restarted services (new certificates) and the ones not yet restarted (old ones, same CA) agree with a client that reread its own certificate file
+          docker compose exec -T r1-termination python3 - < scripts/compose_mtls_check.py
+
+      - name: Dump logs on failure
+        if: failure()
+        working-directory: smo
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --tail=150
+
+      - name: Tear down
+        if: always()
+        working-directory: smo
+        run: docker compose down -v
+
   # PR-SB-1.3/1.4: a real NETCONF-over-SSH server (Netopeer2, profile `netconf-lab`) answers the SSH session wrapper of RAN NF OAM.
   netconf-lab:
     name: NETCONF lab (netopeer2)

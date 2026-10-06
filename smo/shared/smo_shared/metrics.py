@@ -203,6 +203,31 @@ class _WorkerSuccessCollector:
 
 REGISTRY.register(_WorkerSuccessCollector())
 
+
+class _MtlsCertCollector:
+    """PR-SEC-2.5: when `SMO_MTLS=on`, the Unix time at which this process's certificate (`cert`) and the CA bundle it trusts (`ca`: the earliest of the certificates in it)
+    expire, read from the files at scrape time, so a renewed file shows at once. Nothing is exported with mTLS off; a file that cannot be read exports nothing for it
+    (the alert on expiry then has nothing to fire on, which is why the probe and the start-up check fail on an unreadable file first)."""
+    def describe(self):
+        return []
+
+    def collect(self):
+        from . import mtls
+        if not mtls.enabled():
+            return
+        family = GaugeMetricFamily("smo_mtls_cert_not_after_timestamp_seconds",
+                                   "Unix time at which the mTLS certificate (cert) or the earliest CA certificate this module trusts (ca) expires.", labels=["file"])
+        cert, _key, ca = mtls.files()
+        for label, path in (("cert", cert), ("ca", ca)):
+            try:
+                family.add_metric([label], mtls.cert_not_after(path).timestamp())
+            except Exception as exc:  # noqa: BLE001 (a scrape must not fail because a file is unreadable)
+                log.warning("mTLS certificate expiry not exported for %s: %r", path, exc)
+        yield family
+
+
+REGISTRY.register(_MtlsCertCollector())
+
 Rows = Iterable[tuple[tuple[str, ...], float]]
 
 

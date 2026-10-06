@@ -35,7 +35,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.outbox import enqueue
-from smo_shared import roles
+from smo_shared import mtls, roles
 from smo_shared.secretfile import read_secret
 
 from .models import (API_INVOKER_EVENTS, EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration,
@@ -53,7 +53,7 @@ CAPIF_SCOPE_PREFIX = "3gpp#"
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 # The assertion's `aud` must name this token endpoint, as R1 Termination
 # advertises it (`{SME_URL}/oauth2/token`, r1-termination/app/main.py).
-TOKEN_ENDPOINT_AUDIENCE = os.environ.get("SME_TOKEN_AUDIENCE") or f"{os.environ.get('SME_URL', 'http://sme:8000')}/oauth2/token"   # empty counts as unset (compose passes "")
+TOKEN_ENDPOINT_AUDIENCE = os.environ.get("SME_TOKEN_AUDIENCE") or f"{mtls.http_url(os.environ.get('SME_URL', 'http://sme:8000'))}/oauth2/token"   # empty counts as unset (compose passes "")
 ASSERTION_ALGORITHMS = ["RS256", "RS384", "RS512", "PS256", "ES256", "ES384", "EdDSA"]
 MAX_ASSERTION_LIFETIME_SECONDS = 300
 _SCRYPT_N, _SCRYPT_R, _SCRYPT_P, _SCRYPT_DKLEN = 2**14, 8, 1, 32

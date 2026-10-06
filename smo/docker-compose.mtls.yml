@@ -1,0 +1,159 @@
+# Mutual TLS between the services (PR-SEC-2). Off unless you ask for it: the default stack is unchanged.
+#
+#   scripts/init_secrets.sh                                     (once, as for the default stack)
+#   scripts/mtls_certs.py init                                  a development CA and a certificate per service in certs/mtls (git-ignored)
+#   docker compose -f docker-compose.yml -f docker-compose.mtls.yml up -d --build
+#
+# What it does: every SMO service (and the sample rApps) serves HTTPS on :8000 and REFUSES a client that does not present a certificate signed by the CA;
+# every call a module makes (R1Client, the gateway's proxying and token introspection, the callbacks to another service) presents the module's own
+# certificate and verifies the server against the CA. Each service mounts its own directory read-only at /run/mtls (tls.crt, tls.key, ca.crt).
+# Not part of it, by design: mock-o1-adaptor (a stand-in for a network function outside the SMO: plain HTTP), the GUI's nginx and gui-bff (the BFF is a client
+# of R1, with a certificate, and serves the nginx plain HTTP), Postgres (`sslmode=verify-full` is PR-SEC-2.4, open).
+#
+# Consequences: the published port 8080 is the gateway over mTLS, so a host client needs a certificate too (`scripts/mtls_certs.py client NAME`, then
+# `curl --cacert certs/mtls/ca/ca.crt --cert certs/mtls/clients/NAME/tls.crt --key certs/mtls/clients/NAME/tls.key https://localhost:8080/live`); the `tls`
+# profile's edge forwards plain HTTP and does not work with this file; a health check cannot be a plain HTTP request (the server would refuse it), so each
+# service's check is `python -m smo_shared.mtls probe`, which calls /ready over TLS with the service's own certificate. A notification destination inside
+# the stack must be https:// (a plain http:// one cannot reach a service that requires a certificate).
+# Rotation: scripts/mtls_certs.py renew | rotate-ca (its docstring), then `docker compose ... up -d --force-recreate`; expiry: `scripts/mtls_certs.py status`
+# and the metric smo_mtls_cert_not_after_timestamp_seconds (docs/runbooks/SmoMtlsCertExpiring.md).
+
+x-mtls-probe: &mtls_probe
+  test: ["CMD", "python", "-m", "smo_shared.mtls", "probe", "/ready"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+
+services:
+  r1-termination:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/r1-termination:/run/mtls:ro
+    healthcheck: *mtls_probe
+  sme:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/sme:/run/mtls:ro
+    healthcheck: *mtls_probe
+  dme:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/dme:/run/mtls:ro
+    healthcheck: *mtls_probe
+  onboarding:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/onboarding:/run/mtls:ro
+    healthcheck: *mtls_probe
+  rapp-mgmt:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/rapp-mgmt:/run/mtls:ro
+    healthcheck: *mtls_probe
+  ran-nf-oam:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/ran-nf-oam:/run/mtls:ro
+    healthcheck: *mtls_probe
+  nfo:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/nfo:/run/mtls:ro
+    healthcheck: *mtls_probe
+  focom:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/focom:/run/mtls:ro
+    healthcheck: *mtls_probe
+  mlmr:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/mlmr:/run/mtls:ro
+    healthcheck: *mtls_probe
+  aimgf:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/aimgf:/run/mtls:ro
+    healthcheck: *mtls_probe
+  mllf:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/mllf:/run/mtls:ro
+    healthcheck: *mtls_probe
+  ran-analytics:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/ran-analytics:/run/mtls:ro
+    healthcheck: *mtls_probe
+  mdaf:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/mdaf:/run/mtls:ro
+    healthcheck: *mtls_probe
+  intent-service:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/intent-service:/run/mtls:ro
+    healthcheck: *mtls_probe
+  so-smos:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/so-smos:/run/mtls:ro
+    healthcheck: *mtls_probe
+  sa-smos:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/sa-smos:/run/mtls:ro
+    healthcheck: *mtls_probe
+  energy-saving-rapp:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/energy-saving-rapp:/run/mtls:ro
+    healthcheck: *mtls_probe
+  mobility-optimization-rapp:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/mobility-optimization-rapp:/run/mtls:ro
+    healthcheck: *mtls_probe
+  coverage-optimization-rapp:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/coverage-optimization-rapp:/run/mtls:ro
+    healthcheck: *mtls_probe
+  traffic-steering-rapp:
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/traffic-steering-rapp:/run/mtls:ro
+    healthcheck: *mtls_probe
+  ran-nf-oam-worker:       # no port: a client of the others, with a certificate
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/ran-nf-oam-worker:/run/mtls:ro
+  gui-bff:                 # a client of R1 with a certificate; it serves the GUI's nginx plain HTTP (SMO_MTLS_SERVE=off)
+    environment:
+      SMO_MTLS: "on"
+      SMO_MTLS_SERVE: "off"
+    volumes:
+      - ./certs/mtls/gui-bff:/run/mtls:ro

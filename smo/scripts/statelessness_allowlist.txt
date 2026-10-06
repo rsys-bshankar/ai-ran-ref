@@ -5,6 +5,8 @@
 
 shared/smo_shared/r1_client.py:instance-state:_identity  # per-process SME token cache only (a cache is safe per replica); the invoker identity itself is shared by all replicas through the module_identity table (PR-ST-4)
 ran-nf-oam/app/vendors.py:cache:_builtin_schemas  # pure: reads the bundled, read-only cm_schemas/*.json once; identical in every replica
+shared/smo_shared/mtls.py:module-state:_contexts  # the ssl context built from this process's own certificate files, keyed by their modification times (one live entry): a cache of local read-only files, identical in every replica that mounts the same Secret, rebuilt when a file changes (PR-SEC-2)
+shared/smo_shared/mtls.py:module-state:_lock  # guards that cache only
 shared/smo_shared/health.py:background-work:ThreadPoolExecutor  # one short-lived pool per /ready request, only to bound the readiness checks by a timeout; holds no state between requests (PR-ST-7)
 shared/smo_shared/metrics.py:global-statement:_pool_collector  # a once-per-process flag so the pool gauges register once; the gauges read the engine's own pool at scrape time and metrics are per process by design (PR-OBS-2.4)
 shared/smo_shared/metrics.py:module-state:_worker_last_success  # the last-success time of this worker process's own tasks, shown as a gauge on the worker's own /metrics; metrics are per process by design and nothing reads it as state (PR-OBS-4)

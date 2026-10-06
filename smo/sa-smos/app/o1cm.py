@@ -38,6 +38,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
+from smo_shared import mtls
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.r1_client import R1Client
@@ -50,7 +51,7 @@ _r1 = R1Client()
 RMIH_ID = "sa-smos"
 REQUESTED_BY = "sa-smos:o1-cm-intent-handler"
 # Where Intent Service pushes new Intents for this handler (in-cluster).
-HANDLER_URL = os.environ.get("SA_SMOS_O1_CM_HANDLER_URL", "http://sa-smos:8000/o1-cm-handler/intents")
+HANDLER_URL = mtls.http_url(os.environ.get("SA_SMOS_O1_CM_HANDLER_URL", "http://sa-smos:8000/o1-cm-handler/intents"))
 
 # The CM targets this handler enacts by default, with their allowed values
 # (TS 28.541 / TS 28.623 enums). A registration may declare others.

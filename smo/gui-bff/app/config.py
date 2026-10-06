@@ -14,6 +14,15 @@ import secrets
 from dataclasses import dataclass, field
 
 
+def mtls_on() -> bool:
+    """PR-SEC-2: this backend's calls to R1 present its client certificate (the same `SMO_MTLS` switch as smo_shared/mtls.py, which this image does not install)."""
+    return os.environ.get("SMO_MTLS", "off").strip().lower() in ("on", "1", "true", "yes", "require")
+
+
+def _internal_url(url: str) -> str:
+    return "https://" + url[len("http://"):] if mtls_on() and url.startswith("http://") else url
+
+
 def _bool(name: str, default: bool) -> bool:
     raw = os.environ.get(name)
     return default if raw is None else raw.strip().lower() in ("1", "true", "yes", "on")
@@ -21,10 +30,10 @@ def _bool(name: str, default: bool) -> bool:
 
 @dataclass
 class Settings:
-    r1_url: str = field(default_factory=lambda: os.environ.get("R1_URL", "http://r1-termination:8000").rstrip("/"))
+    r1_url: str = field(default_factory=lambda: _internal_url(os.environ.get("R1_URL", "http://r1-termination:8000")).rstrip("/"))
     # Optional override. By default the SME token endpoint is discovered the
     # same way an rApp discovers it: from R1 Termination's own /bootstrap.
-    sme_url: str | None = field(default_factory=lambda: (os.environ.get("SME_URL") or "").rstrip("/") or None)
+    sme_url: str | None = field(default_factory=lambda: _internal_url(os.environ.get("SME_URL") or "").rstrip("/") or None)
     database_url: str = field(default_factory=lambda: os.environ.get("GUI_DATABASE_URL", "sqlite:///./gui-bff.db"))
     jwt_secret: str = field(default_factory=lambda: os.environ.get("GUI_JWT_SECRET", ""))
     session_ttl_seconds: int = field(default_factory=lambda: int(os.environ.get("GUI_SESSION_TTL_SECONDS", str(8 * 3600))))

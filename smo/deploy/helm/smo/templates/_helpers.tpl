@@ -87,3 +87,28 @@ imagePullSecrets:
 {{- end -}}
 {{- toJson (uniq $roles) -}}
 {{- end -}}
+
+{{/* PR-SEC-2: how a module takes part in mutual TLS: "server", "client" or "off". smo.mtlsMode (dict "root" . "name" "sme" "module" $m). A worker has no port, so it is a client. */}}
+{{- define "smo.mtlsMode" -}}
+{{- if not .root.Values.mtls.enabled -}}off
+{{- else if eq .module.kind "worker" -}}{{ ternary "off" "client" (eq (toString .module.mtls) "off") }}
+{{- else -}}{{ .module.mtls }}
+{{- end -}}
+{{- end -}}
+
+{{/* The Secret a module's certificate is in. */}}
+{{- define "smo.mtlsSecretName" -}}
+{{- printf "%s%s" .name .root.Values.mtls.secretSuffix -}}
+{{- end -}}
+
+{{/* The issuer of the module certificates: smo.mtlsIssuerRef (dict "root" .) -> a YAML map. */}}
+{{- define "smo.mtlsIssuerRef" -}}
+{{- if .root.Values.mtls.certManager.createCA -}}
+name: smo-mtls-ca
+kind: Issuer
+group: cert-manager.io
+{{- else -}}
+{{- if not .root.Values.mtls.certManager.issuerRef.name }}{{ fail "mtls.certManager.createCA=false needs mtls.certManager.issuerRef.name" }}{{ end -}}
+{{ toYaml .root.Values.mtls.certManager.issuerRef }}
+{{- end -}}
+{{- end -}}

@@ -16,6 +16,7 @@ import hashlib
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from smo_shared import mtls
 
 from .model.series import ATTEMPTS, PING_PONG, TOO_EARLY, TOO_LATE, WRONG_CELL
 
@@ -23,7 +24,7 @@ router = APIRouter()
 
 SIM_PRODUCER_ID = "mobility-dt-producer"
 SIM_TYPE = {"namespace": "RAN", "name": "HO_PERFORMANCE_SIM", "version": "1.0.0", "typeName": "RAN.HO_PERFORMANCE_SIM"}
-SELF_URL = "http://mobility-optimization-rapp:8000"
+SELF_URL = mtls.http_url("http://mobility-optimization-rapp:8000")   # https:// with SMO_MTLS=on (PR-SEC-2): the address DME calls back
 
 HEALTHY = {TOO_LATE: 0.004, TOO_EARLY: 0.003, WRONG_CELL: 0.002, PING_PONG: 0.003}
 SCENARIOS = {

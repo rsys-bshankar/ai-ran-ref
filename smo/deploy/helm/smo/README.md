@@ -76,7 +76,7 @@ Every module answers `GET /version` (`{module, version, buildSha, builtAt}`, PR-
 
 ## Alerts
 
-`prometheusRule.enabled=true` renders `files/smo-alerts.rules.yaml` (18 alerts, the burn-rate rules for three proposed SLOs, `docs/SLOS.md`) as a `PrometheusRule` of the Prometheus Operator; it is off by default because it needs that CRD. `prometheusRule.labels` is what your Prometheus selects rules on (for example `release: kube-prometheus-stack`), `prometheusRule.namespace` where to put it (default: the release's). The rules assume each module is scraped on `/metrics` as a job named after the module; the chart does not make the scrape configuration (a `ServiceMonitor` is not included). Without the Operator, use the same file as a plain `rule_files:` entry. Each alert's `runbook_url` is a page in `docs/runbooks/`.
+`prometheusRule.enabled=true` renders `files/smo-alerts.rules.yaml` (20 alerts, the burn-rate rules for three proposed SLOs, `docs/SLOS.md`) as a `PrometheusRule` of the Prometheus Operator; it is off by default because it needs that CRD. `prometheusRule.labels` is what your Prometheus selects rules on (for example `release: kube-prometheus-stack`), `prometheusRule.namespace` where to put it (default: the release's). The rules assume each module is scraped on `/metrics` as a job named after the module; the chart does not make the scrape configuration (a `ServiceMonitor` is not included). Without the Operator, use the same file as a plain `rule_files:` entry. Each alert's `runbook_url` is a page in `docs/runbooks/`.
 
 ## CI
 
@@ -91,6 +91,30 @@ Every module answers `GET /version` (`{module, version, buildSha, builtAt}`, PR-
 * **`R1_BOOTSTRAP_KEY[_FILE]`**, the gateway's own shared key (`X-Bootstrap-Key`). The chart has no dedicated value, so that the key does not land in `values.yaml`: mount a Secret and set `modules.r1-termination.env.R1_BOOTSTRAP_KEY_FILE` on the gateway and `moduleDefaults.env.SMO_BOOTSTRAP_KEY_FILE` for every client (every module and rApp that reaches `/bootstrap` must send it, or its discovery gets a 401).
 
 The rate limiter's buckets are per gateway replica by default. `modules.r1-termination.env.R1_RATE_STORE=postgres` (the chart sets `memory`, as compose does by default) keeps them in the shared table `rate_bucket` (migration `0028`; the gateway's database role has it) so replicas share one budget, at the price of one database round trip per authenticated request; if the database fails the limiter fails open to the replica's own bucket and counts it in `smo_rate_store_errors_total`. `HorizontalPodAutoscaler` or `replicas` above 1 on `r1-termination` is where this matters.
+
+## Mutual TLS between the services (PR-SEC-2)
+
+Off by default (`mtls.enabled: false`): nothing in the chart changes. With `mtls.enabled=true` every `service` module serves HTTPS and refuses a client without a certificate from the CA, every module's calls present its own certificate (`smo_shared/mtls.py`, `docs/ARCHITECTURE.md`, "Mutual TLS between services"), and each participating module mounts the Secret `<module>-mtls` (keys `tls.crt`, `tls.key`, `ca.crt`) at `/run/mtls`. A pod whose Secret does not exist stays in `ContainerCreating`, and one whose files are unreadable exits: a missing certificate never means plain HTTP. `modules.<name>.mtls` is `server` (default), `client` (calls with a certificate, serves plain HTTP: the GUI backend, whose caller is the GUI's nginx; a worker is always a client) or `off` (`mock-o1-adaptor`, a stand-in for a network function, and the GUI's nginx).
+
+**Certificates, one of two ways.**
+
+* `mtls.certManager.enabled=true`: the chart renders one cert-manager `Certificate` per participant (ECDSA P-256, usages digital signature, server auth and client auth, names `<module>`, `<module>.<namespace>.svc`, `<module>.<namespace>.svc.cluster.local` and `localhost`; `duration` 90 days, `renewBefore` 30 days) into its Secret. With `createCA: true` (default) it also makes the CA: a self-signed `Issuer`, a CA `Certificate` (10 years) and the `Issuer` `smo-mtls-ca` that signs the module certificates. With `createCA: false`, name your own `Issuer` or `ClusterIssuer` in `mtls.certManager.issuerRef` (the chart fails to render without a name). Needs cert-manager's CRDs; `helm template` without them still renders.
+* Your own Secrets (`certManager.enabled: false`): create `<module>-mtls` for each participant from your CA, with the same three keys and the module's name and `localhost` among the subject alternative names. For a trial, `scripts/mtls_certs.py init --dir /tmp/mtls` makes a development CA and directories named after the modules, and then:
+
+```bash
+for m in $(ls /tmp/mtls | grep -v '^ca$\|^clients$'); do
+  kubectl -n smo create secret generic "$m-mtls" --from-file=/tmp/mtls/$m/tls.crt --from-file=/tmp/mtls/$m/tls.key --from-file=/tmp/mtls/$m/ca.crt
+done
+```
+(`SMO_MTLS_NAMES="sme.smo.svc,sme.smo.svc.cluster.local"` style extra names are one value for every certificate: for a cluster prefer cert-manager.) Never keep `ca/ca.key` on the cluster.
+
+**Probes.** The kubelet's `httpGet` cannot present a certificate, so a server module's startup, readiness and liveness probes are `exec` probes running `python -m smo_shared.mtls probe /ready 8000` inside the container with the module's own certificate (`/live` for the other two). The static and `off` modules keep their probes. A plain probe port was not added: it would be an unauthenticated listener on every service.
+
+**Reaching the gateway from outside.** `r1-termination` requires a client certificate, so the `r1` Ingress has to present one: set `mtls.ingressClientSecret` to `<namespace>/<name>` of a `kubernetes.io/tls` Secret that holds a client certificate (and `ca.crt`; `scripts/mtls_certs.py client ingress` makes one) and the chart adds the ingress-nginx annotations `backend-protocol: HTTPS`, `proxy-ssl-secret`, `proxy-ssl-verify: on` and `proxy-ssl-name: r1-termination` to the `r1` and `r1-bootstrap` Ingresses (other ingress controllers need their own). Callers that bypass the ingress (an rApp in the cluster) need a certificate from the same CA. A NetworkPolicy (`bootstrapNetworkPolicy`) is a separate control and still applies.
+
+**Rotation.** Clients reread their mounted files when they change (a Secret update reaches the pod volume in about a minute); a server loads its files at start, so after cert-manager renews (or you replace a Secret) restart the modules one at a time: `kubectl -n smo rollout restart deploy/<module>` (the other modules keep calling it through its Service: the rolling update keeps a pod ready, and the CA is the same). A CA rotation with your own Secrets is three phases with a rolling restart after each (`scripts/mtls_certs.py rotate-ca trust|issue|retire`, its docstring); with cert-manager, put old and new CA into `ca.crt` (trust-manager or a manual bundle) before re-issuing. Expiry: every participating module exports `smo_mtls_cert_not_after_timestamp_seconds{file="cert"|"ca"}`; the alerts `SmoMtlsCertExpiring` and `SmoMtlsCertExpiryImminent` are in `files/smo-alerts.rules.yaml` (runbooks in `docs/runbooks/`).
+
+**What it does not cover.** Postgres (`postgres.external.sslmode: verify-full` is the database's own setting; the bundled Postgres serves no TLS: `PR-SEC-2.4`, open); a service mesh (decided against: `HISTORY.md` PR-SEC-2); the certificate name is not used for identity (the token check is unchanged). A notification destination inside the release must be `https://` when mTLS is on. The render tests (`tests_integration/test_mtls.py`, with `helm`) cover the Secrets, the probes, the Certificates and the ingress annotations.
 
 ## Where the replicas land
 

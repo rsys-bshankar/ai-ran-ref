@@ -39,7 +39,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from . import metrics
+from . import metrics, mtls
 
 log = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ def _send(method: str, destination: str | None, **kwargs) -> httpx.Response | No
         return None
     started = time.perf_counter()
     try:
-        resp = getattr(httpx, method)(destination, **kwargs)
+        resp = getattr(httpx, method)(destination, **mtls.webhook_kwargs(destination), **kwargs)   # PR-SEC-2: the client certificate only to an https destination inside the deployment
     except httpx.TimeoutException:
         metrics.record_outbound("webhook", "callback", method, "timeout", time.perf_counter() - started)
         return None

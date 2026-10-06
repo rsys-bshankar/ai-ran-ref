@@ -24,6 +24,7 @@ from typing import Any, Literal, NoReturn, cast
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from smo_shared import mtls
 from smo_shared.errors import illegal_transition_error
 from smo_shared.statemachine import IllegalTransition
 from sqlalchemy import delete, func, select
@@ -72,6 +73,8 @@ from .statemachine import (
     SwmState,
     aggregate_event,
 )
+
+SELF_URL = mtls.http_url("http://ran-nf-oam:8000")   # what DME calls back (https:// with SMO_MTLS=on, PR-SEC-2)
 
 app = FastAPI(title="RAN NF OAM SMOS")
 log = logging.getLogger("ran-nf-oam")
@@ -1641,8 +1644,8 @@ def _publish_kpi_to_dme(definition: KpiDefinition, result: dict) -> tuple[int, i
     type_name = f"RAN.KPI.{definition.name}"
     r1.post("/dme/production-capabilities", json={
         "namespace": "RAN", "name": f"KPI.{definition.name}", "version": "1.0.0", "typeName": type_name, "producerId": "ran-nf-oam",
-        "dataProductionSchema": KPI_RESULT_SCHEMA, "producerHealthCallbackUrl": "http://ran-nf-oam:8000/health",
-        "jobCallbackUrl": "http://ran-nf-oam:8000/dme-jobs"})
+        "dataProductionSchema": KPI_RESULT_SCHEMA, "producerHealthCallbackUrl": f"{SELF_URL}/health",
+        "jobCallbackUrl": f"{SELF_URL}/dme-jobs"})
     dme_type = next((t for t in r1.get("/dme/dme-types", params={"data_category": "RAN"}).json() if t["typeName"] == type_name), None)
     jobs = r1.get("/dme/data-jobs", params={"dme_type_id": dme_type["dmeTypeId"], "limit": 500}).json()["items"] if dme_type else []
     delivered = 0
@@ -1885,8 +1888,8 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
     r1.post("/dme/production-capabilities", json={
         "namespace": "RAN", "name": f"PMCounters.{counter_type}", "version": "1.0.0",
         "typeName": f"RAN.PMCounters.{counter_type}", "producerId": "ran-nf-oam",
-        "dataProductionSchema": {}, "producerHealthCallbackUrl": "http://ran-nf-oam:8000/health",
-        "jobCallbackUrl": "http://ran-nf-oam:8000/dme-jobs",
+        "dataProductionSchema": {}, "producerHealthCallbackUrl": f"{SELF_URL}/health",
+        "jobCallbackUrl": f"{SELF_URL}/dme-jobs",
     })
     return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine, "granularityPeriod": sub.granularity_period}
 
@@ -2239,8 +2242,8 @@ def subscribe_fm(managed_element_ref: str, delivery_method: str, db: Session = D
     r1.post("/dme/production-capabilities", json={
         "namespace": "RAN", "name": "FaultRecords", "version": "1.0.0",
         "typeName": "RAN.FaultRecords", "producerId": "ran-nf-oam",
-        "dataProductionSchema": {}, "producerHealthCallbackUrl": "http://ran-nf-oam:8000/health",
-        "jobCallbackUrl": "http://ran-nf-oam:8000/dme-jobs",
+        "dataProductionSchema": {}, "producerHealthCallbackUrl": f"{SELF_URL}/health",
+        "jobCallbackUrl": f"{SELF_URL}/dme-jobs",
     })
     return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine}
 

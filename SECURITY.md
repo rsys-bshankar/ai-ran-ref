@@ -89,7 +89,12 @@ What is in place, so you can judge what counts as a vulnerability:
   the GUI (`:3000`) and Postgres (`:5432`) publish host ports.
   The optional `tls` profile adds an nginx edge on `:3443` (GUI) and `:8443` (R1)
   with TLS 1.2+ and HSTS; the plain ports stay open until a deployment removes them.
-  Services behind the edge speak HTTP on the compose network (`PR-SEC-2` for mTLS).
+  Services behind the edge speak HTTP on the compose network, unless mutual TLS between services is switched on
+  (`SMO_MTLS=on`, `docker-compose.mtls.yml` or the chart's `mtls.enabled`; off by default, `docs/ARCHITECTURE.md`, "Mutual TLS between
+  services"). With it every service requires a client certificate from one CA and every module's calls present one. The development CA of
+  `scripts/mtls_certs.py` is for trials: its key must stay off the hosts that run the stack, and a deployment brings its own CA. Not covered: the
+  certificate name is not used for identity (the token check at the gateway is unchanged), Postgres has no TLS (`PR-SEC-2.4`), `mock-o1-adaptor`,
+  the GUI's nginx and the GUI backend's own port stay plain HTTP, and a server loads its certificate at start (renewal needs a restart).
 - **Operator GUI.** Session JWT in an `HttpOnly; Secure; SameSite=Strict`
   cookie, CSRF double-submit on unsafe methods, role checks (viewer / operator /
   admin) re-read on every request, account lockout after repeated failures, an

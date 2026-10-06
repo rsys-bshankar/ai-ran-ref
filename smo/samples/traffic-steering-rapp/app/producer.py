@@ -34,6 +34,7 @@ from collections.abc import Callable
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from smo_shared import mtls
 
 from .model.series import CIO, HO_ATT, HO_FAIL, PRB, PRIO, SAMPLES, THP, UE_CAPACITY, UES
 
@@ -41,7 +42,7 @@ router = APIRouter()
 
 SIM_PRODUCER_ID = "steering-dt-producer"
 SIM_TYPE = {"namespace": "RAN", "name": "LOAD_PERFORMANCE_SIM", "version": "1.0.0", "typeName": "RAN.LOAD_PERFORMANCE_SIM"}
-SELF_URL = "http://traffic-steering-rapp:8000"
+SELF_URL = mtls.http_url("http://traffic-steering-rapp:8000")   # https:// with SMO_MTLS=on (PR-SEC-2): the address DME calls back
 
 BASELINE_CIO, BASELINE_PRIORITY = 0, 5
 BASE_LOAD, HOTSPOT_FACTOR = 0.5, 1.8

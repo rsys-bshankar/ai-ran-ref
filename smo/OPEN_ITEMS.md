@@ -23,7 +23,7 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 | Area | In 0.5.0 | Moved to 0.6.0 or later |
 |---|---|---|
 | API | `?total=false` on every list route (opt out of the page `COUNT(*)`; default unchanged) | – |
-| Security | SEC-9 `/bootstrap` exposure; SEC-8.5 shared rate limiter; SEC-7 logout revocation (done, V-13c); SEC-2 mTLS between services; SEC-3 mesh option (documented with the mTLS work); SEC-6 OIDC login for the GUI | SEC-5 signing keys and JWKS, SEC-4.7 external secrets example (both 0.6.0). SEC-7.1 to 7.3 (native TOTP) only if required: with OIDC the identity provider does the second factor, and local login stays as break-glass |
+| Security | SEC-9 `/bootstrap` exposure; SEC-8.5 shared rate limiter; SEC-7 logout revocation (done, V-13c); SEC-2 mTLS between services (done except SEC-2.4, Postgres `verify-full`: `HISTORY.md` PR-SEC-2); SEC-3 mesh option (decided: not taken, mTLS instead); SEC-6 OIDC login for the GUI | SEC-5 signing keys and JWKS, SEC-4.7 external secrets example (both 0.6.0). SEC-7.1 to 7.3 (native TOTP) only if required: with OIDC the identity provider does the second factor, and local login stays as break-glass |
 | Operability | OBS-3 traces (Tempo), OBS-4 business metrics, OBS-5 alerts and SLOs, OBS-6 log shipping, OBS-7 runbooks (OBS-4, 5 and 7 are done in part: what remains is under 5.5), OBS-8 `/version`, OPS-6 GitOps example, OPS-7 configuration reference, OPS-9 sizing | – |
 | Disaster recovery | HA-6: RPO 15 minutes, RTO 1 hour, off-site backup shipping, one timed restore drill | HA-7 geo-redundancy (after 1.0.0) |
 | Standards and documents | STD-2.1 spec release table; STD-4.1 personal-data inventory; STD-6.1 data residency statement; STD-4.3 erasure procedure for a GUI user; STD-5 control matrix (ISO 27001, NESAS/SCAS) | STD-3 plugfest plan (0.6.0 or later) |
@@ -310,30 +310,24 @@ Done (`HISTORY.md` §10): `smo_shared/outbox.py` (table, `enqueue`, `drain`, inl
 ### 5.4 Security (`PR-SEC`)
 
 `SECURITY.md` says the build is not hardened. `/bootstrap` and `/health` are unauthenticated (what `/bootstrap` reveals, and the three controls that narrow
-who can ask, are in `r1-termination/README.md` and `HISTORY.md` PR-SEC-9) and service-to-service calls are plain HTTP.
+who can ask, are in `r1-termination/README.md` and `HISTORY.md` PR-SEC-9) and service-to-service calls are plain HTTP unless mutual TLS is switched on (`SMO_MTLS`, `docs/ARCHITECTURE.md`; off by default).
 
 #### PR-SEC-1 — TLS at the edge
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 
-#### PR-SEC-2 — mTLS between services
+#### PR-SEC-2 — mTLS between services (open: SEC-2.4; the rest is in `HISTORY.md` PR-SEC-2)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-2.1 | Per-service certificates from the dev CA | Script output | – |
-| SEC-2.2 | Uvicorn option to require client certs, by env | Call without a cert is refused | SEC-2.1 |
-| SEC-2.3 | `R1Client` and every internal `httpx` call present a client cert and verify the CA | Runbook replay green | SEC-2.2 |
-| SEC-2.4 | `sslmode=verify-full` for Postgres | Connection fails with a wrong CA | SEC-2.1 |
-| SEC-2.5 | Rotation procedure (documented, tested once) | Rotation with no downtime | SEC-2.3 |
+| SEC-2.4 | `sslmode=verify-full` for Postgres (the compose Postgres and the bundled chart one serve no TLS yet; an external one is `postgres.external.sslmode` already) | Connection fails with a wrong CA | `scripts/mtls_certs.py` for a server certificate |
 
-#### PR-SEC-3 — Service mesh option
+#### PR-SEC-3 — Caller allow-list (the service-mesh option is decided: not taken, `HISTORY.md` PR-SEC-2)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-3.1 | Doc: sidecar injection for Istio or Linkerd | Doc reviewed | OPS-2.1 |
-| SEC-3.2 | Strict mTLS policy manifests | Plain-HTTP call between pods fails | SEC-3.1 |
-| SEC-3.3 | Per-module caller allowlist (who may call whom) from `ARCHITECTURE.md` | Denied call proves the rule | SEC-3.2 |
+| SEC-3.3 | Per-module caller allow-list (who may call whom) from `ARCHITECTURE.md`, from the certificate name once the server can read the peer certificate (uvicorn does not hand it to the application today), or from the role SME records | Denied call proves the rule | – |
 
 #### PR-SEC-4 — Secret management
 
@@ -491,7 +485,6 @@ Done: packages, rApp instances and intents by state, the outbox backlog and its 
 |---|---|---|---|
 | OBS-7.2 | Entry: Postgres down (SME down and R1 down are the `SmoModuleDown` page); each page tried once on the compose stack (none has been: the commands were written from the code, not replayed) | Each tried once | – |
 | OBS-7.3 | Entries: O1 write failures, adaptor unreachable (the latter is partly `SmoOutboundCallsFailing`) | Same | OBS-4.3 |
-| OBS-7.5 | Entry: certificate expiry and rotation | Same | SEC-2.5 |
 | OBS-7.6 | Entry: backup and restore | Same | DB-6.4 |
 
 #### PR-OBS-8 — Self-monitoring (all steps done: `HISTORY.md` PR-OBS-8)

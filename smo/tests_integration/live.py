@@ -109,11 +109,19 @@ class LiveCapture:
         return self._items() == other
 
 
+PLAIN_SERVICES = frozenset({"mock-o1-adaptor", "gui-bff"})     # never mTLS servers: a southbound stand-in, and the GUI's own backend (smo_shared/mtls.py)
+
+
 def live_mesh() -> dict:
-    """`mesh[<service>]` -> an httpx client on that service's own port."""
+    """`mesh[<service>]` -> an httpx client on that service's own port. With `SMO_MTLS=on` (PR-SEC-2: the compose mTLS replay) the client is https and
+    presents the certificate of `SMO_MTLS_CERT_FILE` / `_KEY_FILE`, verifying the CA of `SMO_MTLS_CA_FILE`, as every module does."""
+    from smo_shared import mtls
+
     class Mesh(dict):
         def __missing__(self, name):
-            self[name] = client = httpx.Client(base_url=f"http://{name}:8000", timeout=120.0)
+            plain = name in PLAIN_SERVICES or not mtls.enabled()
+            self[name] = client = httpx.Client(base_url=f"{'http' if plain else 'https'}://{name}:8000", timeout=120.0,
+                                               **({} if plain else mtls.client_kwargs()))
             return client
 
     return Mesh()

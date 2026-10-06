@@ -22,6 +22,7 @@ A new alert starts with a page named exactly like the alert (`<AlertName>.md`).
 | `SmoGatewayAvailabilityBurnFast` | critical | [SmoGatewayAvailabilityBurnFast.md](SmoGatewayAvailabilityBurnFast.md) |
 | `SmoGatewayLatencyBurnFast` | critical | [SmoGatewayLatencyBurnFast.md](SmoGatewayLatencyBurnFast.md) |
 | `SmoModuleDown` | critical | [SmoModuleDown.md](SmoModuleDown.md) |
+| `SmoMtlsCertExpiryImminent` | critical | [SmoMtlsCertExpiryImminent.md](SmoMtlsCertExpiryImminent.md) |
 | `SmoOutboxDeliveryLagBurnFast` | critical | [SmoOutboxDeliveryLagBurnFast.md](SmoOutboxDeliveryLagBurnFast.md) |
 | `SmoAuthRefusalsHigh` | warning | [SmoAuthRefusalsHigh.md](SmoAuthRefusalsHigh.md) |
 | `SmoDbPoolNearlyExhausted` | warning | [SmoDbPoolNearlyExhausted.md](SmoDbPoolNearlyExhausted.md) |
@@ -29,6 +30,7 @@ A new alert starts with a page named exactly like the alert (`<AlertName>.md`).
 | `SmoGatewayLatencyBurnSlow` | warning | [SmoGatewayLatencyBurnSlow.md](SmoGatewayLatencyBurnSlow.md) |
 | `SmoModuleHighErrorRate` | warning | [SmoModuleHighErrorRate.md](SmoModuleHighErrorRate.md) |
 | `SmoModuleLatencyHigh` | warning | [SmoModuleLatencyHigh.md](SmoModuleLatencyHigh.md) |
+| `SmoMtlsCertExpiring` | warning | [SmoMtlsCertExpiring.md](SmoMtlsCertExpiring.md) |
 | `SmoOutboundCallsFailing` | warning | [SmoOutboundCallsFailing.md](SmoOutboundCallsFailing.md) |
 | `SmoOutboxBacklog` | warning | [SmoOutboxBacklog.md](SmoOutboxBacklog.md) |
 | `SmoOutboxDeadRows` | warning | [SmoOutboxDeadRows.md](SmoOutboxDeadRows.md) |
@@ -39,4 +41,4 @@ A new alert starts with a page named exactly like the alert (`<AlertName>.md`).
 
 ## Not covered by an alert yet
 
-Postgres down (it shows as `SmoModuleDown` for every module and as pool and 5xx alerts; the database itself is not scraped by this chart), certificate expiry and rotation (waits for mTLS, `PR-SEC-2`), and backup and restore (`scripts/db_backup.sh`, `scripts/db_restore.sh`, `docs/SECRETS.md`; disaster recovery, `PR-HA-6`). They get a page when the alert or the procedure exists.
+Postgres down (it shows as `SmoModuleDown` for every module and as pool and 5xx alerts; the database itself is not scraped by this chart), the expiry of the edge TLS certificate (`PR-SEC-1`: the deployment's own; the service-to-service certificates have `SmoMtlsCertExpiring`), and backup and restore (`scripts/db_backup.sh`, `scripts/db_restore.sh`, `docs/SECRETS.md`; disaster recovery, `PR-HA-6`). They get a page when the alert or the procedure exists.

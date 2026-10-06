@@ -51,4 +51,4 @@ Cause-level alerts that are not SLOs: `SmoModuleDown`, `SmoModuleHighErrorRate`,
 
 ## What is not here
 
-No alert on a database that is not scraped (Postgres is seen through the pool and the 5xx alerts), none on certificate expiry (waits for `PR-SEC-2`), none on backups (`PR-HA-6`). The worker's task counters need the worker's metrics port (`SMO_WORKER_METRICS_PORT`) scraped, which neither compose nor the chart does yet. Targets stay proposed until an operator has run them against real traffic.
+No alert on a database that is not scraped (Postgres is seen through the pool and the 5xx alerts), none on the expiry of the edge's TLS certificate (the deployment's; the service-to-service certificates have `SmoMtlsCertExpiring`), none on backups (`PR-HA-6`). The worker's task counters need the worker's metrics port (`SMO_WORKER_METRICS_PORT`) scraped, which neither compose nor the chart does yet. Targets stay proposed until an operator has run them against real traffic.

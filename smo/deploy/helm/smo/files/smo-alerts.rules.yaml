@@ -193,3 +193,25 @@ groups:
           summary: "{{ $value }} rApp instances have been FAULTED for 15 minutes"
           description: "An rApp instance crashed or failed to bootstrap and has not been recovered or terminated."
           runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoRAppInstancesFaulted.md
+
+  # Certificates for mutual TLS between the services (PR-SEC-2.5). The metric exists only on a module started with SMO_MTLS=on, so with mTLS off nothing fires.
+  # It is read from the module's own files at scrape time, so a renewed file clears the alert before the pod has been restarted: `file="cert"` is the module's
+  # certificate, `file="ca"` the earliest CA certificate it trusts.
+  - name: smo.certificates
+    rules:
+      - alert: SmoMtlsCertExpiring
+        expr: min by (job, file) (smo_mtls_cert_not_after_timestamp_seconds) - time() < 14 * 86400
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: "The mTLS {{ $labels.file }} certificate of {{ $labels.job }} expires in under 14 days"
+          description: "A certificate (file=cert) or the CA (file=ca) behind the service-to-service mutual TLS is about to expire. After it does, the module's calls and the calls to it are refused."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoMtlsCertExpiring.md
+      - alert: SmoMtlsCertExpiryImminent
+        expr: min by (job, file) (smo_mtls_cert_not_after_timestamp_seconds) - time() < 3 * 86400
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "The mTLS {{ $labels.file }} certificate of {{ $labels.job }} expires in under 3 days"
+          description: "The renewal that SmoMtlsCertExpiring asked for did not happen, or did not reach this module. In 3 days the module stops talking to the others."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoMtlsCertExpiryImminent.md

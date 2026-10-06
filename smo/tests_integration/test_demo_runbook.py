@@ -9,7 +9,12 @@ stale too — this is what would have caught it.
 Run with: pytest smo/tests_integration -q
 """
 
+import os
 from pathlib import Path
+
+# PR-SEC-2: the compose mTLS replay (`SMO_MTLS=on`, .github/workflows/smo-tests.yml) registers the in-stack notification destinations as https://, since a module
+# that requires a client certificate has no plain HTTP port; everything else in this file is the same request.
+INTERNAL = "https" if os.environ.get("SMO_MTLS", "off").strip().lower() in ("on", "1", "true", "yes", "require") else "http"
 
 
 def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callbacks):
@@ -237,13 +242,13 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     # In-process the two dispatch destinations are intercepted; live they are
     # the real so-smos / sa-smos services, whose own receipt is not observable
     # from here, so the delivery assertions below run in-process only.
-    intent_notifications = callbacks.capture("intent-service", "http://so-smos:8000/intents/notify")
-    sa_smos_notifications = callbacks.capture("intent-service", "http://sa-smos:8000/intents/notify")
+    intent_notifications = callbacks.capture("intent-service", f"{INTERNAL}://so-smos:8000/intents/notify")
+    sa_smos_notifications = callbacks.capture("intent-service", f"{INTERNAL}://sa-smos:8000/intents/notify")
 
     rmih = mesh["intent-service"].post("/intent-handling-functions", json={
         "rmihId": "so-smos", "smeServiceId": "so-smos-svc",
         "intentHandlingCapabilityList": [{"intentHandlingCapabilityId": "ran-energy", "supportedExpectationObjectType": "RAN_SUBNETWORK", "supportedExpectationTargetInfoList": [{"supportedTargetName": "RANEnergyConsumption"}]}],
-        "notificationDestination": "http://so-smos:8000/intents/notify",
+        "notificationDestination": f"{INTERNAL}://so-smos:8000/intents/notify",
         "intentHandlingScope": ["RAN"],
     })
     assert rmih.status_code == 201
@@ -273,7 +278,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     rmih2 = mesh["intent-service"].post("/intent-handling-functions", json={
         "rmihId": "sa-smos", "smeServiceId": "sa-smos-svc",
         "intentHandlingCapabilityList": [{"intentHandlingCapabilityId": "ran-energy", "supportedExpectationObjectType": "RAN_SUBNETWORK", "supportedExpectationTargetInfoList": [{"supportedTargetName": "RANEnergyConsumption"}]}],
-        "notificationDestination": "http://sa-smos:8000/intents/notify",
+        "notificationDestination": f"{INTERNAL}://sa-smos:8000/intents/notify",
         "intentHandlingScope": ["CN"],
     })
     assert rmih2.status_code == 201

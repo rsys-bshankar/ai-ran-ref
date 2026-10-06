@@ -69,8 +69,9 @@ ENV SMO_VERSION=${SMO_VERSION} \
 # service a stop_grace_period longer than that, so docker's own SIGKILL never lands first. Workers hold no
 # shared state (docs/ARCHITECTURE.md, Process state and scale-out), so a service may raise UVICORN_WORKERS; the
 # two mock services keep their state in memory and must stay at 1. `exec` makes uvicorn PID 1, so it receives
-# the stop signal itself. `--no-access-log` turns off uvicorn's plain-text access line: smo_shared/logconfig.py logs
+# the stop signal itself. Mutual TLS (PR-SEC-2, off unless SMO_MTLS=on): `python -m smo_shared.mtls uvicorn-args` prints the TLS options (certificate, key, CA,
+# a client certificate required) and nothing otherwise; if it fails (mTLS on, a file missing) the container exits instead of serving plain HTTP. `--no-access-log` turns off uvicorn's plain-text access line: smo_shared/logconfig.py logs
 # one structured line per request instead (PR-OBS-1).
 ENV UVICORN_WORKERS=1 \
     UVICORN_GRACEFUL_SHUTDOWN_SECONDS=20
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS} --timeout-graceful-shutdown ${UVICORN_GRACEFUL_SHUTDOWN_SECONDS} --no-access-log"]
+CMD ["sh", "-c", "tls=$(python -m smo_shared.mtls uvicorn-args) || exit 1; exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS} --timeout-graceful-shutdown ${UVICORN_GRACEFUL_SHUTDOWN_SECONDS} --no-access-log $tls"]

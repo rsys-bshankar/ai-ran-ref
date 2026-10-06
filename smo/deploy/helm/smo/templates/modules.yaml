@@ -6,6 +6,10 @@
 {{- $m := include "smo.module" (dict "root" $ "name" $name) | fromYaml }}
 {{- if $m.enabled }}
 {{- $role := include "smo.dbRole" (dict "root" $ "module" $m) }}
+{{- $mtls := include "smo.mtlsMode" (dict "root" $ "name" $name "module" $m) }}
+{{- if not (has $mtls (list "server" "client" "off")) }}
+{{- fail (printf "module %s: mtls must be server, client or off, not %q" $name $mtls) }}
+{{- end }}
 {{- $labels := include "smo.labels" (dict "root" $) }}
 ---
 apiVersion: apps/v1
@@ -102,6 +106,13 @@ spec:
             {{- if $m.enrollment }}
             - { name: SMO_ENROLLMENT_SECRET_FILE, value: /run/secrets/enrollment_secret }
             {{- end }}
+            {{- if ne $mtls "off" }}
+            # PR-SEC-2: the certificate, key and CA are mounted at /run/mtls (the default of SMO_MTLS_*_FILE)
+            - { name: SMO_MTLS, value: "on" }
+            {{- if and (eq $mtls "client") (ne $m.kind "worker") }}
+            - { name: SMO_MTLS_SERVE, value: "off" }
+            {{- end }}
+            {{- end }}
             {{- if eq $name "r1-termination" }}
             {{- with $.Values.ingress.r1.publicBaseUrl }}
             - { name: R1_PUBLIC_BASE_URL, value: {{ . | quote }} }
@@ -132,6 +143,25 @@ spec:
             preStop:
               exec: { command: ["sleep", {{ $m.preStopSeconds | quote }}] }
           {{- end }}
+          {{- if eq $mtls "server" }}
+          # PR-SEC-2: the server refuses a client without a certificate, and the kubelet's httpGet presents none: the probe runs in the container and presents
+          # the module's own (`python -m smo_shared.mtls probe PATH PORT`)
+          startupProbe:
+            exec: { command: ["python", "-m", "smo_shared.mtls", "probe", "/live", {{ $m.port | quote }}] }
+            periodSeconds: 3
+            timeoutSeconds: 5
+            failureThreshold: 40
+          readinessProbe:
+            exec: { command: ["python", "-m", "smo_shared.mtls", "probe", "/ready", {{ $m.port | quote }}] }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec: { command: ["python", "-m", "smo_shared.mtls", "probe", "/live", {{ $m.port | quote }}] }
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- else }}
           startupProbe:
             httpGet: { path: /live, port: http }
             periodSeconds: 3
@@ -146,6 +176,7 @@ spec:
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 3
+          {{- end }}
           {{- else if eq $m.kind "worker" }}
           # no port: the worker touches a file on every tick, and is unhealthy when it is a minute old (docker-compose.yml's x-worker-probe)
           startupProbe:
@@ -175,6 +206,9 @@ spec:
             - { name: tmp, mountPath: /tmp }
             {{- if or $m.database $m.enrollment }}
             - { name: secrets, mountPath: /run/secrets, readOnly: true }
+            {{- end }}
+            {{- if ne $mtls "off" }}
+            - { name: mtls, mountPath: /run/mtls, readOnly: true }
             {{- end }}
             {{- if and (eq $name "rapp-mgmt") (eq $.Values.rappCredentials.delivery "kubernetes") }}
             - { name: k8s-access, mountPath: /var/run/smo-k8s, readOnly: true }
@@ -211,6 +245,12 @@ spec:
                   items:
                     - { key: {{ printf "db-password-%s" $role }}, path: {{ printf "db_password_%s" $role }} }
               {{- end }}
+        {{- end }}
+        {{- if ne $mtls "off" }}
+        - name: mtls
+          secret:
+            secretName: {{ include "smo.mtlsSecretName" (dict "root" $ "name" $name) }}
+            defaultMode: 0440              # readable by the pod's group (fsGroup), not by the world
         {{- end }}
         {{- if and (eq $name "rapp-mgmt") (eq $.Values.rappCredentials.delivery "kubernetes") }}
         - name: k8s-access

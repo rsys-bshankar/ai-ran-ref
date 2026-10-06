@@ -39,6 +39,7 @@ from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from smo_shared import mtls
 
 from .model.CoverageModel import MOVES
 from .model.series import OVERLAP, OVERSHOOT, POLLUTION, POWER, TILT, TOTAL, WEAK
@@ -48,7 +49,7 @@ router = APIRouter()
 SIM_PRODUCER_ID = "coverage-dt-producer"
 SIM_TYPE = {"namespace": "RAN", "name": "COVERAGE_PERFORMANCE_SIM", "version": "1.0.0",
             "typeName": "RAN.COVERAGE_PERFORMANCE_SIM"}
-SELF_URL = "http://coverage-optimization-rapp:8000"
+SELF_URL = mtls.http_url("http://coverage-optimization-rapp:8000")   # https:// with SMO_MTLS=on (PR-SEC-2): the address DME calls back
 
 BASELINE_TILT = 60      # 6.0° (CommonBeamformingFunction.digitalTilt, 0.1°)
 BASELINE_POWER = 43     # dBm (NRSectorCarrier.configuredMaxTxPower)

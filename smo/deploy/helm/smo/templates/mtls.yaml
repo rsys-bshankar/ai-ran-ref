@@ -1,0 +1,71 @@
+{{- /* PR-SEC-2: the certificates of the mutual TLS between the services, made by cert-manager (`mtls.enabled` and `mtls.certManager.enabled`). One Certificate per module that takes part
+       (smo.mtlsMode is not "off"): its Secret `<module><mtls.secretSuffix>` gets tls.crt, tls.key and ca.crt, which the module mounts at /run/mtls. The subject alternative names are
+       the module's Service names (short, `.svc`, `.svc.cluster.local`) and `localhost` (the exec probe calls the server by that name). With `createCA` the chart also makes the CA:
+       a self-signed Issuer, a CA Certificate from it, and the Issuer that signs the module certificates from that Secret. cert-manager renews a certificate at `renewBefore` and
+       rewrites its Secret: a client rereads the mounted file on its next call, a server (which loads it at start) takes it on the next restart (README, "Rotation"). */}}
+{{- if and .Values.mtls.enabled .Values.mtls.certManager.enabled }}
+{{- $cm := .Values.mtls.certManager }}
+{{- $labels := include "smo.labels" (dict "root" $) }}
+{{- if $cm.createCA }}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: smo-mtls-selfsigned
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: smo-mtls-ca
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  isCA: true
+  commonName: smo-mtls-ca
+  secretName: smo-mtls-ca
+  duration: {{ $cm.caDuration }}
+  privateKey: { algorithm: ECDSA, size: 256 }
+  issuerRef: { name: smo-mtls-selfsigned, kind: Issuer, group: cert-manager.io }
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: smo-mtls-ca
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  ca:
+    secretName: smo-mtls-ca
+{{- end }}
+{{- range $name, $_ := .Values.modules }}
+{{- $m := include "smo.module" (dict "root" $ "name" $name) | fromYaml }}
+{{- if and $m.enabled (ne (include "smo.mtlsMode" (dict "root" $ "name" $name "module" $m)) "off") }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "smo.mtlsSecretName" (dict "root" $ "name" $name) }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+spec:
+  commonName: {{ $name }}
+  secretName: {{ include "smo.mtlsSecretName" (dict "root" $ "name" $name) }}
+  duration: {{ $cm.duration }}
+  renewBefore: {{ $cm.renewBefore }}
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
+  usages: [digital signature, server auth, client auth]
+  dnsNames:
+    - {{ $name }}
+    - {{ $name }}.{{ $.Release.Namespace }}.svc
+    - {{ $name }}.{{ $.Release.Namespace }}.svc.cluster.local
+    - localhost
+  issuerRef:
+    {{- include "smo.mtlsIssuerRef" (dict "root" $) | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}
