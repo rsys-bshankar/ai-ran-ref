@@ -85,3 +85,27 @@ def test_concurrent_callers_never_get_more_than_the_burst():
     [t.start() for t in threads]
     [t.join(timeout=30) for t in threads]
     assert len(allowed) == 50
+
+
+def test_idle_callers_are_forgotten_once_the_table_is_over_its_limit(monkeypatch):
+    # found by the mutation pilot (V-2c): nothing tested that the table of buckets stops growing. A bucket is idle when it would be full again.
+    monkeypatch.setattr(ratelimit, "MAX_TRACKED_CALLERS", 3)
+    limiter, clock = buckets(rate=0.5, burst=2.0)
+    for caller, at in (("x", 1000.0), ("y", 1008.0), ("z", 1009.0)):
+        clock.now = at
+        assert limiter.take(caller) is None
+    assert len(limiter) == 3                      # at the limit, not over it: nobody is forgotten yet
+    clock.now = 1010.0
+    assert limiter.take("w") is None              # the fourth caller takes the table over the limit
+    # x refilled long ago and y exactly to its burst (1 + 2 s x 0.5 = 2): both forgotten. z (1.5 of 2) and w are still in use.
+    assert set(limiter._buckets) == {"z", "w"}
+
+
+def test_a_forgotten_caller_starts_again_with_a_full_burst(monkeypatch):
+    monkeypatch.setattr(ratelimit, "MAX_TRACKED_CALLERS", 1)
+    limiter, clock = buckets(rate=1.0, burst=2.0)
+    assert limiter.take("a") is None
+    clock.now += 100
+    assert limiter.take("b") is None              # a is idle and forgotten
+    assert "a" not in limiter._buckets
+    assert limiter.take("a") is None and limiter.take("a") is None   # a full burst of 2 again

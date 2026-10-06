@@ -20,3 +20,8 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["smo_shared*"]
+
+[tool.mutmut]
+source_paths = ["smo_shared"]
+only_mutate = ["smo_shared/pagination.py", "smo_shared/ratelimit.py", "smo_shared/timeutil.py", "smo_shared/roles.py"]
+pytest_add_cli_args_test_selection = ["tests/", "../../r1-termination/tests/test_roles.py"]
