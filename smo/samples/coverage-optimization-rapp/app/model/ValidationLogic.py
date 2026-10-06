@@ -3,6 +3,9 @@
 changes, and how often the predicted direction is right where the share
 moved by at least a point. Both must pass."""
 
+import datetime
+from typing import cast
+
 from .CoverageModel import PROBLEM_KEYS, CoverageModel, rmse
 from .TrainingLogic import transitions
 from .series import by_cell
@@ -12,12 +15,12 @@ MIN_DIRECTION = 0.85
 
 
 def validate(model: CoverageModel, records: list[dict], holdout_fraction: float = 0.25) -> tuple[bool, dict]:
-    cut = {}
+    cut: dict[str, datetime.datetime | None] = {}
     for cell, series in by_cell(records).items():
         cut[cell] = series[int(len(series) * (1 - holdout_fraction))][0] if series else None
-    held = []
+    held: list = []
     for cell, series in by_cell(records).items():
-        held.extend(r for r in series if cut[cell] is not None and r[0] >= cut[cell])
+        held.extend(r for r in series if cut[cell] is not None and r[0] >= cast(datetime.datetime, cut[cell]))      # not None, checked just before
     rows = transitions([{"payload": p} for _, p in held])
     if not rows:
         return False, {"reason": "no held-out rows"}

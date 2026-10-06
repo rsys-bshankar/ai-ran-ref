@@ -21,7 +21,7 @@ PASS_RATE = 0.9
 
 
 def candidates_for(cell: str, nbrs: list[str], layers: dict[str, str]) -> list[dict]:
-    out = [{"knob": "CONNECTED", "target": t} for t in nbrs]
+    out: list[dict] = [{"knob": "CONNECTED", "target": t} for t in nbrs]
     for layer in sorted({layers[t] for t in nbrs if layers.get(t) and layers[t] != layers.get(cell)}):
         out.append({"knob": "IDLE", "layer": layer, "targets": [t for t in nbrs if layers.get(t) == layer]})
     return out

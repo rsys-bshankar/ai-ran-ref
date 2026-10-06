@@ -14,7 +14,7 @@ A Non-RT RIC rApp that learns how weak coverage, overshoot and pilot pollution r
 | R1 route | `/coverage-optimization-rapp/...` (R1 Termination proxies to this service) |
 | Call flow | [24 Coverage Optimization closed loop](../../docs/call-flows/24-coverage-optimization-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 26](../../DEMO_RUNBOOK.md) (Demo 00-11) |
-| Unit tests | 23 passed (`tests/test_engine.py`, `tests/test_model.py`) |
+| Unit tests | 48 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
 
 ## What it does
 
@@ -61,7 +61,7 @@ Logic is in `app/engine.py` (guards, bounds, KPI check; no I/O) and `app/model/C
 | `app/producer.py` | Propagation model, sample history, Digital Twin `COVERAGE_PERFORMANCE_SIM` producer |
 | `app/models.py` | Instance, cell and decision tables |
 | `demo.py` | Demo 00-11 script |
-| `tests/` | Engine and model unit tests |
+| `tests/` | Engine, model and route unit tests (routes through the TestClient on SQLite, the SDK replaced by a platform double) |
 | `manifest.yaml`, `capabilities.yaml`, `Definitions/asd.yaml`, `TOSCA-Metadata/` | CSAR package content |
 
 ## Package
@@ -98,7 +98,7 @@ Paths are relative to the service root; through R1 Termination they sit under `/
 
 ```bash
 cd smo/samples/coverage-optimization-rapp
-PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 23 passed
+PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q     # 48 passed
 ```
 
 The demo runs against a live stack, from inside the compose network (for example the `r1-termination` container). Steps are Demo 00 to 11:

@@ -1,15 +1,15 @@
 {
   "aimgf": 95,
-  "coverage-optimization-rapp": 47,
+  "coverage-optimization-rapp": 98,
   "dme": 98,
-  "energy-saving-rapp": 37,
+  "energy-saving-rapp": 98,
   "focom": 97,
   "gui-bff": 94,
   "intent-service": 98,
   "mdaf": 95,
   "mllf": 100,
   "mlmr": 98,
-  "mobility-optimization-rapp": 40,
+  "mobility-optimization-rapp": 98,
   "mock-o1-adaptor": 95,
   "nfo": 99,
   "onboarding": 99,
@@ -22,5 +22,5 @@
   "shared": 90,
   "sme": 99,
   "so-smos": 100,
-  "traffic-steering-rapp": 46
+  "traffic-steering-rapp": 98
 }
