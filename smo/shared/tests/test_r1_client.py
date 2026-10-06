@@ -157,3 +157,26 @@ def test_every_call_through_r1_has_an_explicit_timeout_not_httpxs_implicit_defau
     assert seen[-1][1] == 7.0
     R1Client(R1).get("/focom/inventory", timeout=2.0)
     assert seen[-1][1] == 2.0
+
+
+def test_bootstrap_is_asked_without_a_key_unless_one_is_configured(net, monkeypatch):
+    monkeypatch.delenv("SMO_BOOTSTRAP_KEY", raising=False)
+    monkeypatch.delenv("SMO_BOOTSTRAP_KEY_FILE", raising=False)
+    R1Client(R1).get("/focom/inventory")
+    assert "X-Bootstrap-Key" not in net.calls[0][2] and net.calls[0][1] == f"{R1}/bootstrap"
+
+
+def test_the_bootstrap_key_is_sent_as_a_header_when_configured(net, monkeypatch):
+    monkeypatch.setenv("SMO_BOOTSTRAP_KEY", "shared-key")
+    R1Client(R1).get("/focom/inventory")
+    assert net.calls[0][2] == {"X-Bootstrap-Key": "shared-key"}
+    assert "X-Bootstrap-Key" not in net.calls[-1][2]                  # only /bootstrap gets it, not the proxied call
+
+
+def test_the_bootstrap_key_may_be_a_file(net, monkeypatch, tmp_path):
+    keyfile = tmp_path / "bootstrap_key"
+    keyfile.write_text("file-key\n")
+    monkeypatch.delenv("SMO_BOOTSTRAP_KEY", raising=False)
+    monkeypatch.setenv("SMO_BOOTSTRAP_KEY_FILE", str(keyfile))
+    R1Client(R1).get("/focom/inventory")
+    assert net.calls[0][2]["X-Bootstrap-Key"] == "file-key"

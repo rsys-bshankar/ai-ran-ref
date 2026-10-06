@@ -63,6 +63,28 @@ What is in place, so you can judge what counts as a vulnerability:
   (RFC 7662) before proxying. Only `/health` and `/bootstrap` are exempt at the
   gateway; tokens are issued by SME directly.
   See [`smo/docs/ARCHITECTURE.md`](smo/docs/ARCHITECTURE.md#r1-api-conventions).
+- **Why `/bootstrap` is unauthenticated, and what it reveals.** An rApp calls
+  `GET /bootstrap` to find SME's token endpoint *before* it has a token, so it
+  cannot require one. It takes no input and reads no data; the answer is two
+  entries (`service-apis`, `published-apis`) naming SME's address on the
+  container network (or the gateway's public base URL) and the OAuth2 token
+  endpoint, nothing else: no identity, secret, token or rApp data, and each
+  endpoint it names still checks credentials. Leaving it open discloses an
+  internal hostname and API paths and gives a free probe of a live gateway; a
+  report that only says "`/bootstrap` needs no token" is this documented
+  behaviour. Narrow who can ask, if the deployment can enforce it: the Helm
+  chart's `bootstrapNetworkPolicy` (limits who reaches the gateway pods; a
+  NetworkPolicy cannot select a path), `ingress.r1.bootstrapAllowedSourceRanges`
+  (an ingress-nginx rule for the exact path), and `R1_BOOTSTRAP_KEY[_FILE]`, an
+  optional shared key sent as `X-Bootstrap-Key` (constant-time compare, 401
+  otherwise; off by default). The key is one secret every rApp holds, a gate
+  against scanners, not an identity. Details: `smo/r1-termination/README.md`.
+- **Rate limiting.** R1 Termination gives each invoker a token bucket (429
+  with `Retry-After`). By default each gateway replica counts for itself;
+  `R1_RATE_STORE=postgres` shares one budget across replicas and **fails
+  open** if the database errors (the limiter is a fairness control, and the
+  token check does not depend on it; the failure is logged and counted in
+  `smo_rate_store_errors_total`).
 - **Network exposure.** In `docker-compose.yml` only R1 Termination (`:8080`),
   the GUI (`:3000`) and Postgres (`:5432`) publish host ports.
   The optional `tls` profile adds an nginx edge on `:3443` (GUI) and `:8443` (R1)

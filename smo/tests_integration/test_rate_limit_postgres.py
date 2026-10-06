@@ -1,0 +1,74 @@
+"""PR-SEC-8.5: the shared limiter's one-statement token bucket, on a real Postgres (LEAST/GREATEST, row locking and the migrated `rate_bucket` table).
+
+Needs SMO_TEST_POSTGRES_URL (CI's `migration-postgres` job, or a local server); skipped without it. The same arithmetic runs on SQLite in
+shared/tests/test_ratelimit_shared.py; what only Postgres can say is that the statement is valid there and that replicas, each with its own
+connections, never lose an update on one caller's row.
+"""
+
+import threading
+
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+
+from smo_shared.ratelimit import SharedTokenBuckets
+from test_db_roles import database, needs_postgres  # noqa: F401  (the `database` fixture: a migrated database)
+
+
+class Clock:
+    def __init__(self):
+        self.now = 1_000_000.0
+
+    def __call__(self):
+        return self.now
+
+
+def _replica(url, rate, burst, clock):
+    engine = create_engine(url, pool_size=8)                                  # its own pool, as a gateway replica has
+    return SharedTokenBuckets(lambda: rate, lambda: burst, clock, sessionmaker(bind=engine, future=True)), engine
+
+
+@needs_postgres
+def test_the_statement_is_a_token_bucket_on_postgres(database):
+    clock = Clock()
+    limiter, engine = _replica(database[0], rate=2.0, burst=4.0, clock=clock)
+    assert [limiter.take("a") for _ in range(4)] == [None] * 4
+    assert limiter.take("a") == 1 and limiter.take("a") == 1                 # empty, and a refused request takes nothing
+    clock.now += 0.5
+    assert limiter.take("a") is None and limiter.take("a") == 1
+    clock.now += 100
+    assert [limiter.take("a") for _ in range(4)] == [None] * 4 and limiter.take("a") is not None
+    assert limiter.take("b") is None                                          # another caller
+    with engine.connect() as connection:
+        row = connection.execute(text("SELECT tokens, last_allowed FROM rate_bucket WHERE caller = 'a'")).one()
+    assert row.tokens < 1 and row.last_allowed is False
+    engine.dispose()
+
+
+@needs_postgres
+def test_replicas_with_their_own_connections_share_one_budget_under_concurrency(database):
+    clock = Clock()
+    replicas = [_replica(database[0], rate=0.000001, burst=40.0, clock=clock) for _ in range(3)]
+    allowed, lock = [], threading.Lock()
+
+    def worker(limiter):
+        for _ in range(20):
+            if limiter.take("caller") is None:
+                with lock:
+                    allowed.append(1)
+    threads = [threading.Thread(target=worker, args=(replicas[n % 3][0],)) for n in range(6)]       # 6 x 20 = 120 attempts against a burst of 40
+    [t.start() for t in threads]
+    [t.join(timeout=60) for t in threads]
+    assert len(allowed) == 40                                                  # one budget for all three replicas, exactly, no lost update
+    [engine.dispose() for _, engine in replicas]
+
+
+@needs_postgres
+def test_purge_removes_the_buckets_that_are_full_again_and_not_the_others(database):
+    clock = Clock()
+    limiter, engine = _replica(database[0], rate=1.0, burst=2.0, clock=clock)
+    limiter.take("idle")
+    limiter.take("busy")
+    limiter.take("busy")
+    clock.now += 1.0                                                           # idle: 1 + 1 >= 2 (full); busy: 0 + 1 < 2
+    assert limiter.purge() == 1 and len(limiter) == 1
+    engine.dispose()

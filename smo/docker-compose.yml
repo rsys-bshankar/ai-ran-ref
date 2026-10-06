@@ -134,6 +134,12 @@ services:
       # PR-SEC-1.6: unset, /bootstrap names SME on the compose network; set to the HTTPS door (https://localhost:8443 with the tls
       # profile) and it names that address instead, so a consumer that only reaches the edge can complete the flow.
       R1_PUBLIC_BASE_URL: ${R1_PUBLIC_BASE_URL:-}
+      # PR-SEC-8.5: `memory` (default): each gateway replica counts for itself; `postgres`: the per-caller buckets live in the shared
+      # `rate_bucket` table so all replicas share one budget (fails open to the in-process bucket if the database errs).
+      R1_RATE_STORE: ${R1_RATE_STORE:-memory}
+      # PR-SEC-9.3: set, GET /bootstrap needs the header X-Bootstrap-Key with this value; unset (default), /bootstrap stays open.
+      # Clients (the SDK, the sample rApps, the modules) send it when SMO_BOOTSTRAP_KEY is set. A file form, R1_BOOTSTRAP_KEY_FILE, also works.
+      R1_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}
       SME_URL: http://sme:8000
       DME_URL: http://dme:8000
       ONBOARDING_URL: http://onboarding:8000
@@ -215,6 +221,7 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_rapp-mgmt
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   ran-nf-oam:
     build: { context: ., args: { MODULE: ran-nf-oam } }
@@ -230,6 +237,7 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_ran-nf-oam
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
       SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
 
   # PR-MSG-4: the same image, run as a worker. It does RAN NF OAM's periodic work (the wave advance of staged CM jobs, KPI schedules,
@@ -250,6 +258,7 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_ran-nf-oam
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
       SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
 
   mock-o1-adaptor:
@@ -282,6 +291,7 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_energy-saving-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   # Wave 10.2: the Mobility Optimization reference rApp
   # (samples/mobility-optimization-rapp) — R1-only, like energy-saving-rapp.
@@ -299,6 +309,7 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mobility-optimization-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   # Wave 10.3: the Coverage Optimization reference rApp
   # (samples/coverage-optimization-rapp) — R1-only, like energy-saving-rapp.
@@ -316,6 +327,7 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_coverage-optimization-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   # Wave 10.4: the Traffic Steering reference rApp
   # (samples/traffic-steering-rapp) — R1-only, like energy-saving-rapp.
@@ -333,6 +345,7 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_traffic-steering-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   nfo:
     build: { context: ., args: { MODULE: nfo } }
@@ -348,6 +361,7 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_nfo
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
     # No `privileged: true` and no Docker socket (PR-SEC-13): NFO never started a container (it runs no
     # `docker run`, nfo/README.md), and either one is root on the host. The Docker bridge of SMO Design v1.3
     # section 3.7 has to arrive as a narrow, separately-run component (a socket proxy that allows a few API calls,
@@ -395,6 +409,7 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_aimgf
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   mllf:
     build: { context: ., args: { MODULE: mllf } }
@@ -405,6 +420,7 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   ran-analytics:
     build: { context: ., args: { MODULE: ran-analytics } }
@@ -420,6 +436,7 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_ran-analytics
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   mdaf:
     build: { context: ., args: { MODULE: mdaf } }
@@ -463,6 +480,7 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_so-smos
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   sa-smos:
     build: { context: ., args: { MODULE: sa-smos } }
@@ -478,6 +496,7 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_sa-smos
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   # ---------------------------------------------------------------- operator GUI
   # Browser -> gui (nginx, the only published GUI port) -> gui-bff -> R1

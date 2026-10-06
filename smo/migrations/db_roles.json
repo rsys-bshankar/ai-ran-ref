@@ -125,7 +125,8 @@
   "schema": null,
   "shared": [
    "audit_log",
-   "audit_head"
+   "audit_head",
+   "rate_bucket"
   ],
   "read": [
    "ran_nf_oam.rapp_kill"

@@ -87,6 +87,18 @@ def record_role_refusal(module: str, action: str) -> None:
     ROLE_REFUSALS.labels(r1_target(module), action).inc()
 
 
+RATE_STORE_ERRORS = Counter("smo_rate_store_errors_total", "Statements against the shared rate limiter store that failed (PR-SEC-8.5; the limiter then fails open).")
+RATE_STORE_FALLBACKS = Counter("smo_rate_store_fallbacks_total", "Requests the limiter decided with the per-replica bucket because the shared store was unavailable (PR-SEC-8.5).")
+
+
+def record_rate_store_error() -> None:
+    RATE_STORE_ERRORS.inc()
+
+
+def record_rate_store_fallback() -> None:
+    RATE_STORE_FALLBACKS.inc()
+
+
 AUDIT_WRITES = Counter("smo_audit_writes_total", "Rows the gateway tried to add to the audit chain (PR-SEC-11), by outcome (ok or failed).", ["outcome"])
 
 
