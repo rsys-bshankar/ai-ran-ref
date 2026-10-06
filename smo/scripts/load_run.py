@@ -28,7 +28,7 @@ import httpx
 
 # (name, method, path, weight, expected statuses). All through the gateway, as an SMO module (the internal scope), the way the modules and the GUI backend call it.
 ROUTES = [
-    ("service discovery", "GET", "/sme/service-apis/v1/allServiceAPIs", 10, (200,)),
+    ("service discovery", "GET", "/sme/service-apis/v1/allServiceAPIs?api_invoker_id={invoker}", 10, (200,)),
     ("alarm list", "GET", "/ran-nf-oam/alarms?limit=50", 15, (200,)),
     ("kpi definitions", "GET", "/ran-nf-oam/kpi-definitions", 10, (200,)),
     ("config job list", "GET", "/ran-nf-oam/config-jobs?limit=20", 10, (200,)),
@@ -72,6 +72,7 @@ async def one_call(client: httpx.AsyncClient, gateway: str, sme: str, reg: dict,
     if method == "TOKEN":
         return (await get_token(client, sme, reg)).status_code
     headers = {"Authorization": f"Bearer {access}"}
+    path = path.replace("{invoker}", reg["apiInvokerId"])
     if method == "POST":
         headers["Idempotency-Key"] = str(uuid.uuid4())
         return (await client.post(f"{gateway}{path}", json=DRY_RUN, headers=headers)).status_code
