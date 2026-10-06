@@ -49,6 +49,15 @@ Every module that uses the database has an init container, `wait-for-schema`, th
 
 `modules.<name>.replicas`, `podDisruptionBudget.enabled` and `autoscaling.enabled` are in the chart, off by default: running a module with more than one replica is the work of the HA release (`OPEN_ITEMS.md`, `PR-HA`). The GUI backend and Onboarding hold a volume and stay at one replica (they use the `Recreate` strategy).
 
+### Rolling back
+
+`helm rollback smo <revision> -n smo --wait` returns to the code of the release before; it does not undo a migration (the old pods run on the new schema, by the expand/contract rule), and `kubectl -n smo rollout status` shows the pods come back. Two things the upgrade lane (`.github/workflows/smo-upgrade-kind.yml`) found:
+
+* **Roll back to a revision made by `helm upgrade`** (`helm history smo`), not to revision 1 made by `helm install`. The install's migrate Job is a plain Job, so a rollback to revision 1 runs it again with the older image, whose `migrate.py` fails on a schema it does not know ("Can't locate revision"). An upgrade's migrate Job is a `pre-upgrade` hook and is not run by a rollback. (From this release on `migrate.py` leaves a later revision alone, so the problem is only that of the older images.)
+* **The rollback is promised to the release before only.** The release before that does not know the newer schema in its own migrate step.
+
+`smo-role-secrets` keeps the password of a role the release no longer has (A1 Related's, for the release that removed it), because the older chart still mounts it.
+
 ## What is not in the chart
 
 `netconf-lab` (a throwaway lab server) and `edge-tls` (the compose TLS terminator: use `ingress` with a TLS secret instead).
