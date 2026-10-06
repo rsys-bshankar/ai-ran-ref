@@ -199,6 +199,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     pool_resources = mesh["focom"].get("/resource-pools/pool-0/resources")
     assert any(r["resourceId"] == resource_id for r in pool_resources.json()["items"])
 
+    callbacks.await_deliveries(notifications, 1)
     assert len(notifications) == 1
     assert notifications[0]["notificationEventType"] == "CREATE"
     assert notifications[0]["resourceId"] == resource_id
@@ -208,6 +209,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     deprovisioned = mesh["focom"].delete(f"/resources/{resource_id}")
     assert deprovisioned.status_code == 200
 
+    callbacks.await_deliveries(notifications, 2)
     assert len(notifications) == 2
     assert notifications[1]["notificationEventType"] == "DELETE"
     assert notifications[1]["resourceId"] == resource_id
@@ -454,6 +456,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     assert report.status_code == 201
     report_id = report.json()["reportId"]
 
+    callbacks.await_deliveries(analytics_notifications, 1)
     assert len(analytics_notifications) == 1
     assert analytics_notifications[0]["reportId"] == report_id
     assert analytics_notifications[0]["output"] == {"issue": "demo-cell-1 coverage hole detected"}
@@ -561,6 +564,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     })
     assert new_type.status_code == 201
     new_type_id = new_type.json()["registrationId"]
+    callbacks.await_deliveries(dme_type_notifications, 1)
     assert len(dme_type_notifications) == 1
     assert dme_type_notifications[0]["infoTypeId"] == new_type_id
     assert dme_type_notifications[0]["status"] == "REGISTERED"
@@ -583,6 +587,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     # what fires the real DEREGISTERED notification.
     deleted = mesh["dme"].delete(f"/dme-types/{new_type_id}")
     assert deleted.status_code == 204
+    callbacks.await_deliveries(dme_type_notifications, 2)
     assert len(dme_type_notifications) == 2
     assert dme_type_notifications[1]["infoTypeId"] == new_type_id
     assert dme_type_notifications[1]["status"] == "DEREGISTERED"
@@ -715,6 +720,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     assert other_svc_update.status_code == 201
     # only consumer-unscoped's callback — consumer-scoped's own apiIds
     # filter (scoped to energy-saving-api, not other-api) excludes it.
+    callbacks.await_deliveries(sme_notifications, 1)
     assert [loc for loc, _ in sme_notifications] == ["http://demo-consumer:9000/sme-events-unscoped"]
 
     energy_saving_update = mesh["sme"].post("/published-apis/v1/energy-saving-rapp/service-apis", json={
@@ -724,6 +730,7 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     })
     assert energy_saving_update.status_code == 201
     # both — this update matches consumer-scoped's own apiIds filter too.
+    callbacks.await_deliveries(sme_notifications, 3)
     assert sorted(loc for loc, _ in sme_notifications[1:]) == sorted([
         "http://demo-consumer:9000/sme-events-scoped", "http://demo-consumer:9000/sme-events-unscoped",
     ])

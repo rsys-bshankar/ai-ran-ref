@@ -8,6 +8,7 @@ and A1TerminationClient calls land on the right module instead of going
 out over a real network.
 """
 
+import time
 import os
 import sys
 from pathlib import Path
@@ -188,6 +189,20 @@ class Callbacks:
 
         self._monkeypatch.setattr(self._apps[module].httpx, "post", fake_post)
         return captured
+
+
+    @staticmethod
+    def await_deliveries(captured, count: int, timeout: float = 30.0) -> None:
+        """Live only: wait until `count` deliveries have arrived. A notification is delivered at least once, and a
+        first attempt that finds the consumer busy is retried by the worker a few seconds later, so a test that
+        expects a delivery must not read the receiver at the instant its request returned. In-process the capture is
+        filled synchronously and there is nothing to wait for. If the delivery never comes the assertion that follows
+        fails, as before."""
+        if not live.LIVE:
+            return
+        deadline = time.monotonic() + timeout
+        while len(captured) < count and time.monotonic() < deadline:
+            time.sleep(0.25)
 
 
 @pytest.fixture(scope="session")
