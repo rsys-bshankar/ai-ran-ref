@@ -153,7 +153,7 @@ RULES: list[Rule] = [
     _rule("POST", "/aimgf/validation-jobs/{id}/complete", O),
     _rule("POST", "/aimgf/emulation-jobs", O),
     _rule("POST", "/aimgf/emulation-jobs/{id}/complete", O),
-    _rule("POST", "/aimgf/(feature-groups|mlmf/subscriptions)", O),
+    _rule("POST", "/aimgf/mlmf/subscriptions", O),    # (POST /aimgf/feature-groups is the rule at the top: the same role, and a second copy of it here was never reached)
     _rule("POST", "/aimgf/mlmf/subscriptions/{id}/reports", A),  # test-data injection
 
     # --- RAN NF OAM
