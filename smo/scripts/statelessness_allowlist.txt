@@ -7,6 +7,9 @@ shared/smo_shared/r1_client.py:instance-state:_identity  # per-process SME token
 ran-nf-oam/app/vendors.py:cache:_builtin_schemas  # pure: reads the bundled, read-only cm_schemas/*.json once; identical in every replica
 shared/smo_shared/health.py:background-work:ThreadPoolExecutor  # one short-lived pool per /ready request, only to bound the readiness checks by a timeout; holds no state between requests (PR-ST-7)
 shared/smo_shared/metrics.py:global-statement:_pool_collector  # a once-per-process flag so the pool gauges register once; the gauges read the engine's own pool at scrape time and metrics are per process by design (PR-OBS-2.4)
+shared/smo_shared/metrics.py:module-state:_worker_last_success  # the last-success time of this worker process's own tasks, shown as a gauge on the worker's own /metrics; metrics are per process by design and nothing reads it as state (PR-OBS-4)
+shared/smo_shared/metrics.py:module-state:_worker_lock  # guards that dict only
+shared/smo_shared/metrics.py:module-state:_query_gauges  # registry of the scrape-time gauges so each registers once per process; each reads the database when scraped, the source of truth is Postgres (PR-OBS-4)
 shared/smo_shared/killswitch.py:module-state:_cache  # a few-second cache of the kill-switch table (per invoker, bounded, refilled from the database): each replica may hold a different, equally valid copy; the source of truth is rapp_kill (AI-10.4)
 shared/smo_shared/killswitch.py:module-state:_lock  # guards that cache only
 shared/smo_shared/outbox.py:background-work:ThreadPoolExecutor  # one short-lived pool per drain call, only so a destination that does not answer does not hold up the others; the rows are claimed in Postgres before and recorded after, nothing is kept between calls (V-9)

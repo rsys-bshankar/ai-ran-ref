@@ -16,7 +16,7 @@ A task that raises is logged and skipped for `SMO_WORKER_FAILURE_BACKOFF_SECONDS
 retried, not hammered; the claim is given back, so another worker may try it sooner. A task is idempotent by contract: it may run again after a
 crash, so it does its work in committed steps and finds what is due from the database, never from memory.
 
-The worker has no HTTP port. It touches `SMO_WORKER_HEARTBEAT_FILE` (default `/tmp/worker-heartbeat`) on every tick, and the compose healthcheck
+The worker has no HTTP port (unless `SMO_WORKER_METRICS_PORT` is set: then `/metrics` on it, with `smo_worker_task_runs_total`). It touches `SMO_WORKER_HEARTBEAT_FILE` (default `/tmp/worker-heartbeat`) on every tick, and the compose healthcheck
 fails when that file is older than a minute. It stops on SIGTERM or SIGINT after the task in hand.
 
 Every worker also runs the **delivery sweep** (PR-MSG-2, `outbox-sweep`): `outbox.drain(engine)` over the shared `notification_outbox`, so a notification whose
@@ -38,6 +38,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .metrics import record_worker_task
 from .single_runner import run_once_per_interval
 
 log = logging.getLogger("smo.worker")
@@ -74,10 +75,12 @@ def tick(tasks: Iterable[Task], *, module: str = "", skip: Iterable[str] = (), s
         except Exception:                                      # noqa: BLE001 (the loop must outlive any one task)
             log.exception("worker task failed", extra={"task": task.name})
             outcome[task.name] = "failed"
+            record_worker_task(module or "unknown", task.name, "failed")
         else:
             outcome[task.name] = "ran" if ran else "skipped"
             if ran:
                 log.info("worker task ran", extra={"task": task.name})
+                record_worker_task(module or "unknown", task.name, "ok")
     return outcome
 
 
@@ -117,6 +120,10 @@ def main(tasks: list[Task] | None = None, *, module: str | None = None, stop: th
     sweep = outbox_sweep_task()
     if sweep is not None and all(t.name != sweep.name for t in tasks):
         tasks = [*tasks, sweep]
+    port = os.environ.get("SMO_WORKER_METRICS_PORT", "").strip()
+    if port:
+        from prometheus_client import start_http_server
+        start_http_server(int(port))                       # /metrics for the worker's task counters (PR-OBS-4); off unless asked
     stop = stop or threading.Event()
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, lambda *_: stop.set())
