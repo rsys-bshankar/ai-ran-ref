@@ -106,6 +106,15 @@ def test_total_false_fetches_one_extra_row_to_know_about_the_next_page():
     assert empty["items"] == [] and empty["hasMore"] is False
 
 
+def test_total_false_asks_the_database_for_exactly_one_row_more_than_the_page():
+    """The extra row is what makes the next-page flag cheap: the query must be bounded at limit+1, not unbounded and not larger (found by the mutation run)."""
+    db = _session()
+    seen: list = []
+    event.listen(db.get_bind(), "before_cursor_execute", lambda conn, cur, stmt, params, *a: seen.append(params))
+    pagination.paginate(db, select(Item).order_by(Item.id), limit=_no_total(3), offset=2)
+    assert len(seen) == 1 and tuple(seen[0]) == (4, 2)                      # LIMIT 4 OFFSET 2
+
+
 def test_total_false_pages_stay_in_primary_key_order_without_overlap():
     db = _session()
     seen, offset = [], 0
