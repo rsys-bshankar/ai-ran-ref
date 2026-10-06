@@ -70,6 +70,14 @@ Every module that uses the database has an init container, `wait-for-schema`, th
 
 `.github/workflows/smo-tests.yml`, job `helm`: lint, render with the options on, build the images from the checkout, install on kind, check the database is at the head revision, run the compose smoke scripts inside the cluster (`compose_e2e.py`, `compose_e2e_roles.py`), check no rApp can read the enrollment secret, upgrade (every module rolls, no pod fails), uninstall.
 
+## Traces and logs
+
+Off by default (`docs/OBSERVABILITY.md` has the queries and the ids). `tracing.endpoint` sets `SMO_OTEL_ENDPOINT` on every module (the OTLP/HTTP base URL of a Tempo or collector; `tracing.sampleRatio` sets `SMO_OTEL_SAMPLE_RATIO`); spans need images built with `--build-arg WITH_TRACING=1`, which the published images are not, and without them the modules propagate a `traceparent` and log the trace id only. `observability.tempo`, `.loki`, `.fluentBit` and `.grafana` (each `enabled: false`) add a lab stack: Tempo and Loki as single Deployments on an emptyDir, Grafana with both data sources provisioned and linked on the trace id, and Fluent Bit as a DaemonSet that ships this release's pod logs (JSON, labelled `service` and `level`) to Loki. With `observability.tempo.enabled` and no `tracing.endpoint` the modules send to `http://tempo:4318`. Their configuration is `files/observability/`, the files `docker-compose.yml` mounts for its `tracing` and `logging` profiles. The GUI's nginx and backend are not given the endpoint.
+
+## GitOps
+
+`deploy/gitops/` has Kustomize overlays (lab, staging, prod) over this chart and Argo CD Applications for them (`deploy/gitops/README.md`).
+
 ## Where the replicas land
 
 With more than one replica of a module (`modules.<name>.replicas`, or `ci/ha-values.yaml` as an example), `placement.mode` decides how the pods are spread: `soft` (default) prefers different nodes and still starts on a cluster with fewer nodes than replicas, `hard` requires different nodes (a replica that cannot be placed stays Pending), `off` sets nothing. `placement.zoneKey: topology.kubernetes.io/zone` adds a preference across zones. The chart's CI checks that each mode renders as described; it runs on one node, so it does not show pods landing on different nodes.

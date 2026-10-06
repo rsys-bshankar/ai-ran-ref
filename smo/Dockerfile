@@ -13,6 +13,11 @@ WORKDIR /srv
 # shared library itself is installed without re-resolving them.
 COPY requirements/runtime.txt /srv/requirements.txt
 RUN pip install --no-cache-dir --require-hashes -r /srv/requirements.txt
+# Distributed traces (PR-OBS-3) are optional: the OpenTelemetry SDK and OTLP exporter are installed only with --build-arg WITH_TRACING=1
+# (docker compose: SMO_WITH_TRACING=1 docker compose --profile tracing up --build). Without them the services still pass a traceparent on.
+ARG WITH_TRACING=0
+COPY requirements/tracing.txt /srv/requirements-tracing.txt
+RUN if [ "$WITH_TRACING" = "1" ]; then pip install --no-cache-dir --require-hashes -r /srv/requirements-tracing.txt; fi
 
 COPY shared /srv/shared
 RUN pip install --no-cache-dir --no-deps -e /srv/shared

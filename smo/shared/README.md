@@ -46,6 +46,7 @@ Mapping of the "R1 API conventions" table in `docs/ARCHITECTURE.md` to code:
 | Subscriptions | Nothing (naming convention only: `notificationDestination`, with the CAPIF/O2ims exceptions) | Each module's request models |
 | Callbacks | `webhook.post_webhook` / `get_webhook` / `delete_webhook` / `is_safe_webhook_destination` | |
 | Correlation | `correlation.apply_correlation_id`, `get_correlation_id`; `R1Client` propagates | R1 Termination forwards its own current id |
+| Trace context | `tracing.apply_tracing` (installed by `apply_correlation_id`), `inject_headers`, `span`; `R1Client` and the gateway send `traceparent` | W3C Trace Context; spans to OTLP/HTTP only with `SMO_OTEL_ENDPOINT` and the OpenTelemetry packages (`docs/OBSERVABILITY.md`) |
 | Cross-module calls | `r1_client.R1Client` | Choosing which module to call |
 
 Also provided, outside that table: `db` (engine and session), `statemachine` (FSM base), `identity` (rAppId equivalence), `timeutil`, `testing`.
@@ -86,6 +87,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | `smo_shared/errors.py` | `ProblemDetails`, `problem()`, `FrameworkError`, `framework_error()`, `illegal_transition_error()` |
 | `smo_shared/pagination.py` | `paginate()`, `PageLimit`, `PageOffset`, `DEFAULT_LIMIT`, `MAX_LIMIT` |
 | `smo_shared/correlation.py` | `apply_correlation_id()`, `get_correlation_id()`, `HEADER_NAME` |
+| `smo_shared/tracing.py` | W3C `traceparent` / `tracestate` parsing and propagation (a context variable, stdlib only), `get_trace_id()`, `inject_headers()`, the optional OpenTelemetry layer (`configure_tracing()`, `span()`: SERVER span per request, CLIENT span per `R1Client` call, OTLP/HTTP export, `SMO_OTEL_ENDPOINT`, `SMO_OTEL_SAMPLE_RATIO`); the SDK is the `tracing` extra of `pyproject.toml` and `requirements/tracing.txt`; FastAPI's own native server span is switched off so a request has one |
 | `smo_shared/invoker.py` | `INVOKER_ID_HEADER` (`X-R1-Invoker-Id`), `ON_BEHALF_OF_HEADER` (`X-R1-On-Behalf-Of`), `invoker_id(request)` (the rApp an internal module is acting for, else the caller's own id), `get_originator()` and `apply_invoker_context(app)` (installed by `apply_correlation_id`, so every service has it); `R1Client` adds the header to onward calls |
 | `smo_shared/webhook.py` | `post_webhook`, `get_webhook`, `delete_webhook`, `is_safe_webhook_destination` |
 | `smo_shared/r1_client.py` | `R1Client` (a caller's own `headers=` are merged with the authorization and correlation headers; the client's win), `R1_GATEWAY_URL`, per-process `_ModuleIdentity` token cache |
@@ -193,7 +195,7 @@ All instances in a process share one identity and token (`_identity`).
 |---|---|
 | `configure_logging(service=None)` | Puts one handler on the root logger (stdout, JSON, redaction filter); level from `LOG_LEVEL` (default INFO; an unknown name is INFO with a warning); uvicorn's own logs go through it and its plain-text access line is off. Idempotent; handlers that are not its own are left alone |
 | `install_logging(app)` | What every `main.py` calls: configure (if nothing did) and add `AccessLogMiddleware` |
-| Fields | `timestamp` (UTC, ms), `level`, `logger`, `service` (the container's `MODULE`), `message`, `correlationId` (inside a request), `exception` (one field, not extra lines), and every `extra=` key |
+| Fields | `timestamp` (UTC, ms), `level`, `logger`, `service` (the container's `MODULE`), `message`, `correlationId` (inside a request), `traceId` (when the request belongs to a trace), `exception` (one field, not extra lines), and every `extra=` key |
 | Access line | `logger: smo.access`, `message: request`, `method`, `route` (the template, `/models/{model_id}`; `unmatched` if none, never the raw path or the query string), `status`, `durationMs`, `correlationId`; probes (`/live`, `/ready`, `/health`) at DEBUG, 5xx at ERROR |
 | Redaction | On the handler, so uvicorn and third-party loggers too: `Authorization`/`Bearer` values, `password=`, `secret=`, `token=`, `api_key=` pairs (also JSON `"key": "value"`), the password in `scheme://user:password@host`, and any extra field named like a secret, in the message, its arguments, the exception text and the extras. A safety net, not permission to log a credential |
 
@@ -302,6 +304,7 @@ cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
 | Test file | Covers | Passed |
 |---|---|---|
 | `tests/test_correlation.py` | Id generated when the caller sends none; caller's id propagated and echoed; `get_correlation_id()` is `None` outside a request; two requests get distinct ids | 4 |
+| `tests/test_tracing.py` | `traceparent` parsing (invalid forms ignored); a `traceparent` and `tracestate` surviving an in-process `R1Client` hop with spans off; none in, none out; the trace id in the JSON log line; with the SDK (skipped without it) the span tree across the hop, a new trace for a request without one, a 5xx as an error span | 19 |
 | `tests/test_r1_client.py` | A caller's own headers ride along and survive the 401 retry, the client's authorization wins; token obtained "the rApp way" (bootstrap, onboarding, client credentials) and attached; token cached across clients and calls; revoked token refreshed once with the same invoker; explicit bearer used as is; SME down means call sent unauthenticated, not raised; correlation header absent outside a request and propagated inside one | 7 |
 | `tests/test_webhook.py` | Allowed destinations (http/https, ordinary and private-range hosts); rejected ones (bad scheme, loopback, link-local/metadata, multicast, unspecified, malformed; parametrized); `post_webhook`/`get_webhook`/`delete_webhook` call `httpx` for an allowed destination, no-op for a disallowed one, and `post_webhook` swallows an unreachable destination | 29 |
 | `tests/test_versioning.py` | `Versioned` on SQLite and, with `SMO_TEST_POSTGRES_URL`, real Postgres: version starts at 1 and every update bumps it; two sessions firing one transition have exactly one winner; a write to another column also conflicts; the repeat after a conflict is refused as an illegal transition; eight threads racing one transition give one winner; a stale write is a 409 ProblemDetails | 11 (5 need Postgres) |

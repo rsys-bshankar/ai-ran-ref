@@ -14,7 +14,7 @@ parses without a regular expression:
                           token), the status and the duration in milliseconds. Probes (`/live`, `/ready`, `/health`) are logged
                           at DEBUG so a probe every few seconds does not drown the log; 5xx answers are ERROR.
   Every record carries `service` (the `MODULE` of the container) and, inside a request, `correlationId` (the one
-  `X-Correlation-ID` propagates through the whole fan-out, `correlation.py`). Extra fields passed with
+  `X-Correlation-ID` propagates through the whole fan-out, `correlation.py`) and, when the request belongs to a trace, `traceId` (`tracing.py`). Extra fields passed with
   `log.info("msg", extra={"deploymentId": ...})` become JSON keys.
 
 Redaction (`RedactionFilter`, on the handler, so it covers every logger including uvicorn's and third-party ones):
@@ -34,6 +34,7 @@ import time
 
 from .correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from .correlation import get_correlation_id
+from .tracing import SCOPE_TRACE_ID, get_trace_id
 
 REDACTED = "[REDACTED]"
 PROBE_PATHS = frozenset({"/live", "/ready", "/health"})
@@ -105,6 +106,9 @@ class JsonFormatter(logging.Formatter):
         correlation_id = getattr(record, "correlationId", None) or get_correlation_id()
         if correlation_id:
             entry["correlationId"] = correlation_id
+        trace_id = getattr(record, "traceId", None) or get_trace_id()
+        if trace_id:
+            entry["traceId"] = trace_id        # PR-OBS-3: the W3C trace id, so a log line and a Tempo trace join on it
         for key, value in vars(record).items():
             if key not in _STANDARD_ATTRIBUTES and key not in entry:
                 entry[key] = value
@@ -195,6 +199,8 @@ class AccessLogMiddleware:
                      "durationMs": round((time.perf_counter() - started) * 1000, 2)}
             if correlation_id:
                 extra["correlationId"] = correlation_id
+            if scope.get(SCOPE_TRACE_ID):
+                extra["traceId"] = scope[SCOPE_TRACE_ID]
             self.log.log(level, "request", extra=extra)
 
 

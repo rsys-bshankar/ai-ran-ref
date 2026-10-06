@@ -1,0 +1,53 @@
+# Production values for deploy/helm/smo. Every host, registry and secret name below is a placeholder to replace; nothing here is a credential.
+# A key set here must exist in the chart's values.yaml (tests_integration/test_gitops.py checks it).
+image:
+  tag: "0.5.0"                               # always a pinned release in production: Git, not the chart's appVersion, says what runs
+  pullPolicy: IfNotPresent
+
+postgres:
+  enabled: false
+  external:
+    host: smo-db-rw.example.internal         # an HA Postgres (CloudNativePG's <cluster>-rw, Patroni's leader service, a managed service)
+    sslmode: verify-full
+    targetSessionAttrs: read-write
+
+secrets:
+  existingSecret: smo-secrets
+databaseRoles:
+  existingSecret: smo-role-secrets
+
+ingress:
+  enabled: true
+  className: nginx
+  gui:
+    host: smo-gui.example.com
+    tlsSecretName: smo-gui-tls
+  r1:
+    host: smo-r1.example.com
+    tlsSecretName: smo-r1-tls
+    publicBaseUrl: https://smo-r1.example.com
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+placement:
+  mode: hard
+  zoneKey: topology.kubernetes.io/zone
+
+modules:
+  r1-termination: { replicas: 3 }
+  sme: { replicas: 3 }
+  dme: { replicas: 2 }
+  rapp-mgmt: { replicas: 2 }
+  ran-nf-oam: { replicas: 2 }
+  ran-nf-oam-worker: { replicas: 2 }
+  nfo: { replicas: 2 }
+  focom: { replicas: 2 }
+  so-smos: { replicas: 2 }
+  sa-smos: { replicas: 2 }
+
+# Spans to the platform's Tempo or OpenTelemetry collector (OTLP/HTTP); needs images built with --build-arg WITH_TRACING=1.
+# Logs: ship the pods' JSON stdout with the platform's own agent (docs/OBSERVABILITY.md); the chart's Loki and Fluent Bit are for a lab.
+tracing:
+  endpoint: ""
+  sampleRatio: "0.1"

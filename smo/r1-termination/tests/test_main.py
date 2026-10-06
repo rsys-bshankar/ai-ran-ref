@@ -255,6 +255,23 @@ def test_proxy_forwards_the_callers_own_correlation_id_unchanged(monkeypatch):
     assert resp.headers["X-Correlation-ID"] == "caller-supplied-id"
 
 
+def test_proxy_forwards_the_callers_traceparent_and_tracestate(monkeypatch):
+    """PR-OBS-3: the W3C trace context rides through the gateway to the backend (spans off: the caller's own trace, unchanged)."""
+    monkeypatch.delenv("SMO_OTEL_ENDPOINT", raising=False)
+    recorder = _install_recording_client(monkeypatch)
+    traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+    client.get("/sme/service-apis/v1/allServiceAPIs", headers={**AUTH_HEADERS, "traceparent": traceparent, "tracestate": "vendor=x"})
+    headers = {k.lower(): v for k, v in recorder.calls[-1]["headers"].items()}
+    assert headers["traceparent"] == traceparent and headers["tracestate"] == "vendor=x"
+
+
+def test_proxy_does_not_forward_an_invalid_traceparent(monkeypatch):
+    monkeypatch.delenv("SMO_OTEL_ENDPOINT", raising=False)
+    recorder = _install_recording_client(monkeypatch)
+    client.get("/sme/service-apis/v1/allServiceAPIs", headers={**AUTH_HEADERS, "traceparent": "not-a-traceparent"})
+    assert "traceparent" not in {k.lower() for k in recorder.calls[-1]["headers"]}
+
+
 def test_proxy_passes_through_upstream_error_status_unchanged(monkeypatch):
     """A real backend failure (e.g. 503) must reach the rApp unchanged,
     not be swallowed or remapped by the gateway.

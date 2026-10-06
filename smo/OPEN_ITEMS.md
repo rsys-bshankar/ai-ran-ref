@@ -442,8 +442,8 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 
 ### 5.5 Observability (`PR-OBS`)
 
-HTTP request metrics and `/metrics` exist (`PR-OBS-2`, `HISTORY.md` §10); no OpenTelemetry usage exists in the code (checked). A correlation id exists in
-`smo_shared/correlation.py`. Liveness and readiness are `PR-ST-7`.
+HTTP request metrics and `/metrics` exist (`PR-OBS-2`, `HISTORY.md` §10). A correlation id exists in `smo_shared/correlation.py`; W3C trace propagation, optional
+OpenTelemetry spans to Tempo and log shipping to Loki exist (`HISTORY.md` §10, PR-OBS-3 and PR-OBS-6; `docs/OBSERVABILITY.md`). Liveness and readiness are `PR-ST-7`.
 
 #### PR-OBS-2 — Metrics (open: OBS-2.8; `HISTORY.md` §10 for 2.4–2.6)
 
@@ -451,15 +451,13 @@ HTTP request metrics and `/metrics` exist (`PR-OBS-2`, `HISTORY.md` §10); no Op
 |---|---|---|---|
 | OBS-2.8 | Committed Grafana dashboard JSON for the golden signals | Imports cleanly | OBS-2.3 |
 
-#### PR-OBS-3 — Distributed traces
+#### PR-OBS-3 — Distributed traces (open: database spans, a live check; the rest in `HISTORY.md` §10)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OBS-3.1 | Parse and propagate `traceparent` next to the correlation id (`correlation.py`) | Header survives R1 hop (test) | – |
-| OBS-3.2 | R1 Termination forwards it | Integration test | OBS-3.1 |
-| OBS-3.3 | OpenTelemetry SDK, off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set | No overhead when off | OBS-3.1 |
-| OBS-3.4 | FastAPI, httpx and SQLAlchemy instrumentation | A request shows 3 span kinds | OBS-3.3 |
-| OBS-3.5 | Collector plus Jaeger or Tempo in a compose profile | Trace visible for a runbook call | OBS-3.4 |
+| OBS-3.4 | SQLAlchemy spans (server spans and `R1Client` client spans are done), and spans for the calls that do not go through `R1Client` (the gateway's token check, webhooks) | A request shows a database span under its server span | – |
+| OBS-3.6 | A live check: the compose `tracing` profile, one runbook call, its trace found by id (the stack is configured but was not run in CI) | Trace visible for a runbook call | – |
+| OBS-3.7 | Decide whether the release workflow also publishes a tracing-enabled image variant (`WITH_TRACING=1`) | Decision recorded | – |
 
 #### PR-OBS-4 — Business metrics
 
@@ -482,13 +480,12 @@ HTTP request metrics and `/metrics` exist (`PR-OBS-2`, `HISTORY.md` §10); no Op
 | OBS-5.5 | Outbox DEAD-row depth rule | Same | MSG-2.6 |
 | OBS-5.6 | Each rule links to its runbook entry | Link check | OBS-7.1 |
 
-#### PR-OBS-6 — Log shipping
+#### PR-OBS-6 — Log shipping (open: OBS-6.3, 6.4; the rest in `HISTORY.md` §10)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OBS-6.1 | Fluent Bit config reading container JSON logs | Logs forwarded | – |
-| OBS-6.2 | Loki and Grafana in a compose profile | Search by correlation id works | OBS-6.1 |
-| OBS-6.3 | Elasticsearch field mapping doc | Doc reviewed | – |
+| OBS-6.3 | Elasticsearch field mapping, shipped and tried (described in `docs/OBSERVABILITY.md`) | Index created, a log line indexed | – |
+| OBS-6.4 | A live check of the `logging` profile (Fluent Bit to Loki, a query by correlation id returns the request's lines); not run in CI | Query returns a request's lines | – |
 
 #### PR-OBS-7 — Runbooks
 
@@ -552,12 +549,11 @@ Tag scheme and `CHANGELOG.md` exist (`PR-OPS-4.1`, `HISTORY.md` §10); no tag ha
 |---|---|---|---|
 | OPS-5.3 | Mixed-version run (two versions side by side) through the replay | Replay green | OPS-5.2, HA-1.1 |
 
-#### PR-OPS-6 — GitOps example
+#### PR-OPS-6 — GitOps example (open: OPS-6.2 sync; the rest in `HISTORY.md` §10)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OPS-6.1 | Kustomize overlays: lab, staging, prod | `kustomize build` green | OPS-2.2 |
-| OPS-6.2 | Argo CD `Application` example | Syncs on a lab cluster | OPS-6.1 |
+| OPS-6.2 | The Argo CD `Application` (written, `deploy/gitops/argocd/`) synced once on a lab cluster | Syncs on a lab cluster | – |
 
 #### PR-OPS-7 — Configuration reference
 

@@ -45,7 +45,7 @@ import httpx
 from .correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from .correlation import get_correlation_id
 from .invoker import ON_BEHALF_OF_HEADER, get_originator
-from . import metrics
+from . import metrics, tracing
 from .roles import ENROLLMENT_HEADER, RAPP_SCOPE
 from .secretfile import read_secret
 from .timeouts import call_timeout
@@ -218,15 +218,21 @@ class R1Client:
     def _call(self, send, method: str, path: str, headers: dict, **kwargs) -> httpx.Response:
         """One attempt, counted (PR-OBS-2.6): target module, method and outcome; a transport failure is counted and re-raised."""
         target, started = metrics.r1_target(path), time.perf_counter()
-        try:
-            resp = send(self._url(path), headers=headers, **kwargs)
-        except httpx.TimeoutException:
-            metrics.record_outbound("r1", target, method, "timeout", time.perf_counter() - started)
-            raise
-        except httpx.HTTPError:
-            metrics.record_outbound("r1", target, method, "error", time.perf_counter() - started)
-            raise
-        status = getattr(resp, "status_code", None)
+        # PR-OBS-3: one CLIENT span per attempt; the traceparent sent names that span (or, with spans off, the caller's own trace unchanged)
+        with tracing.span(f"{method.upper()} {target}", "client", {"http.request.method": method.upper(), "smo.target": target,
+                                                                  "smo.correlation_id": get_correlation_id() or ""}) as client_span:
+            headers = {**headers, **tracing.inject_headers()}
+            try:
+                resp = send(self._url(path), headers=headers, **kwargs)
+            except httpx.TimeoutException:
+                metrics.record_outbound("r1", target, method, "timeout", time.perf_counter() - started)
+                raise
+            except httpx.HTTPError:
+                metrics.record_outbound("r1", target, method, "error", time.perf_counter() - started)
+                raise
+            status = getattr(resp, "status_code", None)
+            if status is not None:
+                tracing.mark_status(client_span, status)
         metrics.record_outbound("r1", target, method, "error" if status is None else metrics.outcome_of(status), time.perf_counter() - started)
         return resp
 

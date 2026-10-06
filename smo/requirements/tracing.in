@@ -1,0 +1,5 @@
+# OpenTelemetry for distributed traces (PR-OBS-3). Optional: smo/Dockerfile installs it only with --build-arg WITH_TRACING=1,
+# and smo_shared/tracing.py runs without it (W3C traceparent propagation only). Constrained to the runtime pins; recompile: see README.
+-c runtime.txt
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-http
