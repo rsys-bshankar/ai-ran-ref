@@ -34,6 +34,7 @@ rApp publishes its own observed relations at GET /instances/{id}/relations.
 import datetime
 import json
 import uuid
+from typing import cast
 
 from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
@@ -140,7 +141,7 @@ def _value(inst: TrafficInstance, ref: str) -> int | None:
     if ref.startswith("NRCellRelation="):
         return _parse_cio(attrs.get("cellIndividualOffset"))
     try:
-        return int(attrs.get("cellReselectionPriority"))
+        return int(cast(str, attrs.get("cellReselectionPriority")))      # a missing one is a TypeError, caught below
     except (TypeError, ValueError):
         return None
 
@@ -213,13 +214,14 @@ def _intent_actions(intent_id: str) -> dict[str, dict]:
 
 
 def _expectation(inst: TrafficInstance, d: TrafficDecision) -> dict:
-    ioc, name = d.managed_ref.split("=", 1)
+    ref, to_value = cast(str, d.managed_ref), cast(int, d.to_value)      # a step has both
+    ioc, name = ref.split("=", 1)
     return {"expectationId": f"mlb-{d.cell_id}-{d.execution_id[:8]}", "expectationVerb": "DELIVER",
             "expectationObject": {"objectType": "RAN_SUBNETWORK", "objectInstance": inst.managed_element_ref,
                                   "objectContexts": [{"contextAttribute": "Cell", "contextCondition": "IS_ALL_OF",
                                                       "contextValueRange": [name]}]},
             "expectationTargets": [{"targetName": CIO_TARGET if ioc == "NRCellRelation" else PRIO_TARGET,
-                                    "targetCondition": "IS_EQUAL_TO", "targetValueRange": _wire(d.managed_ref, d.to_value)}]}
+                                    "targetCondition": "IS_EQUAL_TO", "targetValueRange": _wire(ref, to_value)}]}
 
 
 def _final(row: TrafficCell) -> dict:
@@ -230,8 +232,9 @@ def _bias(row: TrafficCell, d: TrafficDecision, sign: int) -> None:
     """Add (sign +1) or remove (sign −1) this decision's step from the
     steering this rApp has in force from the source cell."""
     steering = {"cio": dict((row.steering or {}).get("cio") or {}), "prio": dict((row.steering or {}).get("prio") or {})}
-    key, bucket = (d.targets[0], "cio") if d.knob == "CONNECTED" else (d.managed_ref.rsplit("-", 1)[1], "prio")
-    steering[bucket][key] = steering[bucket].get(key, 0) + sign * abs(d.to_value - d.from_value)
+    targets, ref = cast(list, d.targets), cast(str, d.managed_ref)      # a step has both
+    key, bucket = (targets[0], "cio") if d.knob == "CONNECTED" else (ref.rsplit("-", 1)[1], "prio")
+    steering[bucket][key] = steering[bucket].get(key, 0) + sign * abs(cast(int, d.to_value) - cast(int, d.from_value))
     steering[bucket] = {k: v for k, v in steering[bucket].items() if v > 0}
     row.steering = steering
 
@@ -240,15 +243,16 @@ def _settle(inst: TrafficInstance, row: TrafficCell, d: TrafficDecision, ok: boo
     steering = d.decision.startswith("STEER_")
     if ok:
         _bias(row, d, +1 if steering else -1)
-        row.last_changed_at = d.observed_at
+        observed_at = cast(datetime.datetime, d.observed_at)      # a step was decided on an observation
+        row.last_changed_at = observed_at
         d.outcome = "EXECUTED"
         if steering:
             row.state = engine.OBSERVING
-            row.last_change = {"at": d.observed_at.isoformat(), "source": d.cell_id, "knob": d.knob, "ref": d.managed_ref,
+            row.last_change = {"at": observed_at.isoformat(), "source": d.cell_id, "knob": d.knob, "ref": d.managed_ref,
                                "targets": d.targets, "from": d.from_value, "to": d.to_value, "decisionId": str(d.decision_id),
                                **(d.prediction or {}).get("kpiBaseline", {})}
             inst.steering_log = [*(inst.steering_log or []),
-                                 {"source": d.cell_id, "targets": d.targets, "at": d.observed_at.isoformat()}]
+                                 {"source": d.cell_id, "targets": d.targets, "at": observed_at.isoformat()}]
     else:
         trigger = (d.rollback or {}).get("trigger", "ACTION_FAILED")
         d.outcome = f"{trigger}_ROLLED_BACK" if d.rollback and d.rollback["result"] in ("VERIFIED", "ALREADY_RESTORED") \
@@ -276,11 +280,12 @@ def _follow_dispatch(inst: TrafficInstance, rows: dict[str, TrafficCell], decisi
         action = actions.get(_expectation(inst, d)["expectationId"])
         d.action = {"path": "INTENT", **action} if action else {"path": "INTENT", "status": "NOT_ENACTED"}
         status = d.action.get("status")
-        d.verification = _verify(inst, {d.managed_ref: d.to_value}) if status == "COMPLETED" else None
-        ok = status == "COMPLETED" and d.verification["result"] == "VERIFIED"
+        ref, to_value, from_value = cast(str, d.managed_ref), cast(int, d.to_value), cast(int, d.from_value)      # a step has all three
+        d.verification = _verify(inst, {ref: to_value}) if status == "COMPLETED" else None
+        ok = status == "COMPLETED" and cast(dict, d.verification)["result"] == "VERIFIED"      # verified just above
         if not ok:
             trigger = "VERIFY_FAILED" if status == "COMPLETED" else "PARTIAL_SUCCESS" if status == "PARTIAL_SUCCESS" else "ACTION_FAILED"
-            d.rollback = {"trigger": trigger, **_restore(inst, {d.managed_ref: d.from_value}, execution_id, f"ROLLBACK:{trigger}")}
+            d.rollback = {"trigger": trigger, **_restore(inst, {ref: from_value}, execution_id, f"ROLLBACK:{trigger}")}
         _settle(inst, rows[cell], d, ok, execution_id)
 
 
@@ -292,7 +297,7 @@ def _reconcile(db: Session, inst: TrafficInstance) -> list[dict]:
     if dispatch["status"] == "AWAITING_SCOPE":
         return []
     rows = _cells(db, inst)
-    decisions = {c: db.get(TrafficDecision, uuid.UUID(i)) for c, i in pending["decisionIds"].items()}
+    decisions = {c: db.get_one(TrafficDecision, uuid.UUID(i)) for c, i in pending["decisionIds"].items()}
     inst.pending_dispatch = None
     _follow_dispatch(inst, rows, decisions, dispatch, next(iter(decisions.values())).execution_id)
     db.commit()
@@ -413,8 +418,8 @@ def validate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     job = sdk.lifecycle.start_validation(inst.model_id, RAPP_ID, package_id=inst.package_id,
                                          training_job_id=(inst.lifecycle_jobs or {}).get("training"),
                                          validation_criteria={"minScore": ValidationLogic.PASS_THRESHOLD})
-    passed, metrics = ValidationLogic.validate(SteeringModel.from_dict(inst.model_params), _dataset(inst, "TRAINING"),
-                                               _layers(inst))
+    model = SteeringModel.from_dict(cast(dict, inst.model_params))      # set by training
+    passed, metrics = ValidationLogic.validate(model, _dataset(inst, "TRAINING"), _layers(inst))
     completed = sdk.lifecycle.complete_validation(job["validationJobId"], passed, metrics=metrics)
     _jobs(inst, validation=job["validationJobId"])
     db.commit()
@@ -428,7 +433,8 @@ def emulate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     inst = _instance(db, instance_id)
     job = sdk.lifecycle.start_emulation(inst.model_id, RAPP_ID, package_id=inst.package_id,
                                         emulation_criteria={"dataset": SIM_DATASET, "minSteeringAccuracy": EmulationLogic.PASS_RATE})
-    passed, metrics = EmulationLogic.emulate(SteeringModel.from_dict(inst.model_params), _dataset(inst, "EMULATION"))
+    model = SteeringModel.from_dict(cast(dict, inst.model_params))      # set by training
+    passed, metrics = EmulationLogic.emulate(model, _dataset(inst, "EMULATION"))
     completed = sdk.lifecycle.complete_emulation(job["emulationJobId"], passed, metrics=metrics)
     _jobs(inst, emulation=job["emulationJobId"])
     db.commit()
@@ -597,7 +603,7 @@ def _plan(db, inst, rows, model, state, latest, planning, now, execution_id) -> 
                 ho_allowed=_flag(rel, "isHOAllowed"), mlb_allowed=_flag(rel, "isMLBAllowed"),
                 mro_observing=f"{cell}-{t}" in coord["mroObserving"]))
         other_layers = sorted({n.layer for n in nbrs if n.layer != layers[cell]})
-        steered_to_me = {}
+        steered_to_me: dict[str, datetime.datetime] = {}
         for e in inst.steering_log:
             if cell in e["targets"]:
                 steered_to_me[e["source"]] = max(parse_time(e["at"]), steered_to_me.get(e["source"], horizon))
