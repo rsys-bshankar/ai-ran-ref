@@ -248,10 +248,10 @@ def ingest_performance_record(body: PerformanceIngestBody, db: Session = Depends
         if job.state != "ACTIVE":
             raise _invalid(f"performance measurement job {job.job_id} is {job.state}")
         job.status = "RUNNING"
-    scalar = isinstance(body.measurementValue, (int, float))
+    scalar_value = body.measurementValue if isinstance(body.measurementValue, (int, float)) else None
     record = OCloudPerformanceMetric(resource_ref=body.resourceId, metric_name=body.performanceMeasurementDefinitionId,
-                                     value=float(body.measurementValue) if scalar else None,
-                                     measurement_value=None if scalar else body.measurementValue, is_suspect=body.isSuspect,
+                                     value=float(scalar_value) if scalar_value is not None else None,
+                                     measurement_value=None if scalar_value is not None else body.measurementValue, is_suspect=body.isSuspect,
                                      job_id=str(job.job_id) if job else None,
                                      collected_at=body.timeStamp or _now())
     db.add(record)
@@ -313,7 +313,8 @@ class PerformanceJobBody(BaseModel):
 def _job_view(db: Session, j: PerformanceJob) -> dict:
     records = db.scalars(select(OCloudPerformanceMetric).where(OCloudPerformanceMetric.job_id == str(j.job_id))).all()
     current = j.state == "ACTIVE"
-    measured, collected = {}, {}
+    measured: dict[str, dict[str, Any]] = {}
+    collected: dict[tuple[str | None, str], dict[str, Any]] = {}
     for r in records:
         rt = _resource_type_of(db, r.resource_ref)
         measured.setdefault(r.resource_ref, {"resourceTypeId": rt, "resourceId": r.resource_ref, "timeAdded": [_iso(r.collected_at)],

@@ -215,7 +215,7 @@ def _register(kind: str, path: str, id_attr: str, model: type[_Body], check) -> 
     def create(body: model, db: Session = Depends(get_session)):  # type: ignore[valid-type]
         if check is not None:
             check(db, body)
-        row = O2imsObject(kind=kind, object_id=str(uuid.uuid4()), attributes=body.model_dump(exclude_none=True, mode="json"))
+        row = O2imsObject(kind=kind, object_id=str(uuid.uuid4()), attributes=body.model_dump(exclude_none=True, mode="json"))  # type: ignore[attr-defined]  # `body` is the registered model class, which FastAPI needs as the annotation
         db.add(row)
         db.commit()
         return _view(kind, id_attr, path, row)

@@ -251,10 +251,9 @@ def _restconf_apply(ref: str, function_ref: str | None, attributes: dict, replac
 @app.put("/restconf/data/{path:path}")
 @app.delete("/restconf/data/{path:path}")
 async def restconf_data(path: str, request: Request) -> Response:
-    target = _restconf_target(request)
-    if target is None or target[0] is None:
+    ref, function_ref = _restconf_target(request) or (None, None)
+    if ref is None:
         return _restconf_error("invalid-value", "not a managed-element / managed-function data resource")
-    ref, function_ref = target
     list_name, key = ("managed-function", "function-ref") if function_ref else ("managed-element", "ref")
     if request.method == "GET":
         entry = {key: function_ref or ref, **_current(ref, function_ref)}
@@ -296,9 +295,9 @@ async def restconf_create(request: Request, path: str = "") -> Response:
     ref = parent[0]
     list_name, key = ("managed-function", "function-ref") if ref else ("managed-element", "ref")
     parsed = await _restconf_entry(request, list_name, key)
-    if parsed is None or parsed[0] is None:
+    child_key, attributes = parsed or (None, {})
+    if child_key is None:
         return _restconf_error("malformed-message")
-    child_key, attributes = parsed
     ref, function_ref = (ref, child_key) if ref else (child_key, None)
     fault = _restconf_fault(ref, function_ref)
     if isinstance(fault, Response):
