@@ -10,7 +10,10 @@ by default; any SQLAlchemy URL works via GUI_DATABASE_URL.
 import datetime
 import time
 
+from typing import cast
+
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, create_engine, delete, event, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -154,15 +157,15 @@ class Database:
         has passed restarts at 1, a live one is incremented, and a name with none gets a first row."""
         for _ in range(3):
             with self.session() as s:
-                restarted = s.execute(update(LoginFailure).where(
+                restarted = cast(CursorResult, s.execute(update(LoginFailure).where(
                     LoginFailure.username == username, LoginFailure.first_failed_at <= now - window_seconds)
-                    .values(count=1, first_failed_at=now))
+                    .values(count=1, first_failed_at=now)))
                 if restarted.rowcount == 1:
                     s.commit()
                     return
-                counted = s.execute(update(LoginFailure).where(
+                counted = cast(CursorResult, s.execute(update(LoginFailure).where(
                     LoginFailure.username == username, LoginFailure.first_failed_at > now - window_seconds)
-                    .values(count=LoginFailure.count + 1))
+                    .values(count=LoginFailure.count + 1)))
                 if counted.rowcount == 1:
                     s.commit()
                     return
@@ -207,8 +210,8 @@ class Database:
                 except IntegrityError:
                     s.rollback()
                     return False
-            done = s.execute(update(SmoCredential).where(SmoCredential.id == 1, SmoCredential.api_invoker_id == stale_invoker_id)
-                             .values(api_invoker_id=api_invoker_id, onboarding_secret=secret))
+            done = cast(CursorResult, s.execute(update(SmoCredential).where(SmoCredential.id == 1, SmoCredential.api_invoker_id == stale_invoker_id)
+                                                .values(api_invoker_id=api_invoker_id, onboarding_secret=secret)))
             s.commit()
             return done.rowcount == 1
 

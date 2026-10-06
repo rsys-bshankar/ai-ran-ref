@@ -29,6 +29,7 @@ import secrets
 import time
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
+from typing import cast
 
 import httpx
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, Response
@@ -39,7 +40,7 @@ from sqlalchemy.exc import IntegrityError
 
 from .config import Settings, settings as default_settings
 from .db import AuditEntry, Database, GuiUser
-from .rbac import MODULES, RULES, Role, User, decide
+from .rbac import MODULES, RULES, Role, Rule, User, decide
 from .security import decode_jwt, hash_password, issue_jwt, verify_password
 from .smo_client import R1Gateway, SmoAuthError
 
@@ -213,11 +214,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         return token, csrf
 
     def set_session_cookies(response: Response, token: str, csrf: str) -> None:
-        common = {"secure": cfg.cookie_secure, "samesite": "strict", "max_age": cfg.session_ttl_seconds}
-        response.set_cookie(SESSION_COOKIE, token, httponly=True, path="/api", **common)
+        response.set_cookie(SESSION_COOKIE, token, httponly=True, path="/api", secure=cfg.cookie_secure, samesite="strict", max_age=cfg.session_ttl_seconds)
         # Readable by the SPA on purpose: double-submit CSRF token, echoed back
         # as X-CSRF-Token and checked against the claim inside the session JWT.
-        response.set_cookie(CSRF_COOKIE, csrf, httponly=False, path="/", **common)
+        response.set_cookie(CSRF_COOKIE, csrf, httponly=False, path="/", secure=cfg.cookie_secure, samesite="strict", max_age=cfg.session_ttl_seconds)
 
     def check_credentials(username: str, password: str) -> GuiUser | JSONResponse:
         if app.state.db.login_locked(username, MAX_LOGIN_FAILURES, LOCKOUT_SECONDS, time.time()):
@@ -383,7 +383,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             audit("DENIED", session.user, method=request.method, path=path, status_code=403, detail=detail)
             return _problem(403, "FORBIDDEN", detail)
 
-        rule = decision.rule
+        rule = cast(Rule, decision.rule)         # allowed means a rule matched
         params = [(k, v) for k, v in request.query_params.multi_items()]
         if rule.query_overrides:
             forced = rule.query_overrides(session.user)
