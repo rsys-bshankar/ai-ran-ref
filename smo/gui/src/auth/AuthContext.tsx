@@ -59,10 +59,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [qc]);
 
   const logout = useCallback(async () => {
-    try { await api("/logout", { method: "POST" }); } finally {
+    let endSessionUrl: string | undefined;
+    try { endSessionUrl = (await api<{ endSessionUrl?: string }>("/logout", { method: "POST" })).endSessionUrl; } finally {
       qc.setQueryData(["bff", "me"], null);
       qc.removeQueries({ predicate: (q) => !isMeQuery(q.queryKey) });
     }
+    // PR-SEC-6: a user who signed in through the identity provider also leaves its session (RP-initiated logout), when it has an end-session page.
+    if (endSessionUrl && /^https?:\/\//.test(endSessionUrl)) window.location.assign(endSessionUrl);
   }, [qc]);
 
   const value = useMemo<AuthState>(() => {

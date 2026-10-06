@@ -105,6 +105,10 @@ The schema is created and upgraded by the `migrate` one-shot service (Alembic, `
 - Operator GUI: <http://localhost:3000>, user `admin`. If `GUI_ADMIN_PASSWORD`
   was unset, read the generated password with
   `docker compose exec gui-bff cat /data/initial-admin-password`.
+  Optional OpenID Connect sign-in (`GUI_OIDC_ENABLED=true` and the issuer, client and
+  redirect settings in `.env.example`, `gui-bff/README.md` section 2.9): the sign-in
+  page then also offers "Sign in with <provider>", roles come from the provider's groups,
+  and the local admin stays as the break-glass account.
   See [`gui/README.md`](gui/README.md) for the other GUI variables and roles.
 - A guided walk-through of every module, with copy-pasteable commands:
   [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md).
