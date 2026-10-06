@@ -148,7 +148,7 @@ class PMFile(Base):
     __tablename__ = "pm_file"
 
     file_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    managed_element_ref: Mapped[str] = mapped_column(String, nullable=False)
+    managed_element_ref: Mapped[str] = mapped_column(String, nullable=False, index=True)
     counter_type: Mapped[str] = mapped_column(String, nullable=False)
     file_data_type: Mapped[str] = mapped_column(String, nullable=False, default="Performance")
     file_format: Mapped[str] = mapped_column(String, nullable=False, default="json")

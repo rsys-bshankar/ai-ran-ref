@@ -1,6 +1,7 @@
+import datetime
 import uuid
 
-from sqlalchemy import ForeignKey, JSON, String, Uuid
+from sqlalchemy import DateTime, ForeignKey, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -70,3 +71,6 @@ class LCMOperation(Base):
     nf_deployment_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("nf_deployment.nf_deployment_id"))
     operation_type: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
+    # the order of a deployment's operation history (migration 0027)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                           default=lambda: datetime.datetime.now(datetime.UTC))

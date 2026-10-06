@@ -1,6 +1,6 @@
 """smo_shared.pagination.paginate: a real LIMIT/OFFSET and a real COUNT, and the bounds every route's parameters declare."""
 
-from sqlalchemy import String, create_engine, select
+from sqlalchemy import String, create_engine, func, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from smo_shared import pagination
@@ -47,3 +47,25 @@ def test_an_offset_past_the_end_is_an_empty_page_with_the_real_total():
 def test_the_declared_bounds():
     assert (pagination.DEFAULT_LIMIT, pagination.MAX_LIMIT, pagination.MAX_OFFSET) == (100, 500, 2**31 - 1)
     assert pagination.PageLimit.default == 100 and pagination.PageOffset.default == 0
+
+
+def test_an_unordered_statement_is_paged_in_primary_key_order():
+    db = _session()
+    sql = str(pagination._in_a_stable_order(select(Item)).compile())
+    assert "ORDER BY pagination_item.id" in sql
+    seen = []
+    for offset in range(0, 7, 3):
+        seen += [i.id for i in pagination.paginate(db, select(Item), limit=3, offset=offset)["items"]]
+    assert seen == [1, 2, 3, 4, 5, 6, 7]                # every row on exactly one page
+
+
+def test_a_statement_that_orders_itself_keeps_its_order():
+    stmt = select(Item).order_by(Item.label.desc())
+    assert pagination._in_a_stable_order(stmt) is stmt
+    db = _session()
+    assert [i.id for i in pagination.paginate(db, stmt, limit=2, offset=0)["items"]] == [7, 6]
+
+
+def test_a_statement_that_selects_no_entity_is_left_alone():
+    stmt = select(func.count()).select_from(Item)
+    assert pagination._in_a_stable_order(stmt) is stmt
