@@ -174,7 +174,10 @@ def test_proxy_fails_closed_when_sme_introspection_is_unreachable(monkeypatch):
 
     monkeypatch.setattr("app.main.httpx.AsyncClient", UnreachableAsyncClient)
     resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS)
-    assert resp.status_code == 401
+    # closed, and honest about why: 503 with Retry-After (a 401 would make a client drop a good token and sign in again, into the same outage)
+    assert resp.status_code == 503
+    assert resp.json()["title"] == "AUTH_SERVICE_UNAVAILABLE"
+    assert int(resp.headers["Retry-After"]) >= 1
 
 
 class RecordingAsyncClient:
@@ -516,3 +519,25 @@ def test_a_path_the_policy_and_the_backend_could_read_differently_is_refused():
         assert _path_problem(bad), bad
     for fine in ("", "x", "x/y", "x/y/", "published-apis/v1/abc/service-apis", "a.b/c..d"):
         assert not _path_problem(fine), fine
+
+
+def test_proxy_answers_503_not_401_when_sme_itself_fails_the_introspection(monkeypatch):
+    """SME up but erroring (its database is down): the token was not found bad, so not 401, and nothing is forwarded."""
+    class ErroringAsyncClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kwargs):
+            import httpx as httpx_module
+            return httpx_module.Response(500, json={"title": "INTERNAL"})
+
+    monkeypatch.setattr("app.main.httpx.AsyncClient", ErroringAsyncClient)
+    resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS)
+    assert resp.status_code == 503
+    assert resp.headers["Retry-After"]
