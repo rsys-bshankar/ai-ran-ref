@@ -16,6 +16,7 @@ on:
       - ".github/workflows/smo-stress.yml"
       - "smo/scripts/stress_run.py"
       - "smo/scripts/load_run.py"
+      - "smo/docker-compose.stress-limiter.yml"
 
 permissions:
   contents: read
@@ -32,12 +33,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Start the stack (rate limiter on, the default)
+      - name: Start the stack (a small per-caller rate budget for the limiter scenario)
         working-directory: smo
         run: |
           scripts/init_secrets.sh
           cp .env.example .env
-          docker compose up -d --build
+          docker compose -f docker-compose.yml -f docker-compose.stress-limiter.yml up -d --build
           for i in $(seq 1 60); do
             curl -fsS http://localhost:8080/health > /dev/null 2>&1 && break
             sleep 5
@@ -64,7 +65,7 @@ jobs:
           status=0
           {
             echo "### Stress and failure injection"; echo; echo '```'
-            stress limiter   || status=1
+            stress limiter --burst 100 || status=1
             stress oversize  || status=1
             # the rate limiter off for the saturation ramp: the gateway is recreated with the load override
             docker compose -f docker-compose.yml -f docker-compose.load.yml up -d r1-termination

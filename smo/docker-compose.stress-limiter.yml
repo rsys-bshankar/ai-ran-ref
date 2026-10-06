@@ -1,0 +1,8 @@
+# The limiter scenario of the stress lane (PR-V-9, .github/workflows/smo-stress.yml): a small per-caller budget, so a burst of 100 calls is certain to go past it
+# whatever the speed of the runner (at the default 100 a second with a burst of 200 it depends on how fast the gateway answers).
+#   docker compose -f docker-compose.yml -f docker-compose.stress-limiter.yml up -d --build
+services:
+  r1-termination:
+    environment:
+      R1_RATE_PER_SECOND: "5"
+      R1_RATE_BURST: "20"

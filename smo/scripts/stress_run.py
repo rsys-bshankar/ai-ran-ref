@@ -53,7 +53,7 @@ async def limiter(client, args, headers) -> int:
     if any(c >= 500 or c == 0 for c in codes):
         return fail("a call got a 5xx or no answer under the burst")
     if not limited:
-        return fail("no call was rate limited: is R1_RATE_PER_SECOND on (default) and the burst larger than R1_RATE_BURST?")
+        return fail("no call was rate limited: is the gateway started with docker-compose.stress-limiter.yml (a budget of 20 and 5 a second), and the burst larger than that?")
     if any(int(r.headers.get("Retry-After", "0")) < 1 for r in limited):
         return fail("a 429 came without a usable Retry-After")
     wait = max(int(r.headers["Retry-After"]) for r in limited)
@@ -158,7 +158,7 @@ def main() -> None:
     ap.add_argument("--timeout", type=float, default=30)
     ap.add_argument("--token-file", default="")
     ap.add_argument("--max-reset-rate", type=float, default=0.005, help="saturate: share of calls that may end in a connection reset (a kept-alive connection closed as it is reused)")
-    ap.add_argument("--burst", type=int, default=400)
+    ap.add_argument("--burst", type=int, default=100)
     ap.add_argument("--levels", default="20,50,100,200")
     ap.add_argument("--seconds", type=float, default=15)
     ap.add_argument("--expect", choices=["down", "up"], default="up")
