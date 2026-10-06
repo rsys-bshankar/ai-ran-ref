@@ -131,6 +131,13 @@ spec:
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+            {{- with $.Values.gui.oidcClientSecretRef }}
+            {{- if .name }}
+            # PR-SEC-6: the OIDC client's credential from a Secret of your own, not from values
+            - name: GUI_OIDC_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: {{ .name | quote }}, key: {{ .key | default "client-secret" | quote }} } }
+            {{- end }}
+            {{- end }}
             {{- end }}
           {{- if eq $m.kind "service" }}
           {{- if $m.preStopSeconds }}

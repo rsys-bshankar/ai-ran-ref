@@ -207,6 +207,7 @@ input:disabled { opacity: 0.7; }
 .btn.ghost { background: none; border-color: transparent; }
 .btn.small { padding: 3px 8px; font-size: 12px; }
 .btn.block { width: 100%; padding: 9px; }
+a.btn { display: inline-block; text-decoration: none; text-align: center; box-sizing: border-box; }
 
 .error-box { background: var(--bad-soft); color: var(--bad); border-radius: 6px; padding: 8px 12px; margin: 6px 0; font-size: 13px; }
 .admin-tools { border: 1px dashed var(--border); border-radius: var(--radius); padding: 10px 14px; margin-top: 14px; }

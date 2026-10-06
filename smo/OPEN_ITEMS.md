@@ -23,7 +23,7 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 | Area | In 0.5.0 | Moved to 0.6.0 or later |
 |---|---|---|
 | API | `?total=false` on every list route (opt out of the page `COUNT(*)`; default unchanged) | – |
-| Security | SEC-9 `/bootstrap` exposure; SEC-8.5 shared rate limiter; SEC-7 logout revocation (done, V-13c); SEC-2 mTLS between services; SEC-3 mesh option (documented with the mTLS work); SEC-6 OIDC login for the GUI | SEC-5 signing keys and JWKS, SEC-4.7 external secrets example (both 0.6.0). SEC-7.1 to 7.3 (native TOTP) only if required: with OIDC the identity provider does the second factor, and local login stays as break-glass |
+| Security | SEC-9 `/bootstrap` exposure; SEC-8.5 shared rate limiter; SEC-7 logout revocation (done, V-13c); SEC-2 mTLS between services; SEC-3 mesh option (documented with the mTLS work); SEC-6 OIDC login for the GUI (done: `HISTORY.md`; SEC-6.8 LDAP stays open and optional) | SEC-5 signing keys and JWKS, SEC-4.7 external secrets example (both 0.6.0). SEC-7.1 to 7.3 (native TOTP) only if required: with OIDC the identity provider does the second factor, and local login stays as break-glass |
 | Operability | OBS-3 traces (Tempo), OBS-4 business metrics, OBS-5 alerts and SLOs, OBS-6 log shipping, OBS-7 runbooks (OBS-4, 5 and 7 are done in part: what remains is under 5.5), OBS-8 `/version`, OPS-6 GitOps example, OPS-7 configuration reference, OPS-9 sizing | – |
 | Disaster recovery | HA-6: RPO 15 minutes, RTO 1 hour, off-site backup shipping, one timed restore drill | HA-7 geo-redundancy (after 1.0.0) |
 | Standards and documents | STD-2.1 spec release table; STD-4.1 personal-data inventory; STD-6.1 data residency statement; STD-4.3 erasure procedure for a GUI user; STD-5 control matrix (ISO 27001, NESAS/SCAS) | STD-3 plugfest plan (0.6.0 or later) |
@@ -356,16 +356,12 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 
 #### PR-SEC-6 — OIDC login for the GUI
 
+SEC-6.1 to 6.7 are done (`HISTORY.md`, PR-SEC-6). What remains:
+
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-6.1 | Config: issuer, client id and secret, redirect URL, scopes | Startup validates config | – |
-| SEC-6.2 | Authorization-code with PKCE routes (`/api/oidc/login`, `/callback`) | Works against a local Keycloak container | SEC-6.1 |
-| SEC-6.3 | ID token validation via the issuer's JWKS | Bad signature and wrong audience refused | SEC-6.2 |
-| SEC-6.4 | Group claim → `rbac.py` role mapping from config | Mapped user gets the right role | SEC-6.3 |
-| SEC-6.5 | Create the user on first login | Row appears; no password stored | SEC-6.3 |
-| SEC-6.6 | Logout and end-session redirect | Session cookie cleared | SEC-6.2 |
-| SEC-6.7 | Local admin kept as break-glass behind a flag | Flag off disables local login | SEC-6.2 |
 | SEC-6.8 | LDAP bind as an alternative provider (optional) | Login works against an OpenLDAP container | SEC-6.1 |
+| SEC-6.9 | Open from the OIDC build: a second provider, back-channel logout, `id_token_hint` on the end-session request (needs the ID token kept), and a run against a provider other than Keycloak (Entra ID, Okta, Google) | Only if a deployment asks | SEC-6.7 |
 
 #### PR-SEC-7 — MFA and logout revocation
 

@@ -1,0 +1,75 @@
+{
+  "realm": "smo",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": false,
+  "bruteForceProtected": false,
+  "groups": [
+    { "name": "smo-admins" },
+    { "name": "smo-ops" },
+    { "name": "smo-viewers" }
+  ],
+  "users": [
+    {
+      "username": "oidc-admin", "enabled": true, "email": "oidc-admin@example.test", "emailVerified": true,
+      "firstName": "Ada", "lastName": "Admin",
+      "credentials": [{ "type": "password", "value": "ci-oidc-admin-1", "temporary": false }],
+      "groups": ["smo-admins"]
+    },
+    {
+      "username": "oidc-operator", "enabled": true, "email": "oidc-operator@example.test", "emailVerified": true,
+      "firstName": "Omar", "lastName": "Operator",
+      "credentials": [{ "type": "password", "value": "ci-oidc-operator-1", "temporary": false }],
+      "groups": ["smo-ops"]
+    },
+    {
+      "username": "oidc-viewer", "enabled": true, "email": "oidc-viewer@example.test", "emailVerified": true,
+      "firstName": "Vera", "lastName": "Viewer",
+      "credentials": [{ "type": "password", "value": "ci-oidc-viewer-1", "temporary": false }],
+      "groups": ["smo-viewers"]
+    },
+    {
+      "username": "oidc-nogroup", "enabled": true, "email": "oidc-nogroup@example.test", "emailVerified": true,
+      "firstName": "Nia", "lastName": "Nogroup",
+      "credentials": [{ "type": "password", "value": "ci-oidc-nogroup-1", "temporary": false }]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "smo-gui",
+      "name": "SMO Operator GUI",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "ci-oidc-client-secret",
+      "clientAuthenticatorType": "client-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:3000/api/oidc/callback"],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3000/login"
+      },
+      "defaultClientScopes": ["web-origins", "profile", "email", "roles"],
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ]
+}
