@@ -176,7 +176,7 @@ cd smo/so-smos && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | File | Covers | Tests |
 |---|---|---|
 | `tests/test_dispatch.py` | `execute_order` (all succeed, first failure halts and leaves `PENDING`, unknown pair), `_ensure_ok` (pass-through, 4xx raises), every dispatcher posts to its own module path (parametrized), inference notification destination as query param (present and absent), full AI/ML pipeline composed in one order, model-runtime deploy distinct from workload deploy | 18 |
-| `tests/test_main.py` | Submit persists and returns executed steps, read, cancel marks only `PENDING` steps, list, `/health` | 5 |
+| `tests/test_main.py` | Submit persists and returns executed steps, read, cancel marks only `PENDING` steps, list, `/health` | 5 `GET /orders?total=false`: no count, `hasMore` on the last page. |
 
 ### 3.3 What is not covered here
 

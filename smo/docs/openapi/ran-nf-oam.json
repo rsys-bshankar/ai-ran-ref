@@ -1542,6 +1542,20 @@
             }
           },
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -1556,17 +1570,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -2460,6 +2472,20 @@
             }
           },
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -2474,17 +2500,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -2606,6 +2630,20 @@
         "operationId": "list_cm_schemas_cm_schemas_get",
         "parameters": [
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -2620,17 +2658,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -3164,6 +3200,20 @@
             }
           },
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -3178,17 +3228,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -4928,6 +4976,20 @@
             }
           },
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -4942,17 +5004,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -5090,6 +5150,20 @@
             }
           },
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -5104,17 +5178,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -5615,6 +5687,20 @@
         "operationId": "list_kpi_definitions_kpi_definitions_get",
         "parameters": [
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -5629,17 +5715,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -7419,6 +7503,20 @@
             }
           },
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -7433,17 +7531,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -8137,6 +8233,20 @@
             }
           },
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -8151,17 +8261,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -8697,6 +8805,20 @@
             }
           },
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -8711,17 +8833,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -8983,6 +9103,20 @@
         "operationId": "list_access_rules_msac_access_rules_get",
         "parameters": [
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -8997,17 +9131,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -9502,6 +9634,20 @@
         "operationId": "list_identities_msac_identities_get",
         "parameters": [
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -9516,17 +9662,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -10157,6 +10301,20 @@
         "operationId": "list_roles_msac_roles_get",
         "parameters": [
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -10171,17 +10329,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -10828,6 +10984,20 @@
             }
           },
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -10842,17 +11012,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -12138,6 +12306,20 @@
             }
           },
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -12152,17 +12334,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -12568,6 +12748,20 @@
         "operationId": "list_killed_rapps_rapp_kill_get",
         "parameters": [
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -12582,17 +12776,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -13652,6 +13844,20 @@
             }
           },
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -13666,17 +13872,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -13933,6 +14137,20 @@
         "operationId": "list_safeguard_subscriptions_safeguard_subscriptions_get",
         "parameters": [
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -13947,17 +14165,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -14343,6 +14559,20 @@
             }
           },
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -14357,17 +14587,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],
@@ -15196,6 +15424,20 @@
         "operationId": "list_vendor_capabilities_vendor_capabilities_get",
         "parameters": [
           {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",
@@ -15210,17 +15452,15 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
+            "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
             "in": "query",
-            "name": "offset",
+            "name": "total",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "default": true,
+              "description": "`false` skips the count of the whole result (linear in its size): the response then has no `total` and a `hasMore` flag instead. Default `true`.",
+              "title": "Total",
+              "type": "boolean"
             }
           }
         ],

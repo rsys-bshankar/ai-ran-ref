@@ -29,7 +29,7 @@ import secrets
 import time
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 import httpx
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, Response
@@ -87,7 +87,24 @@ STATUS_MODULES = ["r1-termination", *MODULES]
 # reason it already has its own _problem()/_problem_exception() rather
 # than smo_shared.errors). One route here needs it, so it's inlined
 # rather than requiring smo_shared just for this.
-PageLimit = Query(100, ge=1, le=500, description="Max rows to return (1-500).")
+class _PageSize(int):
+    """`limit` that also remembers whether `?total=false` asked to skip the count (smo_shared.pagination.PageSize, kept local for the reason above)."""
+
+    with_total: bool = True
+
+    def __new__(cls, limit: int, with_total: bool = True):
+        self = super().__new__(cls, limit)
+        self.with_total = with_total
+        return self
+
+
+def _page_limit(limit: int = Query(100, ge=1, le=500, description="Max rows to return (1-500)."),
+                total: bool = Query(True, description="`false` skips the count of the whole result: the response then has no `total` and "
+                                    "a `hasMore` flag instead. Default `true`.")) -> _PageSize:
+    return _PageSize(limit, total)
+
+
+PageLimit: Any = Depends(_page_limit)
 PageOffset = Query(0, ge=0, description="Rows to skip before the first one returned.")
 
 
@@ -95,9 +112,13 @@ def _paginate(db, stmt, limit: int, offset: int) -> dict:
     # `db` is a real sqlalchemy.orm.Session (db.py's own Database.session()) —
     # left untyped here since this module's own `Session` name (below) is a
     # different, unrelated RBAC dataclass.
-    total = db.scalar(select(func.count()).select_from(stmt.subquery()))
-    rows = db.scalars(stmt.limit(limit).offset(offset)).all()
-    return {"items": rows, "total": total, "limit": limit, "offset": offset}
+    n = int(limit)
+    if getattr(limit, "with_total", True):
+        total = db.scalar(select(func.count()).select_from(stmt.subquery()))
+        rows = db.scalars(stmt.limit(n).offset(offset)).all()
+        return {"items": rows, "total": total, "limit": n, "offset": offset}
+    rows = db.scalars(stmt.limit(n + 1).offset(offset)).all()
+    return {"items": rows[:n], "limit": n, "offset": offset, "hasMore": len(rows) > n}
 
 
 def _problem_body(status: int, title: str, detail: str | None = None) -> dict:

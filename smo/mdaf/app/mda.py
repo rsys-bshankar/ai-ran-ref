@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.timeutil import as_utc
-from smo_shared.pagination import PageLimit, PageOffset, paginate
+from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
 from smo_shared.outbox import enqueue
 
 from . import ts28104
@@ -434,7 +434,8 @@ def list_mda_reports(mda_type: str | None = None, report_kind: str | None = None
     if managed_entity:
         rows = [r for r in rows if managed_entity in ((r.scope or {}).get("managedEntitiesScope") or [])]
     view = _report_view_for(db)
-    return {"items": [view(r) for r in rows[offset:offset + limit]], "total": len(rows), "limit": limit, "offset": offset}
+    page = paginate_list(rows, limit, offset)
+    return {**page, "items": [view(r) for r in page["items"]]}
 
 
 @router.get("/mda-reports/{report_id}")

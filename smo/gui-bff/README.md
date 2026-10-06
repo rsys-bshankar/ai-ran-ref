@@ -126,6 +126,8 @@ None: stateless. The only state is per-user `token_version` and `active` (no tra
 
 ### 2.4 API
 
+Every list route also takes the optional `total` (boolean, default `true`, the shared `smo_shared.pagination` parameter): `total=false` skips the `COUNT(*)` of the whole result, leaves `total` out of the envelope and adds `hasMore`.
+
 All routes are under `/api`. OpenAPI is served at `/api/openapi.json` (docs/redoc disabled); there is no committed `../docs/openapi/gui-bff.json`.
 
 **Auth and session**
