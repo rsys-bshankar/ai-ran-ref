@@ -1,0 +1,115 @@
+name: SMO soak
+
+# PR-V-9b: a steady load for a long time, with the stack watched: memory and open file descriptors of the gateway, SME and RAN NF OAM, the database connections and
+# the notifications waiting in the outbox are sampled every minute; at the end smo/scripts/soak_check.py compares the first third of the run with the last
+# and fails if anything grew (memory 25 % and 50 MiB, descriptors 50, connections 10, outbox 100), and the load itself must have had no errors (0.1 % allowed).
+# Weekly for two hours, and on demand with the minutes you choose (a release candidate: 360, the most one job can run). Not a required check.
+
+on:
+  schedule:
+    - cron: "37 1 * * 0"
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "Minutes under load (GitHub stops a job at 360)"
+        default: "60"
+  pull_request:
+    paths:
+      - ".github/workflows/smo-soak.yml"
+      - "smo/scripts/soak_check.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smo-soak-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  soak:
+    name: Steady load, nothing grows
+    runs-on: ubuntu-latest
+    timeout-minutes: 400
+    env:
+      # a pull request runs it for 8 minutes only, to prove the lane; a schedule for two hours
+      MINUTES: ${{ inputs.minutes || (github.event_name == 'pull_request' && '8' || '120') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Start the stack, rate limiter off
+        working-directory: smo
+        run: |
+          scripts/init_secrets.sh
+          cp .env.example .env
+          docker compose -f docker-compose.yml -f docker-compose.load.yml up -d --build
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8080/health > /dev/null 2>&1 && break
+            sleep 5
+          done
+
+      - name: Seed, start the load, sample every minute
+        working-directory: smo
+        run: |
+          mkdir -p soak-out
+          network=$(docker inspect "$(docker compose ps -q r1-termination)" --format '{{range $k, $_ := .NetworkSettings.Networks}}{{$k}}{{end}}')
+          docker run -d --name soak-load --network "$network" --user "$(id -u):$(id -g)" \
+            -v "$PWD":/smo -w /smo \
+            -v "$PWD/secrets/enrollment_secret":/run/secrets/enrollment_secret:ro \
+            -v "$PWD/secrets/db_password":/run/secrets/db_password:ro \
+            -e LOAD_OUT=/smo/soak-out -e PIP_DISABLE_PIP_VERSION_CHECK=1 -e HOME=/tmp \
+            python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 \
+            sh -c "pip install --quiet --user --no-warn-script-location --require-hashes -r requirements/runtime.txt && python scripts/load_seed.py --elements 1000 && python scripts/load_run.py --duration $((MINUTES * 60)) --warmup 30 --concurrency 10 --max-error-rate 0.001"
+          sample() {
+            now=$(date +%s)
+            docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' | while read -r name mem _; do
+              case "$name" in *r1-termination*|*-sme-*|*ran-nf-oam-1*)
+                short=$(echo "$name" | sed 's/^smo-//; s/-1$//')
+                value=$(echo "$mem" | sed -E 's/([0-9.]+)([KMG]i?B).*/\1 \2/' | awk '{u=$2; v=$1; if (u ~ /^G/) v*=1024; else if (u ~ /^K/) v/=1024; printf "%.1f", v}')
+                echo "$now,mem:$short,$value" >> soak-out/soak-samples.csv
+                fds=$(docker exec "$name" sh -c 'ls /proc/1/fd | wc -l' 2>/dev/null || echo "")
+                [ -n "$fds" ] && echo "$now,fds:$short,$fds" >> soak-out/soak-samples.csv ;;
+              esac
+            done || true
+            conns=$(docker compose exec -T postgres psql -U smo -d smo -Atc "select count(*) from pg_stat_activity where datname = 'smo'" 2>/dev/null || echo "")
+            [ -n "$conns" ] && echo "$now,pg_connections,$conns" >> soak-out/soak-samples.csv
+            pending=$(docker compose exec -T postgres psql -U smo -d smo -Atc "select count(*) from notification_outbox where status = 'PENDING'" 2>/dev/null || echo "")
+            [ -n "$pending" ] && echo "$now,outbox_pending,$pending" >> soak-out/soak-samples.csv
+            return 0
+          }
+          while [ "$(docker inspect -f '{{.State.Running}}' soak-load)" = "true" ]; do
+            sample
+            sleep 60
+          done
+          docker logs soak-load > soak-out/load.log 2>&1 || true
+          code=$(docker wait soak-load)
+          echo "load exit status: $code"
+          echo "$code" > soak-out/load-exit
+
+      - name: Is anything growing?
+        working-directory: smo
+        run: |
+          {
+            echo "### Soak, ${MINUTES} minutes"; echo
+            [ -f soak-out/load-results.md ] && cat soak-out/load-results.md; echo
+            python3 scripts/soak_check.py soak-out/soak-samples.csv | tee soak-out/soak-check.md
+          } >> "$GITHUB_STEP_SUMMARY"
+          python3 scripts/soak_check.py soak-out/soak-samples.csv > /dev/null
+          test "$(cat soak-out/load-exit)" = "0"
+
+      - name: Container logs on failure
+        if: ${{ failure() }}
+        working-directory: smo
+        run: docker compose logs --no-color --tail 100 r1-termination sme > soak-out/logs.txt || true
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: soak-results
+          path: smo/soak-out
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Stop the stack
+        if: ${{ always() }}
+        working-directory: smo
+        run: docker compose -f docker-compose.yml -f docker-compose.load.yml down -v
