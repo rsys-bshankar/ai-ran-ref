@@ -82,6 +82,13 @@ Every module answers `GET /version` (`{module, version, buildSha, builtAt}`, PR-
 
 `.github/workflows/smo-tests.yml`, job `helm`: lint, render with the options on, build the images from the checkout, install on kind, check the database is at the head revision, run the compose smoke scripts inside the cluster (`compose_e2e.py`, `compose_e2e_roles.py`), check no rApp can read the enrollment secret, upgrade (every module rolls, no pod fails), uninstall.
 
+## Traces and logs
+
+Off by default (`docs/OBSERVABILITY.md` has the queries and the ids). `tracing.endpoint` sets `SMO_OTEL_ENDPOINT` on every module (the OTLP/HTTP base URL of a Tempo or collector; `tracing.sampleRatio` sets `SMO_OTEL_SAMPLE_RATIO`); spans need images built with `--build-arg WITH_TRACING=1`, which the published images are not, and without them the modules propagate a `traceparent` and log the trace id only. `observability.tempo`, `.loki`, `.fluentBit` and `.grafana` (each `enabled: false`) add a lab stack: Tempo and Loki as single Deployments on an emptyDir, Grafana with both data sources provisioned and linked on the trace id, and Fluent Bit as a DaemonSet that ships this release's pod logs (JSON, labelled `service` and `level`) to Loki. With `observability.tempo.enabled` and no `tracing.endpoint` the modules send to `http://tempo:4318`. Their configuration is `files/observability/`, the files `docker-compose.yml` mounts for its `tracing` and `logging` profiles. The GUI's nginx and backend are not given the endpoint.
+
+## GitOps
+
+`deploy/gitops/` has Kustomize overlays (lab, staging, prod) over this chart and Argo CD Applications for them (`deploy/gitops/README.md`).
 ## Exposure of `/bootstrap` and the rate limiter (PR-SEC-9, PR-SEC-8.5)
 
 `GET /bootstrap` on R1 Termination has no token (an rApp calls it to find SME before it has one) and reveals only SME's address and two API paths (`r1-termination/README.md`). Three controls, all off by default:

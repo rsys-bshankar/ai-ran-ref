@@ -1,0 +1,6 @@
+# What every environment shares: the namespace. The release itself (the Helm chart) is rendered by each overlay's `helmCharts`, because its values differ.
+# The chart wants a namespace of its own: the Services are named as in docker-compose.yml, so one release per namespace (deploy/helm/smo/README.md).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml

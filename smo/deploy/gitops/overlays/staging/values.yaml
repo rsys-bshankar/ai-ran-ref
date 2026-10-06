@@ -1,0 +1,47 @@
+# Staging values for deploy/helm/smo. Every host, registry and secret name below is a placeholder to replace; nothing here is a credential.
+# A key set here must exist in the chart's values.yaml (tests_integration/test_gitops.py checks it).
+image:
+  tag: ""                                    # pin the release under test, for example "0.5.0"
+
+postgres:
+  enabled: false                             # a managed or HA Postgres of your own
+  external:
+    host: smo-staging-db.example.internal
+    sslmode: require
+    targetSessionAttrs: read-write
+
+secrets:
+  existingSecret: smo-secrets                # created out of band (External Secrets, SealedSecrets, ...): keys db-password and enrollment-secret
+databaseRoles:
+  existingSecret: smo-role-secrets           # a key db-password-<role> per module role
+
+ingress:
+  enabled: true
+  className: nginx
+  gui:
+    host: smo-gui.staging.example.com
+    tlsSecretName: smo-gui-tls
+  r1:
+    host: smo-r1.staging.example.com
+    tlsSecretName: smo-r1-tls
+    publicBaseUrl: https://smo-r1.staging.example.com
+
+podDisruptionBudget:
+  enabled: true
+placement:
+  mode: soft
+
+# two replicas of what can have them (deploy/helm/smo/ci/ha-values.yaml says what cannot, and why)
+modules:
+  r1-termination: { replicas: 2 }
+  sme: { replicas: 2 }
+  dme: { replicas: 2 }
+  rapp-mgmt: { replicas: 2 }
+  ran-nf-oam: { replicas: 2 }
+  nfo: { replicas: 2 }
+  so-smos: { replicas: 2 }
+
+# Traces to a Tempo or collector of your own; empty leaves spans off
+tracing:
+  endpoint: ""
+  sampleRatio: "0.25"

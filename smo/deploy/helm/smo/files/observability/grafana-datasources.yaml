@@ -1,0 +1,32 @@
+# Grafana data sources provisioned for the SMO's traces (Tempo) and logs (Loki), linked both ways (PR-OBS-3, PR-OBS-6):
+#   - in Tempo, a span's "Logs for this span" runs the Loki query below with the trace id;
+#   - in Loki, the `traceId` in a log line becomes a link that opens the trace in Tempo.
+# `$$` keeps Grafana's provisioning from expanding `${...}` as an environment variable.
+apiVersion: 1
+datasources:
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        customQuery: true
+        query: '{job="smo"} | json | traceId="$${__trace.traceId}"'
+      nodeGraph:
+        enabled: true
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      derivedFields:
+        - name: traceId
+          matcherRegex: '"traceId":\s*"([0-9a-f]{32})"'
+          url: '$${__value.raw}'
+          datasourceUid: tempo
+          urlDisplayLabel: Open trace

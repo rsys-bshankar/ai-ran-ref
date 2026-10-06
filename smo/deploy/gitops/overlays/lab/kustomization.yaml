@@ -1,0 +1,14 @@
+# Lab: everything the chart brings (its own Postgres, generated secrets), one replica of each module, and the traces and logs stack.
+#   kustomize build --enable-helm deploy/gitops/overlays/lab
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+helmGlobals:
+  chartHome: ../../../helm
+helmCharts:
+  - name: smo
+    releaseName: smo
+    namespace: smo
+    valuesFile: values.yaml
+    kubeVersion: "1.30.0"
