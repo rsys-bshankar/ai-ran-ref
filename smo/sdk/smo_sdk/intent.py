@@ -8,6 +8,7 @@ intentReportControl, intentHandlingCapabilityList, intentReference, ...).
 """
 
 import uuid
+from typing import Any
 
 from ._common import BaseClient, ensure_ok
 
@@ -104,7 +105,7 @@ def energy_saving_expectation(object_instance: str, cells: list[dict] | None = N
     RANEnergyConsumption target (IS_LESS_THAN, the family's only allowed
     condition) and, by default, a daily schedulingTime guarantee period (a TS 28.623
     SchedulingTime: `timeIntervals` of RFC 3339 full-times, so every day)."""
-    obj = {"objectType": "RAN_SUBNETWORK", "objectInstance": object_instance}
+    obj: dict[str, Any] = {"objectType": "RAN_SUBNETWORK", "objectInstance": object_instance}
     if cells:
         obj["objectContexts"] = [{"contextAttribute": "Cell", "contextCondition": "IS_ALL_OF", "contextValueRange": cells}]
     expectation = {

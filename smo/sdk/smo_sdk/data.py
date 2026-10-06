@@ -211,7 +211,8 @@ class DataClient(BaseClient):
                     if j.get("lifecycleStage") == lifecycle_stage), None)
         job_id = job["dataJobId"] if job else self.create_data_job(
             type_id, "CONTINUOUS", "PULL_HTTP", consumer_id, lifecycle_stage=lifecycle_stage)["dataJobId"]
-        records, offset = [], 0
+        records: list[dict] = []
+        offset = 0
         while len(records) < max_records:
             page = ensure_ok(self._r1.get(f"/dme/data-jobs/{job_id}/records", params={"limit": 500, "offset": offset}))
             records.extend(page)

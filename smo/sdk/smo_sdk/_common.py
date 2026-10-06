@@ -10,6 +10,7 @@ request against `/mlmr/models`.
 """
 
 import uuid
+from typing import Any
 
 from smo_shared.r1_client import R1Client
 
@@ -28,7 +29,8 @@ class SdkError(Exception):
         super().__init__(f"{status_code}: {body}")
 
 
-def ensure_ok(resp) -> dict | list | None:
+def ensure_ok(resp) -> Any:
+    """The response's JSON body (None for a 204): the shape is the route's, which each wrapper's own return annotation states."""
     if resp.status_code >= 400:
         try:
             body = resp.json()
