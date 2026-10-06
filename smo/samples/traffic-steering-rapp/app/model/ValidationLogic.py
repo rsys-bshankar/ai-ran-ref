@@ -13,7 +13,7 @@ MAX_RMSE = 3.0
 
 def validate(model: SteeringModel, records: list[dict], layers: dict[str, str],
              holdout_fraction: float = 0.25) -> tuple[bool, dict]:
-    held = []
+    held: list = []
     for series in by_cell(records).values():
         cut = int(len(series) * (1 - holdout_fraction))
         held.extend({"payload": p} for _, p in series[max(0, cut - 1):])

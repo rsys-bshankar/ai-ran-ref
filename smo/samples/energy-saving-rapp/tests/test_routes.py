@@ -1,0 +1,472 @@
+"""The EnergySaving rApp's HTTP routes (instance binding, lifecycle, the evaluate loop, override, audit views, the Digital
+Twin producer) through FastAPI's TestClient on SQLite, with the AI Runtime SDK and R1 replaced by an in-memory platform double
+(`FakePlatform`): a cell-configuration store the double's O1 actions change and its read-back reports, scripted autonomy
+dispatches, and the real model and decision engine on top. Run with: pytest samples/energy-saving-rapp/tests -q"""
+
+import datetime
+import json
+import types
+import uuid
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
+
+from smo_sdk import SdkError
+from smo_sdk.data import AlarmScope
+from smo_shared.db import Base, get_session
+from smo_shared.testing import make_test_engine
+
+from app import main
+from app.main import app
+from app.producer import samples
+
+ME = "gnb"
+CELL = "101"
+T0 = datetime.datetime(2026, 9, 2, 0, 0, tzinfo=datetime.UTC)
+HISTORY = [{"managedElementRef": ME, **s} for s in samples([CELL], T0, 72, 60)[CELL]]
+NIGHT = [{"managedElementRef": ME, "cellId": CELL, "value": 2.0, "timestamp": (T0 + datetime.timedelta(minutes=5 * i)).isoformat()}
+         for i in range(14)]
+BUSY = [{**r, "value": 40.0} for r in NIGHT]
+
+
+def _raise(error):
+    def call(*a, **k):
+        raise error
+    return call
+
+
+class FakeResponse:
+    def __init__(self, status_code, payload):
+        self.status_code, self._payload = status_code, payload
+
+    def json(self):
+        return self._payload
+
+
+class FakeR1:
+    """rapp-mgmt's instance record, as the R1 proxy returns it."""
+    def __init__(self):
+        self.instances = {}
+
+    def get(self, path, **kw):
+        info = self.instances.get(path.rsplit("/", 1)[-1])
+        return FakeResponse(200, info) if info else FakeResponse(404, {})
+
+
+class FakePlatform:
+    """Just enough of the SDK's surface for this rApp: `sdk.<area>.<call>` is routed to a method here."""
+    def __init__(self):
+        self.config = {}              # cell -> administrativeState, what O1 read-back reports (unset = UNLOCKED)
+        self.records = {"TRAINING": HISTORY, "INFERENCE": NIGHT, "EMULATION": HISTORY}
+        self.guards, self.alarms, self.prediction = [], [], None
+        self.dispatch = {"status": "SHADOWED"}
+        self.action_status = "COMPLETED"   # what an enacted LOCK reports
+        self.stuck = False                 # O1 acknowledges a write but the cell's configuration does not change
+        self.actions, self.dispatches, self.training = [], [], []
+        self.artifact = b""
+        self.data = types.SimpleNamespace(
+            get_dataset=self.get_dataset, read_config=self.read_config, query_cell_guards=lambda: self.guards,
+            query_critical_alarms=lambda me: AlarmScope(self.alarms), register_type=lambda *a, **k: {"dmeTypeId": "t-1"},
+            discover_types=lambda ns: [{"dmeTypeId": "t-sim", "dmeTypeIdStruct": {"name": "PRB_UTILIZATION_SIM"}}],
+            list_data_jobs=lambda dme_type_id: [{"dataJobId": "j-1"}, {"dataJobId": "j-2"}],
+            ingest_data_record=lambda job, record: None)
+        self.models = types.SimpleNamespace(
+            register_model=lambda *a, **k: {"modelId": str(uuid.uuid4())}, store_model=self.store_model,
+            download_artifact=lambda model_id, version: types.SimpleNamespace(content=self.artifact))
+        self.lifecycle = types.SimpleNamespace(
+            start_training=lambda *a, **k: {"trainingJobId": "tr-1"}, complete_training=self.complete_training,
+            start_validation=lambda *a, **k: {"validationJobId": "va-1"},
+            complete_validation=lambda job, ok, metrics: {"status": "VALIDATED" if ok else "FAILED"},
+            start_emulation=lambda *a, **k: {"emulationJobId": "em-1"},
+            complete_emulation=lambda job, ok, metrics: {"status": "EMULATED" if ok else "FAILED"},
+            deploy_model=lambda *a, **k: {}, deploy_runtime=lambda *a, **k: {}, activate_runtime=lambda *a, **k: {},
+            get_model_lifecycle=lambda model_id: {"state": "X"}, request_inference=lambda model_id: {"inferenceJobId": "inf-1"},
+            resolve_inference=lambda job, ok, inference_outputs: {"aIMLInferenceReportId": "rep-1"})
+        self.intent = types.SimpleNamespace(
+            request_autonomy_dispatch=self.request_dispatch, get_autonomy_dispatch=self.get_dispatch,
+            list_intent_reports=self.list_intent_reports)
+        self.platform = types.SimpleNamespace(execute_action=self.execute_action)
+        self.analytics = types.SimpleNamespace(get_prediction=self.get_prediction)
+
+    def get_dataset(self, name, consumer, lifecycle_stage=None, max_records=2000):
+        return {"dmeTypeId": "t", "dataJobId": f"job-{lifecycle_stage}", "sourceDomain": "RAN", "records": self.records[lifecycle_stage]}
+
+    def read_config(self, me, mfr):
+        return {"attributes": {"administrativeState": self.config.get(mfr.split("=")[1], "UNLOCKED")}}
+
+    def store_model(self, model_type, version, artifact, filename):
+        self.artifact = artifact
+        return {"artifactVersion": 3}
+
+    def complete_training(self, job, ok, metrics, **kw):
+        self.training.append((ok, metrics))
+        return {"status": "TRAINED" if ok else "FAILED"}
+
+    def get_prediction(self, key, pm_name):
+        if self.prediction == "error":
+            raise SdkError(404, {})
+        return self.prediction
+
+    def execute_action(self, consumer, changes, action_id, source_context):
+        self.actions.append({"changes": changes, "actionId": action_id, "context": source_context})
+        if not self.stuck:
+            for change in changes:
+                self.config[change["managedFunctionRef"].split("=")[1]] = change["attributeChanges"]["administrativeState"]
+        locking = changes[0]["attributeChanges"]["administrativeState"] == "LOCKED"
+        return {"actionId": action_id, "status": self.action_status if locking else "COMPLETED", "forwardedJobId": "fj-1"}
+
+    def request_dispatch(self, instance_id, expectations, rmih_id, **kw):
+        self.dispatches.append((instance_id, expectations, kw))
+        if self.dispatch["status"] == "DISPATCHED" and not self.stuck:
+            for cell in expectations[0]["expectationObject"]["objectContexts"][0]["contextValueRange"]:
+                self.config[cell] = "LOCKED"
+        return self.dispatch
+
+    def get_dispatch(self, dispatch_id):
+        if self.dispatch["status"] == "DISPATCHED" and not self.stuck:
+            self.config[CELL] = "LOCKED"          # the operator's approval enacted the lock meanwhile
+        return self.dispatch
+
+    def list_intent_reports(self, intent_id):
+        if self.dispatch.get("noReport"):
+            return [{"attributes": {}}, {"attributes": {"intentFulfilmentReport": {"additionalFulfilmentInfo": "{not json"}}}]
+        info = json.dumps({"actions": [{"actionId": "a-1", "status": self.action_status}]})
+        return [{"attributes": {}}, {"attributes": {"intentFulfilmentReport": {"additionalFulfilmentInfo": info}}}]
+
+
+@pytest.fixture
+def platform(monkeypatch):
+    fake = FakePlatform()
+    monkeypatch.setattr(main, "sdk", fake)
+    return fake
+
+
+@pytest.fixture
+def r1(monkeypatch):
+    fake = FakeR1()
+    monkeypatch.setattr(main, "_r1", fake)
+    return fake
+
+
+@pytest.fixture
+def client():
+    engine = make_test_engine()
+    Base.metadata.create_all(engine, tables=[m.__table__ for m in (main.EnergySavingInstance, main.EnergySavingCell, main.EnergySavingDecision)])
+    factory = sessionmaker(bind=engine)
+
+    def override_get_session():
+        session = factory()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_session] = override_get_session
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+def _start(client, r1, mode="AUTONOMOUS", **config):
+    instance_id = str(uuid.uuid4())
+    r1.instances[instance_id] = {"packageId": str(uuid.uuid4()), "autonomyMode": mode,
+                                 "configuration": {"managedElementRef": ME, "cells": [CELL], **config}}
+    resp = client.post(f"/instances/{instance_id}/start")
+    assert resp.status_code == 200, resp.text
+    return instance_id
+
+
+def _deployed(client, platform, r1, mode="AUTONOMOUS", **config):
+    instance_id = _start(client, r1, mode, **config)
+    for step in ("train", "validate", "emulate", "deploy"):
+        resp = client.post(f"/instances/{instance_id}/lifecycle/{step}")
+        assert resp.status_code == 200, resp.text
+    return instance_id
+
+
+def _dispatched(mode="AUTONOMOUS", **extra):
+    return {"status": "DISPATCHED", "dispatchId": str(uuid.uuid4()), "autonomyMode": mode, "intentId": "i-1", **extra}
+
+
+# ---------------------------------------------------------------- instance binding
+
+def test_start_binds_the_instance_and_discovers_a_dataset_per_stage(client, platform, r1):
+    instance_id = _start(client, r1, "ASSIST", operatorNotificationUri="http://ops/notify")
+    view = client.get(f"/instances/{instance_id}").json()
+    assert (view["cells"], view["actuator"], view["autonomyMode"], view["rmihId"]) == ([CELL], "ADMINISTRATIVE_STATE", "ASSIST", "sa-smos")
+    assert set(view["datasets"]) == {"TRAINING", "INFERENCE", "EMULATION"}
+    assert [i["instanceId"] for i in client.get("/instances").json()["items"]] == [instance_id]
+    assert client.get(f"/instances/{instance_id}/cells").json()["items"][0]["state"] == "SERVING"
+    # starting again re-binds the same instance rather than adding one
+    assert client.post(f"/instances/{instance_id}/start").status_code == 200
+    assert len(client.get("/instances").json()["items"]) == 1
+
+
+def test_start_rejects_an_unknown_instance_and_an_invalid_config(client, platform, r1):
+    resp = client.post(f"/instances/{uuid.uuid4()}/start")
+    assert (resp.status_code, resp.json()["detail"]["title"]) == (404, "INSTANCE_NOT_FOUND")
+    for config in ({"cells": []}, {"actuator": "FAN"}):
+        instance_id = str(uuid.uuid4())
+        r1.instances[instance_id] = {"configuration": {"managedElementRef": ME, "cells": [CELL], **config}}
+        resp = client.post(f"/instances/{instance_id}/start")
+        assert (resp.status_code, resp.json()["detail"]["title"]) == (422, "INSTANCE_CONFIG_INVALID")
+
+
+def test_an_instance_that_was_never_started_is_404_on_every_route(client, platform, r1):
+    missing = uuid.uuid4()
+    for verb, path in (("get", ""), ("post", "/lifecycle/train"), ("post", "/evaluate"), ("post", "/reconcile"),
+                       ("get", "/cells"), ("get", "/dashboard")):
+        resp = getattr(client, verb)(f"/instances/{missing}{path}")
+        assert (resp.status_code, resp.json()["detail"]["title"]) == (404, "INSTANCE_NOT_STARTED"), path
+
+
+def test_a_platform_error_is_passed_through_and_a_server_error_becomes_502(client, platform, r1, monkeypatch):
+    instance_id = _start(client, r1)
+    monkeypatch.setattr(platform.lifecycle, "start_training", _raise(SdkError(409, {"detail": {"title": "BUSY", "detail": "x"}})))
+    resp = client.post(f"/instances/{instance_id}/lifecycle/train")
+    assert (resp.status_code, resp.json()["detail"]["title"]) == (409, "BUSY")
+    monkeypatch.setattr(platform.lifecycle, "start_training", _raise(SdkError(500, {"detail": "boom"})))
+    resp = client.post(f"/instances/{instance_id}/lifecycle/train")
+    assert (resp.status_code, resp.json()["detail"]["title"]) == (502, "PLATFORM_ERROR")
+
+
+# ---------------------------------------------------------------- lifecycle
+
+def test_the_model_lifecycle_trains_validates_emulates_and_deploys(client, platform, r1):
+    instance_id = _start(client, r1)
+    trained = client.post(f"/instances/{instance_id}/lifecycle/train").json()
+    assert (trained["status"], trained["metrics"]["artifactVersion"]) == ("TRAINED", 3)
+    validated = client.post(f"/instances/{instance_id}/lifecycle/validate").json()
+    assert (validated["validationJobId"], validated["status"], validated["passed"]) == ("va-1", "VALIDATED", True)
+    emulated = client.post(f"/instances/{instance_id}/lifecycle/emulate").json()
+    assert (emulated["emulationJobId"], emulated["passed"]) == ("em-1", True)
+    deployed = client.post(f"/instances/{instance_id}/lifecycle/deploy").json()
+    assert deployed["artifactVersion"] == 3 and deployed["model"]["profile"]
+    view = client.get(f"/instances/{instance_id}").json()
+    assert view["lifecycleJobs"] == {"training": "tr-1", "validation": "va-1", "emulation": "em-1"} and view["modelId"]
+    # training again keeps the registered model
+    assert client.post(f"/instances/{instance_id}/lifecycle/train").json()["modelId"] == view["modelId"]
+
+
+def test_training_on_too_little_history_is_422_and_the_job_is_failed(client, platform, r1):
+    instance_id = _start(client, r1)
+    platform.records["TRAINING"] = HISTORY[:2]
+    resp = client.post(f"/instances/{instance_id}/lifecycle/train")
+    assert (resp.status_code, resp.json()["detail"]["title"]) == (422, "TRAINING_FAILED")
+    assert platform.training[0][0] is False and "not enough" in platform.training[0][1]["failureReason"]
+    assert client.get(f"/instances/{instance_id}").json()["lifecycleJobs"] == {"training": "tr-1"}
+
+
+# ---------------------------------------------------------------- evaluate
+
+def test_evaluate_needs_a_deployed_model(client, platform, r1):
+    instance_id = _start(client, r1)
+    resp = client.post(f"/instances/{instance_id}/evaluate")
+    assert (resp.status_code, resp.json()["detail"]["title"]) == (409, "MODEL_NOT_DEPLOYED")
+
+
+def test_evaluate_in_shadow_mode_recommends_a_lock_and_changes_nothing(client, platform, r1):
+    instance_id = _deployed(client, platform, r1, "SHADOW")
+    platform.dispatch = {"status": "SHADOWED", "dispatchId": str(uuid.uuid4()), "autonomyMode": "SHADOW"}
+    body = client.post(f"/instances/{instance_id}/evaluate", headers={"X-Correlation-ID": "exec-1"}).json()
+    d = body["decisions"][0]
+    assert (body["executionId"], d["decision"], d["outcome"], d["intent"]["status"]) == ("exec-1", "LOCK", "SHADOWED", "SHADOWED")
+    assert platform.config == {} and platform.dispatches[0][1][0]["expectationTargets"][0]["targetValueRange"] == "LOCKED"
+    assert client.get(f"/instances/{instance_id}/cells").json()["items"][0]["state"] == "PRE_SLEEP"
+
+
+def test_evaluate_in_autonomous_mode_locks_the_cell_and_verifies_it(client, platform, r1):
+    instance_id = _deployed(client, platform, r1)
+    platform.dispatch = _dispatched()
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert (d["outcome"], d["verification"]["result"], d["finalState"]) == ("EXECUTED", "VERIFIED", {"state": "SLEEP", "o1": "LOCKED"})
+    assert d["action"]["path"] == "INTENT" and platform.config == {CELL: "LOCKED"}
+    # a second pass finds nothing to do: the cell's low load keeps it asleep
+    again = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert (again["decision"], again["reason"]) == ("NO_CHANGE", "SLEEPING")
+
+
+def test_a_lock_that_o1_reports_but_does_not_apply_is_rolled_back(client, platform, r1):
+    instance_id = _deployed(client, platform, r1)
+    platform.dispatch = _dispatched()
+    platform.stuck = True
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert (d["outcome"], d["verification"]["result"], d["rollback"]["trigger"]) == ("VERIFY_FAILED_ROLLED_BACK", "VERIFY_FAILED", "VERIFY_FAILED")
+    assert d["finalState"] == {"state": "SERVING", "o1": "UNLOCKED"}
+
+
+def test_a_partially_applied_lock_is_rolled_back_through_dme(client, platform, r1):
+    instance_id = _deployed(client, platform, r1)
+    platform.dispatch = _dispatched()
+    platform.action_status = "PARTIAL_SUCCESS"
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert d["outcome"] == "PARTIAL_SUCCESS_ROLLED_BACK" and d["rollback"]["trigger"] == "PARTIAL_SUCCESS"
+    assert d["verification"] is None and platform.config[CELL] == "UNLOCKED"
+
+
+def test_a_lock_the_intent_never_enacted_is_rolled_back_as_failed(client, platform, r1):
+    instance_id = _deployed(client, platform, r1)
+    platform.dispatch = _dispatched(noReport=True)
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert (d["outcome"], d["action"]["status"], d["rollback"]["trigger"]) == ("ACTION_FAILED_ROLLED_BACK", "NOT_ENACTED", "ACTION_FAILED")
+
+
+def test_assist_mode_waits_for_the_operator_then_enacts_on_reconcile(client, platform, r1):
+    instance_id = _deployed(client, platform, r1, "ASSIST")
+    dispatch_id = str(uuid.uuid4())
+    platform.dispatch = {"status": "AWAITING_SCOPE", "dispatchId": dispatch_id, "autonomyMode": "ASSIST"}
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert (d["outcome"], d["intent"]["status"]) == ("AWAITING_APPROVAL", "AWAITING_SCOPE")
+    assert client.get(f"/instances/{instance_id}/cells").json()["items"][0]["pendingDispatchId"] == dispatch_id
+    # nothing is decided for the cell while it waits, and a still-pending dispatch settles nothing
+    assert client.post(f"/instances/{instance_id}/evaluate").json()["decisions"] == []
+    assert client.post(f"/instances/{instance_id}/reconcile").json() == {"settled": []}
+    # the operator resolves it: the next reconcile enacts the lock
+    platform.dispatch = {**_dispatched("ASSIST"), "dispatchId": dispatch_id}
+    settled = client.post(f"/instances/{instance_id}/reconcile").json()["settled"]
+    assert settled[0]["status"] == "DISPATCHED" and settled[0]["outcomes"][CELL] == "EXECUTED"
+    assert client.get(f"/instances/{instance_id}/cells").json()["items"][0]["state"] == "SLEEP"
+
+
+def test_assist_mode_rejection_returns_the_cell_to_service(client, platform, r1):
+    instance_id = _deployed(client, platform, r1, "ASSIST")
+    dispatch_id = str(uuid.uuid4())
+    platform.dispatch = {"status": "AWAITING_SCOPE", "dispatchId": dispatch_id, "autonomyMode": "ASSIST"}
+    client.post(f"/instances/{instance_id}/evaluate")
+    platform.dispatch = {"status": "REJECTED", "dispatchId": dispatch_id, "autonomyMode": "ASSIST", "rejectedBy": "op"}
+    settled = client.post(f"/instances/{instance_id}/reconcile").json()["settled"]
+    assert settled[0]["outcomes"][CELL] == "REJECTED"
+    assert client.get(f"/instances/{instance_id}/cells").json()["items"][0]["state"] == "SERVING"
+
+
+def test_a_lock_on_a_cell_already_locked_is_not_repeated(client, platform, r1):
+    instance_id = _deployed(client, platform, r1)
+    platform.config[CELL] = "LOCKED"
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert (d["decision"], d["outcome"]) == ("LOCK", "NO_ACTION_ALREADY_IN_STATE")
+    assert platform.dispatches == []
+
+
+def test_a_guard_blocks_the_lock_and_the_audit_trail_says_why(client, platform, r1):
+    instance_id = _deployed(client, platform, r1)
+    platform.guards = [{"managedElementRef": ME, "cellId": CELL, "cellClass": "EMERGENCY", "neighbourRefs": [f"{ME}/102"]}]
+    platform.alarms = [{"alarmId": "al-1", "severity": "critical", "probableCause": "coverage hole", "managedFunctionRef": "NRCellDU=102"}]
+    platform.prediction = {"pmPredictedValue": 1.0}
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert d["decision"] == "NO_CHANGE" and d["reason"].startswith("SAFETY_BLOCKED:EMERGENCY_CELL")
+    assert d["prediction"]["mdafFuturePrb"] == 1.0
+    assert platform.dispatches == []
+
+
+def test_an_mdaf_outage_does_not_stop_the_loop(client, platform, r1):
+    instance_id = _deployed(client, platform, r1, "SHADOW")
+    platform.prediction = "error"
+    platform.dispatch = {"status": "SHADOWED", "dispatchId": str(uuid.uuid4()), "autonomyMode": "SHADOW"}
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert d["prediction"]["mdafFuturePrb"] is None and d["outcome"] == "SHADOWED"
+
+
+def _asleep(client, platform, r1, mode):
+    instance_id = _deployed(client, platform, r1, mode)
+    platform.dispatch = _dispatched(mode)
+    client.post(f"/instances/{instance_id}/evaluate")
+    assert platform.config == {CELL: "LOCKED"}
+    platform.records["INFERENCE"] = BUSY      # load returns
+    platform.prediction = {"pmPredictedValue": 30.0}
+    return instance_id
+
+
+def test_returning_load_wakes_a_sleeping_cell_straight_through_dme(client, platform, r1):
+    instance_id = _asleep(client, platform, r1, "AUTONOMOUS")
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert (d["decision"], d["reason"], d["outcome"], d["finalState"]) == ("UNLOCK", "PREDICTED_LOAD", "EXECUTED", {"state": "SERVING", "o1": "UNLOCKED"})
+    assert platform.config[CELL] == "UNLOCKED" and platform.actions[-1]["context"]["reason"] == "WAKE:PREDICTED_LOAD"
+
+
+def test_a_wake_that_will_not_stick_is_resent_once_and_reported(client, platform, r1):
+    instance_id = _asleep(client, platform, r1, "AUTONOMOUS")
+    platform.stuck = True
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert d["outcome"] == "VERIFY_FAILED" and d["rollback"]["trigger"] == "VERIFY_FAILED" and len(d["rollback"]["attempts"]) == 2
+    assert d["finalState"]["state"] == "SLEEP"
+
+
+def test_in_shadow_mode_a_wake_is_only_recommended(client, platform, r1):
+    instance_id = _asleep(client, platform, r1, "SHADOW")
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert (d["decision"], d["outcome"]) == ("UNLOCK", "SHADOWED") and platform.config[CELL] == "LOCKED"
+
+
+def test_a_wake_for_a_cell_already_awake_performs_no_action(client, platform, r1):
+    instance_id = _asleep(client, platform, r1, "AUTONOMOUS")
+    platform.config[CELL] = "UNLOCKED"
+    d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert d["outcome"] == "NO_ACTION_ALREADY_IN_STATE"
+
+
+# ---------------------------------------------------------------- override, audit, dashboard
+
+def test_an_override_wakes_the_cell_and_suppresses_the_ai_until_cleared(client, platform, r1):
+    instance_id = _asleep(client, platform, r1, "AUTONOMOUS")
+    resp = client.post(f"/instances/{instance_id}/cells/{CELL}/override", json={"operator": "alice", "reason": "event"})
+    d = resp.json()
+    assert (resp.status_code, d["reason"], d["outcome"], d["safety"]["note"]) == (200, "OPERATOR_OVERRIDE:alice", "EXECUTED", "event")
+    assert platform.config[CELL] == "UNLOCKED"
+    cell = client.get(f"/instances/{instance_id}/cells").json()["items"][0]
+    assert (cell["state"], cell["overrideBy"]) == ("SERVING", "alice")
+    platform.records["INFERENCE"] = NIGHT
+    held = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
+    assert held["reason"] == "OPERATOR_OVERRIDE" and held["decision"] == "NO_CHANGE"
+    # overriding a cell that is already awake performs nothing; clearing releases the cell
+    again = client.post(f"/instances/{instance_id}/cells/{CELL}/override", json={"operator": "bob"}).json()
+    assert again["outcome"] == "NO_ACTION_ALREADY_IN_STATE"
+    assert client.delete(f"/instances/{instance_id}/cells/{CELL}/override").status_code == 204
+    assert client.get(f"/instances/{instance_id}/cells").json()["items"][0]["overrideBy"] is None
+    assert client.delete(f"/instances/{instance_id}/cells/nope/override").status_code == 204
+
+
+def test_an_override_reports_a_wake_that_cannot_be_verified(client, platform, r1):
+    instance_id = _start(client, r1)
+    platform.config[CELL] = "LOCKED"
+    platform.stuck = True
+    d = client.post(f"/instances/{instance_id}/cells/{CELL}/override", json={"operator": "alice"}).json()
+    assert d["outcome"] == "VERIFY_FAILED"
+
+
+def test_override_validates_the_request_and_the_cell(client, platform, r1):
+    instance_id = _start(client, r1)
+    assert client.post(f"/instances/{instance_id}/cells/{CELL}/override", json={}).status_code == 422
+    resp = client.post(f"/instances/{instance_id}/cells/nope/override", json={"operator": "alice"})
+    assert (resp.status_code, resp.json()["detail"]["title"]) == (404, "CELL_NOT_MANAGED")
+
+
+def test_decisions_are_listed_filtered_and_shown_on_the_dashboard(client, platform, r1):
+    instance_id = _deployed(client, platform, r1, "SHADOW")
+    platform.dispatch = {"status": "SHADOWED", "dispatchId": str(uuid.uuid4()), "autonomyMode": "SHADOW"}
+    for execution in ("e-1", "e-2"):
+        client.post(f"/instances/{instance_id}/evaluate", headers={"X-Correlation-ID": execution})
+    assert len(client.get(f"/instances/{instance_id}/decisions").json()["items"]) == 2
+    only = client.get(f"/instances/{instance_id}/decisions", params={"execution_id": "e-1", "cell_id": CELL, "limit": 5}).json()["items"]
+    assert [d["executionId"] for d in only] == ["e-1"]
+    assert client.get(f"/instances/{instance_id}/decisions", params={"cell_id": "other"}).json()["items"] == []
+    board = client.get(f"/instances/{instance_id}/dashboard", params={"points": 3}).json()
+    cell = board["cells"][0]
+    assert board["instance"]["instanceId"] == instance_id and len(cell["prbTrend"]) == 3 and cell["latestDecision"]["outcome"] == "SHADOWED"
+
+
+def test_the_dashboard_of_a_cell_without_decisions_has_no_latest_decision(client, platform, r1):
+    instance_id = _start(client, r1)
+    assert client.get(f"/instances/{instance_id}/dashboard").json()["cells"][0]["latestDecision"] is None
+
+
+# ---------------------------------------------------------------- the Digital Twin producer
+
+def test_the_sim_producer_registers_publishes_and_answers_dme_callbacks(client, platform):
+    resp = client.post("/sim-producer/register")
+    assert resp.status_code == 201 and resp.json()["dmeTypeId"] == "t-1"
+    body = {"managedElementRef": ME, "cells": [CELL], "start": T0.isoformat(), "hours": 3}
+    assert client.post("/sim-producer/publish", json=body).json() == {"dmeTypeId": "t-sim", "dataJobs": 2, "recordsDelivered": 6}
+    assert client.post("/sim-producer/publish", json={"cells": [CELL]}).status_code == 422
+    assert client.get("/sim-producer/health").json() == {"status": "healthy"}
+    assert client.post("/sim-producer/jobs", json={"dataJobId": "j"}).json() == {"status": "accepted"}
+    assert client.delete("/sim-producer/jobs/j-1").status_code == 204
