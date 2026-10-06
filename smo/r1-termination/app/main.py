@@ -219,7 +219,13 @@ async def _proxy(full_path: str, request: Request):
     if backend is None:
         return JSONResponse(status_code=404, content={"title": "NO_ROUTE", "status": 404})
 
-    caller = await _introspect_token(request)
+    try:
+        caller = await _introspect_token(request)
+    except IntrospectionUnavailable:
+        # Still closed (nothing is forwarded), but not "UNAUTHORIZED": the token was not found bad, SME could not say. A client that reads a 401 drops
+        # its token and signs in again; one that reads a 503 with Retry-After waits and retries, which is what an outage of SME or its database needs.
+        return JSONResponse(status_code=503, headers={"Retry-After": "5"}, content={
+            "title": "AUTH_SERVICE_UNAVAILABLE", "status": 503, "detail": "the token could not be checked now (SME did not answer); retry shortly"})
     if caller is None:
         return JSONResponse(status_code=401, content={"title": "UNAUTHORIZED", "status": 401})
     invoker_id, role = caller
@@ -325,6 +331,10 @@ async def _introspect(request: Request) -> str | None:
     return None if caller is None else caller[0]
 
 
+class IntrospectionUnavailable(Exception):
+    """SME did not answer the introspection (unreachable, or an error of its own): the token is neither good nor bad."""
+
+
 async def _introspect_token(request: Request) -> tuple[str, str] | None:
     """HISTORY.md §2: "No real OAuth2/token enforcement at R1
     Termination — only a comment and a tokenEndPoint URI in the bootstrap
@@ -342,7 +352,7 @@ async def _introspect_token(request: Request) -> tuple[str, str] | None:
     every proxied request. This is a security gate, not a best-effort
     side effect: unlike this build's usual "unreachable callback never
     fails the primary operation" pattern (DME notifications),
-    SME being unreachable here fails CLOSED (unauthorized), not open.
+    SME being unreachable here fails CLOSED (nothing is forwarded, 503 with Retry-After), not open.
     """
     auth = request.headers.get("authorization", "")
     if not auth.lower().startswith("bearer "):
@@ -353,8 +363,10 @@ async def _introspect_token(request: Request) -> tuple[str, str] | None:
     async with httpx.AsyncClient(timeout=introspect_timeout()) as client:
         try:
             resp = await client.request("POST", f"{ROUTES['/sme']}/oauth2/introspect", json={"token": token})
-        except httpx.HTTPError:
-            return None
+        except httpx.HTTPError as exc:
+            raise IntrospectionUnavailable from exc
+    if resp.status_code >= 500:
+        raise IntrospectionUnavailable
     if resp.status_code != 200 or resp.json().get("active") is not True:
         return None
     body = resp.json()

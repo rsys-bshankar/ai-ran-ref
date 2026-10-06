@@ -17,7 +17,7 @@ GitHub's runners vary from night to night: compare a run with the previous one o
 ## Not yet covered
 
 - Cells, managed objects and KPI results are not seeded yet (V-8b seeds managed elements, alarms and performance files).
-- Stress, saturation and failure injection (V-9) and the soak (V-9b).
+- Stress and failure injection beyond the first four scenarios (`scripts/stress_run.py`, `.github/workflows/smo-stress.yml`: limiter burst, oversized body, saturation ramp, Postgres down and back): a slow or dead webhook subscriber, SME down, a full package volume (V-9), and the soak (V-9b).
 - Baseline numbers per release: recorded here once the seeded run exists.
 
 ## Baselines
