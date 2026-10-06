@@ -29,6 +29,7 @@ How each kind of write reaches O1:
 import datetime
 import json
 import uuid
+from typing import cast
 
 from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
@@ -195,7 +196,8 @@ def _intent_actions(intent_id: str) -> dict[str, dict]:
 
 def _changed_knob(d: CoverageDecision) -> tuple[str, int]:
     """The one knob a move changes, and its new value."""
-    return next((k, v) for k, v in d.to_setting.items() if d.from_setting.get(k) != v)
+    to_setting, from_setting = cast(dict, d.to_setting), cast(dict, d.from_setting)      # a move has both
+    return next((k, v) for k, v in to_setting.items() if from_setting.get(k) != v)
 
 
 def _expectation(inst: CoverageInstance, d: CoverageDecision) -> dict:
@@ -234,16 +236,17 @@ def _follow_dispatch(db: Session, inst: CoverageInstance, rows: dict[str, Covera
         action = actions.get(_expectation(inst, d)["expectationId"])
         d.action = {"path": "INTENT", **action} if action else {"path": "INTENT", "status": "NOT_ENACTED"}
         status = d.action.get("status")
-        d.verification = _verify(inst, {cell: d.to_setting}) if status == "COMPLETED" else None
-        if status == "COMPLETED" and d.verification["result"] == "VERIFIED":
-            row.state, row.tilt, row.power = engine.OBSERVING, d.to_setting["digitalTilt"], d.to_setting["configuredMaxTxPower"]
+        to_setting, from_setting = cast(dict, d.to_setting), cast(dict, d.from_setting)      # a move has both
+        d.verification = _verify(inst, {cell: to_setting}) if status == "COMPLETED" else None
+        if status == "COMPLETED" and cast(dict, d.verification)["result"] == "VERIFIED":      # verified just above
+            row.state, row.tilt, row.power = engine.OBSERVING, to_setting["digitalTilt"], to_setting["configuredMaxTxPower"]
             row.last_changed_at = d.observed_at
             d.outcome = "EXECUTED"
             executed[cell] = {"from": d.from_setting, "to": d.to_setting, "move": d.decision, "decisionId": str(d.decision_id)}
         else:
             trigger = "VERIFY_FAILED" if status == "COMPLETED" else "PARTIAL_SUCCESS" if status == "PARTIAL_SUCCESS" else "ACTION_FAILED"
-            d.rollback = {"trigger": trigger, **_restore(inst, {cell: d.from_setting}, execution_id, f"ROLLBACK:{trigger}")}
-            row.state, row.tilt, row.power = engine.STEADY, d.from_setting["digitalTilt"], d.from_setting["configuredMaxTxPower"]
+            d.rollback = {"trigger": trigger, **_restore(inst, {cell: from_setting}, execution_id, f"ROLLBACK:{trigger}")}
+            row.state, row.tilt, row.power = engine.STEADY, from_setting["digitalTilt"], from_setting["configuredMaxTxPower"]
             d.outcome = f"{trigger}_ROLLED_BACK" if d.rollback["result"] in ("VERIFIED", "ALREADY_RESTORED") \
                 else f"{trigger}_ROLLBACK_FAILED"
         d.final_state = _final(row)
@@ -262,7 +265,7 @@ def _reconcile(db: Session, inst: CoverageInstance) -> list[dict]:
     if dispatch["status"] == "AWAITING_SCOPE":
         return []
     rows = _cells(db, inst)
-    decisions = {c: db.get(CoverageDecision, uuid.UUID(i)) for c, i in pending["decisionIds"].items()}
+    decisions = {c: db.get_one(CoverageDecision, uuid.UUID(i)) for c, i in pending["decisionIds"].items()}
     inst.pending_dispatch = None
     _follow_dispatch(db, inst, rows, decisions, dispatch, next(iter(decisions.values())).execution_id, pending["objective"])
     db.commit()
@@ -378,7 +381,8 @@ def validate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
                                          training_job_id=(inst.lifecycle_jobs or {}).get("training"),
                                          validation_criteria={"maxRmse": ValidationLogic.MAX_RMSE,
                                                               "minDirectionAccuracy": ValidationLogic.MIN_DIRECTION})
-    passed, metrics = ValidationLogic.validate(CoverageModel.from_dict(inst.model_params), _dataset(inst, "TRAINING"))
+    model = CoverageModel.from_dict(cast(dict, inst.model_params))      # set by training
+    passed, metrics = ValidationLogic.validate(model, _dataset(inst, "TRAINING"))
     completed = sdk.lifecycle.complete_validation(job["validationJobId"], passed, metrics=metrics)
     _jobs(inst, validation=job["validationJobId"])
     db.commit()
@@ -392,7 +396,8 @@ def emulate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     inst = _instance(db, instance_id)
     job = sdk.lifecycle.start_emulation(inst.model_id, RAPP_ID, package_id=inst.package_id,
                                         emulation_criteria={"dataset": SIM_DATASET, "minMoveAccuracy": EmulationLogic.PASS_RATE})
-    passed, metrics = EmulationLogic.emulate(CoverageModel.from_dict(inst.model_params), _dataset(inst, "EMULATION"))
+    model = CoverageModel.from_dict(cast(dict, inst.model_params))      # set by training
+    passed, metrics = EmulationLogic.emulate(model, _dataset(inst, "EMULATION"))
     completed = sdk.lifecycle.complete_emulation(job["emulationJobId"], passed, metrics=metrics)
     _jobs(inst, emulation=job["emulationJobId"])
     db.commit()
@@ -649,7 +654,7 @@ def dashboard(instance_id: uuid.UUID, points: int = 48, db: Session = Depends(ge
                             .order_by(CoverageDecision.created_at.desc()).limit(1)).first()
         trend = [{"t": t.isoformat(), **shares(counters(p))} for t, p in series.get(cell, [])[-points:]]
         out.append({**_cell_view(rows[cell]), "shareTrend": trend,
-                    "excessTrend": [{"t": x["t"], "v": round(excess(x), 3)} for x in trend],
+                    "excessTrend": [{"t": x["t"], "v": round(excess(cast(dict[str, float], x)), 3)} for x in trend],      # excess reads only the shares
                     "latestDecision": _decision_view(latest) if latest else None})
     db.commit()
     return {"instance": _instance_view(inst), "cells": out}

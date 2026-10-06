@@ -30,6 +30,7 @@ carrying load L is then ≈ 98·L. The handover failure rate on S → T is
 
 import datetime
 import hashlib
+from collections.abc import Callable
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -116,7 +117,7 @@ def cell_counters(cell: str, t: datetime.datetime, carried: float, setting: dict
 
 def measurements(neighbours: dict[str, list[str]], layers: dict[str, str], settings: dict[str, dict] | None,
                  faults: dict[str, str] | None, t: datetime.datetime, overrides: dict[str, dict] | None = None,
-                 extra: dict | None = None) -> list[dict]:
+                 extra: dict | Callable[..., dict] | None = None) -> list[dict]:
     """PM measurements of every cell for the window starting at `t`."""
     settings = settings or baseline_settings(neighbours, layers)
     carried = loads(neighbours, layers, settings, faults, t)

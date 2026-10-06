@@ -17,7 +17,7 @@ def _reach_step(series: Series, t: datetime.datetime) -> tuple[float, float] | N
     if before is None or after is None:
         return None
     (t0, p0), (t1, p1) = config(counters(before)), config(counters(after))
-    if None in (t0, p0, t1, p1):
+    if t0 is None or p0 is None or t1 is None or p1 is None:
         return None
     return -(t1 - t0) / 10.0, p1 - p0
 

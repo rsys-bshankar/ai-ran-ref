@@ -39,6 +39,7 @@ same DME path.
 import datetime
 import json
 import uuid
+from typing import cast
 
 from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
@@ -210,7 +211,7 @@ def _finish_lock(db: Session, inst: EnergySavingInstance, rows: dict, decisions:
     status = action.get("status")
     act = ACTUATORS[inst.actuator]
     verification = _verify(inst, cells, True) if status == "COMPLETED" else None
-    ok = status == "COMPLETED" and verification["result"] == "VERIFIED"
+    ok = status == "COMPLETED" and cast(dict, verification)["result"] == "VERIFIED"      # a COMPLETED action was verified just above
     rollback = None
     if not ok:
         trigger = ("VERIFY_FAILED" if status == "COMPLETED" else
@@ -223,10 +224,11 @@ def _finish_lock(db: Session, inst: EnergySavingInstance, rows: dict, decisions:
             d.outcome = "EXECUTED"
             row.state, row.o1_value = engine.SLEEP, act["locked"]
         else:
-            d.outcome = f"{rollback['trigger']}_ROLLED_BACK" if rollback["result"] in ("VERIFIED", "ALREADY_UNLOCKED") \
-                else f"{rollback['trigger']}_ROLLBACK_FAILED"
+            undone = cast(dict, rollback)      # not ok, so the rollback was made above
+            d.outcome = f"{undone['trigger']}_ROLLED_BACK" if undone["result"] in ("VERIFIED", "ALREADY_UNLOCKED") \
+                else f"{undone['trigger']}_ROLLBACK_FAILED"
             row.state, row.o1_value = engine.SERVING, act["unlocked"]
-            if rollback["performed"]:
+            if undone["performed"]:
                 row.last_unlocked_at = now or d.observed_at or row.last_unlocked_at
         d.final_state = {"state": row.state, "o1": row.o1_value}
         d.updated_at = datetime.datetime.now(datetime.UTC)
@@ -285,7 +287,7 @@ def _reconcile(db: Session, inst: EnergySavingInstance) -> list[dict]:
         dispatch = sdk.intent.get_autonomy_dispatch(dispatch_id)
         if dispatch["status"] == "AWAITING_SCOPE":
             continue
-        decisions = {c: db.get(EnergySavingDecision, rows[c].pending_decision_id) for c in cells}
+        decisions = {c: db.get_one(EnergySavingDecision, rows[c].pending_decision_id) for c in cells}
         for c in cells:
             rows[c].pending_dispatch_id = rows[c].pending_decision_id = None
         execution_id = next(iter(decisions.values())).execution_id
@@ -403,7 +405,8 @@ def validate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     job = sdk.lifecycle.start_validation(inst.model_id, RAPP_ID, package_id=inst.package_id,
                                          training_job_id=(inst.lifecycle_jobs or {}).get("training"),
                                          validation_criteria={"minScore": ValidationLogic.PASS_THRESHOLD})
-    passed, metrics = ValidationLogic.validate(EnergyModel.from_dict(inst.model_params), _dataset(inst, "TRAINING"))
+    model = EnergyModel.from_dict(cast(dict, inst.model_params))      # set by training
+    passed, metrics = ValidationLogic.validate(model, _dataset(inst, "TRAINING"))
     completed = sdk.lifecycle.complete_validation(job["validationJobId"], passed, metrics=metrics)
     _jobs(inst, validation=job["validationJobId"])
     db.commit()
@@ -417,7 +420,8 @@ def emulate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     inst = _instance(db, instance_id)
     job = sdk.lifecycle.start_emulation(inst.model_id, RAPP_ID, package_id=inst.package_id,
                                         emulation_criteria={"dataset": SIM_DATASET, "midnightRecommendation": "LOCKED"})
-    passed, metrics = EmulationLogic.emulate(EnergyModel.from_dict(inst.model_params), _dataset(inst, "EMULATION"))
+    model = EnergyModel.from_dict(cast(dict, inst.model_params))      # set by training
+    passed, metrics = EmulationLogic.emulate(model, _dataset(inst, "EMULATION"))
     completed = sdk.lifecycle.complete_emulation(job["emulationJobId"], passed, metrics=metrics)
     _jobs(inst, emulation=job["emulationJobId"])
     db.commit()
@@ -554,10 +558,10 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
             inst.instance_id, [_lock_expectation(inst, locks, execution_id)], inst.rmih_id, model_id=inst.model_id,
             notification_destination=inst.operator_notification_uri, user_label=f"energy-saving {execution_id}")
         _follow_dispatch(db, inst, rows, decisions, locks, dispatch, execution_id,
-                         max(results[c].observed_at for c in locks))
+                         max(cast(datetime.datetime, results[c].observed_at) for c in locks))
 
     if unlocks:
-        now = max(results[c].observed_at for c in unlocks)
+        now = max(cast(datetime.datetime, results[c].observed_at) for c in unlocks)
         if inst.autonomy_mode == "SHADOW":
             for cell in unlocks:
                 decisions[cell].outcome = "SHADOWED"
