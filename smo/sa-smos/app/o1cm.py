@@ -167,7 +167,8 @@ def _changes_for(expectation: dict, cm_targets: dict[str, list[str]]) -> tuple[l
             unsupported.append({"expectationId": expectation["expectationId"], "targetName": name, "reason": reason})
             continue
         ioc, attribute = name.split(".", 1)
-        for cell in _cells(expectation) or [None]:
+        cells: list[str | None] = [*_cells(expectation)] or [None]
+        for cell in cells:
             change = {"managedElementRef": element, "className": ioc, "attributeChanges": {attribute: value}}
             if cell is not None:
                 change["managedFunctionRef"] = f"{ioc}={cell}"

@@ -57,7 +57,7 @@ install_health(app, checks=[database_check, sme_token_check])  # /live, /ready a
 @app.post("/monitors", status_code=201)
 def register_assurance_monitor(target_order_id: uuid.UUID | None = None, target_coordination_group_id: uuid.UUID | None = None,
                                 target_rapp_instance_id: uuid.UUID | None = None,
-                                analytics_subscription_id: uuid.UUID | None = None, thresholds: dict = None, db: Session = Depends(get_session)):
+                                analytics_subscription_id: uuid.UUID | None = None, thresholds: dict | None = None, db: Session = Depends(get_session)):
     """At most one target: a service order (NF deployment remediation), a
     model coordination group (retrain), or a rApp instance (remediation
     through rApp Management, including ROLLBACK)."""

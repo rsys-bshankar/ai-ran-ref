@@ -86,7 +86,7 @@ def query_inventory(resource_type: str = "", db: Session = Depends(get_session))
     either way.
     """
     _ensure_phase1_topology(db)
-    dm = db.get(DeploymentManager, PHASE1_DEPLOYMENT_MANAGER_ID)
+    dm = db.get_one(DeploymentManager, PHASE1_DEPLOYMENT_MANAGER_ID)
     resource_types = db.scalars(select(ResourceType)).all()
     if resource_type:
         resource_types = [t for t in resource_types if t.resource_type_id == resource_type]
