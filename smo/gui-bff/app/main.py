@@ -35,11 +35,11 @@ import httpx
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from .config import Settings, settings as default_settings
-from .db import AuditEntry, Database, GuiUser
+from .db import AuditEntry, Database, GuiUser, LoginFailure
 from .rbac import MODULES, RULES, Role, Rule, User, decide
 from .security import decode_jwt, hash_password, issue_jwt, verify_password
 from .smo_client import R1Gateway, SmoAuthError
@@ -470,7 +470,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         with app.state.db.session() as s:
             if s.get(GuiUser, body.username) is not None:
                 return _problem(409, "USER_EXISTS")
-            user = GuiUser(username=body.username, password_hash=hash_password(body.password), role=body.role)
+            # A random starting token version, not 0: a session token carries the version it was issued under, so a user deleted
+            # and created again under the same name (STD-4.3) must not make the old person's unexpired token valid again.
+            user = GuiUser(username=body.username, password_hash=hash_password(body.password), role=body.role,
+                           token_version=secrets.randbits(30))
             s.add(user)
             s.commit()
             view = _user_view(user)
@@ -513,6 +516,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
                 return Response(status_code=204)
             if user.role == Role.ADMIN and user.active and _active_admins(s) <= 1:
                 return _problem(409, "LAST_ADMIN", "at least one active admin must remain")
+            # One transaction: the account and the failed-login counter kept under its name go together (STD-4.3). There is no
+            # session row to remove: a session is a signed token, and with its user gone every token naming it is refused.
+            # The audit rows that name the user stay (docs/PRIVACY.md), and so do the module tables that record `smo-gui:<name>`.
+            s.execute(delete(LoginFailure).where(LoginFailure.username == username))
             s.delete(user)
             s.commit()
         audit("USER_DELETED", session.user, detail=username)
