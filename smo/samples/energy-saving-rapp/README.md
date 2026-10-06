@@ -15,7 +15,7 @@ A Non-RT RIC rApp that predicts sustained low PRB utilisation from O1 PM data, p
 | R1 route | `/energy-saving-rapp` on R1 Termination (service `energy-saving-rapp:8000`) |
 | Call flow | [22-energy-saving-closed-loop.md](../../docs/call-flows/22-energy-saving-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md](../../DEMO_RUNBOOK.md) section 24 (`demo.py` steps 00-11) |
-| Unit tests | 24 passed |
+| Unit tests | 51 passed (98 % of `app/`) |
 
 ## What it does
 
@@ -65,7 +65,7 @@ Decision logic (`app/engine.py`, pure functions). Cell states are internal: SERV
 | `app/producer.py` | Synthetic diurnal PRB profile and the Digital Twin `PRB_UTILIZATION_SIM` producer |
 | `app/model/` | `EnergyModel`, `TrainingLogic`, `ValidationLogic`, `EmulationLogic`, `InferenceLogic`, `series` helpers |
 | `demo.py` | Demo steps 00-11 against a running stack |
-| `tests/` | `test_engine.py`, `test_model.py`, `conftest.py` |
+| `tests/` | `test_engine.py`, `test_model.py`, `test_routes.py` (the routes, with the SDK replaced by a platform double), `conftest.py` |
 
 ## Package
 
@@ -101,7 +101,7 @@ Served on port 8000; reached through R1 Termination at `/energy-saving-rapp`.
 
 ## Run and test
 
-Unit tests (24 passed):
+Unit tests (51 passed):
 
 ```bash
 cd smo/samples/energy-saving-rapp && PYTHONPATH=.:../../shared:../../sdk python -m pytest tests/ -q
