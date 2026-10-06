@@ -1,0 +1,195 @@
+# Prometheus recording and alerting rules for the SMO (PR-OBS-5). The one source of both uses:
+#   - a Prometheus rule file as it is:        rule_files: [smo-alerts.rules.yaml]
+#   - the chart's PrometheusRule (`prometheusRule.enabled=true`) embeds this file as its `spec`.
+# Assumes each module is scraped as its own job named after the module (`job="r1-termination"`, `job="onboarding"`, ...), on `/metrics`.
+# Every metric used here is exported by the code (tests_integration/test_alert_rules.py checks it), every alert has a page in docs/runbooks/
+# (the `runbook_url` annotation, checked too), and the targets behind the SLO alerts are in docs/SLOS.md (all of them proposed).
+# Thresholds are starting points; tune them against a week of your own traffic.
+groups:
+  - name: smo.recording
+    interval: 30s
+    rules:
+      # Gateway (r1-termination) availability SLI: the share of requests answered with a 5xx. 4xx are the caller's, not an outage.
+      - record: smo:gateway_error_ratio:rate5m
+        expr: sum(rate(smo_http_requests_total{job="r1-termination",status=~"5.."}[5m])) / sum(rate(smo_http_requests_total{job="r1-termination"}[5m]))
+      - record: smo:gateway_error_ratio:rate30m
+        expr: sum(rate(smo_http_requests_total{job="r1-termination",status=~"5.."}[30m])) / sum(rate(smo_http_requests_total{job="r1-termination"}[30m]))
+      - record: smo:gateway_error_ratio:rate1h
+        expr: sum(rate(smo_http_requests_total{job="r1-termination",status=~"5.."}[1h])) / sum(rate(smo_http_requests_total{job="r1-termination"}[1h]))
+      - record: smo:gateway_error_ratio:rate6h
+        expr: sum(rate(smo_http_requests_total{job="r1-termination",status=~"5.."}[6h])) / sum(rate(smo_http_requests_total{job="r1-termination"}[6h]))
+      # Gateway latency SLI: the share of requests slower than 1 s (the 1.0 bucket is one of the histogram's default buckets).
+      - record: smo:gateway_slow_ratio:rate5m
+        expr: 1 - (sum(rate(smo_http_request_duration_seconds_bucket{job="r1-termination",le="1.0"}[5m])) / sum(rate(smo_http_request_duration_seconds_count{job="r1-termination"}[5m])))
+      - record: smo:gateway_slow_ratio:rate30m
+        expr: 1 - (sum(rate(smo_http_request_duration_seconds_bucket{job="r1-termination",le="1.0"}[30m])) / sum(rate(smo_http_request_duration_seconds_count{job="r1-termination"}[30m])))
+      - record: smo:gateway_slow_ratio:rate1h
+        expr: 1 - (sum(rate(smo_http_request_duration_seconds_bucket{job="r1-termination",le="1.0"}[1h])) / sum(rate(smo_http_request_duration_seconds_count{job="r1-termination"}[1h])))
+      - record: smo:gateway_slow_ratio:rate6h
+        expr: 1 - (sum(rate(smo_http_request_duration_seconds_bucket{job="r1-termination",le="1.0"}[6h])) / sum(rate(smo_http_request_duration_seconds_count{job="r1-termination"}[6h])))
+      # Notification delivery SLI: 1 while a module's oldest pending notification is older than 15 minutes (the retry backoff is 755 s in all), else 0.
+      # The gauge is the same on every replica of a module: max, not sum.
+      - record: smo:outbox_lag:breach
+        expr: max by (module) (smo_outbox_oldest_pending_age_seconds) > bool 900
+
+  - name: smo.availability
+    rules:
+      - alert: SmoModuleDown
+        expr: up{job=~"r1-termination|sme|dme|onboarding|rapp-mgmt|ran-nf-oam|mock-o1-adaptor|nfo|focom|mlmr|aimgf|mllf|ran-analytics|mdaf|intent-service|so-smos|sa-smos|energy-saving-rapp|mobility-optimization-rapp|coverage-optimization-rapp|traffic-steering-rapp"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.job }} is not answering its scrape ({{ $labels.instance }})"
+          description: "Prometheus could not scrape {{ $labels.job }} for 2 minutes: the process is down, restarting, or its network is cut."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoModuleDown.md
+      - alert: SmoGatewayAvailabilityBurnFast
+        expr: smo:gateway_error_ratio:rate1h > (14.4 * 0.001) and smo:gateway_error_ratio:rate5m > (14.4 * 0.001)
+        for: 2m
+        labels: {severity: critical, slo: gateway-availability}
+        annotations:
+          summary: "The gateway is burning its 30-day error budget 14x too fast"
+          description: "{{ $value | humanizePercentage }} of gateway requests were 5xx over the last 5 minutes. At this rate the 99.9% availability target (proposed, docs/SLOS.md) is spent in about 2 days."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoGatewayAvailabilityBurnFast.md
+      - alert: SmoGatewayAvailabilityBurnSlow
+        expr: smo:gateway_error_ratio:rate6h > (6 * 0.001) and smo:gateway_error_ratio:rate30m > (6 * 0.001)
+        for: 15m
+        labels: {severity: warning, slo: gateway-availability}
+        annotations:
+          summary: "The gateway is burning its 30-day error budget 6x too fast"
+          description: "{{ $value | humanizePercentage }} of gateway requests were 5xx over the last 30 minutes, and the 6-hour rate is above the same line. The 99.9% availability target (proposed, docs/SLOS.md) is spent in 5 days at this rate."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoGatewayAvailabilityBurnSlow.md
+      - alert: SmoModuleHighErrorRate
+        expr: |
+          sum by (job) (rate(smo_http_requests_total{status=~"5.."}[10m])) / sum by (job) (rate(smo_http_requests_total[10m])) > 0.05
+          and sum by (job) (rate(smo_http_requests_total[10m])) > 0.1
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.job }} answers more than 5% of requests with a 5xx"
+          description: "{{ $value | humanizePercentage }} of {{ $labels.job }}'s requests failed with a 5xx over 10 minutes (and it handles more than one request every 10 seconds)."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoModuleHighErrorRate.md
+
+  - name: smo.latency
+    rules:
+      - alert: SmoGatewayLatencyBurnFast
+        expr: smo:gateway_slow_ratio:rate1h > (14.4 * 0.01) and smo:gateway_slow_ratio:rate5m > (14.4 * 0.01)
+        for: 2m
+        labels: {severity: critical, slo: gateway-latency}
+        annotations:
+          summary: "The gateway is burning its 30-day latency budget 14x too fast"
+          description: "{{ $value | humanizePercentage }} of gateway requests took longer than 1 s over the last 5 minutes. The target is 99% under 1 s (proposed, docs/SLOS.md)."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoGatewayLatencyBurnFast.md
+      - alert: SmoGatewayLatencyBurnSlow
+        expr: smo:gateway_slow_ratio:rate6h > (6 * 0.01) and smo:gateway_slow_ratio:rate30m > (6 * 0.01)
+        for: 15m
+        labels: {severity: warning, slo: gateway-latency}
+        annotations:
+          summary: "The gateway is burning its 30-day latency budget 6x too fast"
+          description: "{{ $value | humanizePercentage }} of gateway requests took longer than 1 s over the last 30 minutes. The target is 99% under 1 s (proposed, docs/SLOS.md)."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoGatewayLatencyBurnSlow.md
+      - alert: SmoModuleLatencyHigh
+        expr: |
+          histogram_quantile(0.99, sum by (job, le) (rate(smo_http_request_duration_seconds_bucket[10m]))) > 5
+          and sum by (job) (rate(smo_http_request_duration_seconds_count[10m])) > 0.1
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.job }} p99 latency is above 5 s"
+          description: "The 99th percentile of {{ $labels.job }}'s request duration is {{ $value | humanizeDuration }} over 10 minutes."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoModuleLatencyHigh.md
+
+  - name: smo.outbox
+    rules:
+      - alert: SmoOutboxDeadRows
+        expr: max by (module) (smo_outbox_rows{status="DEAD"}) > 0
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.module }} has {{ $value }} notifications that could not be delivered and were given up"
+          description: "Rows in notification_outbox are DEAD: the destination did not answer in 5 attempts, or the SSRF guard refused it at send time. The subscriber lost those events."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoOutboxDeadRows.md
+      - alert: SmoOutboxBacklog
+        expr: max by (module) (smo_outbox_rows{status="PENDING"}) > 500
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.module }} has {{ $value }} notifications waiting to be sent"
+          description: "More than 500 PENDING rows in notification_outbox for 15 minutes: the delivery sweep is not keeping up, or a subscriber is slow."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoOutboxBacklog.md
+      - alert: SmoOutboxDeliveryLagBurnFast
+        expr: avg_over_time(smo:outbox_lag:breach[1h]) > (14.4 * 0.005) and avg_over_time(smo:outbox_lag:breach[5m]) > (14.4 * 0.005)
+        for: 2m
+        labels: {severity: critical, slo: outbox-delivery-lag}
+        annotations:
+          summary: "{{ $labels.module }}: the oldest pending notification has been over 15 minutes old for much of the last hour"
+          description: "The delivery lag target (oldest pending notification under 15 minutes, 99.5% of the time over 30 days; proposed, docs/SLOS.md) is burning 14x too fast. Nothing is sending this module's notifications."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoOutboxDeliveryLagBurnFast.md
+      - alert: SmoOutboxDeliveryLagBurnSlow
+        expr: avg_over_time(smo:outbox_lag:breach[6h]) > (6 * 0.005) and avg_over_time(smo:outbox_lag:breach[30m]) > (6 * 0.005)
+        for: 15m
+        labels: {severity: warning, slo: outbox-delivery-lag}
+        annotations:
+          summary: "{{ $labels.module }}: notification delivery lag is burning its budget 6x too fast"
+          description: "The oldest pending notification has been over 15 minutes old for a recurring share of the last 6 hours (target in docs/SLOS.md, proposed)."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoOutboxDeliveryLagBurnSlow.md
+
+  - name: smo.platform
+    rules:
+      - alert: SmoDbPoolNearlyExhausted
+        expr: max by (job) (smo_db_pool_connections{state="in_use"}) / max by (job) (smo_db_pool_capacity) > 0.9
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.job }} uses {{ $value | humanizePercentage }} of its database connection pool"
+          description: "Requests wait for a connection when the pool is full; a pool that stays full for minutes is a slow database or a leak."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoDbPoolNearlyExhausted.md
+      - alert: SmoAuditWriteFailed
+        expr: sum(increase(smo_audit_writes_total{outcome="failed"}[10m])) > 0
+        for: 0m
+        labels: {severity: critical}
+        annotations:
+          summary: "The gateway failed to write {{ $value }} audit rows in the last 10 minutes"
+          description: "A row of the tamper-evident audit chain (PR-SEC-11) was not stored. The calls it describes happened; the record of them has a gap."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoAuditWriteFailed.md
+      - alert: SmoOutboundCallsFailing
+        expr: |
+          sum by (client, target) (rate(smo_outbound_calls_total{outcome=~"5xx|timeout|error"}[10m])) / sum by (client, target) (rate(smo_outbound_calls_total[10m])) > 0.2
+          and sum by (client, target) (rate(smo_outbound_calls_total[10m])) > 0.05
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 20% of calls from {{ $labels.client }} to {{ $labels.target }} fail"
+          description: "Calls through R1 to a module (client=r1) or to callbacks (client=webhook, target=callback) are failing with a 5xx, a timeout or a connection error."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoOutboundCallsFailing.md
+      - alert: SmoGatewayRateLimiting
+        expr: sum(rate(smo_refusals_total{module="r1-termination",reason="rate_limited"}[5m])) > 1
+        for: 10m
+        labels: {severity: info}
+        annotations:
+          summary: "The gateway has refused more than one request per second for rate limiting for 10 minutes"
+          description: "Some caller keeps exceeding its token bucket (R1_RATE_PER_SECOND / R1_RATE_BURST): a loop in an rApp, or a budget set too low."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoGatewayRateLimiting.md
+      - alert: SmoAuthRefusalsHigh
+        expr: sum by (module) (rate(smo_refusals_total{reason=~"unauthorized|forbidden"}[5m])) > 5
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.module }} refuses more than 5 requests per second as unauthorized or forbidden"
+          description: "A caller with a bad or revoked token, a misconfigured rApp, or a probe."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoAuthRefusalsHigh.md
+      - alert: SmoWorkerTaskFailing
+        expr: sum by (module, task) (increase(smo_worker_task_runs_total{outcome="failed"}[15m])) >= 3
+        for: 0m
+        labels: {severity: warning}
+        annotations:
+          summary: "Worker task {{ $labels.module }}:{{ $labels.task }} failed {{ $value }} times in 15 minutes"
+          description: "Needs the worker's metrics port (SMO_WORKER_METRICS_PORT) to be scraped. The task is retried after a backoff; the period's work is not being done."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoWorkerTaskFailing.md
+      - alert: SmoRAppInstancesFaulted
+        expr: max(smo_rapp_instances{state="FAULTED"}) > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $value }} rApp instances have been FAULTED for 15 minutes"
+          description: "An rApp instance crashed or failed to bootstrap and has not been recovered or terminated."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoRAppInstancesFaulted.md

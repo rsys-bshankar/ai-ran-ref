@@ -226,6 +226,8 @@ smo/
     ARCHITECTURE.md         layers, golden rules, R1 conventions, standards per service
     RAPP_PACKAGING.md       rApp CSAR layout, manifest.yaml / capabilities.yaml, per-sample parameter tables
     STANDARDS.md            frozen decisions, TS 28.105/28.104/28.312 compliance matrices, runtime realisation
+    SLOS.md                 service level objectives (proposed) and the burn-rate alerts built on them
+    runbooks/               one page per alert: symptom, impact, diagnosis, mitigation, escalation
     call-flows/             27 Mermaid sequence diagrams of end-to-end journeys
     openapi/                committed OpenAPI spec per service, checked against the live schema
 ```
@@ -246,6 +248,7 @@ smo/
 | [`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md) | Every outbound call to a caller-registered destination, classified (outbox or inline), kept in step with the code by a test |
 | [`docs/adr/`](docs/adr/) | Architecture decision records (`0001`: Alembic, one history) |
 | [`docs/VALIDATION.md`](docs/VALIDATION.md) | The validation program: what is tested today in each category (unit, integration, interface, DB, security, load, stress, upgrade, rollback, HA, GUI), what is not, and the order gaps are closed |
+| [`docs/SLOS.md`](docs/SLOS.md), [`docs/runbooks/`](docs/runbooks/README.md) | The SLIs and proposed targets, the Prometheus alert rules (`deploy/helm/smo/files/smo-alerts.rules.yaml`, also a `PrometheusRule` in the chart) and one runbook page per alert |
 | [`docs/SECRETS.md`](docs/SECRETS.md) | Every secret: owner, how it is supplied, how it is stored (hash or plaintext), how it is rotated |
 | [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md) | Command-by-command live demo against `docker compose up` |
 | [`CLAUDE.md`](CLAUDE.md) | Working practice, conventions, full test battery |
