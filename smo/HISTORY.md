@@ -1093,7 +1093,7 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   (`PR-DB-2` per-module roles; `PR-SEC-4` secrets manager replaces the `.env` file; `SEC-4.3`). The GUI BFF's own SQLite needs no password.
   A volume created with the old `smo` password keeps it: recreate the volume (`docker compose down -v`) or change the role's password.
 
-### PR-DB-6 — Backup and restore (DB-6.1; 6.2–6.4 open)
+### PR-DB-6 — Backup and restore (DB-6.1, 6.3, 6.5; 6.2 and 6.4 open)
 
 - **The scripts (DB-6.1).** `scripts/db_backup.sh` writes one `pg_dump --format=custom` file (`--no-owner --no-privileges`); `scripts/db_restore.sh`
   puts it back with `pg_restore --clean --if-exists --exit-on-error --single-transaction`, so a restore that fails (a truncated or foreign file)
@@ -1111,9 +1111,47 @@ decisions behind them are in `docs/STANDARDS.md` (D-1…D-9) and the wave entrie
   putting the password in `--dbname` each fails a test. The test skips when the client tools are older than the server (pg_dump refuses),
   which is the case on the CI runner (Postgres 16 client, 18 server), so CI covers the scripts in the compose e2e job instead: backup in
   compose mode, stop everything but the database, delete rows, restore, and compare the row count.
-- **Not taken, still open.** `compose` mode could not be run in the sandbox this was written in (no Docker daemon): its first run is the CI e2e
+- **WAL archiving and point-in-time recovery (DB-6.3) and the GUI database (DB-6.5).** Both are written up and built in `PR-HA-6` below: WAL archiving as the CloudNativePG
+  `barmanObjectStore` path (documented, not run in CI), the GUI SQLite file copied with SQLite's online backup API into each off-site set and put back by the runbook
+  (its integrity and its users are checked by the drill; the copy into a compose volume is a documented command, not yet run on a real stack).
+- **Not taken, still open (as of DB-6.1; superseded by the entry below).** `compose` mode could not be run in the sandbox this was written in (no Docker daemon): its first run is the CI e2e
   job. WAL archiving and point-in-time recovery (DB-6.3), a restore drill with timings (DB-6.4), and the CI job with a runbook smoke after the
   restore and a host-mode run against Postgres 18 (DB-6.2) are not done; a dump restores to the moment it was taken only.
+
+### PR-HA-6 — Disaster recovery (HA-6.1, 6.2; 6.3 open)
+
+- **Targets (HA-6.1).** RPO 15 minutes and RTO 1 hour, decided by the owner (October 2026, release 0.5.0 scope), written with what each means and how it is measured
+  in `docs/DISASTER_RECOVERY.md`: the RPO is the age of the newest complete off-site copy at the disaster, the RTO is the whole recovery and the drill times the part a
+  script can (fetch and verify, restore, schema checks, smoke); a working split of the hour (15 decide and provision, 30 fetch and restore, 15 re-point and verify) is given as a
+  budget to replace by measurements.
+- **Two mechanisms, by where Postgres runs (HA-6.2).** (A) compose, a host or any Postgres: `scripts/dr_backup.sh` runs `db_backup.sh` (a verified `pg_dump`), copies the GUI
+  SQLite file with `sqlite3`'s backup API, writes `manifest.json` (UTC time, Postgres version, Alembic revision from `alembic_version`, table count, `backupSeconds`, size and
+  SHA-256 per file), uploads the set under `<prefix>/<UTC stamp>/`, checks every uploaded object by name and size against the manifest, and only then writes `latest.json`
+  and prunes (older than `SMO_BACKUP_RETENTION_DAYS`, never below `SMO_BACKUP_KEEP_MIN` sets, never the set just written). `--loop N` repeats every N seconds and logs a failed run
+  instead of exiting; the compose service `db-backup` (profile `backup`, image `smo/backup/Dockerfile`: the pinned Postgres 18 image plus the AWS CLI, bash and python, running as the
+  GUI backend's uid with the SQLite volume mounted read-only) runs it every `SMO_BACKUP_INTERVAL_SECONDS` (600): worst-case loss is the interval plus one backup's duration, inside 900 s
+  while a backup takes under about 5 minutes. (B) Kubernetes with CloudNativePG: continuous WAL archiving through the Cluster's `barmanObjectStore` with `archive_timeout` 300
+  (`deploy/helm/smo/ci/cnpg-cluster-backup.yaml`), and an opt-in chart value `postgres.cnpgBackup` that renders the `ScheduledBackup` of the base backups
+  (`templates/cnpg-backup.yaml`; it fails the render with the bundled Postgres or without a cluster name). The S3 side is the AWS CLI with `--endpoint-url`, so AWS S3, MinIO and Ceph
+  need no code of their own (`scripts/dr_s3.sh`; `SMO_BACKUP_AWS` swaps the binary, which the tests use).
+- **The drill (HA-6.3, script part).** `scripts/dr_fetch.sh` downloads a set and refuses a file that differs from the manifest; `scripts/dr_drill.sh` creates `smo_drill_<UTC>` on a
+  Postgres it is given, restores with `db_restore.sh`, compares the revision and table count with the manifest, runs `scripts/migrate.py` and
+  `scripts/check_migration_matches_models.py` on it, checks that every table answers a query and that the GUI database passes `PRAGMA integrity_check` and has users, then prints the phase timings and
+  the data-loss window. With `--probe TABLE:COLUMN --high-water T` the window is the last write the dead database acknowledged minus the newest row after the restore; without them it is the
+  age of the set. It exits 1 when a check fails, the recovery time exceeds `--rto-seconds` (3600) or the window exceeds `--rpo-seconds` (900), and drops its database unless `--keep`.
+  CI job `disaster-recovery` (`.github/workflows/smo-dr.yml`, weekly and on changes to the scripts): MinIO from `docker run` (a service container cannot pass `server /data`), a Postgres 18 source
+  migrated to head taking one row a second into `periodic_run` (a real table, so the models check still passes: it fails on a table outside `table_owners.json`), `dr_backup.sh --loop 20`, a kill of
+  the database and the job together, a fresh Postgres 18, the drill with both gates, an assertion that the loss was under 120 s at that cadence, and a second drill limited to 1 s that must fail.
+- **Proof here.** `tests_integration/test_dr_scripts.py` on a real Postgres with a stand-in AWS CLI (`tests_integration/fake_aws.py`): manifest content, `latest.json` equal to the newest
+  manifest, no bucket means no backup, an upload that drops the dump fails the run and leaves `latest.json` alone, retention with its floor and the new set kept, a flipped byte refused by `dr_fetch.sh`,
+  the drill passing with a measured loss and cleaning up, failing on `--rto-seconds 0`, on a high-water mark in the future and on a manifest that names the wrong revision; structure tests pin the
+  workflow, the compose service, the chart values and template, the example Cluster and the document's links. A first script-level drill is in the document's log (5.4 s, 1.8 s lost, Postgres 16 on a sandbox).
+- **Choices not taken.** WAL archiving for compose and plain hosts (a shipper in the image, a base-backup cycle and a recovery procedure, each to build and prove; the logical dump meets 15 minutes at
+  these sizes and the document says when it stops doing so); a CronJob and a published backup image for Kubernetes without CloudNativePG; client-side encryption (the bucket's server-side encryption
+  and policy are the operator's); an alert on a late set; a chart-made CloudNativePG Cluster (the operator and its object store are the operator's, the chart only schedules).
+- **Not done, still open (HA-6.3, DB-6.2, DB-6.4).** Not run here: Docker, Helm, MinIO and kind were not available in the sandbox, so the compose service, the Dockerfile, the `helm` render tests and the CI job's
+  first run (including the PGDG client install and the MinIO image tag) are checked only by structure. The WAL archive and a CloudNativePG recovery have never run. The drill of the runbook (sections 5 and 6)
+  on a real host and on kind at a representative size, with its line in the drill log, is what `RELEASES.md` criterion 4 asks for and is open.
 
 ### PR-DB-4 — Indexes and pagination (DB-4.1; 4.2–4.5 open)
 

@@ -103,6 +103,41 @@ services:
       timeout: 3s
       retries: 10
 
+  # Off-site backup (PR-HA-6.2), a profile: set SMO_BACKUP_S3_BUCKET (and, for MinIO or another store that is not AWS, SMO_BACKUP_S3_ENDPOINT plus
+  # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in .env), then `docker compose --profile backup up -d db-backup`. Every SMO_BACKUP_INTERVAL_SECONDS (default
+  # 600) it dumps Postgres and the GUI backend's SQLite file, writes a manifest, uploads the set and applies the retention (docs/DISASTER_RECOVERY.md).
+  # Direct to Postgres, never through the pooler: pg_dump needs a session. The SQLite volume is mounted read-only.
+  db-backup:
+    profiles: ["backup"]
+    build: { context: ./backup }
+    <<: *hardening
+    user: "10001:10001"
+    restart: unless-stopped
+    secrets: [db_password]
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    environment:
+      SMO_DATABASE_URL: postgresql+psycopg://smo@postgres:5432/smo   # direct to Postgres, not the pooler; no password here: scripts/pg_env.sh adds it from the file below
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password
+      SMO_BACKUP_S3_BUCKET: ${SMO_BACKUP_S3_BUCKET:-}
+      SMO_BACKUP_S3_PREFIX: ${SMO_BACKUP_S3_PREFIX:-smo}
+      SMO_BACKUP_S3_ENDPOINT: ${SMO_BACKUP_S3_ENDPOINT:-}
+      SMO_BACKUP_S3_SSE: ${SMO_BACKUP_S3_SSE:-}
+      SMO_BACKUP_RETENTION_DAYS: ${SMO_BACKUP_RETENTION_DAYS:-14}
+      SMO_BACKUP_KEEP_MIN: ${SMO_BACKUP_KEEP_MIN:-5}
+      SMO_BACKUP_INTERVAL_SECONDS: ${SMO_BACKUP_INTERVAL_SECONDS:-600}
+      SMO_BACKUP_GUI_DB: /gui-data/gui-bff.db
+      SMO_BACKUP_STAGING: /staging
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+    command: ["sh", "-c", "exec /scripts/dr_backup.sh --loop \"$$SMO_BACKUP_INTERVAL_SECONDS\""]
+    volumes:
+      - ./scripts:/scripts:ro
+      - gui_bff_data:/gui-data:ro
+      - smo_backup_staging:/staging
+
   # Brings the database to the schema of this release, then exits (PR-OPS-1.5, docs/adr/0001-schema-migrations.md): an
   # empty database gets the baseline and every revision after it, a database made from 001_init.sql by an earlier
   # stack is stamped and upgraded, an up-to-date one is left alone. The services wait for it to finish; if it fails
@@ -617,6 +652,7 @@ networks:
 
 volumes:
   smo_pgdata:
+  smo_backup_staging:
   smo_scratch:
   smo_packages:
   gui_bff_data:

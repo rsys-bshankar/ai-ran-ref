@@ -34,6 +34,14 @@ postgres:
     # accepts writes is used, so a new primary is found after a failover without a change here. A service that always points at the primary
     # (CloudNativePG's <cluster>-rw, Patroni's leader service) needs neither.
     targetSessionAttrs: ""                     # "" | read-write | any | primary | prefer-standby
+  # Disaster recovery (PR-HA-6.2, docs/DISASTER_RECOVERY.md), opt in. With a CloudNativePG cluster behind postgres.external, the Cluster's
+  # spec.backup.barmanObjectStore archives the WAL to an S3-compatible bucket continuously (ci/cnpg-cluster-backup.yaml); this renders the
+  # ScheduledBackup that takes the base backups the WAL is replayed on. The Cluster is not made by this chart, so `cluster` names it.
+  cnpgBackup:
+    enabled: false
+    cluster: ""                                # the CloudNativePG Cluster to back up, e.g. smo-pg
+    schedule: "0 0 2 * * *"                    # six fields, seconds first (CloudNativePG's cron): daily at 02:00 UTC
+    immediate: true                            # also take one backup as soon as the object exists
 
 # The two secrets every install needs: the database password and the enrollment secret (what makes a module an SMO module at SME, PR-SEC-14).
 # By default the chart makes them (random, kept across upgrades). To bring your own, create a Secret with the keys `db-password` and

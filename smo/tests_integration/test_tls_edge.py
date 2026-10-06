@@ -152,7 +152,7 @@ def test_the_edge_is_only_in_the_tls_profile_publishes_two_ports_and_is_hardened
     assert sorted(edge["secrets"]) == ["tls_cert", "tls_key"]
     assert compose["secrets"]["tls_cert"]["file"] == "./certs/server.crt" and compose["secrets"]["tls_key"]["file"] == "./certs/server.key"
     # the only services outside the default stack: the TLS edge, and the NETCONF lab server (PR-SB-1.4, profile netconf-lab)
-    assert sorted(name for name, svc in compose["services"].items() if "profiles" in svc) == ["edge-tls", "netconf-lab", "pgbouncer"], \
+    assert sorted(name for name, svc in compose["services"].items() if "profiles" in svc) == ["db-backup", "edge-tls", "netconf-lab", "pgbouncer"], \
         "the default stack must not need a certificate"
     assert compose["services"]["netconf-lab"]["profiles"] == ["netconf-lab"]
 
