@@ -5,8 +5,8 @@
 # so the list shrinks and nothing is added to it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-MODULES=(onboarding rapp-mgmt mlmr mllf so-smos sme dme r1-termination nfo ran-analytics mdaf sa-smos mock-o1-adaptor focom gui-bff aimgf intent-service)
-# NOT_YET (findings, under the pinned mypy): ran-nf-oam 68, sdk 97
+MODULES=(onboarding rapp-mgmt mlmr mllf so-smos sme dme r1-termination nfo ran-analytics mdaf sa-smos mock-o1-adaptor focom gui-bff aimgf intent-service ran-nf-oam)
+# NOT_YET (findings, under the pinned mypy): sdk 97
 [ "$#" -gt 0 ] && MODULES=("$@")
 status=0
 for m in "${MODULES[@]}"; do
