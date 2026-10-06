@@ -574,6 +574,8 @@ def _cell(text: str) -> str:
 
 
 def default_cell(variable: Variable) -> str:
+    if variable.secret:
+        return "*not shown*"                                    # the default of a secret is never written to a document, whatever it is today
     if len(variable.defaults) == 1:
         return f"`{_cell(variable.defaults[0])}`"
     return " / ".join(f"`{_cell(d)}`" for d in variable.defaults)
