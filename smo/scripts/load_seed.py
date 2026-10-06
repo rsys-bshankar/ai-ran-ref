@@ -40,7 +40,7 @@ def seed(conn, elements: int, seed_value: int) -> dict:
     with conn.cursor() as cur:
         with cur.copy("COPY ran_nf_oam.managed_entity (managed_element_ref, entity_type, vendor_name, o1_protocol, cell_guards) FROM STDIN") as cp:
             for n in range(elements):
-                cp.write_row((f"load-me-{n}", "gNB", "load-vendor", "NETCONF", json.dumps({})))
+                cp.write_row((f"load-me-{n}", "O-DU", "load-vendor", "NETCONF", json.dumps({})))
         with cur.copy("COPY ran_nf_oam.alarm (alarm_id, source_alarm_id, managed_element_ref, severity, ack_state, raised_at, root_cause_indicator, "
                       "correlated_notifications) FROM STDIN") as cp:
             for n in range(elements):
