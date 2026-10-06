@@ -85,7 +85,7 @@ def target_path(managed_element_ref: str, managed_function_ref: str | None) -> s
 
 def _rules_of(db: Session, roles: list[MsacRole]) -> list[MsacAccessRule]:
     ids = {uuid.UUID(str(r)) for role in roles for r in role.access_rules_list}
-    return [db.get(MsacAccessRule, i) for i in ids if db.get(MsacAccessRule, i) is not None]
+    return [rule for i in ids if (rule := db.get(MsacAccessRule, i)) is not None]
 
 
 def resolve_roles(db: Session, requested_by: str, msac_role: str | None) -> tuple[bool, list[MsacRole]]:

@@ -79,7 +79,7 @@ def children_stmt(dn: str):
 
 def subtree(db: Session, dn: str, depth: int) -> tuple[dict, bool]:
     """(the object and its descendants down to `depth` levels as nested `children`, whether `MAX_SUBTREE_NODES` cut it short)."""
-    root = db.get(ManagedObject, dn)
+    root = db.get_one(ManagedObject, dn)
     budget = [MAX_SUBTREE_NODES]
     truncated = [False]
 

@@ -14,6 +14,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -172,7 +173,7 @@ def compute(db: Session, definition: KpiDefinition, start: datetime.datetime, en
 # They are NOT the TS 28.554 definitions, which are not reproduced here: an operator who needs those defines them (`PUT /kpi-definitions/{name}`)
 # over the counters their NFs report.
 HO_FAILURES = "(fail_too_late + fail_too_early + fail_wrong_cell)"
-STANDARD_KPIS = [
+STANDARD_KPIS: list[dict[str, Any]] = [
     {"name": "dl_prb_utilization", "unit": "percent", "formula": "prb",
      "description": "Mean downlink PRB utilisation (RRU.PrbTotDl is reported as a percentage per sample)",
      "counters": [{"counter": "RRU.PrbTotDl", "variable": "prb", "aggregation": "avg"}]},

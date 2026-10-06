@@ -26,6 +26,7 @@ An interval bound of None is unbounded.
 
 import re
 from decimal import Decimal, InvalidOperation
+from typing import cast
 
 _INTEGER_TEXT = re.compile(r"^[+-]?\d+$")
 
@@ -77,13 +78,13 @@ def check_value(entry: dict, value) -> str | None:
             return f"is out of range {_intervals_text(entry['range'])}"
         return None
     if kind == "number":
-        number = _as_decimal(value)
-        if number is None:
+        decimal = _as_decimal(value)
+        if decimal is None:
             return "is not a number"
         digits = entry.get("fractionDigits")
-        if digits is not None and -number.as_tuple().exponent > digits and number != number.quantize(Decimal(1).scaleb(-digits)):
+        if digits is not None and -cast(int, decimal.as_tuple().exponent) > digits and decimal != decimal.quantize(Decimal(1).scaleb(-digits)):
             return f"has more than {digits} fraction digits"
-        if entry.get("range") and not _within(number, entry["range"]):
+        if entry.get("range") and not _within(decimal, entry["range"]):
             return f"is out of range {_intervals_text(entry['range'])}"
         return None
     if kind == "boolean":
