@@ -208,7 +208,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     def issue_session(user: GuiUser) -> tuple[str, str]:
         csrf = secrets.token_urlsafe(24)
-        token = issue_jwt({"sub": user.username, "ver": user.token_version, "csrf": csrf},
+        token = issue_jwt({"sub": user.username, "ver": user.token_version, "csrf": csrf, "jti": secrets.token_urlsafe(16)},
                           cfg.jwt_secret, cfg.session_ttl_seconds)
         return token, csrf
 
@@ -245,6 +245,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         with app.state.db.session() as s:
             user = s.get(GuiUser, claims.get("sub"))
         if user is None or not user.active or user.token_version != claims.get("ver"):
+            raise _problem_exception(401, "SESSION_REVOKED", "session revoked")
+        if claims.get("jti") and app.state.db.session_revoked(claims["jti"]):      # ended by its owner (logout)
             raise _problem_exception(401, "SESSION_REVOKED", "session revoked")
         if via_cookie and request.method in UNSAFE_METHODS:
             sent = request.headers.get(CSRF_HEADER, "")
@@ -294,10 +296,15 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.post("/api/logout")
     def logout(request: Request, response: Response):
-        claims = decode_jwt(request.cookies.get(SESSION_COOKIE, ""), cfg.jwt_secret)
+        auth = request.headers.get("authorization", "")
+        token = auth[7:].strip() if auth.lower().startswith("bearer ") else request.cookies.get(SESSION_COOKIE, "")
+        claims = decode_jwt(token, cfg.jwt_secret)
         response.delete_cookie(SESSION_COOKIE, path="/api", secure=cfg.cookie_secure, samesite="strict")
         response.delete_cookie(CSRF_COOKIE, path="/", secure=cfg.cookie_secure, samesite="strict")
         if claims:
+            if claims.get("jti"):
+                # the cookie is cleared in the browser, but a copy of it (or the token) would stay good until it expires: the session itself is ended here
+                app.state.db.revoke_session(claims["jti"], claims["exp"], time.time())
             audit("LOGOUT", username=claims.get("sub"))
         return {"status": "logged out"}
 

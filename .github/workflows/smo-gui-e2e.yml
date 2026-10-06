@@ -13,6 +13,8 @@ on:
     paths:
       - ".github/workflows/smo-gui-e2e.yml"
       - "smo/scripts/gui_e2e.py"
+      - "smo/scripts/gui_session_e2e.py"
+      - "smo/gui-bff/**"
       - "smo/security/gui-axe-baseline.json"
       - "smo/gui/**"
 
@@ -47,6 +49,8 @@ jobs:
         working-directory: smo
         env:
           GUI_COOKIE_SECURE: "false"      # no TLS terminator in front of the GUI here
+          GUI_OPERATOR_PASSWORD: ci-operator-pass-1     # the stack seeds these accounts on first start; throwaway, for this job's stack only
+          GUI_VIEWER_PASSWORD: ci-viewer-pass-1
         run: |
           scripts/init_secrets.sh
           cp .env.example .env
@@ -69,6 +73,19 @@ jobs:
           # the generated admin password is in the BFF container (mode 0600, never in the log)
           GUI_E2E_PASSWORD=$(docker compose exec -T gui-bff cat /data/initial-admin-password) \
             python scripts/gui_e2e.py --base-url http://localhost:3000 --out "$RUNNER_TEMP/gui-e2e"
+
+      - name: Sessions and roles in the browser (viewer, operator, admin)
+        working-directory: smo
+        env:
+          GUI_E2E_OPERATOR_PASSWORD: ci-operator-pass-1
+          GUI_E2E_VIEWER_PASSWORD: ci-viewer-pass-1
+        run: |
+          export GUI_E2E_PASSWORD=$(docker compose exec -T gui-bff cat /data/initial-admin-password)
+          python scripts/gui_session_e2e.py --base-url http://localhost:3000
+          # a short session: restart the backend with a 20 s lifetime and check that a sign-in ends
+          GUI_COOKIE_SECURE=false GUI_SESSION_TTL_SECONDS=20 docker compose up -d gui-bff
+          for i in $(seq 1 30); do curl -fsS http://localhost:3000/api/permissions > /dev/null 2>&1 && break; sleep 2; done
+          python scripts/gui_session_e2e.py --base-url http://localhost:3000 --expiry 20 --only-expiry
 
       - name: The stack's logs, when a step failed
         if: failure()

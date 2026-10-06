@@ -503,6 +503,7 @@ services:
       GUI_OPERATOR_PASSWORD: ${GUI_OPERATOR_PASSWORD:-}
       GUI_VIEWER_PASSWORD: ${GUI_VIEWER_PASSWORD:-}
       GUI_COOKIE_SECURE: ${GUI_COOKIE_SECURE:-true}
+      GUI_SESSION_TTL_SECONDS: ${GUI_SESSION_TTL_SECONDS:-28800}    # how long a sign-in lasts (8 h)
     volumes:
       - gui_bff_data:/data   # GUI users, audit log, the BFF's SME invoker credential
 
