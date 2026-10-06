@@ -40,7 +40,7 @@ def _in_a_stable_order(stmt):
     different orders, so a row could be on both pages or on neither (found by the volume lane, PR-V-6). A statement that orders itself is left as it is."""
     if stmt._order_by_clauses:                                  # noqa: SLF001 — the only way to ask a Select whether it is ordered
         return stmt
-    entity = stmt.column_descriptions[0].get("entity") if stmt.column_descriptions else None
+    entity = stmt.column_descriptions[0].get("entity")
     if entity is None:
         return stmt
     return stmt.order_by(*inspect(entity).primary_key)
