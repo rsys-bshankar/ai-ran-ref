@@ -183,9 +183,9 @@ def register_model(body: RegisterModelRequest, db: Session = Depends(get_session
     db.add(model)
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         db.rollback()
-        raise framework_error(FrameworkError.MODEL_ALREADY_REGISTERED, detail=f"model type {body.modelType} version {body.version} already registered")
+        raise framework_error(FrameworkError.MODEL_ALREADY_REGISTERED, detail=f"model type {body.modelType} version {body.version} already registered") from exc
     return {"modelId": str(model.model_id)}
 
 
@@ -419,7 +419,7 @@ def _aimgf_refs(model_id: uuid.UUID) -> dict:
         resp = _r1.get(f"/aimgf/ml-models/{model_id}/nrm-refs")
         if resp.status_code == 200:
             return resp.json()
-    except Exception:  # noqa: BLE001 — any transport failure degrades to "unknown"
+    except Exception:  # noqa: BLE001, S110 — any transport failure degrades to "unknown"
         pass
     return {"mLTrainingType": None, "aIMLInferenceReportRefList": [], "usedByFunctionRefList": []}
 

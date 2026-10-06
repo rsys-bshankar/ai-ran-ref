@@ -105,7 +105,7 @@ def _record_phase(model_id: uuid.UUID, phase: str, *, training_info: dict | None
         body["trainingInfo"] = training_info
     try:
         _r1.patch(f"/mlmr/models/{model_id}/phase-info", json=body)
-    except Exception:  # noqa: BLE001 — a transport failure only loses the lineage record
+    except Exception:  # noqa: BLE001, S110 — a transport failure only loses the lineage record
         pass
 
 
@@ -137,9 +137,9 @@ def _fire_model_event(db: Session, model_id: uuid.UUID, event: ModelLifecycleEve
     from_state = ModelLifecycleState(lifecycle.model_lifecycle_state)
     try:
         new_state = MODEL_LIFECYCLE_FSM.fire(from_state, event)
-    except IllegalTransition:
+    except IllegalTransition as exc:
         raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
-                               detail=f"cannot fire {event} from model lifecycle state {from_state}")
+                               detail=f"cannot fire {event} from model lifecycle state {from_state}") from exc
     lifecycle.model_lifecycle_state = new_state
     db.add(LifecycleTransition(model_id=model_id, fsm="MODEL", from_state=from_state, to_state=new_state, event=event))
     if event in GOVERNANCE_EVENTS:
@@ -164,9 +164,9 @@ def _fire_runtime_event(db: Session, model_id: uuid.UUID, event: RuntimeLifecycl
     from_state = RuntimeLifecycleState(lifecycle.runtime_lifecycle_state)
     try:
         new_state = RUNTIME_LIFECYCLE_FSM.fire(from_state, event)
-    except IllegalTransition:
+    except IllegalTransition as exc:
         raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION,
-                               detail=f"cannot fire {event} from runtime lifecycle state {from_state}")
+                               detail=f"cannot fire {event} from runtime lifecycle state {from_state}") from exc
     lifecycle.runtime_lifecycle_state = new_state
     db.add(LifecycleTransition(model_id=model_id, fsm="RUNTIME", from_state=from_state, to_state=new_state, event=event))
     db.flush()
@@ -1088,9 +1088,9 @@ def advance_model_lifecycle(model_id: uuid.UUID, event: str, decided_by: str | N
     """
     try:
         ev = ModelLifecycleEvent(event)
-    except ValueError:
+    except ValueError as exc:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
-                               detail=f"unknown model lifecycle event {event!r}; advance accepts {sorted(ADVANCEABLE_EVENTS)}")
+                               detail=f"unknown model lifecycle event {event!r}; advance accepts {sorted(ADVANCEABLE_EVENTS)}") from exc
     if ev not in ADVANCEABLE_EVENTS:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
                                detail=f"{ev} is job-driven and cannot be advanced directly; use {_JOB_ROUTE_FOR_EVENT[ev]}")
@@ -1662,10 +1662,10 @@ def create_feature_group(body: CreateFeatureGroupRequest, db: Session = Depends(
     db.add(group)
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         db.rollback()
         _terminate_feature_group_data_job(data_job_id)  # lost a race on the name: don't leave the job behind
-        raise framework_error(FrameworkError.FEATURE_GROUP_ALREADY_REGISTERED, detail=f"feature group {body.featureGroupName!r} already exists")
+        raise framework_error(FrameworkError.FEATURE_GROUP_ALREADY_REGISTERED, detail=f"feature group {body.featureGroupName!r} already exists") from exc
     return _feature_group_view(group)
 
 

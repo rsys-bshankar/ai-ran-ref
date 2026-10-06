@@ -24,7 +24,7 @@ run and read its logs, and `scripts/check_migration_matches_models.py`
 needs a real Postgres CI doesn't give you locally unless you start one
 yourself.
 
-**0. Lint** (CI job `lint`; the rules and why they are narrow: `ruff.toml`):
+**0. Lint** (CI job `lint`; the rule sets and what is switched off, and why: `ruff.toml`):
 
 ```bash
 cd smo && pip install ruff && ruff check .

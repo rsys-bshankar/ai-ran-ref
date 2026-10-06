@@ -367,7 +367,7 @@ def _forward_drift_to_mlmf(report: MDAFReport) -> list[str]:
             for sub in subs.json().get("items", []):
                 _r1.post(f"/aimgf/mlmf/subscriptions/{sub['subscriptionId']}/reports", json=metrics)
                 forwarded.append(sub["subscriptionId"])
-        except Exception:  # noqa: BLE001 — drift forwarding never fails the publish
+        except Exception:  # noqa: BLE001, S112 — drift forwarding never fails the publish
             continue
     return forwarded
 

@@ -1,12 +1,29 @@
-# CI lint (.github/workflows/smo-tests.yml, job `lint`). Deliberately narrow:
-# only rules that catch real defects — syntax errors (E9), invalid
-# comparisons/asserts/print-chevrons (F63, F7) and undefined names (F82).
+# CI lint (.github/workflows/smo-tests.yml, job `lint`). The rule sets are the ones that catch defects or security slips:
+#   E9, F63, F7, F82   syntax errors, invalid comparisons / asserts, undefined names
+#   B                  flake8-bugbear: a raise in an except clause without `from` (B904, the cause is lost), a closure over a loop variable (B023), an unused loop variable (B007)...
+#   S                  flake8-bandit: SQL built from strings (S608), a swallowed exception (S110, S112), a hard-coded temporary path (S108), `subprocess` (S603, S607), a hard-coded password (S105, S106)...
+#   PLE                pylint errors
 #
-# F401 (unused import) is NOT enabled: each module's `main.py` keeps `import
-# httpx` so the integration tests can patch `loaded_apps[<module>].httpx`, and
-# "fixing" those would break them. B008 (call in default argument) is FastAPI's
-# `Depends(...)` idiom.
+# Not enabled, and why. F401 (unused import): each module's `main.py` keeps `import httpx` so the integration tests can patch `loaded_apps[<module>].httpx`, and
+# "fixing" those would break them. B008 (call in default argument) is FastAPI's `Depends(...)` idiom. B905 (`zip` without `strict=`) is style, not a defect, at this
+# Python floor. The `S` rules that cannot apply to a kind of file are switched off for that kind of file below, with the reason; a single line that is deliberate carries
+# its own `# noqa: <code> — <reason>`.
 extend-exclude = ["gui/node_modules", "gui/dist"]
 
 [lint]
-select = ["E9", "F63", "F7", "F82"]
+select = ["E9", "F63", "F7", "F82", "B", "S", "PLE"]
+ignore = ["B008", "B905"]
+
+[lint.per-file-ignores]
+# tests assert, use fixed passwords and temporary paths, and call `git`, `docker` and `openssl`
+"**/tests/**" = ["S"]
+"tests_integration/**" = ["S"]
+"**/conftest.py" = ["S"]
+# a migration builds SQL from table and column names that are constants of the revision (never input), because DDL cannot take bound parameters
+"migrations/versions/*.py" = ["S608"]
+# repository tooling runs `git`, `docker`, `helm` and `kubectl` by name, and its probes write to /tmp on purpose
+"scripts/**" = ["S101", "S603", "S607", "S108"]
+# the fuzz harnesses assert on purpose: an assertion failure is what the fuzzer looks for
+"fuzz/**" = ["S101"]
+# the demo scripts of the sample rApps write their output to /tmp
+"samples/*/demo.py" = ["S108"]

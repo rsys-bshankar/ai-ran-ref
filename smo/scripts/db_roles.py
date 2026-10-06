@@ -28,7 +28,7 @@ from pathlib import Path
 
 SMO_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = SMO_ROOT / "migrations" / "db_roles.json"
-PASSWORD_DIR_VARIABLE = "SMO_DB_ROLE_PASSWORD_DIR"
+PASSWORD_DIR_VARIABLE = "SMO_DB_ROLE_PASSWORD_DIR"  # noqa: S105 — the name of an environment variable, not a credential
 
 
 def short_name(module: str) -> str:

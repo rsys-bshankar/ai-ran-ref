@@ -173,7 +173,7 @@ class NetconfSession:
             try:
                 if resource is not None:
                     resource.close()
-            except Exception:                                   # noqa: BLE001 - closing must never mask the real error
+            except Exception:                                   # noqa: BLE001, S110 - closing must never mask the real error
                 pass
         self._channel = self._client = None
 

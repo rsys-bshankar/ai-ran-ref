@@ -96,7 +96,7 @@ def concurrent_commit_on(table: str):
             return
         for obj in session.dirty:
             if getattr(obj, "__tablename__", None) == table and session.is_modified(obj):
-                session.connection().exec_driver_sql(f"UPDATE {table} SET row_version = row_version + 1")
+                session.connection().exec_driver_sql(f"UPDATE {table} SET row_version = row_version + 1")  # noqa: S608 — the table name is a model's __tablename__
                 fired.append(True)
                 return
 

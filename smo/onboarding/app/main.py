@@ -402,8 +402,8 @@ def _fire(db: Session, pkg: ApplicationPackage, event: PackageEvent, guard_refus
         return ONBOARDING_FSM.fire(state, event, db=db, package=pkg)
     except IllegalTransition as exc:
         if guard_refusal is not None and event in ONBOARDING_FSM.legal_events(state):
-            raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail=guard_refusal)
-        raise illegal_transition_error(exc, f"package {pkg.package_id}")
+            raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail=guard_refusal) from exc
+        raise illegal_transition_error(exc, f"package {pkg.package_id}") from exc
 
 
 @app.get("/packages/{package_id}/onboarding-status")

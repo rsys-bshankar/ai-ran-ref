@@ -384,7 +384,7 @@ def train(instance_id: uuid.UUID, db: Session = Depends(get_session)):
         sdk.lifecycle.complete_training(job["trainingJobId"], False, metrics={"failureReason": str(e)})
         _jobs(inst, training=job["trainingJobId"])
         db.commit()
-        raise RappError(422, "TRAINING_FAILED", str(e))
+        raise RappError(422, "TRAINING_FAILED", str(e)) from e
     stored = sdk.models.store_model(MODEL_TYPE, version, model.to_artifact(), filename="energy_model.zip")
     inst.artifact_version, inst.model_params = stored["artifactVersion"], model.to_dict()
     metrics["artifactVersion"] = stored["artifactVersion"]

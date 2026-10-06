@@ -41,7 +41,7 @@ def emulate(model: CoverageModel, records: list[dict]) -> tuple[bool, dict]:
     faulty = correct = healthy = false_actions = 0
     gain = 0.0
     every_move = {m for m in MOVES if m != "NONE"}
-    for cluster, recs in sorted(clusters.items()):
+    for _cluster, recs in sorted(clusters.items()):
         cells = by_cell(recs)
         first = recs[0].get("payload", recs[0])
         scenario, fault = first.get("scenario", "HEALTHY"), first.get("faultCell")

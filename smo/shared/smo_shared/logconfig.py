@@ -39,7 +39,7 @@ REDACTED = "[REDACTED]"
 PROBE_PATHS = frozenset({"/live", "/ready", "/health"})
 _HANDLER_MARK = "_smo_json_handler"
 
-_SECRET_NAME = r"(?:pass(?:word|wd)?|secret|client_secret|onboarding_?secret|(?:access_|refresh_|id_|session_)?token|api[_-]?key|credentials?|private[_-]?key|cookie|set-cookie)"
+_SECRET_NAME = r"(?:pass(?:word|wd)?|secret|client_secret|onboarding_?secret|(?:access_|refresh_|id_|session_)?token|api[_-]?key|credentials?|private[_-]?key|cookie|set-cookie)"  # noqa: S105 — a pattern of names to redact, not a credential
 _PATTERNS = [
     # Authorization: Bearer abc / "authorization": "Basic abc"  (keeps the scheme, drops the value)
     (re.compile(r"(?i)(authorization[\"']?\s*[:=]\s*[\"']?)(bearer|basic|token)\s+[^\s\"',;}]+"), r"\1\2 " + REDACTED),
