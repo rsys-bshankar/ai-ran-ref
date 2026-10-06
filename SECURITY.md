@@ -146,7 +146,10 @@ declined, but a way to exploit one in a surprising way is welcome.
   [`smo/docs/PRIVACY.md`](smo/docs/PRIVACY.md). Deleting a GUI user removes the account, its
   sessions and its failed-login counter; the audit rows and module records that name the user
   stay (the same document says why and what the options are). The GUI's own database is not
-  covered by `scripts/db_backup.sh` (`DB-6.5`).
+  covered by `scripts/db_backup.sh`, which dumps Postgres; `scripts/dr_backup.sh` copies it with the rest to an
+  S3-compatible bucket (compose). Backups hold every table including credentials in plaintext, are not
+  encrypted by the scripts, and are as sensitive as the database: [`smo/docs/DISASTER_RECOVERY.md`](smo/docs/DISASTER_RECOVERY.md)
+  has the targets, the bucket guidance and what is not covered.
 
 The authoritative, current list of open items is
 [`smo/OPEN_ITEMS.md`](smo/OPEN_ITEMS.md). How what exists maps to ISO/IEC 27001:2022 Annex A

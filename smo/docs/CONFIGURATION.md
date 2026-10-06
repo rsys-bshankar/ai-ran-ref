@@ -256,9 +256,19 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 
 | Variable | Default | Secret | Read in | What it does |
 |---|---|---|---|---|
+| `AWS_ACCESS_KEY_ID` | *not shown* | yes | `docker-compose.yml` | Access key of the S3-compatible bucket for the `backup` profile's `db-backup` service (`docs/DISASTER_RECOVERY.md`). Empty: the AWS CLI looks for a role or profile instead. Used by no module. |
+| `AWS_DEFAULT_REGION` | `us-east-1` |  | `docker-compose.yml` | Region the AWS CLI signs `db-backup` requests for (default `us-east-1`; MinIO accepts any). |
+| `AWS_SECRET_ACCESS_KEY` | *not shown* | yes | `docker-compose.yml` | Secret key that goes with `AWS_ACCESS_KEY_ID`, for `db-backup` only. In an environment variable it is visible to anyone who can inspect the container; on AWS prefer an instance or pod role. |
 | `PGBOUNCER_MAX_CLIENT_CONN` | `1000` |  | `docker-compose.yml` | Compose `pooler` profile: how many client connections PgBouncer accepts in total (default 1000). Above it, new clients are refused. |
 | `PGBOUNCER_POOL_SIZE` | `20` |  | `docker-compose.yml` | Compose `pooler` profile: server connections PgBouncer keeps per database and user (default 20). Raise it with the modules' replica count; it must stay below Postgres's `max_connections`. |
 | `POSTGRES_SLOW_QUERY_MS` | `500` |  | `docker-compose.yml` | Compose: Postgres logs every statement slower than this many milliseconds with its text (default 500). `-1` turns it off, `0` logs all. Read it with `docker compose logs postgres`. |
+| `SMO_BACKUP_INTERVAL_SECONDS` | `600` |  | `docker-compose.yml` | Seconds between off-site backups by the `db-backup` service (default 600). The recovery point objective is this plus the time one backup takes, so it must stay well under 900 (`docs/DISASTER_RECOVERY.md`). |
+| `SMO_BACKUP_KEEP_MIN` | `5` |  | `docker-compose.yml` | Retention floor of `scripts/dr_backup.sh`: this many of the newest backup sets are kept whatever their age (default 5). |
+| `SMO_BACKUP_RETENTION_DAYS` | `14` |  | `docker-compose.yml` | Retention of `scripts/dr_backup.sh`: backup sets older than this many days are deleted from the bucket after each successful upload, but never below `SMO_BACKUP_KEEP_MIN` sets (default 14). |
+| `SMO_BACKUP_S3_BUCKET` | `"" (empty)` |  | `docker-compose.yml` | Bucket that receives the off-site backups. Empty (the default) and the `db-backup` service refuses to run; `scripts/dr_backup.sh`, `dr_fetch.sh` and `dr_drill.sh` read it too. |
+| `SMO_BACKUP_S3_ENDPOINT` | `"" (empty)` |  | `docker-compose.yml` | Endpoint URL of an S3-compatible store that is not AWS (MinIO: `http://minio:9000`). Empty: AWS S3. |
+| `SMO_BACKUP_S3_PREFIX` | `smo` |  | `docker-compose.yml` | Key prefix inside the bucket (default `smo`); each backup is a directory `<prefix>/<UTC timestamp>/` and `<prefix>/latest.json` names the newest. |
+| `SMO_BACKUP_S3_SSE` | `"" (empty)` |  | `docker-compose.yml` | Server-side encryption requested on each upload: `AES256` or `aws:kms`. Empty: the bucket's own default applies. |
 | `SMO_DB_HOST` | `postgres` |  | `docker-compose.yml` | Compose: host of Postgres in every module's database URL (default `postgres`). Set it to `pgbouncer` for the `pooler` profile, or to an external database host. |
 | `SMO_DB_PORT` | `5432` |  | `docker-compose.yml` | Compose: port of Postgres in every module's database URL (default 5432); `6432` for PgBouncer. |
 | `SMO_WITH_TRACING` | `0` |  | `docker-compose.yml` | Compose build argument: 1 installs the OpenTelemetry packages (requirements/tracing.txt) into the image. 0 (the default) builds the image without them. |

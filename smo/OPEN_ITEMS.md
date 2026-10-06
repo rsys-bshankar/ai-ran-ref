@@ -25,7 +25,7 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 | API | `?total=false` on every list route (opt out of the page `COUNT(*)`; default unchanged) | – |
 | Security | SEC-9 `/bootstrap` exposure; SEC-8.5 shared rate limiter; SEC-7 logout revocation (done, V-13c); SEC-2 mTLS between services; SEC-3 mesh option (documented with the mTLS work); SEC-6 OIDC login for the GUI (done: `HISTORY.md`; SEC-6.8 LDAP stays open and optional) | SEC-5 signing keys and JWKS, SEC-4.7 external secrets example (both 0.6.0). SEC-7.1 to 7.3 (native TOTP) only if required: with OIDC the identity provider does the second factor, and local login stays as break-glass |
 | Operability | OBS-3 traces (Tempo), OBS-4 business metrics, OBS-5 alerts and SLOs, OBS-6 log shipping, OBS-7 runbooks (OBS-4, 5 and 7 are done in part: what remains is under 5.5), OBS-8 `/version`, OPS-6 GitOps example, OPS-7 configuration reference, OPS-9 sizing | – |
-| Disaster recovery | HA-6: RPO 15 minutes, RTO 1 hour, off-site backup shipping, one timed restore drill | HA-7 geo-redundancy (after 1.0.0) |
+| Disaster recovery | HA-6: RPO 15 minutes, RTO 1 hour, off-site backup shipping, one timed restore drill (built, `docs/DISASTER_RECOVERY.md`; the drill on a real stack is open, HA-6.3) | HA-7 geo-redundancy (after 1.0.0) |
 | Standards and documents | STD-2.1 spec release table; STD-4.1 personal-data inventory; STD-6.1 data residency statement; STD-4.3 erasure procedure for a GUI user; STD-5 control matrix (ISO 27001, NESAS/SCAS) | STD-3 plugfest plan (0.6.0 or later) |
 
 **Documentation rule (every pull request):** a change updates the documents it makes stale in the same pull request: the overall `README.md`, the module's own `README.md` (HLD, LLD, tests), `docs/ARCHITECTURE.md` and `docs/STANDARDS.md` where behaviour or a standard's realisation changes, `OPEN_ITEMS.md` (closed items move to `HISTORY.md`), `CHANGELOG.md`, `docs/VALIDATION.md`, and the chart's README for anything an operator deploys.
@@ -232,10 +232,9 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| DB-6.2 | CI job: backup, wipe, restore, run a runbook smoke (a compose-mode round trip exists since DB-6.1; this adds the runbook smoke and a host-mode run against Postgres 18) | Job green | – |
-| DB-6.3 | Document WAL archiving and point-in-time recovery | Doc reviewed | – |
-| DB-6.4 | Restore drill checklist with timings | Checklist filled once | – |
-| DB-6.5 | Back up and restore the GUI backend's own database (SQLite on volume `gui_bff_data` by default: users, GUI audit log, failed-login counters); `db_backup.sh` dumps Postgres only | A restore on a new host keeps the GUI users and audit log | – |
+| DB-6.2 | CI job: backup, wipe, restore, run a runbook smoke (a compose-mode round trip exists since DB-6.1, and the `disaster-recovery` job restores a host-mode Postgres 18 backup into a fresh database with a database smoke check, `HA-6`; open: the runbook replay after a restore) | Job green | – |
+| DB-6.4 | Restore drill checklist with timings (the runbook and drill log are in `docs/DISASTER_RECOVERY.md`, one script-level line filled; open: a drill of the runbook on a real stack at representative size, same as `HA-6.3`) | Checklist filled once on a real stack | HA-6.3 |
+(`DB-6.3` and `DB-6.5` are done, `HISTORY.md` PR-DB-6.)
 
 #### PR-DB-7 — Postgres HA
 
@@ -621,9 +620,8 @@ Later by design; each feature assumes the stateless, database and messaging step
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| HA-6.1 | RPO and RTO targets written down | Numbers agreed | – |
-| HA-6.2 | Off-site backup shipping | Restore from the off-site copy | – |
-| HA-6.3 | Restore order and re-pointing steps (GUI, R1, adaptors) | One full drill with timings | HA-6.2 |
+| HA-6.3 | Restore order and re-pointing steps (GUI, R1, adaptors) are written (`docs/DISASTER_RECOVERY.md`, sections 5 and 6) and the script-level drill runs in CI (`disaster-recovery`); open: one full drill of the runbook on a real compose host and on kind with CloudNativePG recovery from an object store (the WAL archive has never run in CI), at a representative database size, timings added to the drill log; and an alert on an off-site set older than 15 minutes | One full drill with timings inside RPO 15 minutes and RTO 1 hour (`RELEASES.md` criterion 4) | – |
+(`HA-6.1` and `HA-6.2` are done, `HISTORY.md` PR-HA-6.)
 
 #### PR-HA-7 — Geo-redundancy
 

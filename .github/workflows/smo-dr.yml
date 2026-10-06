@@ -1,0 +1,165 @@
+name: SMO disaster recovery drill
+
+# PR-HA-6: the recovery targets of docs/DISASTER_RECOVERY.md (RPO 15 minutes, RTO 1 hour), proved on every change to the backup scripts and weekly.
+#
+# A Postgres 18 migrated to head takes writes (one timestamped row a second); scripts/dr_backup.sh --loop ships the databases to an S3 bucket served by moto_server (a
+# pip-installable S3 stand-in, requirements/dr.txt) every 20 s; then the database and the backup job are killed with no warning. A FRESH Postgres 18 is started and
+# scripts/dr_drill.sh restores the newest off-site set into it: manifest checksums, migrate + models check, a smoke check, and the data-loss
+# window (the last write the dead database acknowledged minus the newest row found after the restore). The job fails when the loss exceeds 900 s
+# (RPO), the drill takes longer than 3600 s (RTO), or any check fails. A second drill with --rto-seconds 1 must fail, so the gate is known to bite.
+# Timings and the loss window go to the job summary. The S3 side is moto, NOT real storage: the AWS CLI calls, the manifest and the retention are proved here, MinIO and AWS S3 themselves are still to be
+# proved in a drill (docs/DISASTER_RECOVERY.md, section 8). moto replaced a MinIO image that could not be pulled.
+# Not a required check yet.
+
+on:
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/smo-dr.yml"
+      - "smo/scripts/dr_*.sh"
+      - "smo/scripts/db_backup.sh"
+      - "smo/scripts/db_restore.sh"
+      - "smo/scripts/pg_env.sh"
+      - "smo/backup/**"
+      - "smo/requirements/dr.*"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/smo-dr.yml"
+      - "smo/scripts/dr_*.sh"
+      - "smo/scripts/db_backup.sh"
+      - "smo/scripts/db_restore.sh"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smo-dr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  disaster-recovery:
+    name: Off-site backup, kill, restore into a fresh Postgres - RPO 15 min, RTO 1 h
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      POSTGRES_IMAGE: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+      PGPASSWORD: smo
+      AWS_ACCESS_KEY_ID: smo-ci-access
+      AWS_SECRET_ACCESS_KEY: smo-ci-secret-key
+      AWS_DEFAULT_REGION: us-east-1
+      SMO_BACKUP_S3_BUCKET: smo-dr
+      SMO_BACKUP_S3_ENDPOINT: http://localhost:9000
+      SMO_BACKUP_INTERVAL: "20"
+      RPO_SECONDS: "900"
+      RTO_SECONDS: "3600"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: smo/requirements/*.txt
+
+      - name: Install the dependencies, and the Postgres 18 client (a pg_dump older than the server refuses)
+        working-directory: smo
+        run: |
+          pip install --quiet --require-hashes -r requirements/runtime.txt
+          pip install --quiet --no-deps -e shared
+          pip install --quiet --require-hashes -r requirements/dr.txt       # moto_server and the AWS CLI
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-18
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+          aws --version
+
+      - name: Start moto_server (an S3 API on :9000) and make the bucket
+        run: |
+          nohup moto_server -H 127.0.0.1 -p 9000 > "$RUNNER_TEMP/moto.log" 2>&1 &
+          for i in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:9000/moto-api/ && break; sleep 1; done
+          curl -fsS -o /dev/null http://localhost:9000/moto-api/
+          aws --endpoint-url "$SMO_BACKUP_S3_ENDPOINT" s3 mb "s3://$SMO_BACKUP_S3_BUCKET"
+
+      - name: Start the source Postgres 18 and migrate it to head
+        working-directory: smo
+        env:
+          SMO_DATABASE_URL: postgresql+psycopg://smo:smo@localhost:5432/smo
+        run: |
+          docker run -d --name pg-source -p 5432:5432 -e POSTGRES_USER=smo -e POSTGRES_PASSWORD=smo -e POSTGRES_DB=smo "$POSTGRES_IMAGE"
+          for i in $(seq 1 30); do pg_isready -h localhost -p 5432 -U smo && break; sleep 2; done
+          python scripts/migrate.py
+
+      - name: Take writes, back up off-site every 20 s, and kill everything with no warning
+        working-directory: smo
+        env:
+          SMO_DATABASE_URL: postgresql+psycopg://smo:smo@localhost:5432/smo
+          SMO_BACKUP_GUI_DB: ${{ runner.temp }}/gui-bff.db
+        run: |
+          # the GUI backend's SQLite database, with a user (DB-6.5)
+          python - <<'PY'
+          import os, sqlite3
+          db = sqlite3.connect(os.environ["SMO_BACKUP_GUI_DB"])
+          db.execute("CREATE TABLE gui_user (username TEXT PRIMARY KEY, role TEXT)")
+          db.execute("INSERT INTO gui_user VALUES ('admin', 'admin')")
+          db.commit()
+          PY
+          # one timestamped row a second into a real table (periodic_run: a name and a time); the last one acknowledged is the high-water mark
+          psql() { command psql -h localhost -U smo -d smo -Atq "$@"; }
+          psql -c "INSERT INTO periodic_run SELECT 'probe-seed-' || g, clock_timestamp() FROM generate_series(1, 1000) g"
+          ( n=0; while true; do
+              n=$((n + 1))
+              ts=$(psql -c "INSERT INTO periodic_run VALUES ('probe-w-$n', clock_timestamp()) RETURNING to_char(last_run_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')") \
+                && echo "$ts" > "$RUNNER_TEMP/high-water"
+              sleep 1
+            done ) &
+          writer=$!
+          scripts/dr_backup.sh --loop "$SMO_BACKUP_INTERVAL" > "$RUNNER_TEMP/backup.log" 2>&1 &
+          backup=$!
+          sleep 75                                     # three or four backup cycles, the last one part-way through the next interval
+          echo "disaster at $(date -u +%FT%T.%NZ)"
+          kill -9 "$writer" "$backup"
+          docker rm -f pg-source
+          cat "$RUNNER_TEMP/backup.log"
+          [ "$(grep -c '^off-site backup ' "$RUNNER_TEMP/backup.log")" -ge 3 ]
+          if grep -q FAILED "$RUNNER_TEMP/backup.log"; then echo "::error::a backup run failed"; exit 1; fi
+          echo "last acknowledged write: $(cat "$RUNNER_TEMP/high-water")"
+
+      - name: Start a fresh Postgres 18 and run the drill (RPO and RTO gates)
+        working-directory: smo
+        run: |
+          docker run -d --name pg-target -p 5433:5432 -e POSTGRES_USER=smo -e POSTGRES_PASSWORD=smo -e POSTGRES_DB=postgres "$POSTGRES_IMAGE"
+          for i in $(seq 1 30); do pg_isready -h localhost -p 5433 -U smo && break; sleep 2; done
+          scripts/dr_drill.sh --admin-url postgresql+psycopg://smo:smo@localhost:5433/postgres \
+            --probe public.periodic_run:last_run_at --high-water "$(cat "$RUNNER_TEMP/high-water")" \
+            --rpo-seconds "$RPO_SECONDS" --rto-seconds "$RTO_SECONDS" --report "$RUNNER_TEMP/drill.json" | tee "$RUNNER_TEMP/drill.txt"
+          # with a cadence of 20 s and a backup that takes seconds, far less than the RPO is lost: a loss near the RPO would mean the schedule is not running
+          python - <<'PY'
+          import json, os
+          r = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "drill.json")))
+          assert r["passed"], r
+          assert r["dataLossSeconds"] <= 120, f"lost {r['dataLossSeconds']} s with a 20 s backup interval"
+          PY
+          {
+            echo "### Disaster-recovery drill"; echo
+            echo '```'; cat "$RUNNER_TEMP/drill.txt"; echo '```'; echo
+            echo "Targets: RPO ${RPO_SECONDS} s, RTO ${RTO_SECONDS} s. The backup interval here is ${SMO_BACKUP_INTERVAL} s; the compose service defaults to 600 s."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: The RTO gate fails a slow drill (a drill limited to one second must fail)
+        working-directory: smo
+        run: |
+          if scripts/dr_drill.sh --admin-url postgresql+psycopg://smo:smo@localhost:5433/postgres --rto-seconds 1 > "$RUNNER_TEMP/gate.txt" 2>&1; then
+            cat "$RUNNER_TEMP/gate.txt"; echo "::error::a drill limited to 1 s passed: the RTO gate does not bite"; exit 1
+          fi
+          grep -q "FAIL  recovery time" "$RUNNER_TEMP/gate.txt"
+
+      - name: Docker logs on failure
+        if: ${{ failure() }}
+        run: |
+          docker logs pg-source --tail 40 || true
+          docker logs pg-target --tail 40 || true
+          tail -40 "$RUNNER_TEMP/moto.log" || true

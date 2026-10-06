@@ -1,0 +1,4 @@
+# the disaster-recovery drill (.github/workflows/smo-dr.yml) installs this on top of runtime.txt: an S3 server that is pip-installable
+# (moto_server, the stand-in for MinIO / AWS S3 in CI; not real storage) and the AWS CLI that scripts/dr_backup.sh, dr_fetch.sh and dr_drill.sh call.
+moto[server]
+awscli
