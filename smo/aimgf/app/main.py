@@ -451,6 +451,7 @@ def _expire_overdue_jobs(db: Session) -> list[dict]:
 def sweep_execution_timeouts(db: Session = Depends(get_session)):
     """W7-04: fail every overdue Training/Validation/Emulation/Inference run
     now (for a scheduler; reads and completions also sweep lazily)."""
+    # config-ref: AIMGF_TIMEOUT_TRAINING_SECONDS, AIMGF_TIMEOUT_VALIDATION_SECONDS, AIMGF_TIMEOUT_EMULATION_SECONDS, AIMGF_TIMEOUT_INFERENCE_SECONDS
     return {"expired": _expire_overdue_jobs(db), "defaultTimeoutSeconds": {k: _timeout_for(k, None) for k in DEFAULT_TIMEOUT_SECONDS}}
 
 

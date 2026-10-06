@@ -69,6 +69,7 @@ def _cred_var(ref: str, part: str) -> str:
 
 
 def credential_configured(ref: str) -> bool:
+    # config-ref: NETCONF_CRED_<REF>_PASSWORD, NETCONF_CRED_<REF>_PASSWORD_FILE, NETCONF_CRED_<REF>_KEY_FILE, NETCONF_CRED_<REF>_CERT_FILE
     return any(os.environ.get(_cred_var(ref, part)) or os.environ.get(_cred_var(ref, part) + "_FILE")
                for part in ("PASSWORD", "KEY_FILE", "CERT_FILE"))
 

@@ -11,7 +11,7 @@ parses without a regular expression:
                           the access-log middleware below replaces it, with the route template and the correlation id).
   `install_logging(app)`  configure_logging() plus `AccessLogMiddleware`: one line per request with the method, the route
                           template (`/models/{model_id}`, never the raw path or the query string, which may carry an id or a
-                          token), the status and the duration in milliseconds. Probes (`/live`, `/ready`, `/health`) are logged
+                          token), the status and the duration in milliseconds. Probes (`/live`, `/ready`, `/health`, `/version`) are logged
                           at DEBUG so a probe every few seconds does not drown the log; 5xx answers are ERROR.
   Every record carries `service` (the `MODULE` of the container) and, inside a request, `correlationId` (the one
   `X-Correlation-ID` propagates through the whole fan-out, `correlation.py`) and, when the request belongs to a trace, `traceId` (`tracing.py`). Extra fields passed with
@@ -37,7 +37,7 @@ from .correlation import get_correlation_id
 from .tracing import SCOPE_TRACE_ID, get_trace_id
 
 REDACTED = "[REDACTED]"
-PROBE_PATHS = frozenset({"/live", "/ready", "/health"})
+PROBE_PATHS = frozenset({"/live", "/ready", "/health", "/version"})
 _HANDLER_MARK = "_smo_json_handler"
 
 _SECRET_NAME = r"(?:pass(?:word|wd)?|secret|client_secret|onboarding_?secret|(?:access_|refresh_|id_|session_)?token|api[_-]?key|credentials?|private[_-]?key|cookie|set-cookie)"  # noqa: S105 — a pattern of names to redact, not a credential

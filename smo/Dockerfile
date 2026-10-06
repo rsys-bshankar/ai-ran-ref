@@ -58,6 +58,16 @@ USER 10001:10001
 ENV PYTHONPATH=/srv/module:/srv/sdk
 EXPOSE 8000
 
+# Build identity, answered by GET /version (PR-OBS-8.1). Declared last so a new commit invalidates only this layer, not
+# the dependency and code layers above. docker-compose.yml passes ${SMO_VERSION}, ${SMO_BUILD_SHA} and ${SMO_BUILT_AT}
+# from the environment; the release workflow passes the tag, the commit and the build time.
+ARG SMO_VERSION=unknown
+ARG SMO_BUILD_SHA=unknown
+ARG SMO_BUILT_AT=unknown
+ENV SMO_VERSION=${SMO_VERSION} \
+    SMO_BUILD_SHA=${SMO_BUILD_SHA} \
+    SMO_BUILT_AT=${SMO_BUILT_AT}
+
 # Worker processes per container, and how long a stopping container keeps finishing the requests it already
 # accepted (PR-ST-6). On SIGTERM uvicorn stops accepting connections, lets in-flight requests complete, and
 # exits; anything still running after UVICORN_GRACEFUL_SHUTDOWN_SECONDS is cut. docker-compose.yml gives every

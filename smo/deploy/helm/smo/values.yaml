@@ -135,6 +135,12 @@ observability:
     resources:
       requests: { cpu: 50m, memory: 128Mi }
       limits: { memory: 384Mi }
+# The alert and SLO burn-rate rules (PR-OBS-5, files/smo-alerts.rules.yaml) as a PrometheusRule of the Prometheus Operator. Off by default: it needs that CRD, and
+# the rules assume each module is scraped as a job named after it. `labels` is what your Prometheus's ruleSelector matches (for example `release: kube-prometheus-stack`).
+prometheusRule:
+  enabled: false
+  namespace: ""          # empty: the release's namespace
+  labels: {}
 
 # Brings the database to this release's schema (PR-OPS-3): a Job that runs on install and, as a pre-upgrade hook, before any pod of a new version
 # starts. Every module waits for the schema in an init container (it never serves on an older one).

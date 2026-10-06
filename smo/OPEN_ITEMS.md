@@ -24,7 +24,7 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 |---|---|---|
 | API | `?total=false` on every list route (opt out of the page `COUNT(*)`; default unchanged) | – |
 | Security | SEC-9 `/bootstrap` exposure; SEC-8.5 shared rate limiter; SEC-7 logout revocation (done, V-13c); SEC-2 mTLS between services; SEC-3 mesh option (documented with the mTLS work); SEC-6 OIDC login for the GUI | SEC-5 signing keys and JWKS, SEC-4.7 external secrets example (both 0.6.0). SEC-7.1 to 7.3 (native TOTP) only if required: with OIDC the identity provider does the second factor, and local login stays as break-glass |
-| Operability | OBS-3 traces (Tempo), OBS-4 business metrics, OBS-5 alerts and SLOs, OBS-6 log shipping, OBS-7 runbooks, OBS-8 `/version`, OPS-6 GitOps example, OPS-7 configuration reference, OPS-9 sizing | – |
+| Operability | OBS-3 traces (Tempo), OBS-4 business metrics, OBS-5 alerts and SLOs, OBS-6 log shipping, OBS-7 runbooks (OBS-4, 5 and 7 are done in part: what remains is under 5.5), OBS-8 `/version`, OPS-6 GitOps example, OPS-7 configuration reference, OPS-9 sizing | – |
 | Disaster recovery | HA-6: RPO 15 minutes, RTO 1 hour, off-site backup shipping, one timed restore drill | HA-7 geo-redundancy (after 1.0.0) |
 | Standards and documents | STD-2.1 spec release table; STD-4.1 personal-data inventory; STD-6.1 data residency statement; STD-4.3 erasure procedure for a GUI user; STD-5 control matrix (ISO 27001, NESAS/SCAS) | STD-3 plugfest plan (0.6.0 or later) |
 
@@ -235,6 +235,7 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 | DB-6.2 | CI job: backup, wipe, restore, run a runbook smoke (a compose-mode round trip exists since DB-6.1; this adds the runbook smoke and a host-mode run against Postgres 18) | Job green | – |
 | DB-6.3 | Document WAL archiving and point-in-time recovery | Doc reviewed | – |
 | DB-6.4 | Restore drill checklist with timings | Checklist filled once | – |
+| DB-6.5 | Back up and restore the GUI backend's own database (SQLite on volume `gui_bff_data` by default: users, GUI audit log, failed-login counters); `db_backup.sh` dumps Postgres only | A restore on a new host keeps the GUI users and audit log | – |
 
 #### PR-DB-7 — Postgres HA
 
@@ -373,8 +374,7 @@ SME access tokens are opaque and introspected (RFC 7662); the signed tokens are 
 | SEC-7.1 | `gui_user_totp` table and enrol route | QR secret generated and verified | – |
 | SEC-7.2 | Login second step | Wrong code refused | SEC-7.1 |
 | SEC-7.3 | Recovery codes (hashed) | One-time use | SEC-7.1 |
-| SEC-7.4 | Server-side session row so logout revokes a session (today only `token_version` bumps do) | Token refused after logout | – |
-| SEC-7.5 | Admin action: revoke a user's sessions | Route test | SEC-7.4 |
+| SEC-7.5 | Admin action: revoke a user's sessions (SEC-7.4, logout revocation, is done: `HISTORY.md`) | Route test | – |
 
 #### PR-SEC-8 — Rate and size limits
 
@@ -459,26 +459,25 @@ OpenTelemetry spans to Tempo and log shipping to Loki exist (`HISTORY.md` §10, 
 | OBS-3.6 | A live check: the compose `tracing` profile, one runbook call, its trace found by id (the stack is configured but was not run in CI) | Trace visible for a runbook call | – |
 | OBS-3.7 | Decide whether the release workflow also publishes a tracing-enabled image variant (`WITH_TRACING=1`) | Decision recorded | – |
 
-#### PR-OBS-4 — Business metrics
+#### PR-OBS-4 — Business metrics (open: the remainder below; done in `HISTORY.md` §10)
+
+Done: packages, rApp instances and intents by state, the outbox backlog and its oldest pending age, refusals by class, worker task counters. Still open, each step on the same pattern (`register_query_gauge` or a counter beside the code path, low-cardinality labels):
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OBS-4.1 | Gauges: packages, rApp instances and NF deployments by state | Values match the DB | OBS-2.2 |
-| OBS-4.2 | Alarms by severity and ack state | Same | OBS-2.2 |
-| OBS-4.3 | O1 write outcome and retry counters | Counters move in an O1 test | OBS-2.2 |
-| OBS-4.4 | Model and runtime lifecycle counts | Same | OBS-2.2 |
-| OBS-4.5 | Pending approvals and their age | Same | OBS-2.2 |
+| OBS-4.1 | Gauge: NF deployments by state (packages and rApp instances are done) | Values match the DB | – |
+| OBS-4.2 | Alarms by severity and ack state | Same | – |
+| OBS-4.3 | O1 write outcome and retry counters | Counters move in an O1 test | – |
+| OBS-4.4 | Model and runtime lifecycle counts | Same | – |
+| OBS-4.5 | Pending approvals and their age | Same | – |
 
-#### PR-OBS-5 — Alerts and SLOs
+#### PR-OBS-5 — Alerts and SLOs (open: OBS-5.4; the rest is in `HISTORY.md` §10)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OBS-5.1 | SLI definitions (availability, latency, correctness) in `docs/` | Doc reviewed | – |
-| OBS-5.2 | Availability and error-rate alert rules | `promtool check rules` green | OBS-2.2 |
-| OBS-5.3 | Latency alert rules | Same | OBS-2.2 |
-| OBS-5.4 | O1 write failure rate rule | Same | OBS-4.3 |
-| OBS-5.5 | Outbox DEAD-row depth rule | Same | MSG-2.6 |
-| OBS-5.6 | Each rule links to its runbook entry | Link check | OBS-7.1 |
+| OBS-5.4 | O1 write failure rate rule (and its runbook page) | Rule and page added to `smo-alerts.rules.yaml` and `docs/runbooks/` | OBS-4.3 |
+| OBS-5.7 | Accept the proposed SLO targets (`docs/SLOS.md`) for a deployment and tune the thresholds against a week of its traffic | Targets no longer say proposed | a deployment |
+| OBS-5.8 | Scrape the worker's metrics port in compose and the chart (`SMO_WORKER_METRICS_PORT`), so `SmoWorkerTaskFailing` has data | Series visible on a scrape | – |
 
 #### PR-OBS-6 — Log shipping (open: OBS-6.3, 6.4; the rest in `HISTORY.md` §10)
 
@@ -487,24 +486,16 @@ OpenTelemetry spans to Tempo and log shipping to Loki exist (`HISTORY.md` §10, 
 | OBS-6.3 | Elasticsearch field mapping, shipped and tried (described in `docs/OBSERVABILITY.md`) | Index created, a log line indexed | – |
 | OBS-6.4 | A live check of the `logging` profile (Fluent Bit to Loki, a query by correlation id returns the request's lines); not run in CI | Query returns a request's lines | – |
 
-#### PR-OBS-7 — Runbooks
+#### PR-OBS-7 — Runbooks (open: the entries below; template, index and one page per alert are in `HISTORY.md` §10)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| OBS-7.1 | Runbook template and index | Template merged | – |
-| OBS-7.2 | Entries: Postgres down, SME down, R1 down | Each tried once on the compose stack | – |
-| OBS-7.3 | Entries: O1 write failures, adaptor unreachable | Same | – |
-| OBS-7.4 | Entries: webhook backlog, DEAD rows | Same | MSG-2.4 |
+| OBS-7.2 | Entry: Postgres down (SME down and R1 down are the `SmoModuleDown` page); each page tried once on the compose stack (none has been: the commands were written from the code, not replayed) | Each tried once | – |
+| OBS-7.3 | Entries: O1 write failures, adaptor unreachable (the latter is partly `SmoOutboundCallsFailing`) | Same | OBS-4.3 |
 | OBS-7.5 | Entry: certificate expiry and rotation | Same | SEC-2.5 |
 | OBS-7.6 | Entry: backup and restore | Same | DB-6.4 |
 
-#### PR-OBS-8 — Self-monitoring
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| OBS-8.1 | `/version` per module (build SHA from an env set in the image) | Route test | – |
-| OBS-8.2 | BFF `GET /modules/status` adds readiness and version | Test | OBS-8.1 |
-| OBS-8.3 | GUI shows readiness and version columns | Component test | OBS-8.2 |
+#### PR-OBS-8 — Self-monitoring (all steps done: `HISTORY.md` PR-OBS-8)
 
 ### 5.6 Packaging, migrations and release (`PR-OPS`)
 
@@ -555,13 +546,7 @@ Tag scheme and `CHANGELOG.md` exist (`PR-OPS-4.1`, `HISTORY.md` §10); no tag ha
 |---|---|---|---|
 | OPS-6.2 | The Argo CD `Application` (written, `deploy/gitops/argocd/`) synced once on a lab cluster | Syncs on a lab cluster | – |
 
-#### PR-OPS-7 — Configuration reference
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| OPS-7.1 | Script that lists every `os.environ` read per module | Output file | – |
-| OPS-7.2 | Table: name, default, secret or not, owner | In `docs/` | OPS-7.1 |
-| OPS-7.3 | CI check: a new env read must appear in the table | Fails on a seeded miss | OPS-7.2 |
+#### PR-OPS-7 — Configuration reference (all steps done: `HISTORY.md` PR-OPS-7)
 
 #### PR-OPS-8 — Feature flags
 
@@ -1291,16 +1276,14 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 | Feature | Step | What | Done when | Needs |
 |---|---|---|---|---|
 | STD-1 | STD-1.1 | Close the §3 items (`SA-MLMR-1/6/7`, `SA-FOCOM-6/7`, `SA-RANOAM-1/4/8`, `SA-O1-4`); do not duplicate them here | §3 empty | – |
-| STD-2 | STD-2.1 | Record the release of every spec in `specs/` | Table in `specs/README.md` | – |
-| STD-2 | STD-2.2 | List newer releases and what changes for the SMO | List with item IDs | STD-2.1 |
+| STD-2 | STD-2.2 | List newer releases and what changes for the SMO (`specs/README.md` has the release table and a minimal list of what is certain; everything else there says "not assessed") | List with item IDs | – |
 | STD-3 | STD-3.1 | Map each interface to the O-RAN test specification | Table | – |
 | STD-3 | STD-3.2 | Plugfest plan | One page | STD-3.1 |
-| STD-4 | STD-4.1 | Inventory of personal data (GUI users, subscriber-derived PM) | Table | – |
-| STD-4 | STD-4.2 | Retention per item | Linked to `DB-3` | STD-4.1, DB-3.1 |
-| STD-4 | STD-4.3 | Erasure procedure for a GUI user | Tested once | STD-4.1 |
-| STD-4 | STD-4.4 | Access logging for personal data reads | Rows appear | STD-4.1, SEC-11.2 |
-| STD-5 | STD-5.1 | Control matrix (ISO 27001, NESAS/SCAS) against what exists | Matrix | SEC-14.2 |
-| STD-6 | STD-6.1 | Data residency statement: where data lives and what leaves a site | One page | – |
+| STD-4 | STD-4.2 | Retention per item (the inventory is `docs/PRIVACY.md`; its retention column says "none" for most rows) | Linked to `DB-3` | DB-3.1 |
+| STD-4 | STD-4.4 | Access logging for personal data reads | Rows appear | SEC-11.2 |
+| STD-4 | STD-4.5 | Erasure beyond the account (`docs/PRIVACY.md` section 4): write an opaque per-user id instead of the username in `gui_audit_log` and in the module columns that take `smo-gui:<username>` / `ack_user_id`, so deleting the user severs the link and the rows stay; or a tested SQL procedure per table. Decide first whether the audit rows are kept with a stated period instead | A deleted user's name appears in no table; a test shows it | – |
+| STD-4 | STD-4.6 | Pin `decided_by` (`POST /aimgf/models/{id}/advance`) and `pinnedBy` (O1 host keys) to the signed-in GUI user, as `requestedBy` is: today an operator can attribute either to any name | Test: the stored name is the caller's whatever the request says | – |
+| STD-4 | STD-4.7 | Make `gui_audit_log` tamper-evident: chain it as `smo_shared/audit.py` does, or write GUI actions into the platform chain with the person as `detail` (it is append-only in the ORM only, and a GUI action reaches the platform chain under the GUI's own invoker id) | `verify` detects an edited GUI audit row | SEC-11.6 |
 
 ### 5.15 Quality engineering (`PR-QA`)
 
@@ -1318,7 +1301,7 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | QA-2.1 | Pilot: schemathesis or similar over one module's `docs/openapi/` file | Runs in CI | – (done: `tests_integration/test_contract_schemathesis.py`, eight modules) |
-| QA-2.2 | Consumer-side checks for cross-module calls made through `R1Client` | Break detected on a seeded change | – |
+| QA-2.2 | Consumer-side checks for cross-module calls made through `R1Client` | Break detected on a seeded change | – (done: `tests_integration/test_r1_consumer_calls.py`, 195 literal-path calls checked, waivers in `r1_consumer_waivers.json`) |
 | QA-2.3 | Roll out to every module | Job covers all | QA-2.1 |
 
 #### PR-QA-3 — Failure injection

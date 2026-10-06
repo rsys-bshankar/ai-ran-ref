@@ -3,7 +3,11 @@
 
 export interface Me { username: string; role: "viewer" | "operator" | "admin"; csrfToken?: string }
 
-export interface ModuleStatus { module: string; healthy: boolean; latencyMs: number; statusCode: number | null; error: string | null }
+// ready / version / buildSha / builtAt: PR-OBS-8.2 — null when the module could not be asked (down, or an older build with no /version)
+export interface ModuleStatus {
+  module: string; healthy: boolean; latencyMs: number; statusCode: number | null; error: string | null;
+  ready: boolean | null; version: string | null; buildSha: string | null; builtAt: string | null;
+}
 export interface ModulesStatus { checkedAt: string; modules: ModuleStatus[] }
 
 // ---- Onboarding / rApp Management

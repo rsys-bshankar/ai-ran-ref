@@ -58,6 +58,14 @@ Every module that uses the database has an init container, `wait-for-schema`, th
 
 `smo-role-secrets` keeps the password of a role the release no longer has (A1 Related's, for the release that removed it), because the older chart still mounts it.
 
+## Configuration reference
+
+Every variable a module reads is in `docs/CONFIGURATION.md` (default, secret or not, what it does). The chart sets the database, secret and enrollment variables itself; any other goes under `modules.<name>.env` (merged over `moduleDefaults.env`), the GUI backend's under `gui.env`. `tests_integration/test_helm_chart.py` still fails when a service's environment in the chart and in `docker-compose.yml` disagree. A secret has a `*_FILE` form: the chart uses it for the database password and the enrollment secret (a Secret volume), and so should any value you add.
+
+## Build identity
+
+Every module answers `GET /version` (`{module, version, buildSha, builtAt}`, PR-OBS-8.1) from `SMO_VERSION`, `SMO_BUILD_SHA` and `SMO_BUILT_AT`, which are baked into the image as Docker build arguments: the release workflow sets them from the tag, the tag's commit and the build time, so a published `smo-<module>:<version>` image reports its own build and the chart needs no value for it. An image built by hand reports `unknown` unless built with `--build-arg SMO_BUILD_SHA=<commit>` (compose: export `SMO_BUILD_SHA` first). The operator GUI's Module health table shows them, and a module running a different commit than most is marked while a rolling upgrade is in progress.
+
 ## What is not in the chart
 
 `netconf-lab` (a throwaway lab server) and `edge-tls` (the compose TLS terminator: use `ingress` with a TLS secret instead).
@@ -65,6 +73,10 @@ Every module that uses the database has an init container, `wait-for-schema`, th
 ## Values
 
 `values.yaml` is commented. The modules are one map (`modules`) and one template; a module is described by `image`, `kind` (`service` with `/live` and `/ready`, `worker` with a heartbeat file, `static` with a TCP probe), `database`, `enrollment`, `env`, `persistence`, `resources`; `moduleDefaults` is what each starts from. Every pod runs as the unprivileged user, with no capability, no privilege escalation and a read-only root filesystem (PR-SEC-13).
+
+## Alerts
+
+`prometheusRule.enabled=true` renders `files/smo-alerts.rules.yaml` (18 alerts, the burn-rate rules for three proposed SLOs, `docs/SLOS.md`) as a `PrometheusRule` of the Prometheus Operator; it is off by default because it needs that CRD. `prometheusRule.labels` is what your Prometheus selects rules on (for example `release: kube-prometheus-stack`), `prometheusRule.namespace` where to put it (default: the release's). The rules assume each module is scraped on `/metrics` as a job named after the module; the chart does not make the scrape configuration (a `ServiceMonitor` is not included). Without the Operator, use the same file as a plain `rule_files:` entry. Each alert's `runbook_url` is a page in `docs/runbooks/`.
 
 ## CI
 

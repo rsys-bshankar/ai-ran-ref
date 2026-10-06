@@ -13,7 +13,7 @@ Routes (all under /api, which nginx forwards here unchanged):
   GET  /api/me                  current user, role, CSRF token
   POST /api/me/password
   GET  /api/permissions         the RBAC table, so the SPA gates on the same rules
-  GET  /api/modules/status      every module's health via R1, probed in parallel
+  GET  /api/modules/status      every module's health, readiness and build version via R1, probed in parallel
   *    /api/smo/{module}/...    RBAC-checked proxy to R1 Termination
   /api/admin/users[...]         user + role CRUD (admin)
   GET  /api/admin/audit         the append-only audit log (admin)
@@ -35,11 +35,11 @@ import httpx
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from .config import Settings, settings as default_settings
-from .db import AuditEntry, Database, GuiUser
+from .db import AuditEntry, Database, GuiUser, LoginFailure
 from .rbac import MODULES, RULES, Role, Rule, User, decide
 from .security import decode_jwt, hash_password, issue_jwt, verify_password
 from .smo_client import R1Gateway, SmoAuthError
@@ -348,13 +348,25 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
     async def modules_status(session: Session = Depends(current_session)):
         gw: R1Gateway = app.state.gateway
 
+        async def get(module: str, route: str) -> httpx.Response:
+            # R1's own routes are public and answered by the gateway; a module's are reached through R1's token-gated proxy
+            if module == "r1-termination":
+                return await gw.r1_get(route, cfg.health_timeout_seconds)
+            return await gw.request("GET", f"/{module}{route}", timeout=cfg.health_timeout_seconds)
+
+        async def optional_json(module: str, route: str) -> tuple[int | None, dict]:
+            """(status, body) of a route a module may not have (an older build has no /version): never an error."""
+            try:
+                resp = await get(module, route)
+                body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+                return resp.status_code, body if isinstance(body, dict) else {}
+            except (SmoAuthError, httpx.HTTPError, ValueError):
+                return None, {}
+
         async def probe(module: str) -> dict:
             started = time.perf_counter()
             try:
-                if module == "r1-termination":
-                    resp = await gw.r1_health(cfg.health_timeout_seconds)
-                else:
-                    resp = await gw.request("GET", f"/{module}/health", timeout=cfg.health_timeout_seconds)
+                resp = await get(module, "/health")
                 healthy, status_code, error = resp.status_code == 200, resp.status_code, None
             except SmoAuthError as exc:
                 log.warning("health probe %s: SMO token unavailable: %s", module, exc)
@@ -362,8 +374,21 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             except httpx.HTTPError as exc:
                 log.warning("health probe %s failed: %r", module, exc)
                 healthy, status_code, error = False, None, "unreachable"
-            return {"module": module, "healthy": healthy, "latencyMs": round((time.perf_counter() - started) * 1000, 1),
-                    "statusCode": status_code, "error": error}
+            latency_ms = round((time.perf_counter() - started) * 1000, 1)
+            if healthy:     # a module that is not live is not asked again
+                (ready_status, _), (version_status, version) = await asyncio.gather(
+                    optional_json(module, "/ready"), optional_json(module, "/version"))
+            else:
+                ready_status, version_status, version = None, None, {}
+            known = version_status == 200
+            return {"module": module, "healthy": healthy, "latencyMs": latency_ms,
+                    "statusCode": status_code, "error": error,
+                    # PR-OBS-8.2: readiness (null when the module did not answer /ready with 200 or 503) and the build it runs (null when
+                    # it has no /version, e.g. an older release during a rolling upgrade)
+                    "ready": ready_status == 200 if ready_status in (200, 503) else None,
+                    "version": version.get("version") if known else None,
+                    "buildSha": version.get("buildSha") if known else None,
+                    "builtAt": version.get("builtAt") if known else None}
 
         results = await asyncio.gather(*(probe(m) for m in STATUS_MODULES))
         return {"checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "modules": list(results)}
@@ -449,7 +474,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         with app.state.db.session() as s:
             if s.get(GuiUser, body.username) is not None:
                 return _problem(409, "USER_EXISTS")
-            user = GuiUser(username=body.username, password_hash=hash_password(body.password), role=body.role)
+            # A random starting token version, not 0: a session token carries the version it was issued under, so a user deleted
+            # and created again under the same name (STD-4.3) must not make the old person's unexpired token valid again.
+            user = GuiUser(username=body.username, password_hash=hash_password(body.password), role=body.role,
+                           token_version=secrets.randbits(30))
             s.add(user)
             s.commit()
             view = _user_view(user)
@@ -492,6 +520,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
                 return Response(status_code=204)
             if user.role == Role.ADMIN and user.active and _active_admins(s) <= 1:
                 return _problem(409, "LAST_ADMIN", "at least one active admin must remain")
+            # One transaction: the account and the failed-login counter kept under its name go together (STD-4.3). There is no
+            # session row to remove: a session is a signed token, and with its user gone every token naming it is refused.
+            # The audit rows that name the user stay (docs/PRIVACY.md), and so do the module tables that record `smo-gui:<name>`.
+            s.execute(delete(LoginFailure).where(LoginFailure.username == username))
             s.delete(user)
             s.commit()
         audit("USER_DELETED", session.user, detail=username)

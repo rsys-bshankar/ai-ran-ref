@@ -54,9 +54,16 @@ def test_a_module_that_cannot_get_a_token_from_sme_is_not_ready(loaded_apps, hea
     assert not_ready.isdisjoint({"sme", "focom", "r1-termination", "mock-o1-adaptor"})
 
 
+def test_every_service_answers_version_without_a_database_or_token(loaded_apps, monkeypatch):
+    monkeypatch.setenv("SMO_BUILD_SHA", "abc1234")
+    for name, main in loaded_apps.items():
+        body = TestClient(main.app).get("/version").json()
+        assert set(body) == {"module", "version", "buildSha", "builtAt"} and body["buildSha"] == "abc1234", name
+
+
 def test_the_gateway_probes_need_no_token(loaded_apps):
     spec = loaded_apps["r1-termination"].app.openapi()
-    for path in ("/health", "/live", "/ready"):
+    for path in ("/health", "/live", "/ready", "/version"):
         assert all(op["security"] == [] for op in spec["paths"][path].values()), path
 
 

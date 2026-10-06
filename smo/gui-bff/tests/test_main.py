@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.db import AuditEntry, Database, GuiUser
+from app.db import AuditEntry, Database, GuiUser, LoginFailure, RevokedSession
 from app.main import CSRF_COOKIE, SESSION_COOKIE, STATUS_MODULES, create_app, seed_users
 from app.smo_client import R1Gateway
 
@@ -36,6 +36,8 @@ class FakeSmo:
         self.invokers = 0
         self.proxied: list[httpx.Request] = []
         self.down_modules: set[str] = set()
+        self.not_ready: set[str] = set()
+        self.without_version: set[str] = set()
         self.next_response: httpx.Response | None = None
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -44,6 +46,10 @@ class FakeSmo:
             return httpx.Response(200, json={"apiEndpoints": [{"apiName": "service-apis", "tokenEndPoint": {"uri": f"{SME}/oauth2/token"}}]})
         if url == f"{R1}/health":
             return httpx.Response(200, json={"status": "healthy"})
+        if url == f"{R1}/ready":
+            return httpx.Response(200, json={"status": "ready", "checks": {}})
+        if url == f"{R1}/version":
+            return httpx.Response(200, json={"module": "r1-termination", "version": "1.4.0", "buildSha": "abc1234", "builtAt": "2026-10-06T08:00:00Z"})
         if url == f"{SME}/invoker-registrations":
             self.invokers += 1
             return httpx.Response(201, json={"apiInvokerId": f"api-invoker-{self.invokers}", "onboardingSecret": "s3cret"})
@@ -63,6 +69,12 @@ class FakeSmo:
             if module in self.down_modules:
                 raise httpx.ConnectError("down")
             return httpx.Response(200, json={"status": "healthy"})
+        if request.url.path.endswith("/ready"):
+            return httpx.Response(503 if module in self.not_ready else 200, json={"status": "ready", "checks": {}})
+        if request.url.path.endswith("/version"):
+            if module in self.without_version:
+                return httpx.Response(404, json={"detail": "Not Found"})
+            return httpx.Response(200, json={"module": module, "version": "1.4.0", "buildSha": "abc1234", "builtAt": "2026-10-06T08:00:00Z"})
         self.proxied.append(request)
         if self.next_response is not None:
             resp, self.next_response = self.next_response, None
@@ -441,6 +453,19 @@ def test_modules_status_probes_every_module_via_r1(app, smo):
     assert all(isinstance(m["latencyMs"], float) for m in body["modules"])
 
 
+def test_modules_status_adds_readiness_and_the_build_each_module_runs(app, smo):
+    smo.not_ready.add("dme")
+    smo.without_version.add("sme")      # an older release during a rolling upgrade has no /version
+    smo.down_modules.add("nfo")
+    by_module = {m["module"]: m for m in login(app, "viewer").get("/api/modules/status").json()["modules"]}
+    assert by_module["r1-termination"]["version"] == "1.4.0" and by_module["r1-termination"]["ready"] is True   # R1's own public routes
+    assert by_module["aimgf"]["ready"] is True and by_module["aimgf"]["buildSha"] == "abc1234"
+    assert by_module["aimgf"]["builtAt"] == "2026-10-06T08:00:00Z" and by_module["aimgf"]["version"] == "1.4.0"
+    assert by_module["dme"]["healthy"] is True and by_module["dme"]["ready"] is False and by_module["dme"]["buildSha"] == "abc1234"
+    assert by_module["sme"]["healthy"] is True and by_module["sme"]["version"] is None and by_module["sme"]["buildSha"] is None and by_module["sme"]["builtAt"] is None
+    assert by_module["nfo"]["healthy"] is False and by_module["nfo"]["ready"] is None and by_module["nfo"]["buildSha"] is None
+
+
 def test_modules_status_reports_smo_auth_failure_without_crashing(cfg, db):
     def sme_down(request):
         if request.url.path == "/health":
@@ -453,6 +478,8 @@ def test_modules_status_reports_smo_auth_failure_without_crashing(cfg, db):
     by_module = {m["module"]: m for m in body["modules"]}
     assert by_module["r1-termination"]["healthy"] is True
     assert by_module["sme"]["healthy"] is False and by_module["sme"]["error"] == "auth: no SMO access token"
+    assert by_module["sme"]["ready"] is None and by_module["sme"]["version"] is None
+    assert by_module["r1-termination"]["ready"] is None and by_module["r1-termination"]["buildSha"] is None   # its /ready and /version are unreachable here
 
 
 # ---------------------------------------------------------------- admin
@@ -473,6 +500,60 @@ def test_admin_creates_updates_and_deletes_a_user(app):
     assert admin.patch("/api/admin/users/noc1", json={"role": "operator"}).json()["role"] == "operator"
     assert admin.delete("/api/admin/users/noc1").status_code == 204
     assert "noc1" not in [u["username"] for u in admin.get("/api/admin/users").json()]
+
+
+def test_erasing_a_gui_user_end_to_end_and_what_it_leaves_behind(app, db):
+    """STD-4.3, the procedure of docs/PRIVACY.md section 4, tried once: what deleting a user removes, and what stays and why."""
+    admin = login(app, "admin")
+    password = "noc9-long-pass"
+    assert admin.post("/api/admin/users", json={"username": "noc9", "password": password, "role": "operator"}).status_code == 201
+
+    # the user signs in twice (a browser session and a script token) and does something that is audited and attributed to them
+    browser = TestClient(app)
+    resp = browser.post("/api/login", json={"username": "noc9", "password": password})
+    assert resp.status_code == 200
+    browser.headers["X-CSRF-Token"] = resp.json()["csrfToken"]
+    token = TestClient(app).post("/api/token", data={"grant_type": "password", "username": "noc9", "password": password}).json()["access_token"]
+    bearer = {"Authorization": f"Bearer {token}"}
+    assert browser.patch("/api/smo/ran-nf-oam/alarms/a-1/ack").status_code == 200
+    ended = TestClient(app)                                               # a third session that the user ended themselves: a revocation row
+    ended_resp = ended.post("/api/login", json={"username": "noc9", "password": password})
+    ended.headers["X-CSRF-Token"] = ended_resp.json()["csrfToken"]
+    assert ended.post("/api/logout").status_code == 200
+    for _ in range(2):                                                    # failed sign-ins after the last success: the counter row is there
+        assert TestClient(app).post("/api/login", json={"username": "noc9", "password": "wrong"}).status_code == 401
+    with db.session() as s:
+        assert s.get(GuiUser, "noc9") is not None and s.get(LoginFailure, "noc9").count == 2
+        assert s.query(RevokedSession).count() == 1
+    assert browser.get("/api/me").status_code == 200 and TestClient(app).get("/api/me", headers=bearer).status_code == 200
+    audited_before = [r.id for r in audit_rows(db) if r.username == "noc9"]
+    assert {r.action for r in audit_rows(db) if r.username == "noc9"} >= {"LOGIN", "TOKEN", "PROXY", "LOGOUT", "LOGIN_FAILED"}
+
+    # the procedure: one admin call
+    assert admin.delete("/api/admin/users/noc9").status_code == 204
+
+    # removed: the account, the failed-login counter, and every session (a token naming a user that no longer exists is refused)
+    with db.session() as s:
+        assert s.get(GuiUser, "noc9") is None
+        assert s.get(LoginFailure, "noc9") is None
+    assert "noc9" not in [u["username"] for u in admin.get("/api/admin/users").json()]
+    assert browser.get("/api/me").status_code == 401
+    assert TestClient(app).get("/api/me", headers=bearer).json()["detail"]["title"] == "SESSION_REVOKED"
+    assert TestClient(app).post("/api/login", json={"username": "noc9", "password": password}).status_code == 401
+
+    # a new account under the same name does not revive the old person's unexpired tokens
+    assert admin.post("/api/admin/users", json={"username": "noc9", "password": password, "role": "operator"}).status_code == 201
+    assert browser.get("/api/me").status_code == 401
+    assert TestClient(app).get("/api/me", headers=bearer).status_code == 401
+
+    # what stays, deliberately: the audit rows that name the user (the log is append-only), and the revocation row, which holds a token id and an expiry only
+    assert [r.id for r in audit_rows(db) if r.username == "noc9"][:len(audited_before)] == audited_before
+    assert any(r.action == "USER_DELETED" and r.detail == "noc9" for r in audit_rows(db))
+    assert {c.name for c in RevokedSession.__table__.columns} == {"jti", "expires_at"}
+    with db.session() as s, pytest.raises(PermissionError):
+        row = s.query(AuditEntry).filter(AuditEntry.username == "noc9").first()
+        row.username = "erased"                                           # the ORM refuses an edit: pseudonymising in place is not a BFF operation
+        s.commit()
 
 
 def test_password_reset_and_deactivation_revoke_existing_sessions(app):

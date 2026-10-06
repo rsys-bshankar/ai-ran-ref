@@ -1,0 +1,17 @@
+{{- /* Off by default (PR-OBS-5): needs the Prometheus Operator's CRD. The rules are files/smo-alerts.rules.yaml, embedded as they are (a Prometheus rule file is the spec of a PrometheusRule), so they are one source for both uses. */}}
+{{- if .Values.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ .Release.Name }}-smo-alerts
+  {{- with .Values.prometheusRule.namespace }}
+  namespace: {{ . }}
+  {{- end }}
+  labels:
+    {{- include "smo.labels" (dict "root" $) | nindent 4 }}
+    {{- with .Values.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- .Files.Get "files/smo-alerts.rules.yaml" | nindent 2 }}
+{{- end }}

@@ -55,7 +55,7 @@ Browser --/api--> gui (nginx :3000) --> gui-bff --Bearer (SME-issued)--> R1 Term
 | The RBAC table mapping `METHOD + /<module>/...` to a minimum role | The semantic validity of any proxied request (the target module) |
 | Append-only GUI audit log | Platform-side audit or fault data (RAN NF OAM, FOCOM) |
 | The BFF's own CAPIF invoker credential at SME | SME's invoker registry and token issuance (SME) |
-| Health aggregation across modules (`GET /api/modules/status`) | Module health endpoints themselves (each module) |
+| Health, readiness and build-version aggregation across modules (`GET /api/modules/status`) | Module health endpoints themselves (each module) |
 
 ### 1.5 Design decisions
 
@@ -106,7 +106,7 @@ Own database (`GUI_DATABASE_URL`, default `sqlite:///./gui-bff.db`; compose uses
 | `password_hash` | `salt_hex:digest_hex` (scrypt) |
 | `role` | `viewer` / `operator` / `admin` |
 | `active` | default true |
-| `token_version` | default 0; bumped on password change/reset and on any `active` change |
+| `token_version` | seeded users start at 0, a user created through the admin route at a random value (so a user deleted and created again under the same name does not accept the earlier holder's token); bumped on password change/reset and on any `active` change |
 | `created_at` | UTC |
 
 **`gui_audit_log`** (append-only: a `before_flush` listener raises `PermissionError` for any dirty or deleted `AuditEntry`)
@@ -138,7 +138,7 @@ All routes are under `/api`. OpenAPI is served at `/api/openapi.json` (docs/redo
 | GET | `/api/me` | `{username, role, csrfToken}` | 401 `UNAUTHENTICATED` / `SESSION_REVOKED` |
 | POST | `/api/me/password` | `{currentPassword, newPassword (min 8)}`; bumps `token_version`, re-issues the caller's session | 400 `INVALID_CREDENTIALS`; 422 on short password |
 | GET | `/api/permissions` | `{role, rules[{method, pattern, role, queryMatch}]}`: the RBAC table for the SPA (display only) | 401 |
-| GET | `/api/modules/status` | Parallel health probe of `r1-termination` (direct `/health`) and every module in `MODULES` (via R1 `GET /<module>/health`); returns `{checkedAt, modules[{module, healthy, latencyMs, statusCode, error}]}` | 401 |
+| GET | `/api/modules/status` | Parallel health probe of `r1-termination` (direct `/health`) and every module in `MODULES` (via R1 `GET /<module>/health`); then, for a module that is live, `/<module>/ready` and `/<module>/version` (R1's own `/ready` and `/version` for the gateway), in parallel; returns `{checkedAt, modules[{module, healthy, latencyMs, statusCode, error, ready, version, buildSha, builtAt}]}`: `ready` is `true`/`false` from 200/503 and `null` when the module did not answer it; `version`, `buildSha` and `builtAt` are `null` for a module that is down or has no `/version` (an older release during a rolling upgrade) | 401 |
 
 **Proxy**
 
@@ -169,7 +169,7 @@ Forced values replace whatever the browser sent. The role split for `POST /aimgf
 | GET | `/api/admin/users` | List users | 403 `FORBIDDEN` |
 | POST | `/api/admin/users` | `{username, password (min 8), role}` | 400 `INVALID_USERNAME`; 409 `USER_EXISTS` |
 | PATCH | `/api/admin/users/{username}` | Any of `role`, `active`, `password`; (de)activation or reset bumps `token_version` | 404 `NO_SUCH_USER`; 409 `LAST_ADMIN` |
-| DELETE | `/api/admin/users/{username}` | 204 (also when the user does not exist) | 409 `CANNOT_DELETE_SELF`; 409 `LAST_ADMIN` |
+| DELETE | `/api/admin/users/{username}` | 204 (also when the user does not exist). One transaction removes the account and the failed-login counter kept under that name; every token naming the user is refused from then on (`SESSION_REVOKED`). The audit rows that name the user stay (`docs/PRIVACY.md` section 4, the erasure procedure) | 409 `CANNOT_DELETE_SELF`; 409 `LAST_ADMIN` |
 | GET | `/api/admin/audit` | Newest first; filters `username`, `action`; `limit` (1-500, default 100), `offset`; returns `{items, total, limit, offset}` | 403 |
 
 ### 2.5 Interactions
@@ -225,7 +225,7 @@ The BFF answers `{"title", "status", "detail"?}` (no `type` / `instance`). Error
 
 ### 2.8 Limits and open items
 
-- Sessions are stateless: `POST /api/logout` clears the cookies but does not invalidate the JWT, which stays valid until `exp` or a `token_version` bump. A script that captured a Bearer token keeps it for the TTL.
+- Sessions are signed tokens with no session list: `POST /api/logout` clears the cookies and records the token's `jti` in `gui_revoked_session` until the token would expire, so a copied cookie or Bearer token stops working on every instance. There is still no way for an admin to list or end one user's sessions short of deactivating or deleting the user or resetting the password (`SEC-7.4`, `SEC-7.5`).
 - Running more than one instance needs one shared database: set `GUI_DATABASE_URL` to the same Postgres (or similar) for all of them. The default SQLite file belongs to one instance, and two instances on separate files would have separate users. When seeding on first boot, set `GUI_ADMIN_PASSWORD` explicitly: with a generated password each instance writes its own password file, and an instance that loses the seeding race deletes the one it wrote.
 - The SME token cache is per process (a token is per process by nature); an expired or revoked token is refreshed once on a 401.
 - No external IdP: users and roles live in `gui_user`. R1 Termination's own OAuth is unchanged.
@@ -247,7 +247,7 @@ cd smo/gui-bff && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 | Test file | Covers | Passed |
 |---|---|---|
-| `tests/test_main.py` | Login cookies (HttpOnly session, readable CSRF, Secure default), wrong password audited, lockout, tampered token, logout, seeding (no password in git, never touches a populated table), viewer/operator/admin gating through the proxy (nothing reaches R1 when denied), identity pinning (ack user, remedial `requester_is_admin`, intent RMIO, CM-write requester/MSAC tier, ASSIST reject, energy-saving override), role change on next request, CSRF on cookie sessions, Bearer grant without CSRF, BFF token (not browser credentials) forwarded, hop-by-hop and `Set-Cookie` stripping, SMO auth failure without leaking exception text, upstream error pass-through, one-time token refresh on 401, audit of mutations and not reads, append-only audit guard, security headers, health aggregation (including SMO auth failure), user admin (create/update/delete, session revocation, last-admin guard, own password change), audit listing/filters, `/api/permissions` | 43 |
+| `tests/test_main.py` | Login cookies (HttpOnly session, readable CSRF, Secure default), wrong password audited, lockout, tampered token, logout, seeding (no password in git, never touches a populated table), viewer/operator/admin gating through the proxy (nothing reaches R1 when denied), identity pinning (ack user, remedial `requester_is_admin`, intent RMIO, CM-write requester/MSAC tier, ASSIST reject, energy-saving override), role change on next request, CSRF on cookie sessions, Bearer grant without CSRF, BFF token (not browser credentials) forwarded, hop-by-hop and `Set-Cookie` stripping, SMO auth failure without leaking exception text, upstream error pass-through, one-time token refresh on 401, audit of mutations and not reads, append-only audit guard, security headers, health aggregation (including SMO auth failure), user admin (create/update/delete, session revocation, last-admin guard, own password change), the erasure of a user end to end and what it leaves in the audit log (STD-4.3), audit listing/filters, `/api/permissions` | 43 |
 | `tests/test_shared_state.py` | Instances on one database: a generated signing key is stored once and shared (a session from one instance is accepted by another and survives a restart; separate explicit secrets are not shared, as the control); failed logins count across instances, a success clears them, an unknown name locks like a real one, the window restarts, concurrent failures are all counted; two instances seeding one empty database do not crash and leave one password file; two instances onboarding at once keep one SME invoker and offboard the duplicate; a forgotten invoker is replaced once; instances starting together all create the schema; an old database gains the new tables; the store operations under races on SQLite and Postgres | 21 (3 of them are Postgres variants, skipped without `SMO_TEST_POSTGRES_URL`) |
 | `tests/test_rbac.py` | Every module readable by a viewer; minimum role per route (parametrized, 109 cases total in the file); `event=DEPRECATE` admin-only via `query_match` including duplicated values; unlisted routes refused for everyone; ids cannot span path segments; every mutating rule requires at least operator; SPA permissions fixture equals the live table | 109 |
 

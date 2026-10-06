@@ -195,3 +195,34 @@ def test_configure_tracing_is_a_no_op_without_an_endpoint(monkeypatch):
     monkeypatch.delenv(tracing.ENDPOINT_ENV, raising=False)
     assert tracing.configure_tracing() is False
     assert tracing.enabled() is False
+
+
+@needs_sdk
+@pytest.mark.parametrize("ratio, expected", [("0.25", 0.25), ("7", 1.0), ("-1", 0.0), ("not-a-number", 1.0), (None, 1.0)])
+def test_configure_tracing_installs_a_provider_with_the_service_name_and_a_clamped_ratio(monkeypatch, ratio, expected):
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    installed = []
+    monkeypatch.setenv(tracing.ENDPOINT_ENV, "http://collector:4318/")
+    if ratio is None:
+        monkeypatch.delenv(tracing.SAMPLE_RATIO_ENV, raising=False)
+    else:
+        monkeypatch.setenv(tracing.SAMPLE_RATIO_ENV, ratio)
+    monkeypatch.setattr(trace, "get_tracer_provider", lambda: object())          # none of ours installed yet
+    monkeypatch.setattr(trace, "set_tracer_provider", installed.append)          # the real one may be set once per process
+    assert tracing.configure_tracing("svc-a") is True
+    (provider,) = installed
+    try:
+        assert isinstance(provider, TracerProvider)
+        assert provider.resource.attributes["service.name"] == "svc-a"
+        assert f"root:TraceIdRatioBased{{{expected}}}" in provider.sampler.get_description()
+        exporter = provider._active_span_processor._span_processors[0].span_exporter
+        assert exporter._endpoint == "http://collector:4318/v1/traces"
+    finally:
+        provider.shutdown()
+
+
+@needs_sdk
+def test_configure_tracing_keeps_a_provider_that_is_already_installed(monkeypatch, exporter):
+    monkeypatch.setenv(tracing.ENDPOINT_ENV, "http://collector:4318")
+    assert tracing.configure_tracing("svc-b") is True
