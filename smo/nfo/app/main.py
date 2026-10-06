@@ -383,7 +383,7 @@ def list_deployment_operations(nf_deployment_id: uuid.UUID, limit: int = PageLim
     """(GUI pass 2) A deployment's LCM operation history (Instantiate/Heal/Scale/
     Terminate); only a single operation id could be looked up before.
     """
-    stmt = select(LCMOperation).where(LCMOperation.nf_deployment_id == nf_deployment_id)
+    stmt = select(LCMOperation).where(LCMOperation.nf_deployment_id == nf_deployment_id).order_by(LCMOperation.created_at, LCMOperation.operation_id)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"operationId": str(o.operation_id), "operationType": o.operation_type, "status": o.status}
             for o in page["items"]]}

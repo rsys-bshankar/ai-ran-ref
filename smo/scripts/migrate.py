@@ -57,6 +57,11 @@ def migrate(connection, revision: str = "head") -> str | None:
     if is_legacy(connection):
         command.stamp(config, BASELINE)
         connection.commit()
+    at = current_revision(connection)
+    if revision == "head" and at is not None and at not in image_revisions(connection):
+        # a revision this image does not know is a later release's: this image runs on that schema (expand and contract) and has nothing to upgrade.
+        # Without this a rollback that runs this image's migrate Job again (to a revision made by `helm install`) ends in "Can't locate revision".
+        return at
     command.upgrade(config, revision)
     connection.commit()
     return current_revision(connection)
@@ -119,6 +124,9 @@ def main() -> int:
             return 0
         legacy = is_legacy(connection)
         revision = migrate(connection, args.revision)
+        if args.revision == "head" and revision not in image_revisions(connection):
+            print(f"the database is at {revision}, a revision this image does not know (a later release): nothing to upgrade")
+            return 0
         print(f"{'stamped the existing schema at ' + BASELINE + ' and ' if legacy else ''}upgraded to {revision}")
     return 0
 

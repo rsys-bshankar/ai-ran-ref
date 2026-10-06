@@ -22,7 +22,7 @@ CASES = [
     ("alarm count (the total every unfiltered page asks for)", "SELECT count(*) FROM (SELECT * FROM ran_nf_oam.alarm) s", 5000, False),
     ("alarms of one severity, first page", "SELECT * FROM ran_nf_oam.alarm WHERE severity = 'critical' LIMIT 100", 500, False),
     ("alarm count of one severity", "SELECT count(*) FROM (SELECT * FROM ran_nf_oam.alarm WHERE severity = 'critical') s", None, False),
-    ("performance files of one element", "SELECT * FROM ran_nf_oam.pm_file WHERE managed_element_ref = 'load-me-77777' LIMIT 100", None, False),
+    ("performance files of one element", "SELECT * FROM ran_nf_oam.pm_file WHERE managed_element_ref = 'load-me-77777' LIMIT 100", 100, True),
     ("managed elements, first page", "SELECT * FROM ran_nf_oam.managed_entity LIMIT 100 OFFSET 0", 100, False),
     ("managed element count", "SELECT count(*) FROM (SELECT * FROM ran_nf_oam.managed_entity) s", 1000, False),
 ]

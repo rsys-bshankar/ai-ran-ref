@@ -21,7 +21,7 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0026"          # raise this with every new revision: the tests below then check it is the head
+HEAD = "0027"          # raise this with every new revision: the tests below then check it is the head
 
 
 def _scripts() -> ScriptDirectory:
@@ -111,6 +111,21 @@ def test_migrating_twice_is_a_no_op_and_never_restamps(databases):
     assert _run(MIGRATE, databases["fresh"]).returncode == 0
     again = _run(MIGRATE, databases["fresh"])
     assert again.returncode == 0 and "stamped" not in again.stdout
+
+
+@needs_postgres
+def test_a_database_at_a_later_revision_is_left_alone_by_this_images_migrate(databases):
+    """A rollback can run an older image's migrate Job against the schema of a later release: that is not an error, and it changes nothing."""
+    url = databases["fresh"]
+    assert _run(MIGRATE, url).returncode == 0
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(text("UPDATE alembic_version SET version_num = '9999'"))
+    engine.dispose()
+    again = _run(MIGRATE, url)
+    assert again.returncode == 0, again.stderr
+    assert "a revision this image does not know" in again.stdout
+    assert _run(MIGRATE, url, "--current").stdout.strip() == "9999"
 
 
 @needs_postgres

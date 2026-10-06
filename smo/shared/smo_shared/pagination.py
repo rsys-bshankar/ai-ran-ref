@@ -24,7 +24,7 @@ generated OpenAPI spec documents the same bounds (1-500, default 100) for
 from typing import Any
 
 from fastapi import Query
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.orm import Session
 
 DEFAULT_LIMIT = 100
@@ -35,7 +35,18 @@ PageLimit = Query(DEFAULT_LIMIT, ge=1, le=MAX_LIMIT, description="Max rows to re
 PageOffset = Query(0, ge=0, le=MAX_OFFSET, description="Rows to skip before the first one returned.")
 
 
+def _in_a_stable_order(stmt):
+    """`stmt` ordered by its entity's primary key when it is not ordered at all: without an ORDER BY a database may return the rows of two pages in
+    different orders, so a row could be on both pages or on neither (found by the volume lane, PR-V-6). A statement that orders itself is left as it is."""
+    if stmt._order_by_clauses:                                  # noqa: SLF001 — the only way to ask a Select whether it is ordered
+        return stmt
+    entity = stmt.column_descriptions[0].get("entity")
+    if entity is None:
+        return stmt
+    return stmt.order_by(*inspect(entity).primary_key)
+
+
 def paginate(db: Session, stmt, limit: int, offset: int) -> dict[str, Any]:
     total = db.scalar(select(func.count()).select_from(stmt.subquery()))
-    rows = db.scalars(stmt.limit(limit).offset(offset)).all()
+    rows = db.scalars(_in_a_stable_order(stmt).limit(limit).offset(offset)).all()
     return {"items": rows, "total": total, "limit": limit, "offset": offset}

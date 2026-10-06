@@ -80,6 +80,15 @@ jobs:
           psql 'SELECT count(*) FROM audit_log' > "$RUNNER_TEMP/audit_before"
           echo "audit rows written by the previous release: $(cat "$RUNNER_TEMP/audit_before")"
 
+      # an operator's history is install, upgrade, upgrade: the migrate Job of an upgrade is a pre-upgrade hook and is not run again by a rollback to it,
+      # while the install's is a plain Job that a rollback to revision 1 runs again, with the old image, on the new schema. So the rollback goes to revision 2.
+      - name: A second revision of the previous release (its history, as an operator has it)
+        if: ${{ matrix.rollback }}
+        working-directory: prev/smo
+        run: |
+          helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml --set image.tag=prev --set migrate.backoffLimit=7 --wait --timeout 12m
+          helm history smo -n smo
+
       - name: Upgrade to this checkout
         working-directory: cur/smo
         run: |
@@ -107,7 +116,7 @@ jobs:
         if: ${{ matrix.rollback }}
         working-directory: prev/smo
         run: |
-          helm rollback smo 1 -n smo --wait --timeout 12m
+          helm rollback smo 2 -n smo --wait --timeout 12m
           helm history smo -n smo
           for d in $(kubectl -n smo get deploy -o name); do kubectl -n smo rollout status "$d" --timeout=180s; done
           kubectl -n smo get pods
