@@ -703,7 +703,7 @@ def test_the_keycloak_realm_of_the_browser_check_matches_the_workflow_and_the_sc
     workflow = (smo.parent / ".github" / "workflows" / "smo-gui-e2e.yml").read_text()
     script = (smo / "scripts" / "gui_oidc_e2e.py").read_text()
     assert f"GUI_OIDC_REDIRECT_URI: {client['redirectUris'][0]}" in workflow
-    assert f"GUI_OIDC_CLIENT_SECRET: {client['secret']}" in workflow and "GUI_OIDC_ISSUER: http://keycloak:8080/realms/smo" in workflow
+    assert f"GUI_OIDC_CLIENT_SECRET: {client['secret']}" in workflow and "GUI_OIDC_ISSUER: http://keycloak:8180/realms/smo" in workflow
     assert client["attributes"]["pkce.code.challenge.method"] == "S256" and client["publicClient"] is False
     assert f"GUI_OIDC_POST_LOGOUT_REDIRECT_URI: {client['attributes']['post.logout.redirect.uris']}" in workflow
     mapper = client["protocolMappers"][0]["config"]

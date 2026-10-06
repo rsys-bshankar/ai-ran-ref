@@ -109,7 +109,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
-      # Keycloak is reached as http://keycloak:8080 from both sides: the backend's container (a network alias on the compose network) and the
+      # Keycloak is reached as http://keycloak:8180 from both sides (8180, not 8080: compose publishes R1 on the runner's 8080): the backend's container (a network alias on the compose network) and the
       # browser on this runner (an /etc/hosts entry below). The issuer Keycloak puts in its tokens is the same name (KC_HOSTNAME).
       KEYCLOAK_IMAGE: quay.io/keycloak/keycloak:26.4
     steps:
@@ -126,7 +126,7 @@ jobs:
         env:
           GUI_COOKIE_SECURE: "false"      # no TLS terminator in front of the GUI here
           GUI_OIDC_ENABLED: "true"
-          GUI_OIDC_ISSUER: http://keycloak:8080/realms/smo
+          GUI_OIDC_ISSUER: http://keycloak:8180/realms/smo
           GUI_OIDC_ALLOW_HTTP: "true"     # a lab provider without TLS
           GUI_OIDC_CLIENT_ID: smo-gui
           GUI_OIDC_CLIENT_SECRET: ci-oidc-client-secret      # the throwaway client of the committed CI realm
@@ -147,16 +147,16 @@ jobs:
         working-directory: smo
         run: |
           network=$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$(docker compose ps -q gui-bff)")
-          docker run -d --name keycloak --network "$network" --network-alias keycloak -p 8080:8080 \
-            -e KC_HOSTNAME=http://keycloak:8080 -e KC_HTTP_ENABLED=true \
+          docker run -d --name keycloak --network "$network" --network-alias keycloak -p 8180:8180 \
+            -e KC_HOSTNAME=http://keycloak:8180 -e KC_HTTP_PORT=8180 -e KC_HTTP_ENABLED=true \
             -v "$PWD/gui-bff/tests/keycloak:/opt/keycloak/data/import:ro" \
             "$KEYCLOAK_IMAGE" start-dev --import-realm
           echo "127.0.0.1 keycloak" | sudo tee -a /etc/hosts
           for i in $(seq 1 60); do
-            curl -fsS http://keycloak:8080/realms/smo/.well-known/openid-configuration > /dev/null 2>&1 && break
+            curl -fsS http://keycloak:8180/realms/smo/.well-known/openid-configuration > /dev/null 2>&1 && break
             sleep 5
           done
-          curl -fsS http://keycloak:8080/realms/smo/.well-known/openid-configuration | python -c "import json,sys; print(json.load(sys.stdin)['issuer'])"
+          curl -fsS http://keycloak:8180/realms/smo/.well-known/openid-configuration | python -c "import json,sys; print(json.load(sys.stdin)['issuer'])"
 
       - name: The backend offers OIDC, and the local login stays
         working-directory: smo
