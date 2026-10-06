@@ -143,6 +143,10 @@ Docker compose runs the migrations itself (the `migrate` service); services star
 ## PR conventions
 
 - Branch names: `claude/<kebab-case-description>`.
+- **Documents are part of the change.** In the same pull request, update every document the change makes stale: the overall `README.md`, the
+  module's own `README.md` (HLD, LLD, unit tests), `docs/ARCHITECTURE.md` / `docs/STANDARDS.md` where behaviour or a standard's realisation changes,
+  the chart's `deploy/helm/smo/README.md` for anything an operator deploys, `OPEN_ITEMS.md` (move closed items to `HISTORY.md`), `CHANGELOG.md` and
+  `docs/VALIDATION.md`. A reviewer should never have to ask "where is this documented?".
 - PR body: a `## Summary` (what changed and why, naming the
   `OPEN_ITEMS.md` item it closes if applicable) and a `## Test plan`
   checklist naming the specific battery steps above that were run.
