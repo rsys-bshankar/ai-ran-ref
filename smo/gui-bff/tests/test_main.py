@@ -168,6 +168,34 @@ def test_logout_clears_the_session(app):
     assert client.get("/api/me").status_code == 401
 
 
+def test_logout_ends_the_session_itself_so_a_copied_cookie_stops_working(app):
+    client = login(app, "viewer")
+    copied = client.cookies.get(SESSION_COOKIE, path="/api")
+    other = login(app, "viewer")                                          # a second session of the same user
+    assert client.post("/api/logout").status_code == 200
+    thief = TestClient(app)
+    thief.cookies.set(SESSION_COOKIE, copied, path="/api")
+    resp = thief.get("/api/me")
+    assert resp.status_code == 401 and resp.json()["detail"]["title"] == "SESSION_REVOKED"
+    assert other.get("/api/me").status_code == 200                       # only that session ended
+
+
+def test_a_bearer_token_is_revoked_by_logging_out_with_it(app):
+    token = TestClient(app).post("/api/token", data={"grant_type": "password", "username": "operator", "password": PASSWORDS["operator"]}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    assert TestClient(app).get("/api/me", headers=headers).status_code == 200
+    assert TestClient(app).post("/api/logout", headers=headers).status_code == 200
+    assert TestClient(app).get("/api/me", headers=headers).status_code == 401
+
+
+def test_revocations_are_shared_through_the_database_and_expired_ones_are_forgotten(db):
+    db.revoke_session("a", expires_at=2_000.0, now=1_000.0)
+    db.revoke_session("a", expires_at=2_000.0, now=1_000.0)               # twice: no error
+    assert db.session_revoked("a") and not db.session_revoked("b")
+    db.revoke_session("b", expires_at=5_000.0, now=3_000.0)               # "a" has expired by itself by now
+    assert not db.session_revoked("a") and db.session_revoked("b")
+
+
 def test_seed_needs_no_password_in_git(db, tmp_path, caplog):
     """No GUI_ADMIN_PASSWORD set: admin is still seeded, with a random
     password written to an owner-only file and never logged; operator/viewer

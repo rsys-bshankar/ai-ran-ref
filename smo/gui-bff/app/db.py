@@ -94,6 +94,15 @@ class LoginFailure(Base):
     first_failed_at: Mapped[float] = mapped_column(Float, nullable=False)   # unix seconds: start of the counting window
 
 
+class RevokedSession(Base):
+    """A session its owner ended with `POST /api/logout`: its token id (`jti`) until the token would have expired anyway. Shared by every instance, so a
+    copied cookie or token stops working on all of them at once, not at the end of its time to live."""
+    __tablename__ = "gui_revoked_session"
+
+    jti: Mapped[str] = mapped_column(String, primary_key=True)
+    expires_at: Mapped[float] = mapped_column(Float, nullable=False, index=True)   # unix seconds: the token's `exp`; the row is useless after it
+
+
 class Database:
     def __init__(self, url: str):
         kwargs: dict = {"future": True}
@@ -164,6 +173,21 @@ class Database:
                 except IntegrityError:   # another instance added the first row at the same moment: count into it
                     s.rollback()
         raise RuntimeError(f"could not record the failed login for {username!r}")
+
+    def revoke_session(self, jti: str, expires_at: float, now: float) -> None:
+        """Record the end of one session (idempotent), and forget the ones whose tokens have expired by themselves."""
+        with self.session() as s:
+            s.execute(delete(RevokedSession).where(RevokedSession.expires_at <= now))
+            if s.get(RevokedSession, jti) is None:
+                s.add(RevokedSession(jti=jti, expires_at=expires_at))
+            try:
+                s.commit()
+            except IntegrityError:    # another instance recorded the same logout at the same moment
+                s.rollback()
+
+    def session_revoked(self, jti: str) -> bool:
+        with self.session() as s:
+            return s.get(RevokedSession, jti) is not None
 
     def clear_login_failures(self, username: str) -> None:
         with self.session() as s:
