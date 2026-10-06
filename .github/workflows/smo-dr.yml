@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      MINIO_IMAGE: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+      MINIO_IMAGE: docker.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
       POSTGRES_IMAGE: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
       PGPASSWORD: smo
       AWS_ACCESS_KEY_ID: smo-ci-access
