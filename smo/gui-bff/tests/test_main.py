@@ -36,6 +36,8 @@ class FakeSmo:
         self.invokers = 0
         self.proxied: list[httpx.Request] = []
         self.down_modules: set[str] = set()
+        self.not_ready: set[str] = set()
+        self.without_version: set[str] = set()
         self.next_response: httpx.Response | None = None
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -44,6 +46,10 @@ class FakeSmo:
             return httpx.Response(200, json={"apiEndpoints": [{"apiName": "service-apis", "tokenEndPoint": {"uri": f"{SME}/oauth2/token"}}]})
         if url == f"{R1}/health":
             return httpx.Response(200, json={"status": "healthy"})
+        if url == f"{R1}/ready":
+            return httpx.Response(200, json={"status": "ready", "checks": {}})
+        if url == f"{R1}/version":
+            return httpx.Response(200, json={"module": "r1-termination", "version": "1.4.0", "buildSha": "abc1234", "builtAt": "2026-10-06T08:00:00Z"})
         if url == f"{SME}/invoker-registrations":
             self.invokers += 1
             return httpx.Response(201, json={"apiInvokerId": f"api-invoker-{self.invokers}", "onboardingSecret": "s3cret"})
@@ -63,6 +69,12 @@ class FakeSmo:
             if module in self.down_modules:
                 raise httpx.ConnectError("down")
             return httpx.Response(200, json={"status": "healthy"})
+        if request.url.path.endswith("/ready"):
+            return httpx.Response(503 if module in self.not_ready else 200, json={"status": "ready", "checks": {}})
+        if request.url.path.endswith("/version"):
+            if module in self.without_version:
+                return httpx.Response(404, json={"detail": "Not Found"})
+            return httpx.Response(200, json={"module": module, "version": "1.4.0", "buildSha": "abc1234", "builtAt": "2026-10-06T08:00:00Z"})
         self.proxied.append(request)
         if self.next_response is not None:
             resp, self.next_response = self.next_response, None
@@ -441,6 +453,19 @@ def test_modules_status_probes_every_module_via_r1(app, smo):
     assert all(isinstance(m["latencyMs"], float) for m in body["modules"])
 
 
+def test_modules_status_adds_readiness_and_the_build_each_module_runs(app, smo):
+    smo.not_ready.add("dme")
+    smo.without_version.add("sme")      # an older release during a rolling upgrade has no /version
+    smo.down_modules.add("nfo")
+    by_module = {m["module"]: m for m in login(app, "viewer").get("/api/modules/status").json()["modules"]}
+    assert by_module["r1-termination"]["version"] == "1.4.0" and by_module["r1-termination"]["ready"] is True   # R1's own public routes
+    assert by_module["aimgf"]["ready"] is True and by_module["aimgf"]["buildSha"] == "abc1234"
+    assert by_module["aimgf"]["builtAt"] == "2026-10-06T08:00:00Z" and by_module["aimgf"]["version"] == "1.4.0"
+    assert by_module["dme"]["healthy"] is True and by_module["dme"]["ready"] is False and by_module["dme"]["buildSha"] == "abc1234"
+    assert by_module["sme"]["healthy"] is True and by_module["sme"]["version"] is None and by_module["sme"]["buildSha"] is None and by_module["sme"]["builtAt"] is None
+    assert by_module["nfo"]["healthy"] is False and by_module["nfo"]["ready"] is None and by_module["nfo"]["buildSha"] is None
+
+
 def test_modules_status_reports_smo_auth_failure_without_crashing(cfg, db):
     def sme_down(request):
         if request.url.path == "/health":
@@ -453,6 +478,8 @@ def test_modules_status_reports_smo_auth_failure_without_crashing(cfg, db):
     by_module = {m["module"]: m for m in body["modules"]}
     assert by_module["r1-termination"]["healthy"] is True
     assert by_module["sme"]["healthy"] is False and by_module["sme"]["error"] == "auth: no SMO access token"
+    assert by_module["sme"]["ready"] is None and by_module["sme"]["version"] is None
+    assert by_module["r1-termination"]["ready"] is None and by_module["r1-termination"]["buildSha"] is None   # its /ready and /version are unreachable here
 
 
 # ---------------------------------------------------------------- admin

@@ -80,7 +80,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | `smo_shared/secretfile.py` | `read_secret(name)`: the value of `NAME`, or the contents of the file named by `NAME_FILE` (`SecretConflict` if both, `SecretFileError` if unreadable); used for the database URL and password |
 | `smo_shared/bodylimit.py` | `BodySizeLimit` (ASGI middleware: 413 over a path's cap, from `Content-Length` or counted while streaming), `settings_from_env`, `parse_overrides` |
 | `smo_shared/ratelimit.py` | `TokenBuckets`: a token bucket per caller, `take()` returns None or the seconds to wait; per process |
-| `smo_shared/health.py` | `install_health(app, checks)`: `/live`, `/ready` and the `/health` alias; `database_check`, `sme_token_check`, `run_checks` |
+| `smo_shared/health.py` | `install_health(app, checks)`: `/live`, `/ready`, `/version` and the `/health` alias; `version_report()`; `database_check`, `sme_token_check`, `run_checks` |
 | `smo_shared/timeouts.py` | `call_timeout()`, `upstream_timeout()`, `introspect_timeout()`: the platform's outbound HTTP timeouts, read from the environment when asked |
 | `smo_shared/statemachine.py` | `StateMachine`, `Transition`, `IllegalTransition` |
 | `smo_shared/errors.py` | `ProblemDetails`, `problem()`, `FrameworkError`, `framework_error()`, `illegal_transition_error()` |
@@ -217,7 +217,8 @@ All instances in a process share one identity and token (`_identity`).
 
 | Item | Behaviour |
 |---|---|
-| `install_health(app, checks=())` | Adds `GET /live` (always 200 `{"status":"live"}`), `GET /health` (alias of `/live`, `{"status":"healthy"}`) and `GET /ready` |
+| `install_health(app, checks=())` | Adds `GET /live` (always 200 `{"status":"live"}`), `GET /health` (alias of `/live`, `{"status":"healthy"}`) , `GET /ready` and `GET /version` |
+| `/version` | `{module, version, buildSha, builtAt}` (PR-OBS-8.1), read at call time from the environment the image sets: `MODULE` (a sample rApp's `samples/` prefix dropped; else the app title), `SMO_VERSION`, `SMO_BUILD_SHA`, `SMO_BUILT_AT` (Docker build arguments, each `unknown` when absent or empty). Unauthenticated at the module like the probes; through the gateway it is token-gated as `/<module>/version`, except the gateway's own `/version`. Logged at DEBUG and not counted in the request metrics, like a probe |
 | `/ready` | Runs every check in parallel; 200 `{"status":"ready","checks":{name:"ok"}}`, or 503 `{"status":"not-ready",...}` where a failing check shows its exception class (`ConnectionError`) or `timeout`, never the message (it can hold a connection string) |
 | Checks | A function that raises when its dependency is unusable. `database_check`: `SELECT 1` on the process's engine. `sme_token_check`: `R1Client`'s token (cached, so cheap) can be obtained. Bounded by `READY_CHECK_TIMEOUT_SECONDS` (3) |
 | Use | Restart a container on `/live`; take it out of rotation on `/ready`. Adopted by every service except the GUI BFF; SME and focom skip the token check (SME is the issuer, focom calls nobody) |
@@ -317,7 +318,7 @@ cd smo/shared && PYTHONPATH=. python -m pytest tests/ -q
 | `tests/test_secretfile.py` | Value from the variable or the file, trailing newline removed and nothing else trimmed, both set is an error, a missing file names the variable and path; the password from a file is put into a password-less URL (percent-encoded), replaces one already there, the whole URL may come from a file | 11 |
 | `tests/test_bodylimit.py` | The cap is exact (at it passes, one byte over is 413); a declared length over it is refused before the app reads; a chunked body is stopped when it passes the cap; per-path overrides; a response already started is not replaced; non-HTTP scopes pass; override parsing; settings from the environment | 9 |
 | `tests/test_ratelimit.py` | Burst then rate; `Retry-After` is whole seconds to the next token; callers have separate buckets; a rate of 0 turns it off; settings read on every call; idle buckets are forgotten; eight threads never take more than the burst | 7 |
-| `tests/test_health.py` | `/live` and `/health` stay 200 whatever the checks say; `/ready` 200 with all checks passing, 503 naming a failing one without its message; a hung check is `timeout` and does not hang the probe; checks run in parallel; the database check on SQLite and real Postgres, a down database (SQLite path, closed Postgres port) is not ready; the SME token check follows whether a token can be had | 11 (1 needs Postgres) |
+| `tests/test_health.py` | `/live` and `/health` stay 200 whatever the checks say; `/version` returns the image's build (`unknown` when the build arguments are absent or empty, a sample rApp's prefix dropped); `/ready` 200 with all checks passing, 503 naming a failing one without its message; a hung check is `timeout` and does not hang the probe; checks run in parallel; the database check on SQLite and real Postgres, a down database (SQLite path, closed Postgres port) is not ready; the SME token check follows whether a token can be had | 11 (1 needs Postgres) |
 | `tests/test_db_engine.py` | `engine_options`: Postgres defaults, every setting from the environment, 0 turns a limit off, SQLite gets none, the pool settings reach the engine; on real Postgres (`SMO_TEST_POSTGRES_URL`): a statement over the limit is cancelled by the server and the pool survives, a session idle inside a transaction is ended, and the control (no limit, same statement completes); the timeout defaults nest | 10 (3 need Postgres) |
 
 ### 3.3 What is not covered here

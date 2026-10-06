@@ -121,3 +121,27 @@ def test_the_sme_token_check_follows_whether_a_token_can_be_obtained(monkeypatch
     resp = client(sme_token_check).get("/ready")
     assert resp.status_code == 503 and resp.json()["checks"] == {"sme_token_check": "RuntimeError"}
 
+
+
+def test_version_reports_the_build_the_image_set(monkeypatch):
+    monkeypatch.setenv("MODULE", "aimgf")
+    monkeypatch.setenv("SMO_VERSION", "1.4.0")
+    monkeypatch.setenv("SMO_BUILD_SHA", "0123abcd")
+    monkeypatch.setenv("SMO_BUILT_AT", "2026-10-06T08:00:00Z")
+    resp = client(failing).get("/version")           # no readiness check is consulted
+    assert resp.status_code == 200
+    assert resp.json() == {"module": "aimgf", "version": "1.4.0", "buildSha": "0123abcd", "builtAt": "2026-10-06T08:00:00Z"}
+
+
+def test_version_says_unknown_for_an_image_built_without_the_arguments(monkeypatch):
+    for name in ("MODULE", "SMO_VERSION", "SMO_BUILD_SHA", "SMO_BUILT_AT"):
+        monkeypatch.delenv(name, raising=False)
+    body = client().get("/version").json()
+    assert body == {"module": "fastapi", "version": "unknown", "buildSha": "unknown", "builtAt": "unknown"}
+    monkeypatch.setenv("SMO_BUILD_SHA", "")           # an empty build argument is also "unknown"
+    assert client().get("/version").json()["buildSha"] == "unknown"
+
+
+def test_a_sample_rapps_module_name_drops_the_samples_prefix(monkeypatch):
+    monkeypatch.setenv("MODULE", "samples/energy-saving-rapp")
+    assert client().get("/version").json()["module"] == "energy-saving-rapp"

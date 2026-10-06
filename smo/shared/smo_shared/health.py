@@ -10,6 +10,9 @@ Two questions, answered separately because an orchestrator acts differently on e
            replica out of rotation; it is the right place to look at the database and SME.
   /health  the original liveness route, kept as an alias of /live: the GUI BFF's module
            grid, DME's producer health supervision and the demo runbook already call it.
+  /version "which build is this?" `{module, version, buildSha, builtAt}` from the environment the
+           image sets (`SMO_VERSION`, `SMO_BUILD_SHA`, `SMO_BUILT_AT`, Docker build arguments; each
+           `unknown` when the image was built without them). Unauthenticated like the probes (PR-OBS-8.1).
 
     install_health(app, checks=[database_check, sme_token_check])
 
@@ -76,14 +79,37 @@ def run_checks(checks: Sequence[Check], timeout: float | None = None) -> dict[st
     return results
 
 
+class VersionReport(BaseModel):
+    module: str
+    version: str
+    buildSha: str
+    builtAt: str
+
+
+def version_report(default_module: str = "unknown") -> dict[str, str]:
+    """The build this process runs, read from the environment at call time. `module` is the `MODULE` build
+    argument (a sample rApp's `samples/` prefix dropped), else `default_module`."""
+    module = os.environ.get("MODULE", "").removeprefix("samples/") or default_module
+    return {"module": module,
+            "version": os.environ.get("SMO_VERSION") or "unknown",
+            "buildSha": os.environ.get("SMO_BUILD_SHA") or "unknown",
+            "builtAt": os.environ.get("SMO_BUILT_AT") or "unknown"}
+
+
 class ReadinessReport(BaseModel):
     status: str
     checks: dict[str, str]
 
 
 def install_health(app: FastAPI, checks: Sequence[Check] = ()) -> None:
-    """Adds `/live`, `/ready` and the `/health` alias to `app`."""
+    """Adds `/live`, `/ready`, `/version` and the `/health` alias to `app`."""
     checks = tuple(checks)
+    default_module = app.title.lower().replace(" ", "-")
+
+    @app.get("/version", tags=["health"], response_model=VersionReport)
+    def version():
+        """Build identity: module, release version, git SHA and build time, as set in the image (PR-OBS-8.1)."""
+        return version_report(default_module)
 
     @app.get("/live", tags=["health"])
     def live():

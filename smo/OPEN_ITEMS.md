@@ -487,13 +487,7 @@ HTTP request metrics and `/metrics` exist (`PR-OBS-2`, `HISTORY.md` §10); no Op
 | OBS-7.5 | Entry: certificate expiry and rotation | Same | SEC-2.5 |
 | OBS-7.6 | Entry: backup and restore | Same | DB-6.4 |
 
-#### PR-OBS-8 — Self-monitoring
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| OBS-8.1 | `/version` per module (build SHA from an env set in the image) | Route test | – |
-| OBS-8.2 | BFF `GET /modules/status` adds readiness and version | Test | OBS-8.1 |
-| OBS-8.3 | GUI shows readiness and version columns | Component test | OBS-8.2 |
+#### PR-OBS-8 — Self-monitoring (all steps done: `HISTORY.md` PR-OBS-8)
 
 ### 5.6 Packaging, migrations and release (`PR-OPS`)
 

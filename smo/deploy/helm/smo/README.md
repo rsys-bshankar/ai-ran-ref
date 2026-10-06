@@ -58,6 +58,10 @@ Every module that uses the database has an init container, `wait-for-schema`, th
 
 `smo-role-secrets` keeps the password of a role the release no longer has (A1 Related's, for the release that removed it), because the older chart still mounts it.
 
+## Build identity
+
+Every module answers `GET /version` (`{module, version, buildSha, builtAt}`, PR-OBS-8.1) from `SMO_VERSION`, `SMO_BUILD_SHA` and `SMO_BUILT_AT`, which are baked into the image as Docker build arguments: the release workflow sets them from the tag, the tag's commit and the build time, so a published `smo-<module>:<version>` image reports its own build and the chart needs no value for it. An image built by hand reports `unknown` unless built with `--build-arg SMO_BUILD_SHA=<commit>` (compose: export `SMO_BUILD_SHA` first). The operator GUI's Module health table shows them, and a module running a different commit than most is marked while a rolling upgrade is in progress.
+
 ## What is not in the chart
 
 `netconf-lab` (a throwaway lab server) and `edge-tls` (the compose TLS terminator: use `ingress` with a TLS secret instead).

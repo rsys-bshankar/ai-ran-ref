@@ -198,7 +198,7 @@ smo/
   OPEN_ITEMS.md             open items only
   HISTORY.md                audit trail: closed items, spec audit, wave exit reviews (cited by code comments)
   docker-compose.yml        deployment topology
-  Dockerfile                one image, parameterised by the MODULE build arg
+  Dockerfile                one image, parameterised by the MODULE build arg (and SMO_VERSION / SMO_BUILD_SHA / SMO_BUILT_AT, answered by GET /version)
   migrations/001_init.sql   the consolidated Postgres schema (the Alembic baseline revision 0001)
   migrations/versions/      Alembic revisions on top of it; scripts/migrate.py applies them (docs/adr/0001-schema-migrations.md)
   shared/smo_shared/        DB session, FSM base, RFC 7807 errors, R1Client, webhook helpers,

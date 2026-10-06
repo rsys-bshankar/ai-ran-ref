@@ -157,4 +157,8 @@ class R1Gateway:
         return resp
 
     async def r1_health(self, timeout: float) -> httpx.Response:
-        return await self._client.get(f"{self.r1_url}/health", timeout=timeout)
+        return await self.r1_get("/health", timeout)
+
+    async def r1_get(self, path: str, timeout: float) -> httpx.Response:
+        """One of R1 Termination's own unauthenticated routes (`/health`, `/ready`, `/version`): no token."""
+        return await self._client.get(f"{self.r1_url}{path}", timeout=timeout)

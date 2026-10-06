@@ -1,7 +1,7 @@
 // Pure domain helpers shared by pages: state machines as the modules define
 // them, alarm severity handling, and turning reports into chart series.
 
-import type { Alarm, ConfigJob, KpiCounterSpec, KpiGuardResult, RollbackPreview } from "../api/types";
+import type { Alarm, ConfigJob, KpiCounterSpec, KpiGuardResult, ModuleStatus, RollbackPreview } from "../api/types";
 
 // ---------------------------------------------------------------- AI/ML model FSMs
 // aimgf/app/statemachine.py — Wave 2 split ModelLifecycle (a model's own
@@ -391,4 +391,32 @@ export function schedulePayload(f: ScheduleForm): { ok: true; body: Record<strin
   if (f.managedElementRef.trim()) body.managedElementRef = f.managedElementRef.trim();
   if (f.cellId.trim()) body.cellId = f.cellId.trim();
   return { ok: true, body };
+}
+
+
+// ---------------------------------------------------------------- module status (PR-OBS-8.3)
+
+export type ModuleReadiness = "DOWN" | "NOT READY" | "READY" | "UNKNOWN";
+
+export interface ModuleRow {
+  module: string; readiness: ModuleReadiness; version: string; buildSha: string; builtAt: string;
+  /** true when this module runs a different commit than most modules (a rolling upgrade in progress, or a stale image) */
+  skewed: boolean;
+}
+
+/** One row per module for the status table: DOWN when it fails liveness, else READY / NOT READY from /ready (UNKNOWN when it
+ * did not answer it); the build as `—` when the module has no /version, the commit shortened to 7 characters. */
+export function moduleRows(modules: ModuleStatus[]): ModuleRow[] {
+  const shas = modules.map((m) => m.buildSha).filter((s): s is string => !!s && s !== "unknown");
+  const counts = new Map<string, number>();
+  for (const sha of shas) counts.set(sha, (counts.get(sha) ?? 0) + 1);
+  const common = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0];
+  return modules.map((m) => ({
+    module: m.module,
+    readiness: !m.healthy ? "DOWN" : m.ready === null ? "UNKNOWN" : m.ready ? "READY" : "NOT READY",
+    version: m.version && m.version !== "unknown" ? m.version : "—",
+    buildSha: m.buildSha && m.buildSha !== "unknown" ? m.buildSha.slice(0, 7) : "—",
+    builtAt: m.builtAt && m.builtAt !== "unknown" ? m.builtAt : "—",
+    skewed: !!m.buildSha && m.buildSha !== "unknown" && common !== undefined && m.buildSha !== common,
+  }));
 }
