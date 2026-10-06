@@ -58,6 +58,14 @@ Every module that uses the database has an init container, `wait-for-schema`, th
 
 `smo-role-secrets` keeps the password of a role the release no longer has (A1 Related's, for the release that removed it), because the older chart still mounts it.
 
+## Configuration reference
+
+Every variable a module reads is in `docs/CONFIGURATION.md` (default, secret or not, what it does). The chart sets the database, secret and enrollment variables itself; any other goes under `modules.<name>.env` (merged over `moduleDefaults.env`), the GUI backend's under `gui.env`. `tests_integration/test_helm_chart.py` still fails when a service's environment in the chart and in `docker-compose.yml` disagree. A secret has a `*_FILE` form: the chart uses it for the database password and the enrollment secret (a Secret volume), and so should any value you add.
+
+## Build identity
+
+Every module answers `GET /version` (`{module, version, buildSha, builtAt}`, PR-OBS-8.1) from `SMO_VERSION`, `SMO_BUILD_SHA` and `SMO_BUILT_AT`, which are baked into the image as Docker build arguments: the release workflow sets them from the tag, the tag's commit and the build time, so a published `smo-<module>:<version>` image reports its own build and the chart needs no value for it. An image built by hand reports `unknown` unless built with `--build-arg SMO_BUILD_SHA=<commit>` (compose: export `SMO_BUILD_SHA` first). The operator GUI's Module health table shows them, and a module running a different commit than most is marked while a rolling upgrade is in progress.
+
 ## What is not in the chart
 
 `netconf-lab` (a throwaway lab server) and `edge-tls` (the compose TLS terminator: use `ingress` with a TLS secret instead).
@@ -73,6 +81,16 @@ Every module that uses the database has an init container, `wait-for-schema`, th
 ## CI
 
 `.github/workflows/smo-tests.yml`, job `helm`: lint, render with the options on, build the images from the checkout, install on kind, check the database is at the head revision, run the compose smoke scripts inside the cluster (`compose_e2e.py`, `compose_e2e_roles.py`), check no rApp can read the enrollment secret, upgrade (every module rolls, no pod fails), uninstall.
+
+## Exposure of `/bootstrap` and the rate limiter (PR-SEC-9, PR-SEC-8.5)
+
+`GET /bootstrap` on R1 Termination has no token (an rApp calls it to find SME before it has one) and reveals only SME's address and two API paths (`r1-termination/README.md`). Three controls, all off by default:
+
+* **`bootstrapNetworkPolicy.enabled`** renders a NetworkPolicy on the `r1-termination` pods: ingress to the gateway port only from the pods of this release (the modules and the GUI backend) and `bootstrapNetworkPolicy.allowedSources`, a list of NetworkPolicyPeers (the rApp namespaces, the ingress controller's namespace, a scraper). **A NetworkPolicy selects pods and ports, not URL paths**, so it limits who can reach the whole gateway, `/bootstrap` with it, not `/bootstrap` alone. Once on it denies everything not listed, so list the rApps first; it needs a CNI that enforces NetworkPolicy.
+* **`ingress.r1.bootstrapAllowedSourceRanges`** (ingress-nginx; with `ingress.enabled` and `ingress.r1.host`) renders a second Ingress `r1-bootstrap` for the exact path `/bootstrap` carrying `nginx.ingress.kubernetes.io/whitelist-source-range`; the `r1` Ingress and every other path are unchanged. This is the per-path control. Other ingress controllers need their own annotation.
+* **`R1_BOOTSTRAP_KEY[_FILE]`**, the gateway's own shared key (`X-Bootstrap-Key`). The chart has no dedicated value, so that the key does not land in `values.yaml`: mount a Secret and set `modules.r1-termination.env.R1_BOOTSTRAP_KEY_FILE` on the gateway and `moduleDefaults.env.SMO_BOOTSTRAP_KEY_FILE` for every client (every module and rApp that reaches `/bootstrap` must send it, or its discovery gets a 401).
+
+The rate limiter's buckets are per gateway replica by default. `modules.r1-termination.env.R1_RATE_STORE=postgres` (the chart sets `memory`, as compose does by default) keeps them in the shared table `rate_bucket` (migration `0028`; the gateway's database role has it) so replicas share one budget, at the price of one database round trip per authenticated request; if the database fails the limiter fails open to the replica's own bucket and counts it in `smo_rate_store_errors_total`. `HorizontalPodAutoscaler` or `replicas` above 1 on `r1-termination` is where this matters.
 
 ## Where the replicas land
 

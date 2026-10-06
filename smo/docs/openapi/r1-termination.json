@@ -182,6 +182,34 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "VersionReport": {
+        "properties": {
+          "buildSha": {
+            "title": "Buildsha",
+            "type": "string"
+          },
+          "builtAt": {
+            "title": "Builtat",
+            "type": "string"
+          },
+          "module": {
+            "title": "Module",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "module",
+          "version",
+          "buildSha",
+          "builtAt"
+        ],
+        "title": "VersionReport",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -200,8 +228,28 @@
   "paths": {
     "/bootstrap": {
       "get": {
-        "description": "Foundational Platform LLD section 4.1: BootstrapInformation.apiEndpoints\nONLY ever contains service-apis (discovery) and published-apis\n(registration) entries \u2014 never events-subscription. An rApp discovers\nthe subscription endpoint the normal way, via service discovery, once\nit can reach service-apis. No auth (network-isolated), URI-stable\nacross all R1 Termination versions.\n\nInside the compose network the entries name SME directly (`http://sme:8000/...`). With `R1_PUBLIC_BASE_URL` set (PR-SEC-1.6) they\nname this gateway's public address instead: the API entries go through the gateway (`<base>/sme/...`, token required) and the\ntoken endpoint is the one path the TLS edge forwards to SME without a token (`<base>/sme/oauth2/token`), so a consumer that only\nreaches the HTTPS door can complete the whole flow.",
+        "description": "Foundational Platform LLD section 4.1: BootstrapInformation.apiEndpoints\nONLY ever contains service-apis (discovery) and published-apis\n(registration) entries \u2014 never events-subscription. An rApp discovers\nthe subscription endpoint the normal way, via service discovery, once\nit can reach service-apis. No auth (network-isolated), URI-stable\nacross all R1 Termination versions.\n\nInside the compose network the entries name SME directly (`http://sme:8000/...`). With `R1_PUBLIC_BASE_URL` set (PR-SEC-1.6) they\nname this gateway's public address instead: the API entries go through the gateway (`<base>/sme/...`, token required) and the\ntoken endpoint is the one path the TLS edge forwards to SME without a token (`<base>/sme/oauth2/token`), so a consumer that only\nreaches the HTTPS door can complete the whole flow.\n\nWhy it has no token: an rApp calls it to find SME's token endpoint *before* it has a token. What it reveals is only the two entries'\naddresses (SME's, or the public base URL) and the shape of the discovery and registration APIs; no identity, no data. With\n`R1_BOOTSTRAP_KEY[_FILE]` set (PR-SEC-9.3, off by default) the caller must also send that key as `X-Bootstrap-Key` (compared in constant\ntime), else 401; the key is a shared secret an operator hands to the rApps, a gate against scanners, not an identity.",
         "operationId": "bootstrap_bootstrap_get",
+        "parameters": [
+          {
+            "description": "The shared bootstrap key; required only when the gateway is run with `R1_BOOTSTRAP_KEY[_FILE]` (PR-SEC-9.3)",
+            "in": "header",
+            "name": "x-bootstrap-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The shared bootstrap key; required only when the gateway is run with `R1_BOOTSTRAP_KEY[_FILE]` (PR-SEC-9.3)",
+              "title": "X-Bootstrap-Key"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -279,7 +327,7 @@
                 }
               }
             },
-            "description": "Error"
+            "description": "Validation Error"
           },
           "429": {
             "content": {
@@ -674,6 +722,129 @@
         },
         "security": [],
         "summary": "Ready",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/version": {
+      "get": {
+        "description": "Build identity: module, release version, git SHA and build time, as set in the image (PR-OBS-8.1).",
+        "operationId": "version_version_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [],
+        "summary": "Version",
         "tags": [
           "health"
         ]

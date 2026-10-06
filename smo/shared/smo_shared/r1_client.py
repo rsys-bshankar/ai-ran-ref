@@ -22,6 +22,9 @@ rApp Management's package-status check on a real deployment. The
 in-process integration mesh (tests_integration/mesh.py) bypasses R1's
 gateway mechanics, so it never saw this.
 
+PR-SEC-9.3: when the gateway is run with `R1_BOOTSTRAP_KEY[_FILE]`, `GET /bootstrap` needs the header `X-Bootstrap-Key`; this client
+sends it when `SMO_BOOTSTRAP_KEY[_FILE]` is set (the SDK and the sample rApps reach /bootstrap only through this client).
+
 SMO_INVOKER_ID / SMO_INVOKER_SECRET pin a pre-provisioned invoker instead
 of onboarding a fresh one at first use.
 
@@ -46,7 +49,7 @@ from .correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from .correlation import get_correlation_id
 from .invoker import ON_BEHALF_OF_HEADER, get_originator
 from . import metrics
-from .roles import ENROLLMENT_HEADER, RAPP_SCOPE
+from .roles import BOOTSTRAP_KEY_HEADER, ENROLLMENT_HEADER, RAPP_SCOPE
 from .secretfile import read_secret
 from .timeouts import call_timeout
 
@@ -79,7 +82,9 @@ class _ModuleIdentity:
 
     def _discover(self, base_url: str) -> str:
         if self.token_endpoint is None:
-            resp = httpx.get(f"{base_url}/bootstrap", timeout=5.0)
+            # PR-SEC-9.3: a gateway that sets R1_BOOTSTRAP_KEY asks for it here; unset (the default) nothing is sent
+            key = read_secret("SMO_BOOTSTRAP_KEY")
+            resp = httpx.get(f"{base_url}/bootstrap", headers={BOOTSTRAP_KEY_HEADER: key} if key else None, timeout=5.0)
             resp.raise_for_status()
             uris = [(ep.get("tokenEndPoint") or {}).get("uri") for ep in resp.json().get("apiEndpoints", [])]
             self.token_endpoint = next(u for u in uris if u)

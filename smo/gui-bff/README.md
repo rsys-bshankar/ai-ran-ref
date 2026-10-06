@@ -55,7 +55,7 @@ Browser --/api--> gui (nginx :3000) --> gui-bff --Bearer (SME-issued)--> R1 Term
 | The RBAC table mapping `METHOD + /<module>/...` to a minimum role | The semantic validity of any proxied request (the target module) |
 | Append-only GUI audit log | Platform-side audit or fault data (RAN NF OAM, FOCOM) |
 | The BFF's own CAPIF invoker credential at SME | SME's invoker registry and token issuance (SME) |
-| Health aggregation across modules (`GET /api/modules/status`) | Module health endpoints themselves (each module) |
+| Health, readiness and build-version aggregation across modules (`GET /api/modules/status`) | Module health endpoints themselves (each module) |
 
 ### 1.5 Design decisions
 
@@ -140,7 +140,7 @@ All routes are under `/api`. OpenAPI is served at `/api/openapi.json` (docs/redo
 | GET | `/api/me` | `{username, role, csrfToken}` | 401 `UNAUTHENTICATED` / `SESSION_REVOKED` |
 | POST | `/api/me/password` | `{currentPassword, newPassword (min 8)}`; bumps `token_version`, re-issues the caller's session | 400 `INVALID_CREDENTIALS`; 422 on short password |
 | GET | `/api/permissions` | `{role, rules[{method, pattern, role, queryMatch}]}`: the RBAC table for the SPA (display only) | 401 |
-| GET | `/api/modules/status` | Parallel health probe of `r1-termination` (direct `/health`) and every module in `MODULES` (via R1 `GET /<module>/health`); returns `{checkedAt, modules[{module, healthy, latencyMs, statusCode, error}]}` | 401 |
+| GET | `/api/modules/status` | Parallel health probe of `r1-termination` (direct `/health`) and every module in `MODULES` (via R1 `GET /<module>/health`); then, for a module that is live, `/<module>/ready` and `/<module>/version` (R1's own `/ready` and `/version` for the gateway), in parallel; returns `{checkedAt, modules[{module, healthy, latencyMs, statusCode, error, ready, version, buildSha, builtAt}]}`: `ready` is `true`/`false` from 200/503 and `null` when the module did not answer it; `version`, `buildSha` and `builtAt` are `null` for a module that is down or has no `/version` (an older release during a rolling upgrade) | 401 |
 
 **Proxy**
 

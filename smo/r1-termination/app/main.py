@@ -11,13 +11,14 @@ per the Repo Map blueprint) so the whole SMO can run as one docker-compose
 stack without an extra infra dependency.
 """
 
+import hmac
 import logging
 import os
 from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
@@ -33,7 +34,8 @@ from smo_shared.health import install_health
 from smo_shared import killswitch, roles
 from smo_shared.invoker import INVOKER_ID_HEADER, ON_BEHALF_OF_HEADER
 from smo_shared.openapi_security import apply_r1_gateway_security
-from smo_shared.ratelimit import TokenBuckets
+from smo_shared.ratelimit import SharedTokenBuckets, TokenBuckets, store_from_environment
+from smo_shared.secretfile import read_secret
 from smo_shared.timeouts import introspect_timeout, upstream_timeout
 
 log = logging.getLogger(__name__)
@@ -41,11 +43,11 @@ log = logging.getLogger(__name__)
 app = FastAPI(title="R1 Termination")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
 install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
-# /health (with /live and /ready) and /bootstrap are this gateway's own exemptions (see
+# /health (with /live, /ready and /version) and /bootstrap are this gateway's own exemptions (see
 # below: the probes are answered ahead of _authorized entirely, /bootstrap is "No auth (network-isolated)") — every other
 # path here is the catch-all proxy route, which really does call
 # _authorized() on every request.
-apply_r1_gateway_security(app, public_paths=frozenset({"/health", "/live", "/ready", "/bootstrap"}))
+apply_r1_gateway_security(app, public_paths=frozenset({"/health", "/live", "/ready", "/version", "/bootstrap"}))
 # This gateway is the true origin point for external traffic: a caller
 # that never sent its own X-Correlation-ID gets one assigned here, which
 # then propagates through the whole downstream fan-out (see the proxy
@@ -59,10 +61,20 @@ app.add_middleware(BodySizeLimit, settings=settings_from_env(
     "R1", default_overrides=f"/mlmr/models/*/artifact={50 * MIB}"))
 
 # Per-caller request budget (PR-SEC-8.2): a token bucket per invoker id. R1_RATE_PER_SECOND (default 100, 0 turns
-# it off) refills it, R1_RATE_BURST (default 200) is its size. Held in this process: with several replicas each
-# has its own bucket until the shared store of SEC-8.5.
-_limiter = TokenBuckets(rate=lambda: float(os.environ.get("R1_RATE_PER_SECOND", "100")),
-                        burst=lambda: float(os.environ.get("R1_RATE_BURST", "200")))
+# it off) refills it, R1_RATE_BURST (default 200) is its size. R1_RATE_STORE (read once at start) says where the buckets live:
+# `memory` (default): in this process, so N replicas give a caller N x the budget; `postgres` (PR-SEC-8.5): in the shared
+# `rate_bucket` table, one budget for all replicas, failing open to the in-process bucket when the database errs (smo_shared/ratelimit.py).
+_rate = lambda: float(os.environ.get("R1_RATE_PER_SECOND", "100"))     # noqa: E731 (read on every call: a setting changed at run time applies)
+_burst = lambda: float(os.environ.get("R1_RATE_BURST", "200"))         # noqa: E731
+RATE_STORE = store_from_environment()
+_limiter: TokenBuckets | SharedTokenBuckets = SharedTokenBuckets(_rate, _burst) if RATE_STORE == "postgres" else TokenBuckets(_rate, _burst)
+
+
+async def _take_budget(caller: str) -> int | None:
+    """The limiter's answer for `caller`; the shared one is a database round trip, so it runs off the event loop."""
+    if _limiter.blocking:
+        return await run_in_threadpool(_limiter.take, caller)
+    return _limiter.take(caller)
 
 
 # R1 Termination's own probes, declared ahead of the catch-all proxy route so they are answered here,
@@ -120,10 +132,11 @@ def _public_base_url() -> str | None:
 
 
 PUBLIC_BASE_URL = _public_base_url()                 # read once at start: a bad value stops the service, it does not surface per request
+BOOTSTRAP_KEY = read_secret("R1_BOOTSTRAP_KEY")      # PR-SEC-9.3, read once at start (a conflict or an unreadable file stops the service): None = /bootstrap is open, the default
 
 
 @app.get("/bootstrap")
-def bootstrap():
+def bootstrap(x_bootstrap_key: str | None = Header(default=None, description="The shared bootstrap key; required only when the gateway is run with `R1_BOOTSTRAP_KEY[_FILE]` (PR-SEC-9.3)")):
     """Foundational Platform LLD section 4.1: BootstrapInformation.apiEndpoints
     ONLY ever contains service-apis (discovery) and published-apis
     (registration) entries — never events-subscription. An rApp discovers
@@ -135,7 +148,14 @@ def bootstrap():
     name this gateway's public address instead: the API entries go through the gateway (`<base>/sme/...`, token required) and the
     token endpoint is the one path the TLS edge forwards to SME without a token (`<base>/sme/oauth2/token`), so a consumer that only
     reaches the HTTPS door can complete the whole flow.
+
+    Why it has no token: an rApp calls it to find SME's token endpoint *before* it has a token. What it reveals is only the two entries'
+    addresses (SME's, or the public base URL) and the shape of the discovery and registration APIs; no identity, no data. With
+    `R1_BOOTSTRAP_KEY[_FILE]` set (PR-SEC-9.3, off by default) the caller must also send that key as `X-Bootstrap-Key` (compared in constant
+    time), else 401; the key is a shared secret an operator hands to the rApps, a gate against scanners, not an identity.
     """
+    if BOOTSTRAP_KEY is not None and not hmac.compare_digest((x_bootstrap_key or "").encode(), BOOTSTRAP_KEY.encode()):
+        return JSONResponse(status_code=401, content={"title": "UNAUTHORIZED", "status": 401, "detail": "this gateway asks for the bootstrap key (X-Bootstrap-Key)"})
     if PUBLIC_BASE_URL:
         token, apis = f"{PUBLIC_BASE_URL}/sme/oauth2/token", f"{PUBLIC_BASE_URL}/sme"
     else:
@@ -230,7 +250,7 @@ async def _proxy(full_path: str, request: Request):
         return JSONResponse(status_code=401, content={"title": "UNAUTHORIZED", "status": 401})
     invoker_id, role = caller
     request.state.audit = (invoker_id, role, None, request.headers.get(ON_BEHALF_OF_HEADER) if role == roles.ROLE_INTERNAL else None)
-    wait = _limiter.take(invoker_id or "anonymous")
+    wait = await _take_budget(invoker_id or "anonymous")
     if wait is not None:
         return JSONResponse(status_code=429, headers={"Retry-After": str(wait)}, content={
             "title": "RATE_LIMITED", "status": 429,

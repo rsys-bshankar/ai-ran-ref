@@ -25,6 +25,13 @@ x-ready-probe: &ready_probe
   retries: 5
   start_period: 30s
 
+# Build identity baked into every image, answered by GET /version (PR-OBS-8.1): export SMO_BUILD_SHA=$(git rev-parse HEAD)
+# (and SMO_VERSION, SMO_BUILT_AT) before `docker compose build`; unset, the image says "unknown".
+x-build-info: &build_info
+  SMO_VERSION: ${SMO_VERSION:-unknown}
+  SMO_BUILD_SHA: ${SMO_BUILD_SHA:-unknown}
+  SMO_BUILT_AT: ${SMO_BUILT_AT:-unknown}
+
 # Container hardening for every service we build (PR-SEC-13): no Linux capability (a service binds port 8000 and
 # needs none), and no way to gain one through a setuid binary. Postgres keeps its defaults: its entrypoint
 # drops privileges itself and needs a few. The root filesystem is read-only (PR-SEC-13.2): a service writes only to /tmp
@@ -102,7 +109,7 @@ services:
   # they do not start, and `docker compose logs migrate` says why. The image is any of the service images (all carry
   # the migrations); this one is the R1 Termination build, so no extra image layer is built.
   migrate:
-    build: { context: ., args: { MODULE: r1-termination } }
+    build: { context: ., args: { <<: *build_info, MODULE: r1-termination } }
     # the schema, then the per-module roles (PR-DB-2.6): one role for every module whose password file is mounted here, and none for one without
     command: ["sh", "-c", "python /srv/scripts/migrate.py && python /srv/scripts/db_roles.py"]
     restart: "no"
@@ -115,7 +122,7 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password
 
   r1-termination:
-    build: { context: ., args: { MODULE: r1-termination } }
+    build: { context: ., args: { <<: *build_info, MODULE: r1-termination } }
     stop_grace_period: 30s
     secrets: [db_password_r1-termination]    # PR-SEC-11: the gateway adds a row to the audit chain for every authenticated change (it keeps no other state)
     <<: *hardening
@@ -134,6 +141,12 @@ services:
       # PR-SEC-1.6: unset, /bootstrap names SME on the compose network; set to the HTTPS door (https://localhost:8443 with the tls
       # profile) and it names that address instead, so a consumer that only reaches the edge can complete the flow.
       R1_PUBLIC_BASE_URL: ${R1_PUBLIC_BASE_URL:-}
+      # PR-SEC-8.5: `memory` (default): each gateway replica counts for itself; `postgres`: the per-caller buckets live in the shared
+      # `rate_bucket` table so all replicas share one budget (fails open to the in-process bucket if the database errs).
+      R1_RATE_STORE: ${R1_RATE_STORE:-memory}
+      # PR-SEC-9.3: set, GET /bootstrap needs the header X-Bootstrap-Key with this value; unset (default), /bootstrap stays open.
+      # Clients (the SDK, the sample rApps, the modules) send it when SMO_BOOTSTRAP_KEY is set. A file form, R1_BOOTSTRAP_KEY_FILE, also works.
+      R1_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}
       SME_URL: http://sme:8000
       DME_URL: http://dme:8000
       ONBOARDING_URL: http://onboarding:8000
@@ -155,7 +168,7 @@ services:
       TRAFFIC_STEERING_RAPP_URL: http://traffic-steering-rapp:8000
 
   sme:
-    build: { context: ., args: { MODULE: sme } }
+    build: { context: ., args: { <<: *build_info, MODULE: sme } }
     stop_grace_period: 30s
     secrets: [db_password_sme, enrollment_secret]
     <<: *hardening
@@ -172,7 +185,7 @@ services:
       SME_TOKEN_AUDIENCE: ${R1_PUBLIC_BASE_URL:+${R1_PUBLIC_BASE_URL}/sme/oauth2/token}
 
   dme:
-    build: { context: ., args: { MODULE: dme } }
+    build: { context: ., args: { <<: *build_info, MODULE: dme } }
     stop_grace_period: 30s
     secrets: [db_password_dme, enrollment_secret]
     <<: *hardening
@@ -186,7 +199,7 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_dme
 
   onboarding:
-    build: { context: ., args: { MODULE: onboarding } }
+    build: { context: ., args: { <<: *build_info, MODULE: onboarding } }
     stop_grace_period: 30s
     secrets: [db_password_onboarding, enrollment_secret]    # not db_password: it connects as its own role (PR-DB-2.6), which scripts/db_roles.py makes
     <<: *hardening
@@ -202,7 +215,7 @@ services:
       - smo_packages:/srv/packages   # FileSystem-aaS, SMO Design v1.3 section 3.4
 
   rapp-mgmt:
-    build: { context: ., args: { MODULE: rapp-mgmt } }
+    build: { context: ., args: { <<: *build_info, MODULE: rapp-mgmt } }
     stop_grace_period: 30s
     secrets: [db_password_rapp-mgmt, enrollment_secret]
     <<: *hardening
@@ -215,9 +228,10 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_rapp-mgmt
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   ran-nf-oam:
-    build: { context: ., args: { MODULE: ran-nf-oam } }
+    build: { context: ., args: { <<: *build_info, MODULE: ran-nf-oam } }
     stop_grace_period: 30s
     secrets: [db_password_ran-nf-oam, enrollment_secret]
     <<: *hardening
@@ -230,13 +244,14 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_ran-nf-oam
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
       SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
 
   # PR-MSG-4: the same image, run as a worker. It does RAN NF OAM's periodic work (the wave advance of staged CM jobs, KPI schedules,
   # the refusal purge; ran-nf-oam/app/tasks.py), so no request process ever runs a timer. Run as many as you like: a task runs at most
   # once per interval across all of them, and a worker that dies frees its tasks for another.
   ran-nf-oam-worker:
-    build: { context: ., args: { MODULE: ran-nf-oam } }
+    build: { context: ., args: { <<: *build_info, MODULE: ran-nf-oam } }
     command: ["python", "-m", "smo_shared.worker"]
     stop_grace_period: 30s
     secrets: [db_password_ran-nf-oam, enrollment_secret]
@@ -250,10 +265,11 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_ran-nf-oam
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
       SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
 
   mock-o1-adaptor:
-    build: { context: ., args: { MODULE: mock-o1-adaptor } }
+    build: { context: ., args: { <<: *build_info, MODULE: mock-o1-adaptor } }
     stop_grace_period: 30s
     <<: *hardening
     healthcheck: *ready_probe
@@ -269,7 +285,7 @@ services:
   # (DEMO_RUNBOOK.md §24, Demo 00–11). It reaches every SMO service only
   # through R1 Termination, and is reached by the GUI the same way.
   energy-saving-rapp:
-    build: { context: ., args: { MODULE: samples/energy-saving-rapp } }
+    build: { context: ., args: { <<: *build_info, MODULE: samples/energy-saving-rapp } }
     stop_grace_period: 30s
     secrets: [db_password_energy-saving-rapp]
     <<: *hardening
@@ -282,11 +298,12 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_energy-saving-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   # Wave 10.2: the Mobility Optimization reference rApp
   # (samples/mobility-optimization-rapp) — R1-only, like energy-saving-rapp.
   mobility-optimization-rapp:
-    build: { context: ., args: { MODULE: samples/mobility-optimization-rapp } }
+    build: { context: ., args: { <<: *build_info, MODULE: samples/mobility-optimization-rapp } }
     stop_grace_period: 30s
     secrets: [db_password_mobility-optimization-rapp]
     <<: *hardening
@@ -299,11 +316,12 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mobility-optimization-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   # Wave 10.3: the Coverage Optimization reference rApp
   # (samples/coverage-optimization-rapp) — R1-only, like energy-saving-rapp.
   coverage-optimization-rapp:
-    build: { context: ., args: { MODULE: samples/coverage-optimization-rapp } }
+    build: { context: ., args: { <<: *build_info, MODULE: samples/coverage-optimization-rapp } }
     stop_grace_period: 30s
     secrets: [db_password_coverage-optimization-rapp]
     <<: *hardening
@@ -316,11 +334,12 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_coverage-optimization-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   # Wave 10.4: the Traffic Steering reference rApp
   # (samples/traffic-steering-rapp) — R1-only, like energy-saving-rapp.
   traffic-steering-rapp:
-    build: { context: ., args: { MODULE: samples/traffic-steering-rapp } }
+    build: { context: ., args: { <<: *build_info, MODULE: samples/traffic-steering-rapp } }
     stop_grace_period: 30s
     secrets: [db_password_traffic-steering-rapp]
     <<: *hardening
@@ -333,9 +352,10 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_traffic-steering-rapp
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   nfo:
-    build: { context: ., args: { MODULE: nfo } }
+    build: { context: ., args: { <<: *build_info, MODULE: nfo } }
     stop_grace_period: 30s
     secrets: [db_password_nfo, enrollment_secret]
     <<: *hardening
@@ -348,13 +368,14 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_nfo
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
     # No `privileged: true` and no Docker socket (PR-SEC-13): NFO never started a container (it runs no
     # `docker run`, nfo/README.md), and either one is root on the host. The Docker bridge of SMO Design v1.3
     # section 3.7 has to arrive as a narrow, separately-run component (a socket proxy that allows a few API calls,
     # or the Kubernetes API), not as this service holding the socket.
 
   focom:
-    build: { context: ., args: { MODULE: focom } }
+    build: { context: ., args: { <<: *build_info, MODULE: focom } }
     stop_grace_period: 30s
     secrets: [db_password_focom, enrollment_secret]
     <<: *hardening
@@ -368,7 +389,7 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_focom
 
   mlmr:
-    build: { context: ., args: { MODULE: mlmr } }
+    build: { context: ., args: { <<: *build_info, MODULE: mlmr } }
     stop_grace_period: 30s
     secrets: [db_password_mlmr, enrollment_secret]
     <<: *hardening
@@ -382,7 +403,7 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mlmr
 
   aimgf:
-    build: { context: ., args: { MODULE: aimgf } }
+    build: { context: ., args: { <<: *build_info, MODULE: aimgf } }
     stop_grace_period: 30s
     secrets: [db_password_aimgf, enrollment_secret]
     <<: *hardening
@@ -395,9 +416,10 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_aimgf
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   mllf:
-    build: { context: ., args: { MODULE: mllf } }
+    build: { context: ., args: { <<: *build_info, MODULE: mllf } }
     stop_grace_period: 30s
     secrets: [enrollment_secret]
     <<: *hardening
@@ -405,9 +427,10 @@ services:
     environment:
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   ran-analytics:
-    build: { context: ., args: { MODULE: ran-analytics } }
+    build: { context: ., args: { <<: *build_info, MODULE: ran-analytics } }
     stop_grace_period: 30s
     secrets: [db_password_ran-analytics, enrollment_secret]
     <<: *hardening
@@ -420,9 +443,10 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_ran-analytics
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   mdaf:
-    build: { context: ., args: { MODULE: mdaf } }
+    build: { context: ., args: { <<: *build_info, MODULE: mdaf } }
     stop_grace_period: 30s
     secrets: [db_password_mdaf, enrollment_secret]
     <<: *hardening
@@ -436,7 +460,7 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mdaf
 
   intent-service:
-    build: { context: ., args: { MODULE: intent-service } }
+    build: { context: ., args: { <<: *build_info, MODULE: intent-service } }
     stop_grace_period: 30s
     secrets: [db_password_intent-service, enrollment_secret]
     <<: *hardening
@@ -450,7 +474,7 @@ services:
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_intent-service
 
   so-smos:
-    build: { context: ., args: { MODULE: so-smos } }
+    build: { context: ., args: { <<: *build_info, MODULE: so-smos } }
     stop_grace_period: 30s
     secrets: [db_password_so-smos, enrollment_secret]
     <<: *hardening
@@ -463,9 +487,10 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_so-smos
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   sa-smos:
-    build: { context: ., args: { MODULE: sa-smos } }
+    build: { context: ., args: { <<: *build_info, MODULE: sa-smos } }
     stop_grace_period: 30s
     secrets: [db_password_sa-smos, enrollment_secret]
     <<: *hardening
@@ -478,13 +503,14 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_sa-smos
       R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
 
   # ---------------------------------------------------------------- operator GUI
   # Browser -> gui (nginx, the only published GUI port) -> gui-bff -> R1
   # Termination -> modules. gui-bff publishes nothing and authenticates to R1
   # with its own SME-issued OAuth2 token.
   gui-bff:
-    build: { context: ., args: { MODULE: gui-bff } }
+    build: { context: ., args: { <<: *build_info, MODULE: gui-bff } }
     stop_grace_period: 30s
     <<: *hardening
     secrets: [enrollment_secret]

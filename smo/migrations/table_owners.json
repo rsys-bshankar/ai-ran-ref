@@ -6,7 +6,8 @@
   "idempotency_key",
   "module_identity",
   "notification_outbox",
-  "periodic_run"
+  "periodic_run",
+  "rate_bucket"
  ],
  "r1-termination": [],
  "sme": [
