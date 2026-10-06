@@ -15,7 +15,7 @@ SMO_ROOT = Path(__file__).resolve().parent.parent
 CHART = SMO_ROOT / "deploy" / "helm" / "smo"
 COMPOSE = yaml.safe_load((SMO_ROOT / "docker-compose.yml").read_text())
 VALUES = yaml.safe_load((CHART / "values.yaml").read_text())
-NOT_IN_THE_CHART = {"postgres", "migrate", "netconf-lab", "edge-tls", "pgbouncer",                      # Postgres is a template of its own, migrate a Job, the others are compose-only (a pooler on Kubernetes is the operator's)
+NOT_IN_THE_CHART = {"postgres", "migrate", "netconf-lab", "edge-tls", "pgbouncer", "db-backup",                   # Postgres is a template of its own, migrate a Job, the others are compose-only (a pooler on Kubernetes is the operator's)
                     "tempo", "loki", "fluent-bit", "grafana"}                                      # the observability profiles: templates of their own, values-gated (observability.yaml)
 helm = pytest.mark.skipif(shutil.which("helm") is None, reason="helm is not installed")
 
@@ -167,6 +167,21 @@ def test_an_external_database_drops_the_bundled_one_and_needs_a_host():
     assert all(u.endswith("@db.example.com:5432/smo?sslmode=require") and u.split("//")[1].startswith("smo_") for u in urls)
     failed = subprocess.run(["helm", "template", "smo", str(CHART), "--kube-version", "1.30.0", "--set", "postgres.enabled=false"], capture_output=True, text=True)
     assert failed.returncode != 0 and "postgres.external.host" in failed.stderr
+
+
+@helm
+def test_cnpg_backup_is_a_scheduled_backup_of_a_named_cluster_and_only_when_asked_for():
+    external = ["--set", "postgres.enabled=false", "--set", "postgres.external.host=smo-pg-rw"]
+    assert not [d for d in _render(*external) if d["kind"] == "ScheduledBackup"]
+    docs = _render(*external, "--set", "postgres.cnpgBackup.enabled=true", "--set", "postgres.cnpgBackup.cluster=smo-pg")
+    (backup,) = [d for d in docs if d["kind"] == "ScheduledBackup"]
+    assert backup["spec"]["cluster"] == {"name": "smo-pg"} and backup["spec"]["method"] == "barmanObjectStore" and backup["spec"]["schedule"] == "0 0 2 * * *"
+    nameless = subprocess.run(["helm", "template", "smo", str(CHART), "--kube-version", "1.30.0", *external, "--set", "postgres.cnpgBackup.enabled=true"],
+                              capture_output=True, text=True)
+    assert nameless.returncode != 0 and "postgres.cnpgBackup.cluster" in nameless.stderr
+    bundled = subprocess.run(["helm", "template", "smo", str(CHART), "--kube-version", "1.30.0", "--set", "postgres.cnpgBackup.enabled=true",
+                              "--set", "postgres.cnpgBackup.cluster=x"], capture_output=True, text=True)
+    assert bundled.returncode != 0 and "postgres.enabled=false" in bundled.stderr
 
 
 def _database_urls(*args: str) -> set[str]:

@@ -41,4 +41,4 @@ A new alert starts with a page named exactly like the alert (`<AlertName>.md`).
 
 ## Not covered by an alert yet
 
-Postgres down (it shows as `SmoModuleDown` for every module and as pool and 5xx alerts; the database itself is not scraped by this chart), the expiry of the edge TLS certificate (`PR-SEC-1`: the deployment's own; the service-to-service certificates have `SmoMtlsCertExpiring`), and backup and restore (`scripts/db_backup.sh`, `scripts/db_restore.sh`, `docs/SECRETS.md`; disaster recovery, `PR-HA-6`). They get a page when the alert or the procedure exists.
+Postgres down (it shows as `SmoModuleDown` for every module and as pool and 5xx alerts; the database itself is not scraped by this chart), the expiry of the edge TLS certificate (`PR-SEC-1`: the deployment's own; the service-to-service certificates have `SmoMtlsCertExpiring`), and backup and restore (`scripts/db_backup.sh`, `scripts/db_restore.sh`, `docs/SECRETS.md`). Disaster recovery has its own document with a step-by-step runbook: `docs/DISASTER_RECOVERY.md` (an alert on a failed or late off-site backup is not built). They get a page when the alert or the procedure exists.

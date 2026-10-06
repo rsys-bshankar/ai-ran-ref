@@ -44,4 +44,4 @@ surviving the loss of the database primary with no committed work lost and a rec
   job output.
 - Recovery time is a number the failover test records (`DB-7.4`, `HA-3.1/3.2`), and the CHANGELOG states it with the test's own limits.
 - A deployment on a managed database or Patroni gets the same code path; only the lab covers the operator.
-- Backups are separate (`DB-6`): replication is not a backup, and the docs say so next to this decision.
+- Backups are separate (`DB-6`, `HA-6`): replication is not a backup, and the docs say so next to this decision. The recovery targets, the off-site copy and the runbook are in `docs/DISASTER_RECOVERY.md`.

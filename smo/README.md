@@ -143,7 +143,20 @@ scripts/db_restore.sh --compose --yes backups/smo-<UTC>.dump                    
 ```
 
 A restore needs `--yes`, replaces every object in the dump (`--clean --if-exists`) and, being one transaction, changes
-nothing if it fails. WAL archiving and point-in-time recovery are not set up yet (`PR-DB-6.3`).
+nothing if it fails.
+
+Disaster recovery (RPO 15 minutes, RTO 1 hour; [`docs/DISASTER_RECOVERY.md`](docs/DISASTER_RECOVERY.md)): `scripts/dr_backup.sh` ships a set (the dump, the GUI backend's
+SQLite database, a manifest with checksums, the schema revision and the time) to an S3-compatible bucket (AWS S3, MinIO) and applies retention; in compose it is the
+`db-backup` service of the `backup` profile (every `SMO_BACKUP_INTERVAL_SECONDS`, default 600), on Kubernetes with CloudNativePG it is continuous WAL archiving
+(`postgres.cnpgBackup`, `deploy/helm/smo/ci/cnpg-cluster-backup.yaml`). `scripts/dr_drill.sh` restores the newest off-site set into a fresh Postgres, checks the schema, runs a smoke check and prints the
+timings and the data-loss window against the targets; CI runs it against `moto_server`, an S3 stand-in (`.github/workflows/smo-dr.yml`; MinIO or AWS S3 on real storage is still to be drilled). The runbook, what is not covered (point-in-time recovery outside CloudNativePG,
+the SQLite database on Kubernetes) and the drill log are in that document.
+
+```bash
+export SMO_BACKUP_S3_BUCKET=smo-backups SMO_BACKUP_S3_ENDPOINT=http://minio:9000 AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...   # endpoint empty for AWS
+docker compose --profile backup up -d --build db-backup                                  # a set to the bucket every 10 minutes
+scripts/dr_drill.sh --admin-url postgresql+psycopg://user:pass@scratch:5432/postgres      # restore the newest set into a fresh database and time it
+```
 
 Run the tests:
 
@@ -231,7 +244,8 @@ smo/
     *.csar                  committed packages built from the directories above
   tests_integration/        in-process service mesh (loader.py, mesh.py) and cross-service tests,
                             incl. test_demo_runbook.py, which replays DEMO_RUNBOOK.md
-  scripts/                  OpenAPI generation, migration-vs-models check, CM schema ingest,
+  backup/                   the image of the compose `db-backup` service (Postgres 18 client, AWS CLI): off-site backups, docs/DISASTER_RECOVERY.md
+  scripts/                  OpenAPI generation, migration-vs-models check, CM schema ingest, off-site backup and the restore drill (dr_*.sh),
                             TS 28.312 family generation, config_reference.py (the environment-variable reference)
   deploy/helm/smo/          the Helm chart (also the traces and logs lab stack, values-gated)
   deploy/gitops/            Kustomize overlays (lab, staging, prod) and Argo CD Applications for the chart
@@ -274,6 +288,7 @@ smo/
 | [`docs/SECRETS.md`](docs/SECRETS.md) | Every secret: owner, how it is supplied, how it is stored (hash or plaintext), how it is rotated |
 | [`docs/PRIVACY.md`](docs/PRIVACY.md) | Every place personal data can be stored or logged (GUI users, audit rows, attribution fields, logs, backups), retention today, who can read it, and the tested erasure procedure for a GUI user with what it leaves behind |
 | [`docs/DATA_RESIDENCY.md`](docs/DATA_RESIDENCY.md) | One page: where data lives (Postgres, the GUI database, volumes, backups, logs, images) and what leaves a site (callbacks, package download, O1 southbound, image pulls; no telemetry) |
+| [`docs/DISASTER_RECOVERY.md`](docs/DISASTER_RECOVERY.md) | Recovery targets (RPO 15 minutes, RTO 1 hour), what the off-site backup covers and does not, the restore runbook for compose and CloudNativePG, responsibilities, how it is tested, and the drill log |
 | [`docs/CONTROL_MATRIX.md`](docs/CONTROL_MATRIX.md) | ISO/IEC 27001:2022 Annex A themes and NESAS/SCAS test categories mapped to what exists, with evidence and an honest status (Implemented / Partial / Planned with an item ID / Not applicable) |
 | [`../specs/README.md`](../specs/README.md#specification-release-table-std-21) | The specification release table: the release or version of every spec in `specs/` and every spec the code cites, which module realises it, and where |
 | [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md) | Command-by-command live demo against `docker compose up` |

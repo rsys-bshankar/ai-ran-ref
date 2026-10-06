@@ -1,0 +1,27 @@
+{{- /*
+PR-HA-6.2: scheduled base backups of a CloudNativePG cluster, opt in (postgres.cnpgBackup.enabled). The cluster itself is the operator's (this chart runs no
+operator and makes no Cluster: postgres.enabled=false and postgres.external.*), and so is its object store: the Cluster's spec.backup.barmanObjectStore
+(ci/cnpg-cluster-backup.yaml is the example) is what archives the WAL continuously, which is what bounds the data loss to minutes (RPO 15 minutes,
+docs/DISASTER_RECOVERY.md). This object only adds the schedule of the base backups the WAL is replayed on top of.
+*/}}
+{{- with .Values.postgres.cnpgBackup }}
+{{- if .enabled }}
+{{- if $.Values.postgres.enabled }}
+{{- fail "postgres.cnpgBackup.enabled needs a CloudNativePG cluster: set postgres.enabled=false and postgres.external.* (the bundled single-pod Postgres has no WAL archiving)" }}
+{{- end }}
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ required "postgres.cnpgBackup.cluster is the name of the CloudNativePG Cluster to back up" .cluster }}-base
+  labels:
+    {{- include "smo.labels" (dict "root" $) | nindent 4 }}
+    app.kubernetes.io/name: postgres-backup
+spec:
+  schedule: {{ .schedule | quote }}
+  immediate: {{ .immediate }}
+  backupOwnerReference: self
+  method: barmanObjectStore
+  cluster:
+    name: {{ .cluster }}
+{{- end }}
+{{- end }}
