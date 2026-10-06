@@ -300,7 +300,7 @@ def test_rendered_by_default_there_is_no_mtls_anywhere():
     assert not [d for d in docs if d["kind"] == "Certificate"]
     for deployment in (d for d in docs if d["kind"] == "Deployment"):
         container = _container(deployment)
-        assert "SMO_MTLS" not in {e["name"] for e in container["env"]}, deployment["metadata"]["name"]
+        assert "SMO_MTLS" not in {e["name"] for e in container.get("env") or []}, deployment["metadata"]["name"]
         assert "mtls" not in {v["name"] for v in deployment["spec"]["template"]["spec"]["volumes"]}
         if "readinessProbe" in container and "httpGet" in container["readinessProbe"]:
             assert container["readinessProbe"]["httpGet"]["path"] == "/ready"
@@ -311,7 +311,7 @@ def test_with_mtls_each_participant_mounts_its_secret_serves_what_its_mode_says_
     docs = _render("--set", "mtls.enabled=true")
     deployments = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Deployment"}
     for name, deployment in deployments.items():
-        container, env = _container(deployment), {e["name"]: e.get("value") for e in _container(deployment)["env"]}
+        container, env = _container(deployment), {e["name"]: e.get("value") for e in (_container(deployment).get("env") or [])}
         volumes = {v["name"]: v for v in deployment["spec"]["template"]["spec"]["volumes"]}
         if name in ("mock-o1-adaptor", "gui"):
             assert "SMO_MTLS" not in env and "mtls" not in volumes, name
