@@ -1,0 +1,248 @@
+# Configuration reference
+
+Every environment variable the SMO reads, with its default, whether it is a secret, which files read it and what it does. The table is
+generated from the source by `scripts/config_reference.py` (an AST walk, nothing is imported) and the descriptions are written by hand in
+`docs/config_descriptions.json`; `tests_integration/test_config_reference.py` fails when a variable read in code is missing from the table, when the
+table lists one no code reads, when a default drifted, or when a description is missing. To add or change a variable: change the code, add its
+description to the JSON file, run
+
+```bash
+cd smo && python scripts/config_reference.py --write     # regenerates the tables below (python scripts/config_reference.py: a plain table with file:line)
+```
+
+and commit both. A variable whose name is built at run time is listed as a pattern, the run-time part in angle brackets
+(`NETCONF_CRED_<REF>_PASSWORD`: one per credential name an endpoint refers to); such a read carries a `# config-ref: NAME, ...` comment in the source
+so the walk knows what it reads.
+
+## How to read the tables
+
+- **Default**: the value used when the variable is unset, as far as the code shows it. `unset` means the code treats absence as "not
+  configured" (an optional feature, or a required value that the deployment must supply); `required` means the process fails without it; `computed in code`
+  means the default is built from other values (the description says how). Several defaults separated by `/` mean the variable is read in several places with
+  different defaults.
+- **Secret**: `yes` for a variable that holds a secret (the name contains PASSWORD, SECRET, KEY or TOKEN, or it is read through `read_secret`, and the
+  description may correct the guess); `file` for the `*_FILE` form of one (the path of a file that holds it). Never put a secret in a values file
+  or an image; use the file form.
+- **Read in**: the source files that read it. A variable read in `smo_shared` is read by every module that uses that part of the library.
+- Variables are grouped by where they are read: `smo_shared` (every module), one module, or several modules; the last group is variables only
+  `docker-compose.yml` substitutes from `.env`.
+
+## The `*_FILE` convention
+
+A secret can be given as a file instead of a value (`smo_shared/secretfile.py`): `read_secret("SMO_DATABASE_PASSWORD")` returns the value of
+`SMO_DATABASE_PASSWORD`, or the contents of the file named by `SMO_DATABASE_PASSWORD_FILE` (one trailing newline removed). Neither set is "not
+configured"; both set is an error (`SecretConflict`) rather than a guess; an unreadable file names the variable and the path, never the contents. An
+environment variable is visible to `docker inspect` and `/proc/<pid>/environ`, a file mounted from a Compose secret or a Kubernetes Secret is not, so
+compose and the chart use the file form (`docs/SECRETS.md` lists each secret, its owner and its rotation). The GUI backend's image does not install
+`smo_shared` and has its own copy of this rule for `SMO_ENROLLMENT_SECRET`. The `*_FILE` rows below are the variables that name such files.
+
+## Where each variable is set in a deployment
+
+- **Docker Compose** (`docker-compose.yml`): each service's `environment:` block sets the module's variables (the shared database block `x-db-env`
+  sets `SMO_DATABASE_URL`, `SMO_DATABASE_PASSWORD_FILE` and `SMO_DB_POOLER`); a `${NAME:-default}` in the file is substituted from your shell or from `.env` (copy
+  `.env.example`), and those names are the "Compose only" group and the variables marked in the tables. A secret is a Compose secret mounted under
+  `/run/secrets` and named by a `*_FILE` variable. The image's build arguments `MODULE`, `SMO_VERSION`, `SMO_BUILD_SHA` and `SMO_BUILT_AT` are set at build time
+  (`x-build-info`), not at run time.
+- **Helm** (`deploy/helm/smo/values.yaml`, described in `deploy/helm/smo/README.md`): the chart sets the database, secrets and enrollment variables itself
+  from `postgres`, `secrets` and `databaseRoles`; per-module variables go under `modules.<name>.env` (merged over `moduleDefaults.env`), the GUI backend's
+  under `gui.env`, and a few have a value of their own (`ingress.r1.publicBaseUrl` is `R1_PUBLIC_BASE_URL`, `rappCredentials` drives
+  `RAPP_CREDENTIAL_DELIVERY` and the `RAPP_K8S_*` variables). Any variable in the tables can be added to a module's `env` map.
+- **Not covered here**: the variables of third-party images (`POSTGRES_*`, PgBouncer's own, nginx) are documented by those projects; this file lists what
+  the SMO code reads and what `docker-compose.yml` substitutes.
+
+## Variables
+
+<!-- BEGIN GENERATED: scripts/config_reference.py --write -->
+
+### Every module (`smo_shared`)
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `IDEMPOTENCY_IN_PROGRESS_SECONDS` | `300` |  | `shared/smo_shared/idempotency.py` | Seconds an `Idempotency-Key` stays `IN_PROGRESS` before another request with the same key may take it over (default 300). Shorten it if a crashed request must be retried sooner. |
+| `IDEMPOTENCY_KEY_TTL_SECONDS` | `86400` |  | `shared/smo_shared/idempotency.py` | Seconds a stored `Idempotency-Key` (and its replayable answer) is kept (default 24 hours). A retry after this runs again instead of being replayed. |
+| `KUBERNETES_SERVICE_HOST` | `unset` |  | `shared/smo_shared/credential_delivery.py` | Set by Kubernetes in every pod. Credential delivery (`RAPP_CREDENTIAL_DELIVERY=kubernetes`) calls the API server at this host; unset outside a cluster, which disables delivery. Do not set it by hand. |
+| `KUBERNETES_SERVICE_PORT` | `443` |  | `shared/smo_shared/credential_delivery.py` | Set by Kubernetes in every pod: the API server's port (443 if unset). Used only by credential delivery. Do not set it by hand. |
+| `LOG_LEVEL` | `"" (empty)` |  | `shared/smo_shared/logconfig.py` | Log level of every module: DEBUG, INFO (default), WARNING, ERROR or CRITICAL. An unknown value is INFO with a warning. DEBUG also logs the probe requests. |
+| `MODULE` | `"" (empty)` / `smo` / `unknown` |  | `shared/smo_shared/health.py`, `shared/smo_shared/logconfig.py`, `shared/smo_shared/metrics.py`, `shared/smo_shared/outbox.py`, `shared/smo_shared/r1_client.py`, `shared/smo_shared/worker.py` | Name of the module a container runs. Set by the image (`MODULE` build argument), not by an operator. It names the module in logs, in `/version`, in its shared SME identity and (for the sample rApps) in the registry. Do not change it. |
+| `R1_AUDIT` | `on` |  | `docker-compose.yml`, `shared/smo_shared/audit.py` | `on` (default): R1 Termination writes a hash-chained audit row for every authenticated change that reaches it. `off`, `false`, `0` or `no` stops writing; do not switch it off in production. |
+| `R1_GATEWAY_URL` | `http://r1-termination:8000` |  | `shared/smo_shared/r1_client.py` | Address every module (and rApp) uses to reach R1 Termination for calls to other modules and for `/bootstrap`. Change it when the gateway is not `http://r1-termination:8000` from the module's network. |
+| `R1_INTROSPECT_TIMEOUT_SECONDS` | `5` |  | `shared/smo_shared/timeouts.py` | Seconds R1 Termination waits for SME's token introspection (default 5). If SME is slower the call is refused with 503, not let through. |
+| `R1_KILL_CACHE_SECONDS` | `3` |  | `shared/smo_shared/killswitch.py` | Seconds R1 Termination caches whether an invoker is stopped (default 3). A kill switch thrown at RAN NF OAM bites at the gateway within this time. `0` checks the database on every change. |
+| `R1_KILL_SWITCH` | `on` |  | `shared/smo_shared/killswitch.py` | `on` (default): R1 Termination refuses every change by a stopped rApp with 403 `RAPP_KILLED`. `off`, `false`, `0` or `no` turns the gateway's enforcement off (RAN NF OAM's own check stays). |
+| `R1_KILL_SWITCH_SCHEMA` | `unset` |  | `shared/smo_shared/killswitch.py` | Database schema of RAN NF OAM's `rapp_kill` table that the gateway reads. Compose and the chart set `ran_nf_oam`; unset resolves through the search path (SQLite tests, unmigrated databases). |
+| `R1_RATE_STORE` | `"" (empty)` |  | `docker-compose.yml`, `shared/smo_shared/ratelimit.py` | Where the gateway's per-caller token buckets live: `memory` (default, one budget per replica) or `postgres` (one budget across replicas, in the `rate_bucket` table; falls back to a per-replica bucket for a few seconds when the database errors). Read once at start; any other value stops the service. |
+| `R1_UPSTREAM_TIMEOUT_SECONDS` | `60` |  | `shared/smo_shared/timeouts.py` | Seconds R1 Termination waits for a backend module's answer to a proxied call (default 60); then the caller gets a gateway timeout. Long-running calls should be asynchronous jobs, not a larger value. |
+| `RAPP_CREDENTIAL_DELIVERY` | `none` |  | `shared/smo_shared/credential_delivery.py` | `none` (default): an rApp's client credentials are returned only in the instantiate answer. `kubernetes`: rApp Management also writes them to a Kubernetes Secret in `RAPP_K8S_NAMESPACE`. Anything else is `none`. |
+| `RAPP_K8S_CA_FILE` | `unset` |  | `shared/smo_shared/credential_delivery.py` | Path of the CA bundle that verifies the Kubernetes API server for credential delivery (the pod's service-account `ca.crt`). Delivery needs host, namespace, token and CA all set. |
+| `RAPP_K8S_NAMESPACE` | `unset` |  | `shared/smo_shared/credential_delivery.py` | Namespace the per-rApp credential Secrets are created in. Required for `RAPP_CREDENTIAL_DELIVERY=kubernetes`; the pod's service account needs create and delete on Secrets there. |
+| `RAPP_K8S_TOKEN_FILE` | *not shown* | yes | `shared/smo_shared/credential_delivery.py` | Path of the service-account token file used to call the Kubernetes API for credential delivery (normally `/var/run/secrets/kubernetes.io/serviceaccount/token`). |
+| `READY_CHECK_TIMEOUT_SECONDS` | `3` |  | `shared/smo_shared/health.py` | Seconds each `/ready` check (database, SME token) may take before it is reported as `timeout` (default 3). Keep it below the orchestrator's probe timeout. |
+| `SMO_BOOTSTRAP_KEY` | *not shown* | yes | `shared/smo_shared/r1_client.py` | The key `R1Client` sends as `X-Bootstrap-Key` when it discovers the gateway's endpoints; must equal the gateway's `R1_BOOTSTRAP_KEY`. Unset: nothing is sent. |
+| `SMO_BOOTSTRAP_KEY_FILE` | *not shown* | file | `shared/smo_shared/r1_client.py` | Path of a file holding `SMO_BOOTSTRAP_KEY` (a mounted Secret). Give this or `SMO_BOOTSTRAP_KEY`, not both. |
+| `SMO_BUILD_SHA` | `unknown` |  | `docker-compose.yml`, `shared/smo_shared/health.py` | Git commit of the build, baked into the image (`SMO_BUILD_SHA` build argument; compose reads it from your environment). Answered by `GET /version` and shown in the GUI. `unknown` when not given. |
+| `SMO_BUILT_AT` | `unknown` |  | `docker-compose.yml`, `shared/smo_shared/health.py` | UTC time of the build (ISO 8601), baked into the image like `SMO_BUILD_SHA` and answered by `GET /version`. `unknown` when not given. |
+| `SMO_BUSINESS_METRICS_TTL_SECONDS` | `15` |  | `shared/smo_shared/metrics.py` | How long, in seconds, the scrape-time state gauges (rApp packages and instances, intents, outbox rows) are cached before the database is queried again. Keeps a busy Prometheus from querying on every scrape. |
+| `SMO_DATABASE_PASSWORD` | *not shown* | yes | `shared/smo_shared/db.py` | Password put into `SMO_DATABASE_URL` when the URL has none. Compose and the chart mount it as a file instead (`SMO_DATABASE_PASSWORD_FILE`, from `db_password*`). Set only one of the two. |
+| `SMO_DATABASE_PASSWORD_FILE` | *not shown* | file | `shared/smo_shared/db.py` | File holding the database password (a Compose secret or Kubernetes Secret volume); a trailing newline is removed. The `*_FILE` form of `SMO_DATABASE_PASSWORD`. |
+| `SMO_DATABASE_URL` | *not shown* | yes | `shared/smo_shared/db.py` | SQLAlchemy URL of the shared PostgreSQL database every module uses (without the password when the file form is used). Empty under pytest: SQLite in memory; empty otherwise: the module refuses to start. |
+| `SMO_DATABASE_URL_FILE` | *not shown* | file | `shared/smo_shared/db.py` | File holding the whole database URL, for deployments that keep the URL itself in a secret store (the `*_FILE` form of `SMO_DATABASE_URL`). |
+| `SMO_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` | `300000` |  | `shared/smo_shared/db.py` | Milliseconds a connection may sit idle inside a transaction before Postgres ends its session (default 300000, 5 minutes). `0` disables it. Ignored behind a pooler (its server connections set it). |
+| `SMO_DB_MAX_OVERFLOW` | `10` |  | `shared/smo_shared/db.py` | Extra connections each process may open beyond `SMO_DB_POOL_SIZE` under load (default 10). Total per process is pool size plus this; multiply by workers and replicas against Postgres's `max_connections`. |
+| `SMO_DB_POOLER` | `"" (empty)` |  | `docker-compose.yml`, `shared/smo_shared/db.py` | `transaction` or `session` when the modules connect through PgBouncer (anything else is refused). `transaction` also turns off prepared statements; the pooler then owns the session limits. Empty: direct to Postgres. |
+| `SMO_DB_POOL_RECYCLE_SECONDS` | `1800` |  | `shared/smo_shared/db.py` | Seconds after which a pooled connection is replaced (default 1800), so a firewall or pooler idle timeout does not hand out a dead one. `0` or less never recycles. |
+| `SMO_DB_POOL_SIZE` | `5` |  | `shared/smo_shared/db.py` | Connections each process keeps open to Postgres (default 5). Raise it with concurrency; count it per worker and replica against `max_connections`. |
+| `SMO_DB_POOL_TIMEOUT_SECONDS` | `30` |  | `shared/smo_shared/db.py` | Seconds a request waits for a free pooled connection before failing (default 30). A frequent timeout means the pool is too small or queries are too slow. |
+| `SMO_DB_PREPARE_THRESHOLD` | `unset` |  | `shared/smo_shared/db.py` | psycopg server-side prepared-statement threshold: a number of executions, or `off`. Unset: psycopg's default, except behind a transaction pooler where it is off. Set `off` for any pooler that does not support prepared statements. |
+| `SMO_DB_STATEMENT_TIMEOUT_MS` | `30000` |  | `shared/smo_shared/db.py` | Milliseconds Postgres lets one statement run before cancelling it (default 30000). `0` disables it. Ignored behind a pooler, whose server connections set it. |
+| `SMO_ENROLLMENT_SECRET` | *not shown* | yes | `gui-bff/app/smo_client.py`, `shared/smo_shared/r1_client.py`, `sme/app/main.py` | Secret an SMO module presents to SME when it registers as an invoker, and SME requires. Empty: SME refuses registration unless `SME_ALLOW_OPEN_ENROLLMENT` is on. Prefer `SMO_ENROLLMENT_SECRET_FILE`. |
+| `SMO_ENROLLMENT_SECRET_FILE` | *not shown* | file | `gui-bff/app/smo_client.py`, `shared/smo_shared/r1_client.py`, `sme/app/main.py` | File holding the enrollment secret (compose secret `enrollment_secret`, the Helm chart's Secret). The `*_FILE` form of `SMO_ENROLLMENT_SECRET`; set only one of the two. |
+| `SMO_HTTP_TIMEOUT_SECONDS` | `30` |  | `shared/smo_shared/timeouts.py` | Seconds a module waits for another module's answer through R1 (default 30), and for callback deliveries. A slower dependency fails the call; raise it only for known slow routes. |
+| `SMO_IDENTITY_KIND` | `module` |  | `shared/smo_shared/r1_client.py` | `module` (default): the process is an SMO service and registers at SME with the enrollment secret. `rapp`: it is an rApp and registers as an rApp invoker. Set by the sample rApps' deployment. |
+| `SMO_INVOKER_ID` | `unset` |  | `shared/smo_shared/r1_client.py` | Fixed SME invoker id of this module, when it is provisioned from a secret store instead of the shared identity table. Set together with `SMO_INVOKER_SECRET`. |
+| `SMO_INVOKER_SECRET` | *not shown* | yes | `shared/smo_shared/r1_client.py` | Secret of the fixed invoker identity named by `SMO_INVOKER_ID`. Overrides the identity kept in the database. |
+| `SMO_MODULE_IDENTITY_STORE` | `db` |  | `shared/smo_shared/r1_client.py` | `db` (default): replicas of a module share one SME invoker stored in the database (needs `MODULE`). `off`: each process registers its own, which adds a registration per replica and restart. |
+| `SMO_OUTBOX_INLINE_DRAIN` | `true` |  | `shared/smo_shared/outbox.py` | `true` (default): a module delivers its queued notifications right after the request that created them. `false`, `0`, `no` or `off`: only the sweep delivers them, which adds up to `SMO_OUTBOX_SWEEP_SECONDS` of delay. |
+| `SMO_OUTBOX_SEND_CONCURRENCY` | `8` |  | `shared/smo_shared/outbox.py` | Notifications one drain sends in parallel (default 8). Raise it for many subscribers; each is one outbound call. |
+| `SMO_OUTBOX_SENT_RETENTION_SECONDS` | `86400` |  | `shared/smo_shared/outbox.py` | Seconds a delivered notification row is kept before the sweep deletes it (default 86400, one day). Failed (DEAD) rows are never deleted by this. |
+| `SMO_OUTBOX_SWEEP` | `true` |  | `shared/smo_shared/worker.py` | `true` (default): the worker runs the outbox delivery sweep. `false`, `0`, `no` or `off` turns it off (then only inline drains deliver). |
+| `SMO_OUTBOX_SWEEP_SECONDS` | `5` |  | `shared/smo_shared/worker.py` | Seconds between outbox delivery sweeps by the worker (default 5). It bounds the delay of a retried notification. |
+| `SMO_ROLE_ENFORCEMENT` | `enforce` |  | `shared/smo_shared/roles.py` | `enforce` (default): a role check that fails refuses the call with 403. `audit`: it only logs. Anything else is `enforce`, so a typo cannot switch protection off. Use `audit` only to trial a new role table. |
+| `SMO_VERSION` | `unknown` |  | `docker-compose.yml`, `shared/smo_shared/health.py` | Release version of the build (for example `0.5.0`), baked into the image (`SMO_VERSION` build argument). Answered by `GET /version` and shown in the GUI. `unknown` when not given. |
+| `SMO_WORKER_FAILURE_BACKOFF_SECONDS` | `30` |  | `shared/smo_shared/worker.py` | Seconds a worker waits before running a task again after it failed (default 30), so a broken task does not spin. |
+| `SMO_WORKER_HEARTBEAT_FILE` | `/tmp/worker-heartbeat` |  | `shared/smo_shared/worker.py` | File a worker touches on every tick (default `/tmp/worker-heartbeat`); the container health check reports unhealthy when it is a minute old. Change it only with the health check. |
+| `SMO_WORKER_METRICS_PORT` | `"" (empty)` |  | `shared/smo_shared/worker.py` | Port on which a module's worker process serves its own /metrics (task runs and last success per task). Unset by default: the worker serves no metrics port. |
+| `SMO_WORKER_TICK_SECONDS` | `5` |  | `shared/smo_shared/worker.py` | Seconds between a worker's checks for due tasks (default 5). A task's own interval cannot be shorter than this. |
+
+### Read by several modules
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `SME_URL` | `"" (empty)` / `http://sme:8000` |  | `gui-bff/app/config.py`, `r1-termination/app/main.py`, `sme/app/main.py` | Address of SME: where R1 Termination forwards `/sme/...`, the base of SME's own token-endpoint audience, and (GUI backend) an optional override of the token endpoint otherwise discovered from `/bootstrap`. |
+
+### `aimgf`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `AIMGF_TIMEOUT_EMULATION_SECONDS` | `1800` |  | `aimgf/app/main.py` | Seconds an emulation run may take before AIMgF fails it as `TIMEOUT` and notifies the caller. A request's own `timeoutSeconds` wins. Raise it for long emulations. |
+| `AIMGF_TIMEOUT_INFERENCE_SECONDS` | `5` |  | `aimgf/app/main.py` | Seconds an inference job may take before AIMgF fails it as `TIMEOUT`. A request's own `timeoutSeconds` wins. Real-time inference needs this short; raising it only delays the failure. |
+| `AIMGF_TIMEOUT_TRAINING_SECONDS` | `1800` |  | `aimgf/app/main.py` | Seconds a training run may take before AIMgF fails it as `TIMEOUT` and notifies the caller (default 30 minutes). A request's own `timeoutSeconds` wins. |
+| `AIMGF_TIMEOUT_VALIDATION_SECONDS` | `900` |  | `aimgf/app/main.py` | Seconds a validation run may take before AIMgF fails it as `TIMEOUT` (default 15 minutes). A request's own `timeoutSeconds` wins. |
+
+### `focom`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `FOCOM_AUTO_REGISTER_RESOURCE_TYPES` | `"" (empty)` |  | `focom/app/common.py` | `true`, `1` or `yes`: FOCOM registers the O2ims resource types of an O-Cloud with the SMO registration service when it is created. Off by default; turning it on adds one call per O-Cloud. |
+| `FOCOM_IMS_ENDPOINT` | `/focom` |  | `focom/app/common.py` | Path FOCOM advertises as the O2ims `infrastructureManagementServicesEndPoint` in an O-Cloud's registration. Change it when FOCOM is published under another path. |
+| `FOCOM_SMO_REGISTRATION_SERVICE` | `http://r1-termination:8000` |  | `focom/app/common.py` | URL FOCOM advertises as the O2ims `smoRegistrationService` (where an O-Cloud registers with the SMO). Set it to the address the O-Cloud can reach R1 Termination at. |
+
+### `gui-bff`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `GUI_ADMIN_PASSWORD` | *not shown* | yes | `docker-compose.yml`, `gui-bff/app/config.py` | Password of the GUI's `admin` user, set at first start. Empty: a random one is generated and written to `GUI_INITIAL_PASSWORD_FILE`, never logged. Changing it later does not change an existing user: use the user admin page. |
+| `GUI_COOKIE_SECURE` | `true` |  | `docker-compose.yml`, `gui-bff/app/config.py` | `true` (default): the session cookie is marked Secure, so a browser sends it only over HTTPS (http://localhost counts). Set `false` only for plain-HTTP access by a non-localhost name, such as a lab VM by IP. |
+| `GUI_DATABASE_URL` | `sqlite:///./gui-bff.db` |  | `gui-bff/app/config.py` | SQLAlchemy URL of the GUI backend's own database (users, audit trail, the generated JWT key). SQLite file by default; with several GUI backend replicas point them all at one shared database. |
+| `GUI_HEALTH_TIMEOUT_SECONDS` | `3` |  | `gui-bff/app/config.py` | Seconds the GUI backend waits for each module's `/health`, `/ready` and `/version` before showing it as unreachable on the dashboard. Raise it on a slow network. |
+| `GUI_INITIAL_PASSWORD_FILE` | `./initial-admin-password` |  | `gui-bff/app/config.py` | File (mode 0600) the generated first `admin` password is written to when `GUI_ADMIN_PASSWORD` is unset. It holds a password but is a path, not a secret itself; read it once, then change the password. |
+| `GUI_JWT_SECRET` | *not shown* | yes | `docker-compose.yml`, `gui-bff/app/config.py` | Key that signs the GUI session tokens. Empty: the first backend instance generates one and stores it in `GUI_DATABASE_URL`, so replicas on one database agree. Changing it signs every user out. |
+| `GUI_OPERATOR_PASSWORD` | *not shown* | yes | `docker-compose.yml`, `gui-bff/app/config.py` | Password of the demo `operator` user created at first start. Empty: no such user is created. Does not change an existing user. |
+| `GUI_SESSION_TTL_SECONDS` | `28800` |  | `docker-compose.yml`, `gui-bff/app/config.py` | Seconds a GUI session lasts after sign-in (default 8 hours); the user must sign in again after it. Shorten it for shared consoles. |
+| `GUI_UPSTREAM_TIMEOUT_SECONDS` | `30` |  | `gui-bff/app/config.py` | Seconds the GUI backend waits for an answer from R1 Termination when it proxies a page's request (default 30). A longer call is shown as a gateway timeout. |
+| `GUI_VIEWER_PASSWORD` | *not shown* | yes | `docker-compose.yml`, `gui-bff/app/config.py` | Password of the demo `viewer` (read-only) user created at first start. Empty: no such user is created. Does not change an existing user. |
+| `R1_URL` | `http://r1-termination:8000` |  | `gui-bff/app/config.py` | Address the GUI backend reaches R1 Termination at, for health probes, `/bootstrap` and every proxied page request (default `http://r1-termination:8000`). |
+
+### `mock-o1-adaptor`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `MOCK_O1_SUPPORTED_SERVICES` | `PROV,FM,PM,FILE,STREAM,SWM,SUBSCRIPTION,HEARTBEAT` |  | `mock-o1-adaptor/app/main.py` | Comma-separated O1 services the mock adaptor reports as supported in its capability answer. Only for tests and demos with the mock. |
+| `MOCK_O1_VENDOR_MODES` | `O1_NETCONF,O1_RESTCONF` |  | `mock-o1-adaptor/app/main.py` | Comma-separated vendor modes (`O1_NETCONF`, `O1_RESTCONF`) the mock adaptor reports. Only for tests and demos with the mock. |
+| `MOCK_O1_VENDOR_NAME` | `mock-vendor` |  | `mock-o1-adaptor/app/main.py` | Vendor name the mock O1 adaptor reports. Only for tests and demos with the mock. |
+
+### `r1-termination`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `AIMGF_URL` | `http://aimgf:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/aimgf/...` to. Change it only when AIMgF is not reachable as `http://aimgf:8000` (another service name, an external host). |
+| `COVERAGE_OPTIMIZATION_RAPP_URL` | `http://coverage-optimization-rapp:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/coverage-optimization-rapp/...` to (the Coverage Optimization sample rApp). |
+| `DME_URL` | `http://dme:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/dme`, `/dme-push` and `/dme-pull` to (Data Management and Exposure). |
+| `ENERGY_SAVING_RAPP_URL` | `http://energy-saving-rapp:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/energy-saving-rapp/...` to (the Energy Saving sample rApp). |
+| `FOCOM_URL` | `http://focom:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/focom/...` to (O-Cloud inventory and O2ims). |
+| `INTENT_SERVICE_URL` | `http://intent-service:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/intent-service/...` to. |
+| `MDAF_URL` | `http://mdaf:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/mdaf/...` to (analytics catalogue and reports). |
+| `MLLF_URL` | `http://mllf:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/mllf/...` to. |
+| `MLMR_URL` | `http://mlmr:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/mlmr/...` to (the model registry). |
+| `MOBILITY_OPTIMIZATION_RAPP_URL` | `http://mobility-optimization-rapp:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/mobility-optimization-rapp/...` to. |
+| `NFO_URL` | `http://nfo:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/nfo/...` to (network function orchestration, O2dms). |
+| `ONBOARDING_URL` | `http://onboarding:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/onboarding/...` to (rApp package store). |
+| `R1_BOOTSTRAP_KEY` | *not shown* | yes | `docker-compose.yml`, `r1-termination/app/main.py` | Shared key that `GET /bootstrap` requires in the `X-Bootstrap-Key` header. Unset (the default): `/bootstrap` is open. Set the same value as `SMO_BOOTSTRAP_KEY` on every service that calls the gateway. Give the value or the `_FILE` form, not both. |
+| `R1_BOOTSTRAP_KEY_FILE` | *not shown* | file | `r1-termination/app/main.py` | Path of a file holding `R1_BOOTSTRAP_KEY` (a mounted Secret). Give this or `R1_BOOTSTRAP_KEY`, not both. |
+| `R1_MAX_BODY_BYTES` | `1048576` |  | `r1-termination/app/main.py` | Largest request body R1 Termination accepts, in bytes (default 1 MiB), else 413 `PAYLOAD_TOO_LARGE`. Applies to every route except the overrides below. |
+| `R1_MAX_BODY_OVERRIDES` | `computed in code` |  | `r1-termination/app/main.py` | Per-path body limits as `<path-pattern>=<bytes>,...` (default: model artifact upload `/mlmr/models/*/artifact` at 50 MiB). Setting it replaces the default, so repeat that entry if you still need it. |
+| `R1_PUBLIC_BASE_URL` | `"" (empty)` |  | `docker-compose.yml`, `r1-termination/app/main.py` | Origin (no path) consumers outside the compose network use for R1 Termination, such as `https://localhost:8443`. `/bootstrap` advertises SME's token endpoint under it; empty names SME on the internal network. Set it behind a TLS edge. |
+| `R1_RATE_BURST` | `200` |  | `r1-termination/app/main.py` | Size of each invoker's token bucket at R1 Termination: how many requests it may make in a burst (default 200). Per replica of the gateway. |
+| `R1_RATE_PER_SECOND` | `100` |  | `r1-termination/app/main.py` | Requests per second R1 Termination refills each invoker's bucket with (default 100); above it the caller gets 429 `RATE_LIMITED` with `Retry-After`. `0` turns the limit off. Per replica. |
+| `RAN_ANALYTICS_URL` | `http://ran-analytics:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/ran-analytics/...` to. |
+| `RAN_NF_OAM_URL` | `http://ran-nf-oam:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/ran-nf-oam/...` to (O1 management, alarms, CM and PM). |
+| `RAPP_MGMT_URL` | `http://rapp-mgmt:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/rapp-mgmt/...` to (rApp lifecycle). |
+| `SA_SMOS_URL` | `http://sa-smos:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/sa-smos/...` to (service assurance). |
+| `SO_SMOS_URL` | `http://so-smos:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/so-smos/...` to (service orchestration). |
+| `TRAFFIC_STEERING_RAPP_URL` | `http://traffic-steering-rapp:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/traffic-steering-rapp/...` to. |
+
+### `ran-nf-oam`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `NETCONF_CRED_<REF>_CA_FILE` | `unset` |  | `ran-nf-oam/app/netconf_tls.py` | Path of the CA bundle that verifies the server of a NETCONF-over-TLS endpoint whose `credentialRef` is `<ref>` (upper-case, `-` as `_`). Required with its CERT and KEY. |
+| `NETCONF_CRED_<REF>_CERT_FILE` | `unset` |  | `ran-nf-oam/app/netconf_ssh.py`, `ran-nf-oam/app/netconf_tls.py` | Path of the client certificate for the endpoint credential `<REF>` (NETCONF over TLS), or of the SSH credential's certificate where used. Mount it as a secret file. |
+| `NETCONF_CRED_<REF>_KEY_FILE` | *not shown* | yes | `ran-nf-oam/app/netconf_ssh.py`, `ran-nf-oam/app/netconf_tls.py` | Path of the private key for the endpoint credential `<REF>`: the SSH key, or the TLS client key. A credential named by an endpoint never falls back to the shared `NETCONF_SSH_*` one. |
+| `NETCONF_CRED_<REF>_PASSWORD` | *not shown* | yes | `ran-nf-oam/app/netconf_ssh.py` | Password for the endpoint credential `<REF>`, named by an endpoint's `credentialRef` (the database holds the name, never the value). Prefer `_PASSWORD_FILE`. |
+| `NETCONF_CRED_<REF>_PASSWORD_FILE` | *not shown* | file | `ran-nf-oam/app/netconf_ssh.py` | File holding the password for the endpoint credential `<REF>` (the `*_FILE` form of `NETCONF_CRED_<REF>_PASSWORD`; set only one of the two). |
+| `NETCONF_SSH_KEY_FILE` | *not shown* | yes | `ran-nf-oam/app/netconf_ssh.py` | Path of the SSH private key RAN NF OAM uses for NETCONF endpoints without a `credentialRef`. Without it, and without a password, the session cannot authenticate. |
+| `NETCONF_SSH_KNOWN_HOSTS` | `"" (empty)` |  | `ran-nf-oam/app/netconf_ssh.py` | Path of an OpenSSH `known_hosts` file. When set, RAN NF OAM refuses an SSH server whose host key is not listed (never trust on first use); when empty, host keys are not pinned. |
+| `NETCONF_SSH_PASSWORD` | *not shown* | yes | `ran-nf-oam/app/netconf_ssh.py` | Shared SSH password for NETCONF endpoints without a `credentialRef`. Prefer `NETCONF_SSH_PASSWORD_FILE`; set only one of the two. |
+| `NETCONF_SSH_PASSWORD_FILE` | *not shown* | file | `ran-nf-oam/app/netconf_ssh.py` | File holding the shared NETCONF SSH password (the `*_FILE` form of `NETCONF_SSH_PASSWORD`). |
+| `NETCONF_TLS_CA_FILE` | `unset` |  | `ran-nf-oam/app/netconf_tls.py` | Path of the CA bundle that verifies a NETCONF-over-TLS server, for endpoints without a `credentialRef`. All three `NETCONF_TLS_*_FILE` are required together. |
+| `NETCONF_TLS_CERT_FILE` | `unset` |  | `ran-nf-oam/app/netconf_tls.py` | Path of the client certificate presented to a NETCONF-over-TLS server, for endpoints without a `credentialRef`. |
+| `NETCONF_TLS_KEY_FILE` | *not shown* | yes | `ran-nf-oam/app/netconf_tls.py` | Path of the private key of `NETCONF_TLS_CERT_FILE`. Mount it as a secret file with mode 0400. |
+| `RAN_NF_OAM_CM_SNAPSHOTS` | `true` |  | `ran-nf-oam/app/main.py` | `true` (default): RAN NF OAM reads and stores the configuration before and after each sub-change of a config job, for `config-history` and rollback previews. `false`, `0` or `no` skips the extra read and the table. |
+| `RAN_NF_OAM_CM_SNAPSHOT_RETENTION_DAYS` | `0` |  | `ran-nf-oam/app/main.py` | Days a configuration snapshot is kept before `POST /config-history/purge` may delete it. `0` (default) keeps them for ever. Nothing deletes on its own: an operator or scheduler calls the purge. |
+| `RAN_NF_OAM_DISPATCH_RETRY_BUDGET_SECONDS` | `35` |  | `ran-nf-oam/app/main.py` | Seconds in total RAN NF OAM keeps retrying a NETCONF dispatch for a caller that must be answered in time (default 35). When the next delay would pass it, the job fails instead. |
+| `RAN_NF_OAM_ENFORCE_MO_TREE` | `"" (empty)` |  | `ran-nf-oam/app/main.py` | `true`, `1`, `yes` or `on`: a write to a managed object that is not in the managed-object containment tree is refused (`MANAGED_OBJECT_NOT_FOUND`) before anything is sent. Off by default. |
+| `RAN_NF_OAM_KPI_GUARD_GRACE_MINUTES` | `60` |  | `ran-nf-oam/app/main.py` | Minutes after a config job's observation window ends that the worker still runs its KPI guard (default 60); later it is left unchecked. `0` runs it only in the window. |
+| `RAN_NF_OAM_KPI_MAX_FILES` | `2000` |  | `ran-nf-oam/app/kpi.py` | Most performance files one KPI query reads (default 2000). When more match, the answer says `truncated`. Raise it only with the memory and time it costs. |
+| `RAN_NF_OAM_NETCONF_RETRY_DELAYS` | `0,5,10,20` |  | `ran-nf-oam/app/main.py` | Comma-separated seconds RAN NF OAM waits before each NETCONF attempt (default `0,5,10,20`: four tries). The number of values is the number of attempts. |
+| `SAFEGUARD_EVENT_MIN_INTERVAL_SECONDS` | `60` |  | `ran-nf-oam/app/main.py` | Seconds between two safeguard-refusal notifications for the same rApp and reason at RAN NF OAM (default 60), so a looping rApp does not flood subscribers. `0` notifies every refusal. |
+| `SAFEGUARD_REFUSAL_RETENTION_DAYS` | `0` |  | `docker-compose.yml`, `ran-nf-oam/app/main.py` | Days a recorded safeguard refusal is kept before the purge route may delete it. `0` (default) keeps them for ever. Compose passes it through from `.env`. |
+
+### `sa-smos`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `SA_SMOS_O1_CM_HANDLER_URL` | `http://sa-smos:8000/o1-cm-handler/intents` |  | `sa-smos/app/o1cm.py` | URL where the Intent Service pushes new O1 CM intents to SA SMOS's handler (default `http://sa-smos:8000/o1-cm-handler/intents`). Change it if SA SMOS has another address. |
+
+### `scripts`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `SMO_DB_ROLE_PASSWORD_DIR` | `/run/secrets` |  | `scripts/db_roles.py` | Directory `db_roles.py` (the `migrate` service) reads each module's database password file `db_password_<module>` from (default `/run/secrets`). A path, not a secret. |
+
+### `sme`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `SME_ALLOW_OPEN_ENROLLMENT` | `"" (empty)` |  | `sme/app/main.py` | `true`, `1`, `yes` or `on`: SME accepts invoker registration with no enrollment secret (role `internal`). Only for a lab with `SMO_ENROLLMENT_SECRET` unset; never in production. |
+| `SME_TOKEN_AUDIENCE` | `computed in code` |  | `sme/app/main.py` | Audience SME requires in a client assertion for its token endpoint. Empty: `<SME_URL>/oauth2/token`. Set it when SME is published under another public URL than the one it is called by. |
+
+### Compose only (`.env`, substituted into `docker-compose.yml`)
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `PGBOUNCER_MAX_CLIENT_CONN` | `1000` |  | `docker-compose.yml` | Compose `pooler` profile: how many client connections PgBouncer accepts in total (default 1000). Above it, new clients are refused. |
+| `PGBOUNCER_POOL_SIZE` | `20` |  | `docker-compose.yml` | Compose `pooler` profile: server connections PgBouncer keeps per database and user (default 20). Raise it with the modules' replica count; it must stay below Postgres's `max_connections`. |
+| `POSTGRES_SLOW_QUERY_MS` | `500` |  | `docker-compose.yml` | Compose: Postgres logs every statement slower than this many milliseconds with its text (default 500). `-1` turns it off, `0` logs all. Read it with `docker compose logs postgres`. |
+| `SMO_DB_HOST` | `postgres` |  | `docker-compose.yml` | Compose: host of Postgres in every module's database URL (default `postgres`). Set it to `pgbouncer` for the `pooler` profile, or to an external database host. |
+| `SMO_DB_PORT` | `5432` |  | `docker-compose.yml` | Compose: port of Postgres in every module's database URL (default 5432); `6432` for PgBouncer. |
+
+<!-- END GENERATED -->

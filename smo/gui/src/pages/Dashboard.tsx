@@ -9,8 +9,8 @@ import type {
   O1Endpoint, OCloudAlarm, Package, PerfReport, RemedialAction,
 } from "../api/types";
 import { CountBar, Sparkline } from "../components/charts";
-import { Card, ErrorBox, Id, PageHeader, StateBadge } from "../components/ui";
-import { countBySeverity, metricSeries, numericMetricKeys, SEVERITIES } from "../lib/domain";
+import { Card, DataTable, ErrorBox, Id, PageHeader, StateBadge } from "../components/ui";
+import { countBySeverity, metricSeries, moduleRows, numericMetricKeys, SEVERITIES } from "../lib/domain";
 
 export function Dashboard() {
   const status = useQuery<ModulesStatus>({ queryKey: ["bff", "modules-status"], queryFn: () => api("/modules/status"), refetchInterval: POLL.status });
@@ -44,7 +44,7 @@ export function Dashboard() {
         <Stat label="MLMF floor breaches" value={(mlmf.data ?? []).filter((r) => r.breachedFloor).length} sub="in the last 40 reports" tone={(mlmf.data ?? []).some((r) => r.breachedFloor) ? "warn" : "ok"} to="/kpis#mlmf" />
       </div>
 
-      <Card title="Module health" className="anchor" actions={<span className="muted small">GET /&lt;module&gt;/health via R1 Termination</span>}>
+      <Card title="Module health" className="anchor" actions={<span className="muted small">GET /&lt;module&gt;/health, /ready and /version via R1 Termination</span>}>
         <div id="health" />
         <ErrorBox error={status.error} />
         <div className="health-grid">
@@ -55,6 +55,18 @@ export function Dashboard() {
             </div>
           ))}
         </div>
+        <DataTable
+          rows={status.data ? moduleRows(status.data.modules) : undefined}
+          loading={status.isLoading}
+          rowKey={(r) => r.module}
+          columns={[
+            { header: "Module", render: (r) => <strong>{r.module}</strong> },
+            { header: "Readiness", render: (r) => <span className={`badge tone-${r.readiness === "READY" ? "ok" : r.readiness === "UNKNOWN" ? "muted" : "bad"}`}>{r.readiness}</span> },
+            { header: "Version", render: (r) => r.version },
+            { header: "Build", render: (r) => <><code>{r.buildSha}</code>{r.skewed && <span className="badge tone-warn" title="A different commit than most modules">differs</span>}</> },
+            { header: "Built at", render: (r) => r.builtAt },
+          ]}
+        />
       </Card>
 
       <div className="grid cols-2">

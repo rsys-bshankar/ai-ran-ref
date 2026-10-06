@@ -494,13 +494,7 @@ Done: packages, rApp instances and intents by state, the outbox backlog and its 
 | OBS-7.5 | Entry: certificate expiry and rotation | Same | SEC-2.5 |
 | OBS-7.6 | Entry: backup and restore | Same | DB-6.4 |
 
-#### PR-OBS-8 — Self-monitoring
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| OBS-8.1 | `/version` per module (build SHA from an env set in the image) | Route test | – |
-| OBS-8.2 | BFF `GET /modules/status` adds readiness and version | Test | OBS-8.1 |
-| OBS-8.3 | GUI shows readiness and version columns | Component test | OBS-8.2 |
+#### PR-OBS-8 — Self-monitoring (all steps done: `HISTORY.md` PR-OBS-8)
 
 ### 5.6 Packaging, migrations and release (`PR-OPS`)
 
@@ -552,13 +546,7 @@ Tag scheme and `CHANGELOG.md` exist (`PR-OPS-4.1`, `HISTORY.md` §10); no tag ha
 | OPS-6.1 | Kustomize overlays: lab, staging, prod | `kustomize build` green | OPS-2.2 |
 | OPS-6.2 | Argo CD `Application` example | Syncs on a lab cluster | OPS-6.1 |
 
-#### PR-OPS-7 — Configuration reference
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| OPS-7.1 | Script that lists every `os.environ` read per module | Output file | – |
-| OPS-7.2 | Table: name, default, secret or not, owner | In `docs/` | OPS-7.1 |
-| OPS-7.3 | CI check: a new env read must appear in the table | Fails on a seeded miss | OPS-7.2 |
+#### PR-OPS-7 — Configuration reference (all steps done: `HISTORY.md` PR-OPS-7)
 
 #### PR-OPS-8 — Feature flags
 

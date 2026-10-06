@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { completionRoute, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describeSeconds, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, waveProgress, metricSeries, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
+import type { ModuleStatus } from "../api/types";
+
+import { completionRoute, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describeSeconds, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, waveProgress, metricSeries, moduleRows, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
 
 describe("model lifecycle", () => {
   it("maps each state to the FSM's next legal action", () => {
@@ -216,5 +218,38 @@ describe("KPI names and schedules", () => {
     expect(schedulePayload({ ...form, intervalSeconds: "60.5" })).toMatchObject({ ok: false });
     expect(schedulePayload({ ...form, lookbackSeconds: "30" })).toMatchObject({ ok: false });
     expect(schedulePayload({ ...form, lookbackSeconds: "604801" })).toMatchObject({ ok: false });
+  });
+});
+
+describe("module status table (PR-OBS-8.3)", () => {
+  const up = (module: string, extra: Partial<ModuleStatus> = {}): ModuleStatus => ({
+    module, healthy: true, latencyMs: 4, statusCode: 200, error: null, ready: true,
+    version: "1.4.0", buildSha: "0123456789abcdef", builtAt: "2026-10-06T08:00:00Z", ...extra,
+  });
+
+  it("shows readiness, version and the commit shortened to seven characters", () => {
+    expect(moduleRows([up("sme")])).toEqual([
+      { module: "sme", readiness: "READY", version: "1.4.0", buildSha: "0123456", builtAt: "2026-10-06T08:00:00Z", skewed: false },
+    ]);
+  });
+
+  it("tells down, not-ready and not-asked apart", () => {
+    const rows = moduleRows([
+      up("nfo", { healthy: false, ready: null, version: null, buildSha: null, builtAt: null, error: "unreachable", statusCode: null }),
+      up("dme", { ready: false }),
+      up("sme", { ready: null }),
+    ]);
+    expect(rows.map((r) => r.readiness)).toEqual(["DOWN", "NOT READY", "UNKNOWN"]);
+    expect(rows[0]).toMatchObject({ version: "—", buildSha: "—", builtAt: "—", skewed: false });
+  });
+
+  it("shows a dash for a module with no /version or an image built without the arguments", () => {
+    const rows = moduleRows([up("a", { version: null, buildSha: null, builtAt: null }), up("b", { version: "unknown", buildSha: "unknown", builtAt: "unknown" })]);
+    expect(rows.every((r) => r.version === "—" && r.buildSha === "—" && r.builtAt === "—" && !r.skewed)).toBe(true);
+  });
+
+  it("flags the modules that run a different commit than most (a rolling upgrade in progress)", () => {
+    const rows = moduleRows([up("a"), up("b"), up("c", { buildSha: "fedcba9876543210" })]);
+    expect(rows.map((r) => r.skewed)).toEqual([false, false, true]);
   });
 });

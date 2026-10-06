@@ -321,6 +321,8 @@ RPC shape: an `<rpc>` whose `message-id` is the job id, containing `<edit-config
 
 ### 2.6 Configuration
 
+The complete list, with defaults and descriptions, is `../docs/CONFIGURATION.md` (generated from the code). The credential variables `NETCONF_CRED_<REF>_*` and `NETCONF_TLS_*` are built from the endpoint's `credentialRef`, so `netconf_ssh.py` and `netconf_tls.py` carry a `# config-ref:` comment naming them for the generator.
+
 | Variable | Default | Meaning |
 |---|---|---|
 | `RAN_NF_OAM_NETCONF_RETRY_DELAYS` | `0,5,10,20` | Seconds before each dispatch attempt (4 attempts); applies to NETCONF and RESTCONF alike |

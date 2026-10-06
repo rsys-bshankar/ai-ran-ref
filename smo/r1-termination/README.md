@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Standards basis | O-RAN R1 gateway (token check, routing) + internal prefix-routing design |
-| R1 route / port | Is the R1 gateway itself: container `:8000`, host `:8080` in `docker-compose.yml`. Own routes: `GET /health`, `GET /live`, `GET /ready`, `GET /bootstrap`; everything else is the catch-all proxy |
+| R1 route / port | Is the R1 gateway itself: container `:8000`, host `:8080` in `docker-compose.yml`. Own routes: `GET /health`, `GET /live`, `GET /ready`, `GET /version`, `GET /bootstrap`; everything else is the catch-all proxy |
 | Depends on (over R1) | SME (`POST /oauth2/introspect`, direct to SME's address, not through itself); every module in `ROUTES` as a forwarding target |
 | Called by | rApps, the GUI BFF, `smo_shared.R1Client` in every module, the reference rApps |
 | Database tables | None of its own. It writes the shared audit chain (`audit_log`, `audit_head`), reads RAN NF OAM's `rapp_kill`, and, with `R1_RATE_STORE=postgres`, keeps the limiter's buckets in the shared `rate_bucket` table |
@@ -63,7 +63,7 @@ It calls only SME (introspection) and the chosen backend. It never reads a datab
 |---|---|
 | Token check by introspection against SME on every request | SME issues opaque, server-tracked tokens (no IdP in this build), so validity can only be asked, not verified from a signature. |
 | Fails closed: an unreachable SME, a missing or non-`Bearer` header, an empty token, or `active != true` all give `401 UNAUTHORIZED` | Unlike best-effort notifications elsewhere, this is a security gate. |
-| `/bootstrap` and the probes (`/health`, `/live`, `/ready`) are unauthenticated | Bootstrap must work before a token exists (an rApp calls it to find SME's token endpoint), and an orchestrator probes without a token; all are assumed network-isolated (see "Why `/bootstrap` has no token" below for what it reveals and the controls that narrow who can ask). The probes are declared ahead of the catch-all, so it is answered locally and not treated as an unknown prefix. |
+| `/bootstrap`, the probes (`/health`, `/live`, `/ready`) and `/version` are unauthenticated | Bootstrap must work before a token exists (an rApp calls it to find SME's token endpoint), and an orchestrator probes without a token; all are assumed network-isolated (see "Why `/bootstrap` has no token" below for what it reveals and the controls that narrow who can ask). The probes are declared ahead of the catch-all, so it is answered locally and not treated as an unknown prefix. |
 | Unknown prefix is `404 NO_ROUTE` before any token check | Nothing is forwarded, nothing is learned about backends. |
 | Prefix is stripped before forwarding | No backend carries its own prefix in its routes. |
 | `X-Correlation-ID` is overridden with the request's own id (the caller's, or the one the middleware just assigned); `X-R1-Invoker-Id` is set to the introspected token's `client_id` (any inbound value is dropped; omitted when the token carries none) and `X-R1-Role` to the `role` SME records for that invoker, `internal` (an SMO module or the GUI, which presented the enrollment secret) or `rapp` (`PR-SEC-14`; an SME that reports none is read by the token's scope); all other headers except `Host` are forwarded verbatim | One id threads the whole downstream fan-out of an inbound call (call flow 14). |
@@ -79,7 +79,7 @@ Failure behaviour: a backend that does not answer within `R1_UPSTREAM_TIMEOUT_SE
 | File | Responsibility |
 |---|---|
 | `app/main.py` | The whole module: `ROUTES`, the probes, `/bootstrap`, the catch-all `proxy`, `_authorized` (introspection call). |
-| `../shared/smo_shared/openapi_security.py` | `apply_r1_gateway_security(app, public_paths={"/health", "/live", "/ready", "/bootstrap"})`: adds the `r1BearerAuth` scheme to the OpenAPI document and marks those paths as unauthenticated. |
+| `../shared/smo_shared/openapi_security.py` | `apply_r1_gateway_security(app, public_paths={"/health", "/live", "/ready", "/version", "/bootstrap"})`: adds the `r1BearerAuth` scheme to the OpenAPI document and marks those paths as unauthenticated. |
 | `../shared/smo_shared/invoker.py` | `INVOKER_ID_HEADER`, `ON_BEHALF_OF_HEADER` and `invoker_id(request)`: the caller id a backend reads (MLMR's `storeDiscReqs`, and the per-rApp safeguards at RAN NF OAM, which apply to the rApp an SMO module is acting for). R1 Termination forwards `X-R1-On-Behalf-Of` only from an `internal` caller and drops an rApp's own value. |
 | `../shared/smo_shared/correlation.py` | `apply_correlation_id(app)`: middleware assigning `X-Correlation-ID` when absent; `get_correlation_id()`. |
 
@@ -95,6 +95,7 @@ None: stateless.
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
+| GET | `/version` | The gateway's build, `{module, version, buildSha, builtAt}` (PR-OBS-8.1); no auth. A backend's is `/<module>/version`, token-gated like any call | 200 |
 | GET | `/health` | Liveness of the gateway itself; no auth; an alias of `/live`. A backend's own probes are reached as `/<module>/health`, `/<module>/ready` and is token-gated like any call (the GUI BFF's `GET /modules/status` probes both). | none |
 | GET | `/bootstrap` | `{apiEndpoints: [...]}` with exactly two entries, `service-apis` (discovery) and `published-apis` (registration), each with `tokenEndPoint.uri` and `apiEndPoint.uri`; no token (optionally the shared `X-Bootstrap-Key` header, `R1_BOOTSTRAP_KEY`, PR-SEC-9.3), URI-stable. The URIs name SME on the compose network, or, with `R1_PUBLIC_BASE_URL` set (an origin, never taken from request headers), `<base>/sme/...` with the token endpoint at `<base>/sme/oauth2/token` (PR-SEC-1.6). | 401 `UNAUTHORIZED` only when `R1_BOOTSTRAP_KEY` is set and the header is missing or wrong |
 | GET, POST, PUT, PATCH, DELETE | `/{prefix}/{rest}` | Authenticate, strip `/{prefix}`, forward method, headers, query string and body to `ROUTES[prefix]/{rest}`; return the upstream status, headers and body. | `404 NO_ROUTE` unknown prefix; `401 UNAUTHORIZED` token check failed |

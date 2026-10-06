@@ -43,11 +43,11 @@ log = logging.getLogger(__name__)
 app = FastAPI(title="R1 Termination")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
 install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
-# /health (with /live and /ready) and /bootstrap are this gateway's own exemptions (see
+# /health (with /live, /ready and /version) and /bootstrap are this gateway's own exemptions (see
 # below: the probes are answered ahead of _authorized entirely, /bootstrap is "No auth (network-isolated)") — every other
 # path here is the catch-all proxy route, which really does call
 # _authorized() on every request.
-apply_r1_gateway_security(app, public_paths=frozenset({"/health", "/live", "/ready", "/bootstrap"}))
+apply_r1_gateway_security(app, public_paths=frozenset({"/health", "/live", "/ready", "/version", "/bootstrap"}))
 # This gateway is the true origin point for external traffic: a caller
 # that never sent its own X-Correlation-ID gets one assigned here, which
 # then propagates through the whole downstream fan-out (see the proxy
