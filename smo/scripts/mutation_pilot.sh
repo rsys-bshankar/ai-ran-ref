@@ -7,12 +7,17 @@
 # change no test notices ("survived", or "no tests": nothing runs that code) is a place where a bug could be introduced and every test would still pass. Coverage says
 # a line ran; this says whether a test would notice if it were wrong.
 #
-# Scope (smo/shared/pyproject.toml, [tool.mutmut]): pagination.py, ratelimit.py, timeutil.py and roles.py (the gateway's role policy and the enrollment-secret check),
-# tested by shared/tests and the gateway's own tests/test_roles.py. Fails unless every mutant is killed. The first run (October 2026) killed 49 of 131 and found
-# 5 survivors and 77 mutants no test reached; the tests added for it (shared/tests/test_pagination.py, test_roles_helpers.py, test_timeutil.py, two in test_ratelimit.py)
-# kill all 131. A mutant that cannot be killed (equivalent to the original) is listed in `do_not_mutate` with the reason, not left to fail the run.
+# Scope (smo/shared/pyproject.toml, [tool.mutmut] only_mutate): 16 modules of the shared library, chosen because a silent change in them is a security or integrity defect:
+# pagination, ratelimit, timeutil, roles (the gateway's role policy and enrollment-secret check), webhook (the SSRF guard), killswitch, invoker, bodylimit, secretfile,
+# versioning, identity, correlation, audit (the hash chain), idempotency, security_headers and errors. Tested by shared/tests and the gateway's tests/test_roles.py.
+# Fails unless every mutant is killed. First run (October 2026): 131 mutants in four modules, 49 killed. Widened in two steps to 1560 mutants in 16 modules: the first
+# eight added modules gave 822 mutants with 73 survivors; adding audit, idempotency, security_headers and errors gave 1604 with 251 survivors. The tests added to kill them are
+# shared/tests/test_mutation_survivors.py, test_idempotency_exact.py, test_errors_exact.py and test_audit_exact.py.
+# Besides missing tests it found: a CHECK-violation message could override a known SQLSTATE (errors.py), and several mutants that were equivalent to the original (a default
+# argument no code path read, a cast that does nothing at run time, a dict key a later key overwrote, a falsy `None` where `False` was meant): the code was changed to not have
+# them rather than a mutant being excused. The audit command line's help text is held in module constants, which mutmut does not mutate, and its presence is tested.
 #
-# Needs the dev requirements installed (requirements/dev.txt) and mutmut (requirements/mutation.txt). About a minute.
+# Needs the dev requirements installed (requirements/dev.txt) and mutmut (requirements/mutation.txt). About four minutes.
 set -euo pipefail
 cd "$(dirname "$0")/../shared"
 rm -rf mutants
