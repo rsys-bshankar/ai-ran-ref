@@ -43,13 +43,11 @@ import inspect
 import json
 import os
 
-from typing import cast
 
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import JSON, DateTime, Integer, String, delete, update
-from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -121,10 +119,10 @@ def _begin(db: Session, module: str, scope: str, key: str, req_hash: str) -> JSO
             return _replay(row)
         started = as_utc(row.created_at)
         if _now() - started > datetime.timedelta(seconds=_seconds("IDEMPOTENCY_IN_PROGRESS_SECONDS", 300)):
-            taken = cast(CursorResult, db.execute(update(IdempotencyKey).where(*_pk(module, scope, key), IdempotencyKey.created_at == row.created_at)
-                                                  .values(created_at=_now())))
+            taken = db.execute(update(IdempotencyKey).where(*_pk(module, scope, key), IdempotencyKey.created_at == row.created_at)
+                               .values(created_at=_now()))
             db.commit()
-            if taken.rowcount == 1:  # compare-and-swap: exactly one replica takes an abandoned key over
+            if taken.rowcount == 1:  # type: ignore[attr-defined]  # compare-and-swap: exactly one replica takes an abandoned key over
                 return None
             db.expire_all()
             continue
