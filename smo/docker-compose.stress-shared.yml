@@ -1,0 +1,11 @@
+# Three gateway replicas with a small per-caller budget (PR-V-9, the `limiter-shared` scenario of .github/workflows/smo-stress.yml):
+#   docker compose -f docker-compose.yml -f docker-compose.stress-shared.yml up -d --build                       each replica keeps its own buckets (the control)
+#   R1_RATE_STORE=postgres docker compose -f docker-compose.yml -f docker-compose.stress-shared.yml up -d r1-termination   the buckets are shared (SEC-8.5)
+# The callers reach the replicas through Docker's DNS (one name, three addresses), as the other replica lanes do; the host port is dropped (three containers cannot bind it).
+services:
+  r1-termination:
+    deploy: { replicas: 3 }
+    ports: !reset []
+    environment:
+      R1_RATE_PER_SECOND: "5"
+      R1_RATE_BURST: "20"
