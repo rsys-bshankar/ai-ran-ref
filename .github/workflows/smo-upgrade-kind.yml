@@ -101,7 +101,8 @@ jobs:
                 image: local/smo-r1-termination:cur
                 imagePullPolicy: Never
                 command: ["sleep", "10800"]
-                volumeMounts: [{ name: secrets, mountPath: /run/secrets, readOnly: true }]
+                env: [{ name: SMO_ENROLLMENT_SECRET_FILE, value: /enroll/enrollment_secret }]    # not under /run/secrets: /var/run is a link to /run, and the service account's mount goes there
+                volumeMounts: [{ name: secrets, mountPath: /enroll, readOnly: true }]
             volumes:
               - name: secrets
                 secret: { secretName: smo-secrets, items: [{ key: enrollment-secret, path: enrollment_secret }] }
