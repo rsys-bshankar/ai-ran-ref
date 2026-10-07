@@ -18,6 +18,10 @@ GitHub's runners vary from night to night: compare a run with the previous one o
 
 Every list route counts the whole result for `total` (`COUNT(*)`, 55 ms for a million alarms, linear: `scripts/db_volume_check.py` times it). A caller that only pages forward adds `?total=false`: no count query runs, `total` is left out of the response and `hasMore` says whether another page follows. The volume lane's count cases measure what a default call pays; the opt-out costs a first page.
 
+## The upgrade over data (V-6)
+
+`scripts/upgrade_at_volume.py` (in the volume workflow, `.github/workflows/smo-db-volume.yml`): a database at the previous release's last revision (read from the newest `smo-v*` tag, `0026` for 0.4.0), loaded with the same volume as the plan checks (`ELEMENTS` managed elements, each with 10 alarms and 5 performance files), then every newer revision applied by itself with `scripts/migrate.py --revision <id>` and timed. Read a row as "what this revision costs when the tables are full", plus about 0.7 s of process start (Python and Alembic) that every row carries. The whole upgrade has a budget (300 s at 100 000 elements); a revision that scans or rewrites a big table is the thing it exists to show, and a number that jumps between two runs of the same workflow is a finding. It times the schema revisions only: pods rolling, the migrate Job's own start-up and any lock wait behind live traffic are not in it (`.github/workflows/smo-upgrade-kind.yml` covers the upgrade as a whole, on a small database).
+
 ## Not yet covered
 
 - Cells, managed objects and KPI results are not seeded yet (V-8b seeds managed elements, alarms and performance files).

@@ -23,7 +23,7 @@ PM_FILES_PER_ELEMENT = 5
 
 def connect(args) -> psycopg.Connection:
     password = Path(args.password_file).read_text(encoding="utf-8").strip()
-    return psycopg.connect(host=args.host, port=args.port, dbname="smo", user="smo", password=password, autocommit=False)
+    return psycopg.connect(host=args.host, port=args.port, dbname=args.database, user="smo", password=password, autocommit=False)
 
 
 def clean(conn) -> None:
@@ -66,6 +66,7 @@ def main() -> None:
     ap.add_argument("--elements", type=int, default=1000)
     ap.add_argument("--host", default="postgres")
     ap.add_argument("--port", type=int, default=5432)
+    ap.add_argument("--database", default="smo", help="the database to load (the upgrade-at-volume step seeds one at the previous release's revision)")
     ap.add_argument("--password-file", default="/run/secrets/db_password")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--clean", action="store_true", help="remove the rows this script made, and exit")

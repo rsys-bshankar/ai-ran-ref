@@ -3,7 +3,8 @@ name: SMO database at volume
 # PR-V-6: a million alarms. Postgres 18 (the image compose uses) is migrated to head, loaded with 100 000 managed elements (1 000 000 alarms, 500 000 performance files;
 # smo/scripts/load_seed.py), and the queries the list routes run are explained and timed (smo/scripts/db_volume_check.py): the ones that must use an index and the ones with a budget
 # fail the run, the rest are reported. Then a restore drill: pg_dump (custom format, as scripts/db_backup.sh), pg_restore into a fresh database, row counts compared; the sizes and
-# times are in the job summary. Nightly, on demand, and on a pull request that changes the scripts or this workflow. Not a required check yet.
+# times are in the job summary. Also the upgrade itself over data (smo/scripts/upgrade_at_volume.py): a database migrated to the previous release's head, loaded with the same volume, then
+# every newer revision applied one at a time and timed, with a budget: what an operator plans a maintenance window from. Nightly, on demand, and on a pull request that changes the scripts or this workflow. Not a required check yet.
 
 on:
   schedule:
@@ -18,6 +19,7 @@ on:
       - ".github/workflows/smo-db-volume.yml"
       - "smo/scripts/db_volume_check.py"
       - "smo/scripts/load_seed.py"
+      - "smo/scripts/upgrade_at_volume.py"
 
 permissions:
   contents: read
@@ -35,6 +37,8 @@ jobs:
       ELEMENTS: ${{ inputs.elements || '100000' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0      # the release tags: the upgrade step starts from the previous release's last revision
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -68,6 +72,20 @@ jobs:
         working-directory: smo
         run: |
           python scripts/db_volume_check.py --out "$RUNNER_TEMP/plans.md" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upgrade over the data, one revision at a time (the previous release's head to this checkout's)
+        working-directory: smo
+        run: |
+          tag=$(git tag --list 'smo-v*' --sort=-version:refname | grep -v -- '-rc\.' | head -1)
+          [ -n "$tag" ] || { echo "::error::no release tag to start from (does the checkout fetch tags?)"; exit 1; }
+          from=$(git -C .. ls-tree -r --name-only "$tag" -- smo/migrations/versions | grep -oE '/[0-9]{4}_' | tr -d '/_' | sort | tail -1)
+          echo "previous release $tag, its last revision $from"
+          docker exec pg psql -U smo -d postgres -c 'CREATE DATABASE smo_up'
+          url=postgresql+psycopg://smo:smo@localhost:5432/smo_up
+          SMO_DATABASE_URL="$url" python scripts/migrate.py --revision "$from"
+          python scripts/load_seed.py --elements "$ELEMENTS" --host localhost --database smo_up --password-file "$RUNNER_TEMP/pw"
+          { echo; echo "### Upgrade over the data, from $tag ($from), ${ELEMENTS} elements"; echo; } >> "$GITHUB_STEP_SUMMARY"
+          python scripts/upgrade_at_volume.py --url "$url" --from-revision "$from" --budget-seconds 300 --out "$RUNNER_TEMP/upgrade.md" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Restore drill (timed), counts compared
         run: |
