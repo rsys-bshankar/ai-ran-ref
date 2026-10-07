@@ -226,15 +226,25 @@ def install_out_of_range_handler(app) -> None:
 _SQLSTATE_FOREIGN_KEY, _SQLSTATE_UNIQUE, _SQLSTATE_CHECK = "23503", "23505", "23514"
 
 
+def _orig(exc):
+    """What the driver said: the wrapped error of a SQLAlchemy `DBAPIError`, else the error itself."""
+    return getattr(exc, "orig", exc)
+
+
 def _integrity_problem(exc) -> tuple[str, int, str]:
-    """Which problem a database integrity error is, from its SQLSTATE (Postgres) or its message (SQLite, whose tests run the same routes)."""
-    state = getattr(getattr(exc, "orig", None), "sqlstate", None) or getattr(getattr(getattr(exc, "orig", None), "diag", None), "sqlstate", None)
-    text = str(getattr(exc, "orig", exc)).lower()
-    if state == _SQLSTATE_FOREIGN_KEY or "foreign key" in text:
+    """Which problem a database integrity error is: by its SQLSTATE when the driver gives one (Postgres), else by its words (SQLite, whose tests run the
+    same routes). A state that is none of the three is none of them, whatever the message says."""
+    orig = _orig(exc)
+    state = getattr(orig, "sqlstate", None) or getattr(getattr(orig, "diag", None), "sqlstate", None)
+    text = str(orig).lower()
+    foreign_key = state == _SQLSTATE_FOREIGN_KEY if state else "foreign key" in text
+    unique = state == _SQLSTATE_UNIQUE if state else ("unique constraint" in text or "unique violation" in text)
+    check = state == _SQLSTATE_CHECK if state else "check constraint" in text
+    if foreign_key:
         return (*FrameworkError.REFERENCED_RESOURCE_NOT_FOUND, "the request refers to something that does not exist")
-    if state == _SQLSTATE_UNIQUE or "unique constraint" in text or "unique violation" in text:
+    if unique:
         return (*FrameworkError.RESOURCE_ALREADY_EXISTS, "the request repeats something that already exists")
-    if state == _SQLSTATE_CHECK or "check constraint" in text:
+    if check:
         return (*FrameworkError.CONSTRAINT_VIOLATED, "a value in the request is not one the service accepts")
     return (*FrameworkError.INTERNAL_ERROR, "the service could not complete the request")
 
@@ -252,7 +262,7 @@ def install_integrity_handlers(app) -> None:
 
     async def _integrity(request, exc):
         title, status, detail = _integrity_problem(exc)
-        log.warning("%s %s answered %s %s: %s", request.method, request.url.path, status, title, str(getattr(exc, "orig", exc)).splitlines()[0][:200])
+        log.warning("%s %s answered %s %s: %s", request.method, request.url.path, status, title, str(_orig(exc)).splitlines()[0][:200])
         return JSONResponse(status_code=status, content={"detail": ProblemDetails(title=title, status=status, detail=detail).model_dump()})
 
     async def _unhandled(request, exc):  # noqa: ARG001
