@@ -9,6 +9,9 @@ name: SMO disaster recovery drill
 # (RPO), the drill takes longer than 3600 s (RTO), or any check fails. A second drill with --rto-seconds 1 must fail, so the gate is known to bite.
 # Timings and the loss window go to the job summary. The S3 side is moto, NOT real storage: the AWS CLI calls, the manifest and the retention are proved here, MinIO and AWS S3 themselves are still to be
 # proved in a drill (docs/DISASTER_RECOVERY.md, section 8). moto replaced a MinIO image that could not be pulled.
+# A second job runs the CloudNativePG side (smo/deploy/helm/smo/ci/cnpg-cluster-backup.yaml, never run in CI before): continuous WAL archiving and a base backup to the same kind of S3 stand-in,
+# then a recovery into a NEW cluster to a chosen minute (point-in-time), where the rows before that minute are there and the row after it is not. It also reads the operator's own metrics
+# for the two alerts (SmoBackupLate, SmoWalArchiveLate) from a real instance, so the alert expressions use names the operator exports.
 # Not a required check yet.
 
 on:
@@ -24,6 +27,8 @@ on:
       - "smo/scripts/pg_env.sh"
       - "smo/backup/**"
       - "smo/requirements/dr.*"
+      - "smo/deploy/helm/smo/ci/cnpg-*.yaml"
+      - "smo/deploy/helm/smo/files/smo-alerts.rules.yaml"
   push:
     branches: [main]
     paths:
@@ -163,3 +168,159 @@ jobs:
           docker logs pg-source --tail 40 || true
           docker logs pg-target --tail 40 || true
           tail -40 "$RUNNER_TEMP/moto.log" || true
+
+  # The Kubernetes side of the same promise: the WAL of a CloudNativePG cluster is archived continuously and a base backup is taken, both to an S3-compatible object store (moto on the
+  # runner, reached from the kind node through the docker bridge); then a NEW cluster is recovered from that store to a minute in the middle of the writes.
+  cnpg-wal-archive:
+    name: CloudNativePG archives the WAL, and a new cluster recovers to a chosen minute
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      AWS_ACCESS_KEY_ID: smo-ci-access
+      AWS_SECRET_ACCESS_KEY: smo-ci-secret-key
+      AWS_DEFAULT_REGION: us-east-1
+      POSTGRES_IMAGE_CNPG: ghcr.io/cloudnative-pg/postgresql:17.4@sha256:3c0ba08ea353c9705a755c113e4ae395be76553e0ed68076e5410cb09b9d17d9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: smo/requirements/*.txt
+
+      - name: moto_server on the runner, reachable from the cluster, and the bucket
+        working-directory: smo
+        run: |
+          pip install --quiet --require-hashes -r requirements/dr.txt
+          kind create cluster --name dr --wait 180s
+          gateway=$(docker network inspect kind -f '{{(index .IPAM.Config 0).Gateway}}')
+          echo "S3_ENDPOINT=http://$gateway:9000" >> "$GITHUB_ENV"
+          nohup moto_server -H 0.0.0.0 -p 9000 > "$RUNNER_TEMP/moto.log" 2>&1 &
+          for i in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:9000/moto-api/ && break; sleep 1; done
+          aws --endpoint-url http://localhost:9000 s3 mb s3://smo-backups
+          # the node can reach it
+          docker exec dr-control-plane curl -fsS -o /dev/null "http://$gateway:9000/moto-api/"
+
+      - name: Install the CloudNativePG operator (pinned, and its manifest checked)
+        run: |
+          curl -fsSL -o cnpg.yaml https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.25.1/cnpg-1.25.1.yaml
+          echo "ece141801fef6507451a3032b1eda29e9fa15944b741fa7301701c781160ce41  cnpg.yaml" | sha256sum -c -
+          kubectl apply --server-side -f cnpg.yaml
+          kubectl -n cnpg-system rollout status deploy/cnpg-controller-manager --timeout=180s
+
+      - name: A cluster with continuous archiving (the example of the repository, pointed at the stand-in)
+        working-directory: smo
+        run: |
+          kubectl create namespace smo
+          # the example's Secret and endpoint, with the CI values; archive_timeout is shortened so a quiet database ships a segment within a minute
+          sed -e "s#http://minio.minio.svc:9000#$S3_ENDPOINT#" -e 's/replace-me/smo-ci-access/' -e 's/ACCESS_SECRET_KEY: smo-ci-access/ACCESS_SECRET_KEY: smo-ci-secret-key/' \
+              -e 's/instances: 3/instances: 1/' -e 's/archive_timeout: "300"/archive_timeout: "60"/' deploy/helm/smo/ci/cnpg-cluster-backup.yaml > "$RUNNER_TEMP/cluster.yaml"
+          grep -n "endpointURL\|ACCESS\|instances\|archive_timeout" "$RUNNER_TEMP/cluster.yaml"
+          kubectl -n smo create secret generic smo-pg-owner --type=kubernetes.io/basic-auth --from-literal=username=smo --from-literal=password=ci-owner-password
+          kubectl -n smo apply -f "$RUNNER_TEMP/cluster.yaml"
+          kubectl -n smo wait --for=condition=Ready cluster/smo-pg --timeout=600s
+          kubectl -n smo get cluster smo-pg
+          # the operator says the archive works
+          for i in $(seq 1 30); do
+            [ "$(kubectl -n smo get cluster smo-pg -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}')" = "True" ] && break
+            sleep 5
+          done
+          [ "$(kubectl -n smo get cluster smo-pg -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}')" = "True" ]
+
+      - name: Write, take a base backup, write more, note the minute, write once more
+        run: |
+          pod=smo-pg-1
+          psql() { kubectl -n smo exec "$pod" -c postgres -- psql -U postgres -d smo -Atc "$1"; }
+          psql "CREATE TABLE public.dr_marker (n int, phase text)"
+          psql "INSERT INTO public.dr_marker SELECT g, 'before-backup' FROM generate_series(1, 100) g"
+          kubectl -n smo apply -f - <<'EOF'
+          apiVersion: postgresql.cnpg.io/v1
+          kind: Backup
+          metadata: { name: base-1 }
+          spec: { cluster: { name: smo-pg } }
+          EOF
+          started=$(date +%s)
+          kubectl -n smo wait --for=jsonpath='{.status.phase}'=completed backup/base-1 --timeout=600s
+          echo "BACKUP_SECONDS=$(( $(date +%s) - started ))" >> "$GITHUB_ENV"
+          psql "INSERT INTO public.dr_marker SELECT g, 'after-backup' FROM generate_series(1, 50) g"
+          sleep 3
+          target=$(psql "SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') || '+00'")
+          echo "RECOVERY_TARGET=$target" >> "$GITHUB_ENV"
+          sleep 3
+          psql "INSERT INTO public.dr_marker SELECT g, 'after-target' FROM generate_series(1, 25) g"
+          # the segment holding all of it is shipped now (otherwise it waits for archive_timeout)
+          psql "SELECT pg_switch_wal()"
+          echo "minute to recover to: $target"
+
+      - name: The WAL is in the bucket, and the operator's metrics carry what the alerts use
+        run: |
+          for i in $(seq 1 60); do
+            wals=$(aws --endpoint-url http://localhost:9000 s3 ls --recursive s3://smo-backups/smo-pg/ | grep -c '/wals/' || true)
+            [ "$wals" -ge 2 ] && break
+            sleep 5
+          done
+          aws --endpoint-url http://localhost:9000 s3 ls --recursive s3://smo-backups/smo-pg/ | awk '{print $4}' | sed 's#[^/]*$##' | sort | uniq -c
+          [ "$wals" -ge 2 ]
+          aws --endpoint-url http://localhost:9000 s3 ls --recursive s3://smo-backups/smo-pg/ | grep -q '/base/'
+          kubectl -n smo port-forward pod/smo-pg-1 9187:9187 > "$RUNNER_TEMP/pf.log" 2>&1 &
+          pf=$!
+          for i in $(seq 1 20); do curl -fsS http://localhost:9187/metrics > "$RUNNER_TEMP/cnpg-metrics.txt" 2> /dev/null && break; sleep 2; done
+          kill "$pf" || true
+          echo "archive and backup series the operator exports:"; grep -E '^cnpg_.*(archiv|backup)' "$RUNNER_TEMP/cnpg-metrics.txt" | cut -d' ' -f1 | sort -u
+          grep -E '^cnpg_(collector_last_available_backup_timestamp|pg_stat_archiver_(seconds_since_last_archival|failed_count|archived_count)) ' "$RUNNER_TEMP/cnpg-metrics.txt"
+          for m in cnpg_collector_last_available_backup_timestamp cnpg_pg_stat_archiver_seconds_since_last_archival cnpg_pg_stat_archiver_failed_count; do
+            grep -q "^$m " "$RUNNER_TEMP/cnpg-metrics.txt" || { echo "::error::the operator does not export $m"; exit 1; }
+          done
+          last=$(awk '/^cnpg_collector_last_available_backup_timestamp /{printf "%d", $2}' "$RUNNER_TEMP/cnpg-metrics.txt")
+          echo "last backup $(( $(date +%s) - last )) s ago"
+          [ "$last" -gt 0 ] && [ $(( $(date +%s) - last )) -lt 900 ]
+
+      - name: A NEW cluster recovers from the store to that minute
+        run: |
+          cat > "$RUNNER_TEMP/restored.yaml" <<EOF
+          apiVersion: postgresql.cnpg.io/v1
+          kind: Cluster
+          metadata: { name: smo-pg-restored }
+          spec:
+            instances: 1
+            imageName: $POSTGRES_IMAGE_CNPG
+            storage: { size: 2Gi }
+            bootstrap:
+              recovery:
+                source: origin
+                recoveryTarget: { targetTime: "$RECOVERY_TARGET" }
+            externalClusters:
+              - name: origin
+                barmanObjectStore:
+                  destinationPath: s3://smo-backups/smo-pg
+                  serverName: smo-pg
+                  endpointURL: $S3_ENDPOINT
+                  s3Credentials:
+                    accessKeyId: { name: smo-pg-backup-s3, key: ACCESS_KEY_ID }
+                    secretAccessKey: { name: smo-pg-backup-s3, key: ACCESS_SECRET_KEY }
+                  wal: { compression: gzip }
+          EOF
+          started=$(date +%s)
+          kubectl -n smo apply -f "$RUNNER_TEMP/restored.yaml"
+          kubectl -n smo wait --for=condition=Ready cluster/smo-pg-restored --timeout=900s
+          seconds=$(( $(date +%s) - started ))
+          psql() { kubectl -n smo exec smo-pg-restored-1 -c postgres -- psql -U postgres -d smo -Atc "$1"; }
+          counts=$(psql "SELECT phase || '=' || count(*) FROM public.dr_marker GROUP BY phase ORDER BY phase" | tr '\n' ' ')
+          echo "recovered in $seconds s: $counts"
+          { echo "### CloudNativePG: archive and recover to a minute"; echo; echo "- base backup: ${BACKUP_SECONDS} s"; echo "- new cluster recovered to \`$RECOVERY_TARGET\` in ${seconds} s"; echo "- rows found: $counts"; } >> "$GITHUB_STEP_SUMMARY"
+          # everything written before the minute is there, nothing written after it
+          [ "$(psql "SELECT count(*) FROM public.dr_marker WHERE phase = 'before-backup'")" = "100" ]
+          [ "$(psql "SELECT count(*) FROM public.dr_marker WHERE phase = 'after-backup'")" = "50" ]
+          [ "$(psql "SELECT count(*) FROM public.dr_marker WHERE phase = 'after-target'")" = "0" ]
+          [ "$seconds" -lt 3600 ]
+
+      - name: What the cluster says, when it went wrong
+        if: failure()
+        run: |
+          kubectl -n smo get cluster,backup,pods -o wide || true
+          kubectl -n smo describe cluster smo-pg | tail -40 || true
+          kubectl -n smo logs smo-pg-1 -c postgres --tail=60 || true
+          kubectl -n smo logs -l cnpg.io/cluster=smo-pg-restored --all-containers --tail=60 || true
+          kubectl -n cnpg-system logs deploy/cnpg-controller-manager --tail=60 || true
+          tail -20 "$RUNNER_TEMP/moto.log" || true

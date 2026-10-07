@@ -19,13 +19,16 @@ A new alert starts with a page named exactly like the alert (`<AlertName>.md`).
 | Alert | Severity | Page |
 |---|---|---|
 | `SmoAuditWriteFailed` | critical | [SmoAuditWriteFailed.md](SmoAuditWriteFailed.md) |
+| `SmoWalArchiveLate` | critical | [SmoWalArchiveLate.md](SmoWalArchiveLate.md) |
 | `SmoGatewayAvailabilityBurnFast` | critical | [SmoGatewayAvailabilityBurnFast.md](SmoGatewayAvailabilityBurnFast.md) |
 | `SmoGatewayLatencyBurnFast` | critical | [SmoGatewayLatencyBurnFast.md](SmoGatewayLatencyBurnFast.md) |
 | `SmoModuleDown` | critical | [SmoModuleDown.md](SmoModuleDown.md) |
 | `SmoMtlsCertExpiryImminent` | critical | [SmoMtlsCertExpiryImminent.md](SmoMtlsCertExpiryImminent.md) |
 | `SmoOutboxDeliveryLagBurnFast` | critical | [SmoOutboxDeliveryLagBurnFast.md](SmoOutboxDeliveryLagBurnFast.md) |
 | `SmoAuthRefusalsHigh` | warning | [SmoAuthRefusalsHigh.md](SmoAuthRefusalsHigh.md) |
+| `SmoBackupLate` | warning | [SmoBackupLate.md](SmoBackupLate.md) |
 | `SmoDbPoolNearlyExhausted` | warning | [SmoDbPoolNearlyExhausted.md](SmoDbPoolNearlyExhausted.md) |
+| `SmoWalArchiveFailing` | warning | [SmoWalArchiveFailing.md](SmoWalArchiveFailing.md) |
 | `SmoGatewayAvailabilityBurnSlow` | warning | [SmoGatewayAvailabilityBurnSlow.md](SmoGatewayAvailabilityBurnSlow.md) |
 | `SmoGatewayLatencyBurnSlow` | warning | [SmoGatewayLatencyBurnSlow.md](SmoGatewayLatencyBurnSlow.md) |
 | `SmoModuleHighErrorRate` | warning | [SmoModuleHighErrorRate.md](SmoModuleHighErrorRate.md) |
