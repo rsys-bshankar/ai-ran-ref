@@ -4,7 +4,7 @@
     scripts/sizing_report.py <stats.jsonl> [--out load-out] [--mem-headroom 2.0] [--request-headroom 1.25]
 
 `stats.jsonl` is one JSON object per line, as `docker stats --no-stream --format '{{json .}}'` prints it, with a `t` (seconds since the start) added by the sampler
-(`scripts/sample_stats.sh`). Per container the report has the peak memory, the median and p95 CPU while loaded (a core is 100 %), and a suggestion: memory request = peak
+(`scripts/sample_stats.sh`). Per container of the stack (names starting `smo-`; the load generator is left out) the report has the peak memory, the median and p95 CPU while loaded (a core is 100 %), and a suggestion: memory request = peak
 x `--request-headroom`, memory limit = peak x `--mem-headroom`, CPU request = p95 rounded up to 25 m. Those are the numbers the chart's `resources` should be set from, on a
 runner of this size and at this load; `docs/SIZING.md` says how to scale them. Writes `<out>/sizing.json` and `<out>/sizing.md`.
 """
@@ -17,6 +17,7 @@ import statistics
 import sys
 from pathlib import Path
 
+STACK = re.compile(r"^smo[-_]")                 # the compose project name: every container of the stack starts with it
 UNITS = {"b": 1, "kib": 1024, "mib": 1024**2, "gib": 1024**3, "kb": 1000, "mb": 1000**2, "gb": 1000**3}
 
 
@@ -48,6 +49,8 @@ def summarize(lines: list[str], mem_headroom: float, request_headroom: float) ->
         if not line:
             continue
         sample = json.loads(line)
+        if not STACK.match(sample["Name"]):
+            continue                                     # the load generator and anything else on the host is not the stack
         entry = per.setdefault(service_name(sample["Name"]), {"mem": [], "cpu": []})
         entry["mem"].append(to_bytes(sample["MemUsage"].split("/")[0]))
         entry["cpu"].append(float(sample["CPUPerc"].rstrip("%")))

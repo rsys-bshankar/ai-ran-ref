@@ -27,7 +27,7 @@ def test_a_size_without_a_known_unit_is_refused():
         sizing.to_bytes("lots")
 
 
-@pytest.mark.parametrize("container,service", [("smo-r1-termination-1", "r1-termination"), ("smo_sme_2", "sme"), ("postgres", "postgres"), ("smo-gui-bff-1", "gui-bff")])
+@pytest.mark.parametrize("container,service", [("smo-r1-termination-1", "r1-termination"), ("smo_sme_2", "sme"), ("smo-gui-bff-1", "gui-bff")])
 def test_the_compose_project_prefix_and_replica_suffix_come_off(container, service):
     assert sizing.service_name(container) == service
 
@@ -38,6 +38,11 @@ def test_the_peak_memory_and_the_p95_cpu_set_the_suggestion():
     assert (sme["samples"], sme["memPeakMiB"]) == (3, 200.0)
     assert sme["suggest"] == {"memoryRequestMiB": 256, "memoryLimitMiB": 448, "cpuRequestMilli": 900}     # 200*1.25=250 -> 256; 400 -> 448; 90 % of a core = 900 m
     assert [r["service"] for r in rows] == ["dme", "sme"]
+
+
+def test_a_container_that_is_not_the_stack_is_left_out():
+    rows = sizing.summarize([line("friendly_dijkstra", 99, "167MiB"), line("smo-postgres-1", 20, "150MiB")], 2.0, 1.25)
+    assert [r["service"] for r in rows] == ["postgres"]
 
 
 def test_the_report_files_are_written_and_an_empty_input_fails(tmp_path, capsys):
