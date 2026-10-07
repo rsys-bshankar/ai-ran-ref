@@ -175,7 +175,8 @@ def test_the_worker_advances_a_staged_job_whose_pause_has_elapsed(client, fleet,
 
 def test_the_task_list_is_what_the_docs_say():
     assert {t.name: t.interval_seconds for t in tasks.TASKS} == {"advance-waves": 15, "publish-kpis": 30, "run-kpi-guards": 60,
-                                                                       "purge-safeguard-refusals": 3600}
+                                                                       "purge-safeguard-refusals": 3600,
+                                                                       "purge-cleared-alarms": 3600, "purge-pm-files": 3600}
 
 
 def test_the_worker_tick_runs_the_tasks_through_the_claim(db_session_factory, monkeypatch):
@@ -185,6 +186,51 @@ def test_the_worker_tick_runs_the_tasks_through_the_claim(db_session_factory, mo
     Base.metadata.create_all(engine, tables=[PeriodicRun.__table__])
     monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
     out = tick(tasks.TASKS, module="ran-nf-oam", session_factory=db_session_factory, engine=engine)
-    assert out == {"advance-waves": "ran", "publish-kpis": "ran", "run-kpi-guards": "ran", "purge-safeguard-refusals": "ran"}
+    assert out == {name: "ran" for name in ("advance-waves", "publish-kpis", "run-kpi-guards", "purge-safeguard-refusals", "purge-cleared-alarms", "purge-pm-files")}
     assert tick(tasks.TASKS, module="ran-nf-oam", session_factory=db_session_factory, engine=engine) == {
-        "advance-waves": "skipped", "publish-kpis": "skipped", "run-kpi-guards": "skipped", "purge-safeguard-refusals": "skipped"}
+        name: "skipped" for name in out}
+
+
+# ---- retention (PR-DB-3.3, 3.4)
+
+def _alarms_and_files(db_session_factory):
+    from app.models import Alarm, PMFile
+    now = datetime.datetime.now(datetime.UTC)
+    day = datetime.timedelta(days=1)
+    with db_session_factory() as db:
+        for name, raised, cleared in (("old-cleared", 200, 100), ("recent-cleared", 200, 1), ("old-raised", 300, None)):
+            db.add(Alarm(source_alarm_id=name, managed_element_ref="ME-1", severity="cleared" if cleared else "major",
+                         raised_at=now - raised * day, cleared_at=now - cleared * day if cleared else None))
+        for name, age in (("old", 100), ("new", 1)):
+            db.add(PMFile(managed_element_ref="ME-1", counter_type=name, content="{}", file_size=2, file_ready_time=now - age * day))
+        db.commit()
+
+
+def _left(db_session_factory):
+    from app.models import Alarm, PMFile
+    with db_session_factory() as db:
+        return (sorted(a.source_alarm_id for a in db.scalars(select(Alarm))), sorted(f.counter_type for f in db.scalars(select(PMFile))))
+
+
+def test_the_retention_tasks_keep_everything_unless_configured(db_session_factory, monkeypatch):
+    _alarms_and_files(db_session_factory)
+    monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
+    tasks.purge_cleared_alarms()
+    tasks.purge_pm_files()
+    assert _left(db_session_factory) == (["old-cleared", "old-raised", "recent-cleared"], ["new", "old"])
+
+
+def test_only_cleared_alarms_older_than_the_retention_go_and_a_raised_alarm_stays(db_session_factory, monkeypatch):
+    _alarms_and_files(db_session_factory)
+    monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
+    monkeypatch.setenv("SMO_RETENTION_ALARMS_DAYS", "30")
+    tasks.purge_cleared_alarms()
+    assert _left(db_session_factory)[0] == ["old-raised", "recent-cleared"]
+
+
+def test_only_pm_files_older_than_the_retention_go(db_session_factory, monkeypatch):
+    _alarms_and_files(db_session_factory)
+    monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
+    monkeypatch.setenv("SMO_RETENTION_PM_FILES_DAYS", "30")
+    tasks.purge_pm_files()
+    assert _left(db_session_factory)[1] == ["new"]

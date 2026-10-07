@@ -309,6 +309,8 @@ services:
       R1_GATEWAY_URL: http://r1-termination:8000
       SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}    # PR-SEC-9.3: sent as X-Bootstrap-Key to /bootstrap when R1_BOOTSTRAP_KEY is set at the gateway
       SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
+      SMO_RETENTION_ALARMS_DAYS: ${SMO_RETENTION_ALARMS_DAYS:-0}
+      SMO_RETENTION_PM_FILES_DAYS: ${SMO_RETENTION_PM_FILES_DAYS:-0}
 
   mock-o1-adaptor:
     build: { context: ., args: { <<: *build_info, MODULE: mock-o1-adaptor, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
@@ -513,6 +515,24 @@ services:
       SMO_DATABASE_URL: postgresql+psycopg://smo_mdaf@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mdaf
+
+  # PR-DB-3: the same image, run as a worker. It purges MDAF reports older than SMO_RETENTION_MDAF_REPORTS_DAYS (mdaf/app/tasks.py).
+  mdaf-worker:
+    build: { context: ., args: { <<: *build_info, MODULE: mdaf, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
+    command: ["python", "-m", "smo_shared.worker"]
+    stop_grace_period: 30s
+    secrets: [db_password_mdaf, enrollment_secret]
+    <<: *hardening
+    healthcheck: *worker_probe
+    depends_on: *wait_for_schema
+    environment:
+      SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}
+      SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret
+      <<: *db_env
+      SMO_DATABASE_URL: postgresql+psycopg://smo_mdaf@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo
+      SMO_DB_POOLER: ${SMO_DB_POOLER:-}
+      SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mdaf
+      SMO_RETENTION_MDAF_REPORTS_DAYS: ${SMO_RETENTION_MDAF_REPORTS_DAYS:-0}
 
   intent-service:
     build: { context: ., args: { <<: *build_info, MODULE: intent-service, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }

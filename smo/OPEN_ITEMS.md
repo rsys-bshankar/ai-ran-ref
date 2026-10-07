@@ -202,14 +202,8 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| DB-3.1 ★ | Table of high-volume tables with proposed retention (alarm, PM records and files, audit, webhook/outbox, idempotency, MDAF reports) | Table in the module READMEs | – |
-| DB-3.2 | Env-driven retention setting per table | Defaults documented | DB-3.1 |
-| DB-3.3 | Purge command (script or admin route) for cleared alarms older than N days | Test deletes only eligible rows | DB-3.2 |
-| DB-3.4 | Same for PM records and PM files (also remove the file on disk) | Same | DB-3.2 |
-| DB-3.5 | Same for MDAF reports | Same | DB-3.2 |
-| DB-3.6 | Same for GUI audit log, with an optional export-before-delete | Same | DB-3.2 |
-| DB-3.7 | Schedule the purges (cron, K8s CronJob or `ST-8`) | Documented schedule | DB-3.3 |
 | DB-3.8 | Time partitioning for the PM table | Old partition drops in one statement | OPS-1.4 |
+| DB-3.9 | Also: remove `DEAD` outbox rows after a period; prune the platform audit chain behind a signed checkpoint; expire `gui_login_failure` rows | Test deletes only eligible rows; `verify` passes after a prune | DB-3.2 |
 
 #### PR-DB-4 — Indexes and pagination
 
