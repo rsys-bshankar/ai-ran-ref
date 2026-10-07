@@ -17,7 +17,7 @@ The shared bucket, exactly (one statement per request):
 
     INSERT INTO rate_bucket (caller, tokens, refilled_at, last_allowed) VALUES (<new caller: a full bucket less this request>)
     ON CONFLICT (caller) DO UPDATE SET
-        last_allowed = refilled >= 1, tokens = (refilled - 1 if refilled >= 1 else refilled), refilled_at = now
+        last_allowed = refilled >= 1, tokens = (refilled - 1 if refilled >= 1 else refilled), refilled_at = max(refilled_at, now)
     RETURNING tokens, last_allowed
     where refilled = LEAST(burst, tokens + GREATEST(0, now - refilled_at) * rate)
 
@@ -27,7 +27,12 @@ caller and never lose an update, and no other caller is touched. Approximations,
 
   - `now` is the replica's own wall clock (`time.time()`), stored as epoch seconds. Replica clocks that differ by d seconds make
     a caller's refill jump by at most rate x d once; a clock that steps backwards refills nothing (the elapsed time is floored
-    at 0). NTP-synchronised nodes (milliseconds) make this immaterial. The database clock is not used because SQLite, the unit
+    at 0). NTP-synchronised nodes (milliseconds) make this immaterial. The bucket's own clock, `refilled_at`, only moves forward:
+    a statement stamped earlier than the row's clock (replicas stamp a statement before it waits for the row, so statements issued
+    together are applied in any order) refills nothing and leaves the clock where it was. Setting it to the stamp instead let such a
+    statement move the clock back, and the next one was refilled for the same interval again (43 calls let through a budget of about
+    30 in the three-replica burst of scripts/stress_run.py limiter-shared). A replica whose clock stays behind the others adds no refill
+    of its own: the others' calls refill the bucket. The database clock is not used because SQLite, the unit
     tests' database, has no equivalent, and a limiter that cannot be tested is worse than a few milliseconds of skew.
   - `Retry-After` is worked out in the replica from the `tokens` the statement returned, as in memory.
   - Each request costs one round trip and one row update on the gateway's hot path, and the work runs in the thread pool, not on
@@ -121,7 +126,7 @@ def _statements(dialect: str) -> tuple:
         "ON CONFLICT (caller) DO UPDATE SET "
         f"last_allowed = ({refilled}) >= 1, "
         f"tokens = CASE WHEN ({refilled}) >= 1 THEN ({refilled}) - 1 ELSE ({refilled}) END, "
-        "refilled_at = :now "
+        f"refilled_at = {greatest}(rate_bucket.refilled_at, :now) "
         "RETURNING tokens, last_allowed")
     purge = text(f"DELETE FROM rate_bucket WHERE tokens + {greatest}(0, :now - refilled_at) * :rate >= :burst")  # noqa: S608
     return take, purge

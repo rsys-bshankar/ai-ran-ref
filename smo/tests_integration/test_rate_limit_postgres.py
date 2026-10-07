@@ -72,3 +72,20 @@ def test_purge_removes_the_buckets_that_are_full_again_and_not_the_others(databa
     clock.now += 1.0                                                           # idle: 1 + 1 >= 2 (full); busy: 0 + 1 < 2
     assert limiter.purge() == 1 and len(limiter) == 1
     engine.dispose()
+
+
+@needs_postgres
+def test_a_statement_stamped_earlier_than_the_rows_clock_does_not_refill_the_same_time_twice(database):
+    """Statements issued together are applied in any order (a replica stamps one before it waits for the caller's row): one stamped earlier must leave the bucket's clock where it was (GREATEST)."""
+    clock = Clock()
+    limiter, engine = _replica(database[0], rate=1.0, burst=3.0, clock=clock)
+    assert [limiter.take("a") for _ in range(3)] == [None] * 3 and limiter.take("a") is not None      # empty at the start
+    start = clock.now
+    clock.now = start - 1.0                                                                            # issued earlier, applied later
+    assert limiter.take("a") is not None
+    clock.now = start
+    assert limiter.take("a") is not None                                                               # no token for a second that was counted already
+    clock.now = start + 1.0
+    assert limiter.take("a") is None and limiter.take("a") is not None
+    with engine.connect() as db:
+        assert db.execute(text("SELECT refilled_at FROM rate_bucket WHERE caller = 'a'")).scalar_one() == start + 1.0

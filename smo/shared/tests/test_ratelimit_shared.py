@@ -101,6 +101,23 @@ def test_the_settings_are_read_on_every_call_and_a_clock_stepping_back_refills_n
     assert b.take("a") is None
 
 
+def test_a_statement_applied_out_of_order_does_not_refill_the_same_time_twice(factory):
+    """Replicas stamp a statement with their clock before it waits for the caller's row; statements that were issued together are applied in any order, so one stamped earlier can arrive
+    after one stamped later. It must not move the bucket's clock back: the next statement would then be refilled for the interval a second time (found by the three-replica burst of
+    scripts/stress_run.py limiter-shared: 43 calls let through against a budget of about 30)."""
+    b, clock, _ = shared(factory, rate=1.0, burst=3.0)
+    clock.now = 1000.0
+    assert [b.take("a") for _ in range(3)] == [None, None, None] and b.take("a") is not None       # empty at 1000
+    clock.now = 999.0                                                                               # issued earlier, applied later
+    assert b.take("a") is not None
+    clock.now = 1000.0
+    assert b.take("a") is not None                                                                  # not a token for the second between 999 and 1000
+    clock.now = 1001.0
+    assert b.take("a") is None and b.take("a") is not None                                          # one second later, one token, as it should be
+    with factory() as db:
+        assert db.execute(select(RateBucket.refilled_at)).scalar_one() == 1001.0
+
+
 def test_the_row_holds_the_bucket_state(factory):
     b, clock, _ = shared(factory, rate=1, burst=3)
     b.take("a")
