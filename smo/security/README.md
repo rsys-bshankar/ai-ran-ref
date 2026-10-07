@@ -7,7 +7,7 @@
 |---|---|---|---|
 | OWASP ZAP API scan | the gateway (`r1-termination`), driven by `docs/openapi/r1-termination.json` | what an unauthenticated caller can reach: missing headers, error leakage, injection on the documented parameters | `zap-baseline.json` |
 | testssl.sh | the TLS edge, `localhost:8443` (gateway) and `:3443` (GUI) | protocol versions, ciphers, certificate, known TLS vulnerabilities | `testssl-baseline.json` |
-| OWASP ZAP API scan, with a token | the same document, as an rApp (an invoker without the enrollment secret) and as an SMO module (one with it), tokens from `scripts/dast_token.py` | what a caller past the gateway's authentication reaches: the modules' own error handling, injection on the parameters the gateway forwards, and for the module identity the routes an rApp may not use | `zap-baseline.json` (the same file) |
+| OWASP ZAP API scan, with a token (job `dast-authenticated`, two runs: rApp and SMO module) | each module's own document (`docs/openapi/<module>.json`, 15 modules), its paths moved under the gateway's prefix for it (`scripts/dast_gateway_spec.py`), called through the gateway with a token from `scripts/dast_token.py`: an rApp (an invoker without the enrollment secret) or an SMO module (one with it) | what a caller past the gateway's authentication reaches in the modules: error handling, injection on the parameters, and, for the module identity, the routes an rApp may not use | `zap-baseline.json` (the same file) |
 | Nuclei, default templates, severity low and above | what is reachable from outside: the TLS edge of the gateway (`:8443`) and of the GUI (`:3443`) | known misconfigurations and exposures (e.g. that R1's `/metrics`, which is for the internal scraper, is not served by the edge) | `nuclei-baseline.json` |
 
 The three tool images are pinned by digest in the workflow (`ZAP_IMAGE`, `TESTSSL_IMAGE`, `NUCLEI_IMAGE`; pinned 2026-10-05: ZAP `stable`, testssl.sh `3.2`,
@@ -26,7 +26,7 @@ The scripts take the same inputs, so a report can be checked on a laptop: `scrip
 
 ## What is not scanned yet
 
-- **Authenticated calls: done** (above) for the gateway, as two identities. The scan sends every documented method with the token, so it changes data in its throwaway stack; the token-abuse suite (`tests_integration/test_token_abuse.py`, PR-V-7b) still covers identity and path handling.
+- **Authenticated calls: done** (above), through the gateway, as two identities. The gateway's own document has a single route for everything it proxies, so a token on that scan reaches nothing behind it (the first version of this scan did exactly that: 7 URLs, the same as without a token); the module documents are what reach the modules. The scan sends every documented method with the token, so it changes data in its throwaway stack; the token-abuse suite (`tests_integration/test_token_abuse.py`, PR-V-7b) still covers identity and path handling.
 - **Each module on the internal network.** Only the gateway and the GUI are reachable from outside, so only they are scanned. A scan of every module's own specification would find what
   a compromised neighbour could reach.
 - **The southbound side** (NETCONF/SSH to a managed element) and the Helm deployment's own surface.

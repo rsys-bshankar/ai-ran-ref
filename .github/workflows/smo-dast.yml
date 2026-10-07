@@ -7,7 +7,8 @@ name: SMO DAST
 #   testssl.sh     the TLS edge (https://localhost:8443 and :3443): protocols, ciphers, certificate. Baseline smo/security/testssl-baseline.json.
 #   Nuclei         the default template set, severity low and above, against what is reachable from outside: the TLS edge of the gateway and of the GUI. Baseline smo/security/nuclei-baseline.json.
 #
-#   ZAP, with a token  the same document, as an rApp and as an SMO module (smo/scripts/dast_token.py): the modules behind the gateway. Same baseline.
+#   ZAP, with a token  job `dast-authenticated`: each module's own OpenAPI document, called through the gateway, as an rApp and as an SMO module
+#                      (smo/scripts/dast_token.py, dast_gateway_spec.py). Same baseline file.
 #
 # Every tool's report is uploaded as an artifact. smo/security/README.md says how to triage a finding. Not done here (smo/docs/VALIDATION.md, V-7): a scan
 # of each module on the internal network.
@@ -21,6 +22,8 @@ on:
       - ".github/workflows/smo-dast.yml"
       - "smo/security/**"
       - "smo/scripts/dast_baseline.py"
+      - "smo/scripts/dast_token.py"
+      - "smo/scripts/dast_gateway_spec.py"
 
 permissions:
   contents: read
@@ -70,32 +73,6 @@ jobs:
           cp ../zap-wrk/zap.html ../zap-wrk/zap.json ../scan-out/
           python3 scripts/dast_baseline.py zap security/zap-baseline.json ../scan-out/zap.json
 
-      - name: ZAP API scan of the gateway with a token, as an rApp and as an SMO module
-        if: ${{ !cancelled() }}
-        working-directory: smo
-        run: |
-          # what a caller that got past the gateway's authentication reaches: the modules behind it. Two identities (scripts/dast_token.py): an rApp, which the
-          # gateway's role policy restricts, and an SMO module, which it does not. The scan changes data (it sends every documented method): the stack is a throwaway.
-          set +e
-          status=0
-          for role in rapp internal; do
-            token=$(docker compose exec -T sme python - "$role" < scripts/dast_token.py)
-            [ -n "$token" ] || { echo "::error::no token for $role"; status=1; continue; }
-            echo "::add-mask::$token"
-            # a header that does not work would make this a second unauthenticated scan: the token must open a proxied route (an unauthenticated call is 401)
-            docker compose exec -T sme python -c "import httpx, sys; r = httpx.get('http://r1-termination:8000/dme/data-jobs', headers={'Authorization': 'Bearer ' + sys.argv[1]}, timeout=10); print('probe', r.status_code); sys.exit(1 if r.status_code in (401, 403) else 0)" "$token" \
-              || { echo "::error::the $role token is refused by the gateway"; status=1; continue; }
-            rm -rf "../zap-$role" && mkdir -p "../zap-$role" && cp docs/openapi/r1-termination.json "../zap-$role/" && chmod -R a+rwX "../zap-$role"
-            docker run --rm --network smo_default -v "$PWD/../zap-$role:/zap/wrk:rw" \
-              -e ZAP_AUTH_HEADER=Authorization -e ZAP_AUTH_HEADER_VALUE="Bearer $token" -e ZAP_AUTH_HEADER_SITE=r1-termination "$ZAP_IMAGE" \
-              zap-api-scan.py -t r1-termination.json -f openapi -O http://r1-termination:8000 -r zap.html -J zap.json -I
-            echo "zap ($role) exit $?"
-            cp "../zap-$role/zap.html" "../scan-out/zap-$role.html"; cp "../zap-$role/zap.json" "../scan-out/zap-$role.json"
-            echo "== as $role"
-            python3 scripts/dast_baseline.py zap security/zap-baseline.json "../scan-out/zap-$role.json" || status=1
-          done
-          exit $status
-
       - name: testssl.sh against the TLS edge
         if: ${{ !cancelled() }}   # each scanner reports even when another found something
         working-directory: smo
@@ -139,5 +116,70 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dast-reports
+          path: scan-out/
+          retention-days: 30
+
+  # The gateway's own document has one route for everything it proxies (`/{full_path}`), so a token alone reaches nothing behind it. Each module's document, with its
+  # paths under the gateway's prefix for it (scripts/dast_gateway_spec.py), is what makes the scan call the module, as the caller the token says it is: an rApp (an invoker
+  # without the enrollment secret, which the gateway's role policy restricts) or an SMO module (with it). The scan sends every documented method, so it changes data:
+  # the stack is a throwaway.
+  dast-authenticated:
+    name: ZAP through the gateway with a token, ${{ matrix.role }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [rapp, internal]
+    env:
+      # the modules the gateway routes to (r1-termination/app/main.py ROUTES) that have a document in smo/docs/openapi; the reference rApps are not SMO modules
+      MODULES: "sme dme onboarding rapp-mgmt ran-nf-oam nfo focom aimgf mlmr mllf ran-analytics mdaf intent-service so-smos sa-smos"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Start the stack
+        working-directory: smo
+        run: |
+          scripts/init_secrets.sh
+          cp .env.example .env
+          docker compose up -d --build
+          for i in $(seq 1 60); do curl -fsS http://localhost:8080/health > /dev/null 2>&1 && break; sleep 5; done
+          curl -fsS http://localhost:8080/bootstrap | grep -q apiEndpoints
+          mkdir -p ../scan-out
+
+      - name: Scan each module through the gateway as ${{ matrix.role }}
+        working-directory: smo
+        run: |
+          token=$(docker compose exec -T sme python - "${{ matrix.role }}" < scripts/dast_token.py)
+          [ -n "$token" ] || { echo "::error::no token"; exit 1; }
+          echo "::add-mask::$token"
+          # a header that does not work would make this an unauthenticated scan: the token must open a proxied route (an unauthenticated call is 401)
+          docker compose exec -T sme python -c "import httpx, sys; r = httpx.get('http://r1-termination:8000/dme/data-jobs', headers={'Authorization': 'Bearer ' + sys.argv[1]}, timeout=10); print('probe', r.status_code); sys.exit(1 if r.status_code in (401, 403) else 0)" "$token"
+          network=$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$(docker compose ps -q r1-termination)")
+          mkdir -p ../zap-wrk && chmod 777 ../zap-wrk
+          status=0
+          for m in $MODULES; do
+            python3 scripts/dast_gateway_spec.py "docs/openapi/$m.json" "/$m" "../zap-wrk/$m.json"
+            chmod a+r "../zap-wrk/$m.json"
+            # -T: a module's scan is cut at 5 minutes; -I: ZAP's own exit status is not the verdict (the baseline comparison is)
+            docker run --rm --network "$network" -v "$PWD/../zap-wrk:/zap/wrk:rw" \
+              -e ZAP_AUTH_HEADER=Authorization -e ZAP_AUTH_HEADER_VALUE="Bearer $token" -e ZAP_AUTH_HEADER_SITE=r1-termination "$ZAP_IMAGE" \
+              zap-api-scan.py -t "$m.json" -f openapi -O http://r1-termination:8000 -r "zap-$m.html" -J "zap-$m.json" -I -T 5 | grep -E "Number of Imported URLs|Total of|FAIL-NEW|WARN-NEW" || true
+            cp "../zap-wrk/zap-$m.html" "../zap-wrk/zap-$m.json" ../scan-out/ 2>/dev/null
+            echo "== $m as ${{ matrix.role }}"
+            python3 scripts/dast_baseline.py zap security/zap-baseline.json "../scan-out/zap-$m.json" || status=1
+          done
+          exit $status
+
+      - name: The stack's logs, when a step failed
+        if: failure()
+        working-directory: smo
+        run: docker compose logs --no-color --tail=40 r1-termination sme
+
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dast-authenticated-${{ matrix.role }}
           path: scan-out/
           retention-days: 30
