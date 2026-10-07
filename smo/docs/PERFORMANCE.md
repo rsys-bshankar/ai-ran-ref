@@ -18,6 +18,12 @@ GitHub's runners vary from night to night: compare a run with the previous one o
 
 Every list route counts the whole result for `total` (`COUNT(*)`, 55 ms for a million alarms, linear: `scripts/db_volume_check.py` times it). A caller that only pages forward adds `?total=false`: no count query runs, `total` is left out of the response and `hasMore` says whether another page follows. The volume lane's count cases measure what a default call pays; the opt-out costs a first page.
 
+## The upgrade over data (V-6)
+
+`scripts/upgrade_at_volume.py` (in the volume workflow, `.github/workflows/smo-db-volume.yml`): a database at the previous release's last revision (read from the newest `smo-v*` tag, `0026` for 0.4.0), loaded with the same volume as the plan checks (`ELEMENTS` managed elements, each with 10 alarms and 5 performance files), then every newer revision applied by itself with `scripts/migrate.py --revision <id>` and timed. Read a row as "what this revision costs when the tables are full", plus about 0.7 s of process start (Python and Alembic) that every row carries. The whole upgrade has a budget (300 s at 100 000 elements); a revision that scans or rewrites a big table is the thing it exists to show, and a number that jumps between two runs of the same workflow is a finding. It times the schema revisions only: pods rolling, the migrate Job's own start-up and any lock wait behind live traffic are not in it (`.github/workflows/smo-upgrade-kind.yml` covers the upgrade as a whole, on a small database).
+
+First run in CI (GitHub ubuntu-latest, Postgres 18, 100 000 elements = 1 000 000 alarms and 500 000 performance files, from 0.4.0's `0026`): `0027` (the performance-file index and `lcm_operation.created_at`) 0.9 s, `0028` 0.5 s, `0029` (drops the compatibility views) 0.6 s, **2.0 s in all** against the 300 s budget; the restore drill on the same data took 6 s to dump (51 MB) and 7 s to restore. Every row is mostly process start, so no revision of 0.5.0 touches the big tables in a way that scales with them; a later revision that does (a new column with a computed default, an index on `alarm`) will show as the row that stands out.
+
 ## Not yet covered
 
 - Cells, managed objects and KPI results are not seeded yet (V-8b seeds managed elements, alarms and performance files).

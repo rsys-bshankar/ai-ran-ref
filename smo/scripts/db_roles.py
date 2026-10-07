@@ -109,6 +109,15 @@ def main(argv: list[str]) -> int:
         database = cur.fetchone()[0]
         cur.execute("SELECT nspname FROM pg_namespace WHERE nspname NOT LIKE 'pg\\_%' AND nspname <> 'information_schema'")
         schemas = sorted(r[0] for r in cur.fetchall())
+        # with the roles off, every module connects as the owner, and the compatibility views that let it find a table by its bare name are gone (0029):
+        # the owner's search path lists the module schemas, so it finds them as a module's own role does
+        own = sorted({spec["schema"] for spec in manifest.values() if spec.get("schema") in schemas})
+        if own:
+            from psycopg import sql
+            cur.execute("SELECT current_user")
+            owner = cur.fetchone()[0]
+            cur.execute(sql.SQL("ALTER ROLE {} IN DATABASE {} SET search_path = {}, public").format(
+                sql.Identifier(owner), sql.Identifier(database), sql.SQL(", ").join(sql.Identifier(x) for x in own)))
         for module, spec in manifest.items():
             path = password_file(module)
             if not path.exists():

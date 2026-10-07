@@ -206,3 +206,14 @@ def test_without_a_password_file_nothing_is_made(database):
     url, env, _, _ = database
     done = _roles(env)
     assert done.returncode == 0 and "none (no password files)" in done.stdout
+
+
+@needs_postgres
+def test_the_owner_finds_every_module_table_by_its_bare_name_so_a_release_with_the_roles_off_still_runs(database):
+    url, env, _, _ = database
+    assert _roles(env).returncode == 0
+    engine = create_engine(url)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM invoker_registration")).scalar() == 0
+        assert connection.execute(text("SELECT count(*) FROM rapp_instance")).scalar() == 0
+    engine.dispose()
