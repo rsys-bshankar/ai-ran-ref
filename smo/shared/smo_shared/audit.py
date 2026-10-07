@@ -27,6 +27,7 @@ import logging
 import os
 import sys
 import uuid
+from typing import Any
 
 from sqlalchemy import JSON, BigInteger, DateTime, Integer, String, Uuid, select
 from sqlalchemy.exc import IntegrityError
@@ -37,8 +38,8 @@ from .db import Base
 log = logging.getLogger(__name__)
 
 GENESIS = "0" * 64
-_STREAM = {"yield_per": 500}                                  # rows fetched at a time by verify and export: memory, not behaviour
-_JSON = {"sort_keys": True, "ensure_ascii": False}           # one row per line: the same bytes for the same row, readable text kept as text
+_STREAM: dict[str, Any] = {"yield_per": 500}                                  # rows fetched at a time by verify and export: memory, not behaviour
+_JSON: dict[str, Any] = {"sort_keys": True, "ensure_ascii": False}           # one row per line: the same bytes for the same row, readable text kept as text
 _FORMATS = ("jsonl", "syslog")
 _PROG, _DESCRIPTION = "python -m smo_shared.audit", (__doc__ or "").split("\n")[0]
 _VERIFY_HELP, _EXPORT_HELP, _SINCE_HELP = ("check the hash chain; exit 1 when it is broken", "write the rows as JSON lines (or syslog) and the head",
