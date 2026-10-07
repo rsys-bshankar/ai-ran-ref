@@ -124,16 +124,23 @@ jobs:
   # without the enrollment secret, which the gateway's role policy restricts) or an SMO module (with it). The scan sends every documented method, so it changes data:
   # the stack is a throwaway.
   dast-authenticated:
-    name: ZAP through the gateway with a token, ${{ matrix.role }}
+    name: ZAP through the gateway with a token, ${{ matrix.role }} (${{ matrix.group }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
+      # the modules the gateway routes to (r1-termination/app/main.py ROUTES) that have a document in smo/docs/openapi; the reference rApps are not SMO modules.
+      # Three groups of five per role, so that a job fits in its hour (a module's active scan took from 20 seconds to 17 minutes in the first run).
       matrix:
-        role: [rapp, internal]
+        include:
+          - {role: rapp, group: a, modules: "sme dme onboarding rapp-mgmt ran-nf-oam"}
+          - {role: rapp, group: b, modules: "nfo focom aimgf mlmr mllf"}
+          - {role: rapp, group: c, modules: "ran-analytics mdaf intent-service so-smos sa-smos"}
+          - {role: internal, group: a, modules: "sme dme onboarding rapp-mgmt ran-nf-oam"}
+          - {role: internal, group: b, modules: "nfo focom aimgf mlmr mllf"}
+          - {role: internal, group: c, modules: "ran-analytics mdaf intent-service so-smos sa-smos"}
     env:
-      # the modules the gateway routes to (r1-termination/app/main.py ROUTES) that have a document in smo/docs/openapi; the reference rApps are not SMO modules
-      MODULES: "sme dme onboarding rapp-mgmt ran-nf-oam nfo focom aimgf mlmr mllf ran-analytics mdaf intent-service so-smos sa-smos"
+      MODULES: ${{ matrix.modules }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -161,10 +168,10 @@ jobs:
           for m in $MODULES; do
             python3 scripts/dast_gateway_spec.py "docs/openapi/$m.json" "/$m" "../zap-wrk/$m.json"
             chmod a+r "../zap-wrk/$m.json"
-            # -T: a module's scan is cut at 5 minutes; -I: ZAP's own exit status is not the verdict (the baseline comparison is)
+            # scanner.maxScanDurationInMins: a module's active scan is cut at 5 minutes; -I: ZAP's own exit status is not the verdict (the baseline comparison is)
             docker run --rm --network "$network" -v "$PWD/../zap-wrk:/zap/wrk:rw" \
               -e ZAP_AUTH_HEADER=Authorization -e ZAP_AUTH_HEADER_VALUE="Bearer $token" -e ZAP_AUTH_HEADER_SITE=r1-termination "$ZAP_IMAGE" \
-              zap-api-scan.py -t "$m.json" -f openapi -O http://r1-termination:8000 -r "zap-$m.html" -J "zap-$m.json" -I -T 5 | grep -E "Number of Imported URLs|Total of|FAIL-NEW|WARN-NEW" || true
+              zap-api-scan.py -t "$m.json" -f openapi -O http://r1-termination:8000 -r "zap-$m.html" -J "zap-$m.json" -I -z "-config scanner.maxScanDurationInMins=5" | grep -E "Number of Imported URLs|Total of|FAIL-NEW|WARN-NEW" || true
             cp "../zap-wrk/zap-$m.html" "../zap-wrk/zap-$m.json" ../scan-out/ 2>/dev/null
             echo "== $m as ${{ matrix.role }}"
             python3 scripts/dast_baseline.py zap security/zap-baseline.json "../scan-out/zap-$m.json" || status=1
@@ -180,6 +187,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: dast-authenticated-${{ matrix.role }}
+          name: dast-authenticated-${{ matrix.role }}-${{ matrix.group }}
           path: scan-out/
           retention-days: 30

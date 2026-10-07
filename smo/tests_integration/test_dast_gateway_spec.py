@@ -26,9 +26,11 @@ def test_every_path_moves_under_the_prefix_and_nothing_else_changes():
 
 def test_the_modules_the_workflow_scans_are_routed_by_the_gateway_and_have_a_document():
     workflow = (SMO_ROOT.parent / ".github" / "workflows" / "smo-dast.yml").read_text()
-    line = next(l for l in workflow.splitlines() if l.strip().startswith("MODULES:"))
-    modules = line.split("MODULES:")[1].strip().strip('"').split()
-    assert modules
+    import re
+    groups = re.findall(r'modules: "([^"]+)"', workflow)
+    modules = sorted({m for group in groups for m in group.split()})
+    assert len(modules) == 15 and len(groups) == 6      # five modules in each of three groups, for each of the two roles
+    assert len(set(groups)) == 3
     for module in modules:
         assert f"/{module}" in _gateway_prefixes(), f"the gateway has no route /{module}"
         assert json.loads((SMO_ROOT / "docs" / "openapi" / f"{module}.json").read_text())["paths"], module

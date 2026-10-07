@@ -43,6 +43,12 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
   flow 17) have no operator approval beyond the `MODEL_NOT_CERTIFIED` guard. Whether the OI-6.1
   gate should extend to them is undecided. Approach: if yes, reuse the self-loop governance-event
   pattern (`APPROVE_DEPLOY`-style event + flag) through `POST /models/{id}/advance`.
+- **OI-unknown-element-503** — `GET /ran-nf-oam/managed-entities/{ref}/config` of an element that does not exist answers
+  503 `ENDPOINT_UNREACHABLE` (an element with no registered O1 adaptor is unreachable, and an unknown one has none), pinned by
+  `ran-nf-oam/tests/test_dispatch_reliability.py::test_read_after_write`. The authenticated DAST scan (V-7d) flags it as a server
+  error, and a monitor reading 5xx would think the module is down. Approach: answer 404 `MANAGED_ENTITY_NOT_FOUND` for an unknown
+  element and keep 503 for a known one with no adaptor (additive for a client that handles 4xx; a contract change to decide
+  before 1.0.0). Accepted for now in `security/zap-baseline.json`.
 
 ## 2. Platform gaps
 

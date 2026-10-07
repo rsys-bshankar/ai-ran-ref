@@ -1,3 +1,4 @@
 {
- "_comment": "Alerts of the ZAP API scan of the gateway that are accepted, as \"<plugin id> <risk>\": \"reason\" (scripts/dast_baseline.py). Empty: every alert of risk Low or above fails the nightly run. The plugin ids are in the report (zap.html in the run's artifacts) and at https://www.zaproxy.org/docs/alerts/."
+ "_comment": "Alerts of the ZAP API scan of the gateway that are accepted, as \"<plugin id> <risk>\": \"reason\" (scripts/dast_baseline.py). Empty: every alert of risk Low or above fails the nightly run. The plugin ids are in the report (zap.html in the run's artifacts) and at https://www.zaproxy.org/docs/alerts/.",
+ "100000 low": "GET /ran-nf-oam/managed-entities/{ref}/config of an element that does not exist answers 503 ENDPOINT_UNREACHABLE: a deliberate answer pinned by ran-nf-oam/tests/test_dispatch_reliability.py (an element with no registered O1 adaptor, which an unknown one is, is unreachable). Whether it should be a 404 is an open API decision (smo/OPEN_ITEMS.md), not a vulnerability; ZAP's rule 100000 flags any 5xx."
 }
