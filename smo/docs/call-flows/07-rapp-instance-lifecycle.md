@@ -11,6 +11,14 @@ down to `UNDEPLOYED`, and `DELETE` removes the row. Performance reporting is a p
 no FSM transition (contrast AI/ML Workflow's `ReportPerformance`, call flow 02, which drives
 a retrain decision).
 
+> Which caller may make each call below is decided by R1 Termination's role policy
+> (`smo_shared/roles.py`). An rApp-role caller may not change anything on `/rapp-mgmt`, so the
+> calls drawn here as made by the container (`bootstrap-complete`, `recover`, and the `performance`
+> and `fault` reports) are refused to an rApp token. Today an operator or the platform makes
+> `bootstrap-complete` and `recover` (call flow 01 explains why). Whether the `performance` and
+> `fault` reports, which the Non-RT RIC architecture lists as rApp-facing R1 services, should be
+> allowed to the rApp role is open.
+
 ## RAppInstance FSM
 
 | State | Events out (→ target) | Action on the transition |

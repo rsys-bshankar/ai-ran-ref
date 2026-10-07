@@ -77,7 +77,7 @@ Interfaces:
 The rApp never calls DME or RAN NF OAM directly. Its client (`smo_shared.r1_client.R1Client`, `SMO_IDENTITY_KIND=rapp`):
 
 1. reads R1 Termination's `/bootstrap` for the SME token endpoint;
-2. registers at SME as an API invoker with no enrollment secret, so SME records it as an `rapp`;
+2. registers at SME as an API invoker with no enrollment secret, so SME records it as an `rapp` (this is the rApp's own registration of O-RAN.WG2.R1GAP clause 3.1.8: it supplies its identity and credentials and receives an identifier);
 3. takes a `client_credentials` token with scope `smo-rapp` and sends it as `Authorization: Bearer ...` on every call;
 4. refreshes the token before expiry, and once on a 401.
 
@@ -99,7 +99,7 @@ The gNB O1 adaptor simulator and the demo script are not rApps: they act as the 
 | DME | O-RAN R1 DME services, derived from the O-RAN-SC ICS data plane | Standard for data jobs and types; **SMO build** for O1 action mediation (`/actions`) |
 | RAN NF OAM | O-RAN O1 consumer; 3GPP MnS: TS 28.532 and TS 28.541 (CM, FM, PM), TS 28.319 (MSAC) | Standard, plus an **SMO build** per-vendor capability registry |
 | Onboarding | O-RAN rApp package onboarding (ASD in a TOSCA CSAR, O-RAN-SC rApp Manager) | Standard; **SMO build** extension: `manifest.yaml`, `capabilities.yaml` |
-| rApp Management | O-RAN rApp lifecycle management (O-RAN-SC rApp Manager) | Standard; **SMO build** extension: autonomy mode, region scope |
+| rApp Management | O-RAN rApp lifecycle management, modelled on the O-RAN-SC rApp Manager. The Non-RT RIC architecture lists rApp management services (registration, configuration, performance, fault, log) but no instance lifecycle | **SMO build**: the instance states, `bootstrap-complete`, autonomy mode, region scope |
 | `gnb-o1-adaptor-sim` | Stands in for an O1 (MnS) producer. Follows only the NETCONF message shape (RFC 6241) | **Sample / vendor side**: not a standard component; everything below the O1 message is up to the real product |
 | `start.sh`, `scripts/*`, `gnb_demo.py` | None | **Sample**: operator tooling |
 
@@ -107,18 +107,19 @@ The gNB O1 adaptor simulator and the demo script are not rApps: they act as the 
 
 | Interface | Between | Follows | Defined by |
 |---|---|---|---|
-| R1 | rApp to R1 Termination to SME, DME, RAN NF OAM | O-RAN R1 (R1GAP, R1AP), HTTP/JSON | Standard framework; route prefixes `/dme`, `/ran-nf-oam` are **SMO build** |
+| R1 | rApp to R1 Termination to SME, DME, RAN NF OAM | O-RAN R1: R1GAP defines the services and procedures, R1AP v01.00 only the service registration and discovery APIs (`{apiRoot}/<apiName>/<apiMajorVersion>/...`, JSON over HTTP) | Standard framework. R1AP defines no API for data management, CM, FM or PM yet, so the HTTP APIs and the prefixes `/dme`, `/ran-nf-oam` are **SMO build** (the service registration API is realised by SME on CAPIF, TS 29.222) |
 | Authentication | rApp, SME, R1 Termination | OAuth 2.0 client credentials (RFC 6749) with Bearer tokens (RFC 6750); invoker registration and token introspection from CAPIF (TS 29.222) | Standard; the `smo-rapp` scope and the `rapp` role are **SMO build** |
-| DME data jobs | rApp to DME | O-RAN R1 DME data-job model (`ONE_TIME`, `PULL_HTTP`, data types) | Standard model; the type names `RAN.PMCounters.<counter>` are **SMO build** |
+| DME data jobs | rApp to DME | O-RAN.WG2.R1GAP clause 3.2 procedures (register and discover data types, request and subscribe, delivery) | The HTTP API (O-RAN-SC ICS-derived: `ONE_TIME`, `PULL_HTTP`) is **SMO build**; so are the type names `RAN.PMCounters.<counter>` |
 | DME `/actions` | rApp to DME, then DME to RAN NF OAM | Not standardised | **SMO build** ("internal O1 action mediation"); the `X-Correlation-ID` header is a project convention |
-| Configuration read | rApp to RAN NF OAM, then NETCONF `get-config` to the adaptor | 3GPP MnS provisioning (TS 28.532) | REST shape **SMO build**; the managed object `NRCellDU` is the 3GPP IOC (TS 28.541) |
+| Configuration read and write | rApp to RAN NF OAM, then NETCONF `get-config` / `edit-config` to the adaptor | R1GAP clause 3.4.4 (read and write configuration) and the architecture specification clauses 10.3.3 and 10.3.4 (an asynchronous write job with a request id, as RAN NF OAM's config jobs and DME actions realise it); 3GPP MnS provisioning (TS 28.532) | REST shape **SMO build**; the managed object `NRCellDU` is the 3GPP IOC (TS 28.541) |
 | O1 CM | RAN NF OAM to the adaptor | O-RAN O1 with NETCONF (RFC 6241) `edit-config` / `get-config` | In this sample only the message shape, as XML over plain HTTP with a simplified `managed-object` payload; a real O1 uses NETCONF over SSH (RFC 6242) or TLS (RFC 7589). The wire form is **SMO build / sample** |
 | TX-muting data model | `txMutingFeatureEnable`, `txPathOffPattern`, `txMutingActivation` on `NRCellDU` | `NRCellDU` is 3GPP TS 28.541; the three leaves are **not** in 3GPP or O-RAN models | **Vendor-defined** (a vendor YANG augmentation; the names and values here are the sample's reading of it) |
 | PM | Adaptor to RAN NF OAM to DME | O1 PM reporting (TS 28.532) | The counters `DL_PRB_UTILIZATION`, `RRC_CONNECTED_UE` are **sample-defined** names, not TS 28.552 measurement names |
 | FM | Adaptor to RAN NF OAM | O1 FM (TS 28.532) alarm model | Alarm ids are **placeholders**; the rApp does not read alarms |
 | Adaptor registration and heartbeat | Adaptor to RAN NF OAM | Not standardised: replaces MnS Registry polling (TS 28.623) | **SMO build** (adaptor self-registration) |
 | Package | CSAR with an ASD | TOSCA Simple Profile 1.3 (OASIS) as used by the O-RAN rApp package | Standard container; `manifest.yaml` and `capabilities.yaml` are **SMO build** extensions |
-| Package and instance lifecycle | Operator to Onboarding, rApp Management | O-RAN-SC rApp Manager model (onboard, prime, instantiate, terminate) | Standard model; state names as implemented by the SMO build |
+| Package and instance lifecycle | Operator to Onboarding, rApp Management | O-RAN-SC rApp Manager model (onboard, prime, deploy, undeploy). The O-RAN R1GAP, R1AP and architecture specifications define no instance lifecycle | **SMO build**, including `bootstrap-complete`, which an operator or the platform sends and not the rApp (§10.0) |
+| rApp registration | rApp to SME, through R1 | R1GAP clause 3.1.8 (the rApp registers itself and receives an identifier), clause 3.1.4a (register services), the architecture specification clause 8.2.1 (registration "by an entity acting on its behalf") | Realised by SME on CAPIF (TS 29.222): invoker, provider and service registration, all allowed to the rApp role; rApp Management registers the package's declared services on its behalf at `bootstrap-complete` |
 | Control, events, CLI | Operator, `gnb-cli`, `gnb_demo.py` to `gnb-o1-adaptor-sim`; rApp `GET /events` | None | **Sample-defined**: `/control/*`, `/events`, `gnb-cli`, the narrator of `start.sh` |
 | Probes and metrics | Orchestrator to every service | None (`/live`, `/ready`, `/health`, `/metrics`) | **SMO build** |
 | Deployment | Docker Compose overlay | Compose Specification | Standard format; the service layout is **sample-defined** |
@@ -503,7 +504,7 @@ Steps are named by group: **L** the CSAR lifecycle, **G** the gNB and the closed
 | L2 | **Onboard**: serves the CSAR in the compose network; Onboarding fetches and validates it | 1, L1 | package `AVAILABLE`, descriptor id, capabilities |
 | L3 | **Prime** the package | L2 | `PRIMED` |
 | L4 | **Create the instance** (autonomy `AUTONOMOUS`): rApp Management asks NFO to instantiate | L3 | instance id, OAuth client id, `DEPLOYING`; no container yet |
-| L5 | **Bootstrap**: `bootstrap-complete`, then the script starts the rApp container (NFO has no runtime, §10.0) | L4 | `RUNNING`, rApp container `healthy` |
+| L5 | **Start the rApp container** (the script stands in for the deployment manager, NFO has no runtime), wait for it to be healthy, then **mark the instance bootstrapped**: the script plays the operator and sends `bootstrap-complete` directly to rApp Management. The step prints who normally sends it | L4 | rApp container `healthy`; instance `DEPLOYING` then `RUNNING`; an on-screen note on who sends `bootstrap-complete` |
 | G1 | **Prepare the gNB**: the simulator registers with RAN NF OAM, heartbeat, subscribes the two PM counters; an initial config job writes feature enabled, `HORIZONTAL_PLANE`, `MUTING_OFF` | 1 | gNB `endpoint.registered`, `config.received`, cell `MUTING_OFF` |
 | G2 | **Start the rApp**: `POST /start` gives it the target, opens one DME data job per counter and starts its own loop | L5, G1 | `started`, `auto-evaluation.started` |
 | G3 | **Low load** (you choose PRB and UEs): the gNB reports it; the rApp's next pass mutes the cell | G2 | `pm.reported`, `decision REDUCED_TX`, `config.received`, `tx-state.changed MUTING_OFF -> MUTING_ON`, `read-back VERIFIED`, R1 log lines |
@@ -523,7 +524,7 @@ Steps are named by group: **L** the CSAR lifecycle, **G** the gNB and the closed
 | Piece | Runs in | Used by |
 |---|---|---|
 | `start.sh` | your shell | everything |
-| `scripts/lcm.py` | the `r1-termination` container | L2 to L5 and R1, R3: one command per step (`onboard`, `prime`, `deploy`, `bootstrap`, `terminate`, `deprime`, `delete`, `retire`; also `status`, `up`, `down`) |
+| `scripts/lcm.py` | the `r1-termination` container | L2 to L4 and R1, R3: one command per step (`onboard`, `prime`, `deploy`, `terminate`, `deprime`, `delete`, `retire`; also `status`, `up`, `down`). Its `bootstrap` command is `bootstrap-complete`, sent directly to rApp Management as the operator or platform (step L5); the rApp never sends it |
 | `gnb_demo.py` | the `r1-termination` container | G1 to G8: steps `00` (prepare the gNB), `01` (start the rApp), `02` (low load), `03` (show the write), `04` (hysteresis), `05` (restore), `06` (audit). Load values come from `GNB_LOW_PRB` / `GNB_LOW_UE`, `GNB_MID_*`, `GNB_HIGH_*` |
 | `scripts/narrate.py` | the `r1-termination` container, in the background | the live, explained event stream |
 | `python -m app.gnb_cli` | the `gnb-o1-adaptor-sim` container | G7 (fault injection) and G9 |
@@ -550,9 +551,9 @@ cd gnb-o1-adaptor-sim && PYTHONPATH=.:../../../shared:../../../sdk python -m pyt
 
 Verified on 2026-10-06 on the built Docker stack, on an earlier revision: both unit suites; the stack start; a demo run with the rApp calling DME and RAN NF OAM through R1 Termination on an SME token (SME `POST /invoker-registrations` 201; R1 proxying `/actions` with the decision id as correlation id); a hand-driven run, including the retry (`attempts=2`) and the rollback; the state-change log lines; the package lifecycle (onboard, prime, deploy, bootstrap, a refused deprime, terminate, deprime, delete, retire).
 
-**Not run since:** everything about `start.sh` as it is now: the guided flow, the prompts, the clean-up and its checks, the existing-stack guard, `--auto` and `--keep`; the narrator (`scripts/narrate.py`) and its explanations; the rApp's automatic loop and its events, and the three unit tests written for it; the CSAR steps driven one command at a time by `lcm.py`; the rApp container being started and removed by the script; the renamed `gnb-*` services; the rebuilt CSAR. The numbers in §9.5 (38 and 20) are the expected counts, not a measured result.
+**Not run since:** everything about `start.sh` as it is now: the guided flow, the prompts, the clean-up and its checks, the existing-stack guard, `--auto` and `--keep`; the narrator (`scripts/narrate.py`) and its explanations; the rApp's automatic loop and its events, and the three unit tests written for it; the CSAR steps driven one command at a time by `lcm.py`; the rApp container being started and removed by the script, and step L5 as it is now (the container started and waited for, then `bootstrap-complete` sent by the script directly to rApp Management); the renamed `gnb-*` services; the rebuilt CSAR. The numbers in §9.5 (38 and 20) are the expected counts, not a measured result.
 
-Never run: more than one cell or managed element, package upgrade (§10.5), an instance whose container calls `bootstrap-complete` itself.
+Never run: more than one cell or managed element, package upgrade (§10.5).
 
 ---
 
@@ -568,11 +569,22 @@ Two things have a lifecycle here, and they are separate:
 | Instance (a deployment of the package) | rApp Management, with NFO and FOCOM | `DEPLOYING` -> `RUNNING` -> `UNDEPLOYED` |
 | The running services | Docker Compose | `gnb-o1-adaptor-sim` with the stack; `tx-muting-rapp` from step L5 (after the instance is `RUNNING`) to step R2 (after it is terminated) |
 
-The instance is the platform's record of a deployment. The container that actually runs is the compose service, which `start.sh` starts and stops around the instance's life; `bootstrap-complete` stands in for the container's own call-back.
+The instance is the platform's record of a deployment. The container that actually runs is the compose service, which `start.sh` starts and stops around the instance's life; an operator or the platform, not the container, sends `bootstrap-complete` once it is up (§10.0).
 
 ## 10.0 What the CSAR deployment does here, and what a real one adds
 
-The guided session runs the real platform lifecycle from the CSAR: Onboarding validates the package and keeps its capabilities, rApp Management creates the instance, NFO instantiates a deployment for it, and the lifecycle rules (for example, no deprime while an instance exists) are enforced by the platform. What NFO does **not** do is start the rApp's container: NFO in this build has no container runtime ("no Helm, Kubernetes or `docker run`", NFO README), and the CSAR carries no deployment artifact. So `start.sh` stands in for the deployment manager: after the instance is `RUNNING` (step L5) it starts the compose service `tx-muting-rapp`, and when the instance is terminated (step R2) it removes it. The stack itself does not start the rApp, so without the CSAR deployment there is no rApp to run. The instance does not control the container: `docker compose` does.
+The guided session runs the real platform lifecycle from the CSAR: Onboarding validates the package and keeps its capabilities, rApp Management creates the instance, NFO instantiates a deployment for it, and the lifecycle rules (for example, no deprime while an instance exists) are enforced by the platform. What NFO does **not** do is start the rApp's container: NFO in this build has no container runtime ("no Helm, Kubernetes or `docker run`", NFO README), and the CSAR carries no deployment artifact. So `start.sh` stands in for the deployment manager: after the instance is created (step L4) it starts the compose service `tx-muting-rapp` (step L5), and when the instance is terminated (step R2) it removes it. The stack itself does not start the rApp, so without the CSAR deployment there is no rApp to run. The instance does not control the container: `docker compose` does.
+
+**Who sends `bootstrap-complete`.** The instance becomes `RUNNING` when somebody tells rApp Management that the workload is up: `POST /rapp-mgmt/instances/{id}/bootstrap-complete`. That somebody is an operator (the Operator GUI's "Mark bootstrapped" button, or the API with an operator token) or the platform's deployment manager, and it is **not the rApp container**:
+
+- R1 Termination's role policy (`smo_shared/roles.py`, PR-SEC-14) lets an rApp-role caller change only what is on its allow-list. `/rapp-mgmt` is not on it, so R1 answers 403 `ROLE_NOT_PERMITTED` ("is for SMO modules and operators, not for an rApp").
+- The reason is that the handler only checks that the instance is `DEPLOYING`. It cannot tell which instance the caller is, so if rApps could call it, any rApp could mark any other rApp's instance `RUNNING`.
+- Everything the container does itself during bootstrap is allowed to it: reading `/bootstrap`, getting its token, registering at SME, registering DME types. That is the rApp's own registration of R1GAP clause 3.1.8.
+- The O-RAN specifications (R1GAP, R1AP, the Non-RT RIC architecture) do not define `bootstrap-complete`, instance states or who reports a workload up. Marking an instance `RUNNING` is this SMO's lifecycle step. The architecture specification also allows registration "by an entity acting on its behalf", which is what rApp Management does with the package's SME declarations when it receives `bootstrap-complete`.
+
+In this sample, `start.sh` plays that role at step L5: it starts the container, waits for it to be healthy, then sends `bootstrap-complete` directly to rApp Management from inside the compose network, as `DEMO_RUNBOOK.md` does. It does not go through R1, because a call through R1 needs an operator token, which the sample does not mint. The step prints the same explanation on screen. The Operator GUI button is the same call with an operator identity (its tooltip calls it a simulation of the container finishing, which is the same convention).
+
+The call-flow documents that used to show the container sending it (`docs/call-flows/01-...`, and a note in `07-...`) and the rApp Management README have been corrected to match.
 
 In a real deployment the roles are split:
 
@@ -581,7 +593,7 @@ In a real deployment the roles are split:
 | Build and publish the CSAR | The rApp vendor's build pipeline |
 | Onboard, prime, create and terminate instances | The operator, through the SMO Operator GUI or API (or an automation job making the same calls) |
 | Start the workload from the package | NFO with FOCOM, from a deployment artifact such as a Helm chart under `Artifacts/Deployment/HELM/` on a cluster FOCOM knows |
-| `bootstrap-complete` | The rApp container itself, when it is up |
+| `bootstrap-complete` | An operator (GUI button or API with an operator token), or the deployment manager once it sees the workload up. Never the rApp: R1 refuses it |
 
 To make the CSAR start the real container, the package needs that Helm chart and the deployment needs such a cluster (see `smo/deploy`); neither is done in this sample.
 
@@ -608,7 +620,8 @@ stateDiagram-v2
 | Onboard | L2 | `POST onboarding/packages {location}`, then `GET .../onboarding-status` | `AVAILABLE`, NFO descriptor created |
 | Prime | L3 | `POST onboarding/packages/{id}/prime` | `PRIMED` |
 | Deploy | L4 | `POST rapp-mgmt/instances {packageId, autonomyMode}` | `DEPLOYING`, OAuth client id issued |
-| Bootstrap | L5 | `POST rapp-mgmt/instances/{id}/bootstrap-complete`, then the script starts the container | `RUNNING` |
+| Start the workload | L5 | `docker compose up`, then wait for the container to be healthy | container `healthy` |
+| Mark bootstrapped | L5 | `POST rapp-mgmt/instances/{id}/bootstrap-complete`, sent by the script as the operator or platform, directly inside the compose network | `RUNNING` |
 | Terminate | R1 | `POST rapp-mgmt/instances/{id}/terminate` | `UNDEPLOYED`, package usage closed |
 | Stop workload | R2 | `docker compose rm -f -s tx-muting-rapp` | container gone |
 | Deprime, delete, retire | R3 | `POST .../deprime`, `DELETE rapp-mgmt/instances/{id}`, `POST .../deprecate`, `DELETE onboarding/packages/{id}` | package `DELETING` |
@@ -630,7 +643,7 @@ Rebuild the committed package after any change to the packaged files, and bump `
 
 ## 10.3 Deploy
 
-Steps 1 and L2 to L5 of the guided session: the platform (including Onboarding, rApp Management, NFO and FOCOM) starts first, then the package is onboarded, primed, deployed as an instance and bootstrapped, and the rApp container is started. Both sample services are hardened like the rest of the stack (no capabilities, read-only filesystem, `/tmp` tmpfs) and answer `GET /ready`.
+Steps 1 and L2 to L5 of the guided session: the platform (including Onboarding, rApp Management, NFO and FOCOM) starts first, then the package is onboarded, primed and deployed as an instance, the rApp container is started, and the instance is marked bootstrapped (by the operator or platform, here the script, §10.0). Both sample services are hardened like the rest of the stack (no capabilities, read-only filesystem, `/tmp` tmpfs) and answer `GET /ready`.
 
 What each step checks:
 
@@ -639,7 +652,7 @@ What each step checks:
 | L2 | `state` `AVAILABLE`, `nfDeploymentDescriptorId` set, `aiCapabilities` shows execution mode INFERENCE, autonomy AUTONOMOUS, required services DME and RAN-NF-OAM, datasets `DL_PRB_UTILIZATION` and `RRC_CONNECTED_UE` |
 | L3 | `PRIMED` |
 | L4 | an `instanceId` and `oauthClientId`, instance `DEPLOYING` |
-| L5 | instance `RUNNING` with `autonomyMode` `AUTONOMOUS`; the rApp container `healthy` |
+| L5 | the container `healthy`; `bootstrap-complete` accepted; instance `RUNNING` with `autonomyMode` `AUTONOMOUS` |
 
 Onboarding never rejects synchronously (it answers 202); the outcome is only in `onboarding-status`. A package whose bytes are already onboarded ends `FAILED` (same integrity hash): retire the first one (§10.6) before onboarding the same CSAR again. Every `start.sh` session retires its package at the end (R3) and removes the whole stack on exit, so this only matters after an interrupted `--keep` session.
 
@@ -691,7 +704,7 @@ After the package is `DELETING`, the same CSAR can be onboarded again.
 | `cannot reach http://tx-muting-rapp:8000` in a G step | The rApp container is not running (step L5 starts it, R2 removes it) | Run L5 |
 | Automatic or manual pass 502 / `evaluation.error` event | DME or RAN NF OAM unreachable, or R1 Termination refused the call (401 token, 403 role); the message names the call and the status | Check `docker compose ps`, the named service's logs, and that `sme` and `r1-termination` are healthy |
 | `VERIFY_FAILED` in a decision | The network side acknowledged but did not apply (step G7 does this on purpose) | The rApp retries once, then rolls a failed mute back to `MUTING_OFF`; the record shows `attempts` and `rollback` |
-| Instance stays `DEPLOYING` | `bootstrap-complete` was never sent | Run L5 |
+| Instance stays `DEPLOYING` | Nobody has sent `bootstrap-complete` (the rApp cannot: R1 refuses it) | Re-run step L5, or press "Mark bootstrapped" in the Operator GUI |
 | `start.sh` says port 8080 is in use, or a stack exists | Another process or an earlier stack | Free the port; for an earlier stack run `./start.sh --delete` (or `--reset` to delete it and run the demo) |
 
 ---
@@ -699,7 +712,7 @@ After the package is `DELETING`, the same CSAR can be onboarded again.
 # 11. Limits
 
 - State is in memory in both services, not in the shared Postgres: a restart forgets the target, the decision log, the event log and the simulator's configuration, and each service must stay at one replica and one worker. Every change is visible while it lasts (§6.5, §7.4). The other samples keep state in tables.
-- The rApp uses `R1Client` directly, not `smo_sdk`. It does not register with rApp Management on its own: the instance in §10 is a platform record, and the compose service is what actually runs. Its SME identity is per process.
+- The rApp uses `R1Client` directly, not `smo_sdk`. It does not report its own bootstrap (R1 does not allow an rApp to, §10.0), and is not otherwise managed by rApp Management: the instance in §10 is a platform record, and the compose service is what actually runs. Its SME identity is per process.
 - No ML model, so no MLMR, AIMgF or MLLF; no autonomy dispatch: writes go straight through DME `/actions`.
 - The decision ignores alarms, radio synchronisation and sample age or quality by design (§4). Missing data is no decision.
 - The simulator keeps any attribute, validates nothing, and does not model radio behaviour: a muted cell does not change the counters it reports. It can still raise alarms, which no part of the rApp reads.

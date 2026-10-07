@@ -194,7 +194,7 @@ demo() { local step="$1"; shift; in_rt env "$@" python3 "$SCRATCH/gnb_demo.py" "
 demo_logged() { demo "$@" | tee "$WORK/last.out"; return "${PIPESTATUS[0]}"; }
 gnb_cli() { compose exec -T "$GNB" python -m app.gnb_cli "$@" </dev/null; }
 
-rapp_up() {   # NFO has no container runtime, so the host starts the workload once the instance is RUNNING
+rapp_up() {   # NFO has no container runtime, so the host starts the workload, as a deployment manager would
   compose up -d --build "$RAPP" >/dev/null 2>&1 || return 1
   wait_healthy "$RAPP"
 }
@@ -218,8 +218,11 @@ print('    mute when PRB < %s %% and UEs < %s; restore when PRB >= %s %% or UEs 
 }
 
 # ================================================================ the guided session
+# The whole session is one function: bash reads the entire function before it runs anything, so editing or replacing
+# this file (git pull, an editor save) while it runs cannot corrupt the part that has not executed yet.
+main() {
 title "TX-muting rApp: guided end-to-end demo"
-explain "You will deploy an rApp from its CSAR package through the SMO's lifecycle services, then watch it run a closed loop on a simulated gNB, then retire it. Every step is explained first and you decide when it runs. Events from both the rApp and the gNB are explained live as they happen, in colour: cyan for the rApp, magenta for the gNB."
+explain "You will deploy an rApp from its CSAR package through the SMO's lifecycle services, then watch it run a closed loop on a simulated gNB, then retire it. Every step is explained first and you decide when it runs. Where a step is normally done by someone else (an operator or the deployment manager), the script says so and plays that role, so you always know who triggers what. Events from both the rApp and the gNB are explained live as they happen, in colour: cyan for the rApp, magenta for the gNB."
 cat <<EOF
 
       +-------+   PM, alarms   +-------------+   PM records   +-----+
@@ -325,22 +328,32 @@ if ask; then
 fi
 
 title "L4. Create the instance (rApp Management -> NFO)"
-explain "CreateInstance asks rApp Management to deploy the package. It checks the package, asks NFO to instantiate a deployment (placement comes from FOCOM's inventory), and records the instance as DEPLOYING with its own OAuth client id. This demo asks for autonomy mode AUTONOMOUS: the rApp writes to the network without a human approving each change."
+explain "CreateInstance asks rApp Management to deploy the package. It checks the package, asks NFO to instantiate a deployment (placement comes from FOCOM's inventory), and records the instance as DEPLOYING with its own OAuth client id. Autonomy mode is a setting on the instance that says how freely the rApp may change the network: SHADOW (only records what it would do), ASSIST (proposes, a human approves) or AUTONOMOUS (changes it by itself). This demo declares AUTONOMOUS, which is what this rApp does: it writes straight through DME without any approval step. Note that the rApp itself does not read or enforce the mode (the other sample rApps do, through an autonomy-dispatch service); the platform just records it on the instance."
 if ask; then
   run_line "POST rapp-mgmt/instances {packageId, autonomyMode: AUTONOMOUS}"
   attempt lcm deploy
-  notice "an instanceId and the oauthClientId, and state DEPLOYING. NFO in this build has no container runtime (no Helm, no 'docker run'), so no container exists yet. That is why the next step starts it."
+  notice "an instanceId and the oauthClientId, and state DEPLOYING. NFO in this build has no container runtime (no Helm, no 'docker run'), so no container exists yet, and the instance stays DEPLOYING until someone marks it bootstrapped. The next step starts the container and does that, and explains who normally does."
 fi
 
-title "L5. Complete the bootstrap and start the rApp container"
-explain "In a real deployment the rApp container calls rApp Management's bootstrap-complete when it is up, and the instance becomes RUNNING. Here the script sends that call, and then starts the rApp container itself with docker compose, standing in for the deployment manager. The rApp's first call through R1 Termination makes it register at SME as an API invoker (an rApp: no enrollment secret) and fetch a client-credentials token; every call after that carries the token."
+title "L5. Start the rApp container, then mark the instance bootstrapped"
+explain "NFO has no container runtime, so this script starts the rApp container with docker compose, standing in for the deployment manager, and waits until it reports healthy. Then the instance still says DEPLOYING: somebody has to tell rApp Management that the workload is up, with POST /instances/{id}/bootstrap-complete, and the instance becomes RUNNING."
+say ""
+say "  ${B}Who sends bootstrap-complete${N}"
+say "    - ${B}In this demo:${N} this script, playing the operator or the platform. It calls rApp Management directly from inside the compose"
+say "      network, the way DEMO_RUNBOOK.md does, once the container is healthy."
+say "    - ${B}In a real deployment:${N} an operator (the Operator GUI's \"Mark bootstrapped\" button, or the API with an operator token) or the"
+say "      platform's deployment manager once it sees the workload up. ${B}Not the rApp${N}: R1 Termination refuses an rApp-role caller any change on"
+say "      rApp Management (403 ROLE_NOT_PERMITTED, by design), because the handler cannot tell which instance the caller is."
+say "    - ${B}The O-RAN specs${N} (R1GAP, R1AP, the Non-RT RIC architecture) do not define this step. They define the rApp's own registration,"
+say "      which this SMO does through SME and which the rApp is allowed to do itself. Marking an instance RUNNING is this SMO's lifecycle."
 if ask; then
-  run_line "POST rapp-mgmt/instances/{id}/bootstrap-complete"
-  attempt lcm bootstrap
   run_line "docker compose up -d --build $RAPP"
   attempt rapp_up || exit 1
   compose ps --format 'table {{.Service}}\t{{.Status}}' "$RAPP" "$GNB" 2>/dev/null | sed 's/^/    /'
-  notice "the instance is RUNNING and the rApp container is healthy. The rApp is idle: it has no target yet and decides nothing."
+  say "  the workload is healthy; this script now acts as the operator and marks the instance bootstrapped:"
+  run_line "POST http://rapp-mgmt:8000/instances/{id}/bootstrap-complete   (direct, from inside the compose network)"
+  attempt lcm bootstrap
+  notice "the instance goes from DEPLOYING to RUNNING. Nothing in the rApp made that happen: its container is up but idle, with no target yet, and decides nothing until step G2. Through the GUI the same transition is the 'Mark bootstrapped' button."
 fi
 
 # ---------------------------------------------------------------- the closed loop
@@ -448,3 +461,7 @@ title "Done"
 explain "The demo is finished. Pressing Enter removes everything this script created: every container, network and volume of the stack, the images it built, the generated secrets, and its temporary files."
 pause
 exit 0
+}
+
+main "$@"
+exit $?

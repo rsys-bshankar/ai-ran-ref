@@ -64,7 +64,7 @@ def deploy(state):
 
 
 def bootstrap(state):
-    """Complete bootstrap, as the deployed container's callback does: DEPLOYING -> RUNNING."""
+    """Mark the instance bootstrapped as the operator or platform does (not the rApp): DEPLOYING -> RUNNING."""
     show("instance", call("post", f"{RAPP_MGMT}/instances/{need(state, 'instanceId', 'deploy')}/bootstrap-complete"))
 
 

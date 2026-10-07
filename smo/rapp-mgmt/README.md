@@ -7,7 +7,7 @@
 | Standards basis | O-RAN rApp lifecycle management (O-RAN-SC rApp Manager) + internal autonomy mode / region scope |
 | R1 route / port | `/rapp-mgmt` via R1 Termination (container `:8000`) |
 | Depends on (over R1) | Onboarding (`onboarding-status`, `usage/start`, `usage/stop`); NFO (`POST /nfo/deployments`, `DELETE /nfo/deployments/{id}`); SME (provider and service-API registration and deregistration); DME (`DELETE /dme/production-capabilities`) |
-| Called by | Operators and GUI BFF; the rApp container itself (`bootstrap-complete`, `config`, `performance`, `fault`); Intent Service (reads an instance's `autonomyMode` and `regionScope`); SA SMOS (`rollback`, `versions`); the reference rApps (read their own instance) |
+| Called by | Operators and GUI BFF (including `bootstrap-complete`, which the rApp container does not call: R1 refuses an rApp-role caller any change on `/rapp-mgmt`, see call flow 01); the rApp's own `config`, `performance` and `fault` reports are R1 services in the Non-RT RIC architecture but are refused to an rApp token by the same policy today; Intent Service (reads an instance's `autonomyMode` and `regionScope`); SA SMOS (`rollback`, `versions`); the reference rApps (read their own instance) |
 | Database tables | `rapp_instance` (versioned), `rapp_instance_version`, `rapp_fault_report`, `rapp_performance_report` |
 | Idempotency | `POST /instances` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
 | Unit tests | 92 passed (`tests/`, SQLite, standalone) |
@@ -21,7 +21,7 @@
 rApp Management owns the life of an rApp instance after its package has been onboarded:
 
 1. **Create.** Check the package is deployable, mint the instance's identity, ask NFO to place the workload, open a package usage registration.
-2. **Run.** Track `DEPLOYING → RUNNING` when the container reports `bootstrap-complete`; accept configuration, performance and fault reports; register the package's declared SME providers and services for the instance.
+2. **Run.** Track `DEPLOYING → RUNNING` when an operator or the platform's deployment manager reports `bootstrap-complete` (not the rApp); accept configuration, performance and fault reports; register the package's declared SME providers and services for the instance.
 3. **Upgrade and roll back.** Replace an instance with one from another package, with automatic rollback on failure or timeout; keep a version history so a rollback can return to any earlier version.
 4. **Retire.** Terminate (deregister from DME and SME, revoke the credential, release the workload and the usage registration), then delete the row as a separate step.
 5. **Autonomy.** Hold the instance's `autonomyMode` and `regionScope`, which decide how its inference outcomes are enforced (see 1.5).
@@ -45,7 +45,7 @@ Not standardised, this build's own: `autonomyMode` and `regionScope`, `RAppInsta
 
 ```
  operator / GUI BFF ──create, upgrade, rollback, terminate──▶ rApp Management ──▶ Onboarding   (status, usage start/stop)
- rApp container ─────bootstrap-complete, config, fault──────▶                 ──▶ NFO          (deployments)
+ operator / platform ─bootstrap-complete, recover───────────▶                 ──▶ NFO          (deployments)
  SA SMOS ─────────────rollback, versions────────────────────▶                 ──▶ SME          (register / deregister)
  Intent Service ──────GET instance (autonomyMode, regionScope)▶                ──▶ DME          (deregister producer)
 ```
@@ -76,7 +76,7 @@ Cross-module references (`package_id`, `package_usage_registration_id`, `workloa
 | `SHADOW` is the default autonomy mode. | The safest mode: nothing is ever enforced. |
 | `autonomyMode` and `regionScope` are fixed at create (and inherited by upgrades); there is no route to change them. | A per-instance property chosen at onboarding, not per inference call. |
 | A critical fault fires `CRASH`; a non-critical fault is only recorded. | Only a critical fault takes an instance out of `RUNNING`. |
-| No authorization beyond R1's token check; the GUI BFF limits create, config, upgrade, rollback, recover and bootstrap-complete to operators, terminate, delete, performance and fault to admins. | The rApp itself calls some of these through R1. |
+| No authorization beyond R1's token check; the GUI BFF limits create, config, upgrade, rollback, recover and bootstrap-complete to operators, terminate, delete, performance and fault to admins. | An rApp-role caller is refused any change on this module at R1 (403 `ROLE_NOT_PERMITTED`, PR-SEC-14), `bootstrap-complete` included: the handler checks only that the instance is `DEPLOYING` and cannot tell which instance the caller is, so it is an operator or platform step. |
 
 **Autonomy modes.** An inference outcome is handed to Intent Service's `POST /intent-service/autonomy-dispatches`, which reads the instance from here and acts on its mode (behaviour is Intent Service's; summarised because the mode is set here):
 
@@ -168,7 +168,7 @@ Upgrade choreography (`upgrade.py`):
 | POST | `/instances` (202) | `{packageId, config={}, autonomyMode="SHADOW", regionScope?}` → `{instanceId, oauthClientId}` | 404 `PACKAGE_NOT_FOUND`; 409 `MODEL_NOT_CERTIFIED` (package not `AVAILABLE` / `PRIMED`, or no descriptor); 422 (invalid `autonomyMode`) |
 | GET | `/instances?state=` | Paged `{instanceId, packageId, state, autonomyMode}`; applies the lazy timeout to every `UPGRADING` instance first | |
 | GET | `/instances/{id}` | Detail: `workloadRef, configuration, pendingUpgradeInstanceId, smeServiceIds, autonomyMode, regionScope, lastTeardown` | 404 `RAPP_INSTANCE_NOT_FOUND` (also for a replacement already rolled back) |
-| POST | `/instances/{id}/bootstrap-complete` | `DEPLOYING → RUNNING`; registers SME declarations | 409 |
+| POST | `/instances/{id}/bootstrap-complete` | `DEPLOYING → RUNNING`; registers SME declarations. Operator or platform step, not the rApp's: R1 refuses an rApp-role caller | 409 |
 | POST | `/instances/{id}/recover` | `FAULTED → DEPLOYING` | 409 |
 | GET | `/instances/{id}/safeguards` | what holds this instance in check at RAN NF OAM, in one read, for the GUI: `{instanceId, invokerId, killed, kill?, limits?}` (limits include `configJobsLastHour`); a terminated instance has `invokerId` null; 503 when RAN NF OAM cannot answer, never reported as "not stopped" | 404; 503 |
 | PUT / DELETE | `/instances/{id}/kill` | `{requestedBy, reason?}`: throws / lifts the per-rApp kill switch at RAN NF OAM for this instance's `oauthClientId` (`AI-10.4`); the instance keeps running; 503 if RAN NF OAM cannot be told, 404 once terminated. Internal-only at R1 | 404; 503 |
