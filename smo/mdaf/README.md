@@ -103,6 +103,7 @@ ownership summary.
 | `app/mda.py` | TS 28.104 router: `/mda-functions`, `/mda-requests`, `/mda-reports`; request matching, per-IE filters and thresholds, delivery by `reportingMethod`, file download, drift forwarding. |
 | `app/ts28104.py` | Pydantic request models with spec names and closed enums (`extra="forbid"`), the 25-value `MDA_TYPES`, typed outputs and `OUTPUT_TYPE_BY_MDA_TYPE`, `MDAOutputs` validator, `PREDICTION_MDA_TYPES`. |
 | `app/models.py` | SQLAlchemy tables. |
+| `app/tasks.py` | The worker's periodic work: `purge-reports` (retention, `DB-3.5`). |
 
 ### 2.2 Data model
 
@@ -207,7 +208,9 @@ Each delivery writes an `mda_report_delivery` row, surfaced as `deliveredToReque
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | Base URL of outbound R1 calls (`smo_shared.r1_client`) |
 | `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset (the module's shared identity from the `module_identity` table, registered at SME on first use) | OAuth2 client identity for outbound R1 calls |
 
-No MDAF-specific variables.
+| `SMO_RETENTION_MDAF_REPORTS_DAYS` | `0` | Read by the worker (`mdaf-worker`): reports generated more than this many days ago are deleted, hourly; `0` keeps them for ever (`../docs/RETENTION.md`) |
+
+The worker (`python -m smo_shared.worker`, `app/tasks.py`) has one task, `purge-reports`.
 
 ### 2.7 Error codes
 

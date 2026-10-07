@@ -149,6 +149,8 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | Variable | Default | Secret | Read in | What it does |
 |---|---|---|---|---|
 | `GUI_ADMIN_PASSWORD` | *not shown* | yes | `docker-compose.yml`, `gui-bff/app/config.py` | Password of the GUI's `admin` user, set at first start. Empty: a random one is generated and written to `GUI_INITIAL_PASSWORD_FILE`, never logged. Changing it later does not change an existing user: use the user admin page. |
+| `GUI_AUDIT_EXPORT_DIR` | `"" (empty)` |  | `gui-bff/app/retention.py` | A directory: `python -m app.retention` first writes the audit rows it is about to delete there as JSON lines, and deletes only the rows written. Empty (the default): delete without exporting. See docs/RETENTION.md. |
+| `GUI_AUDIT_RETENTION_DAYS` | `0` |  | `gui-bff/app/retention.py` | Days to keep a row of the GUI BFF's audit log (`gui_audit_log`) when `python -m app.retention` runs (from cron or a CronJob). 0 (the default) keeps them all. See docs/RETENTION.md. |
 | `GUI_COOKIE_SECURE` | `true` |  | `docker-compose.yml`, `gui-bff/app/config.py` | `true` (default): the session cookie is marked Secure, so a browser sends it only over HTTPS (http://localhost counts). Set `false` only for plain-HTTP access by a non-localhost name, such as a lab VM by IP. |
 | `GUI_DATABASE_URL` | `sqlite:///./gui-bff.db` |  | `gui-bff/app/config.py` | SQLAlchemy URL of the GUI backend's own database (users, audit trail, the generated JWT key). SQLite file by default; with several GUI backend replicas point them all at one shared database. |
 | `GUI_HEALTH_TIMEOUT_SECONDS` | `3` |  | `gui-bff/app/config.py` | Seconds the GUI backend waits for each module's `/health`, `/ready` and `/version` before showing it as unreachable on the dashboard. Raise it on a slow network. |
@@ -174,6 +176,12 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | `GUI_UPSTREAM_TIMEOUT_SECONDS` | `30` |  | `gui-bff/app/config.py` | Seconds the GUI backend waits for an answer from R1 Termination when it proxies a page's request (default 30). A longer call is shown as a gateway timeout. |
 | `GUI_VIEWER_PASSWORD` | *not shown* | yes | `docker-compose.yml`, `gui-bff/app/config.py` | Password of the demo `viewer` (read-only) user created at first start. Empty: no such user is created. Does not change an existing user. |
 | `R1_URL` | `http://r1-termination:8000` |  | `gui-bff/app/config.py` | Address the GUI backend reaches R1 Termination at, for health probes, `/bootstrap` and every proxied page request (default `http://r1-termination:8000`). |
+
+### `mdaf`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `SMO_RETENTION_MDAF_REPORTS_DAYS` | `0` |  | `docker-compose.yml`, `mdaf/app/tasks.py` | Days to keep an MDAF report before the MDAF worker deletes it (`purge-reports`, hourly). 0 (the default) keeps them all. See docs/RETENTION.md. |
 
 ### `mock-o1-adaptor`
 
@@ -238,6 +246,8 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | `RAN_NF_OAM_NETCONF_RETRY_DELAYS` | `0,5,10,20` |  | `ran-nf-oam/app/main.py` | Comma-separated seconds RAN NF OAM waits before each NETCONF attempt (default `0,5,10,20`: four tries). The number of values is the number of attempts. |
 | `SAFEGUARD_EVENT_MIN_INTERVAL_SECONDS` | `60` |  | `ran-nf-oam/app/main.py` | Seconds between two safeguard-refusal notifications for the same rApp and reason at RAN NF OAM (default 60), so a looping rApp does not flood subscribers. `0` notifies every refusal. |
 | `SAFEGUARD_REFUSAL_RETENTION_DAYS` | `0` |  | `docker-compose.yml`, `ran-nf-oam/app/main.py` | Days a recorded safeguard refusal is kept before the purge route may delete it. `0` (default) keeps them for ever. Compose passes it through from `.env`. |
+| `SMO_RETENTION_ALARMS_DAYS` | `0` |  | `docker-compose.yml`, `ran-nf-oam/app/tasks.py` | Days to keep a cleared alarm before the RAN NF OAM worker deletes it (`purge-cleared-alarms`, hourly). An alarm still raised is never deleted. 0 (the default) keeps them all. See docs/RETENTION.md. |
+| `SMO_RETENTION_PM_FILES_DAYS` | `0` |  | `docker-compose.yml`, `ran-nf-oam/app/tasks.py` | Days to keep a PM file (its content is the row; there is no file on disk) before the RAN NF OAM worker deletes it (`purge-pm-files`, hourly). 0 (the default) keeps them all. KPIs read PM files, so keep at least the longest KPI look-back. See docs/RETENTION.md. |
 
 ### `sa-smos`
 

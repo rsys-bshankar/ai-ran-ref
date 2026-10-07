@@ -152,6 +152,11 @@ services:
       SMO_MTLS: "on"
     volumes:
       - ./certs/mtls/ran-nf-oam-worker:/run/mtls:ro
+  mdaf-worker:             # no port: a client of the others, with a certificate
+    environment:
+      SMO_MTLS: "on"
+    volumes:
+      - ./certs/mtls/mdaf-worker:/run/mtls:ro
   gui-bff:                 # a client of R1 with a certificate; it serves the GUI's nginx plain HTTP (SMO_MTLS_SERVE=off)
     environment:
       SMO_MTLS: "on"
