@@ -51,7 +51,7 @@ DEFAULT_DIR = SMO_ROOT / "certs" / "mtls"
 # outside the SMO, plain HTTP), gui-bff and gui (the browser's side; the BFF is a client only, and has a certificate), the databases, the edge.
 SERVERS = ("r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam", "nfo", "focom", "mlmr", "aimgf", "mllf", "ran-analytics", "mdaf",
            "intent-service", "so-smos", "sa-smos", "energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp", "traffic-steering-rapp")
-CLIENT_ONLY = ("ran-nf-oam-worker", "gui-bff", "runbook")   # no server port (a worker), a plain server (the BFF), or a test driver
+CLIENT_ONLY = ("ran-nf-oam-worker", "mdaf-worker", "gui-bff", "runbook")   # no server port (a worker), a plain server (the BFF), or a test driver
 SERVICES = SERVERS + CLIENT_ONLY
 
 CA_DAYS = 3650

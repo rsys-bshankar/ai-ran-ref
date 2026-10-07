@@ -93,9 +93,10 @@ Idempotency: none needed beyond `seed_users` (first boot only, never touches a n
 | `app/security.py` | `hash_password`/`verify_password` (scrypt), `issue_jwt`/`decode_jwt` (HS256) |
 | `app/smo_client.py` | `R1Gateway`: token discovery, one-time invoker onboarding, cached `client_credentials` token, `request()` with one refresh on 401, `r1_health()` |
 | `app/db.py` | `GuiUser`, `AuditEntry` (with append-only ORM guard), `SmoCredential`, `GuiSetting`, `LoginFailure`, `RevokedSession`, `OidcLogin`, `Database` (`create_all` on start) |
+| `app/retention.py` | `python -m app.retention`: delete audit rows older than `GUI_AUDIT_RETENTION_DAYS`, exporting them first when `GUI_AUDIT_EXPORT_DIR` is set (`DB-3.6`) |
 | `app/config.py` | `Settings` from environment; generates `jwt_secret` if unset |
 | `scripts/export_permissions.py` | Writes `../gui/src/auth/permissions.fixture.json` from `RULES` |
-| `tests/test_main.py`, `tests/test_shared_state.py`, `tests/test_oidc.py`, `tests/test_rbac.py` | See 3.2 |
+| `tests/test_main.py`, `tests/test_shared_state.py`, `tests/test_oidc.py`, `tests/test_rbac.py`, `tests/test_retention.py` | See 3.2 |
 | `tests/keycloak/smo-realm.json` | The Keycloak realm the browser check signs in against (CI only): client `smo-gui`, groups `smo-admins`, `smo-ops`, `smo-viewers`, four throwaway users |
 
 ### 2.2 Data model
@@ -214,6 +215,8 @@ All read in `app/config.py` at import time.
 | `GUI_OPERATOR_PASSWORD`, `GUI_VIEWER_PASSWORD` | unset: user not created | Seeds `operator` / `viewer` |
 | `GUI_HEALTH_TIMEOUT_SECONDS` | `3` | Per-module health probe |
 | `GUI_UPSTREAM_TIMEOUT_SECONDS` | `30` | Proxied call |
+| `GUI_AUDIT_RETENTION_DAYS` | `0` | Read by `python -m app.retention` (run it from cron or a CronJob): audit rows older than this many days are deleted; `0` keeps them (`../docs/RETENTION.md`) |
+| `GUI_AUDIT_EXPORT_DIR` | unset | `python -m app.retention` first writes the rows it will delete there as JSON lines and deletes only those written |
 
 Constants in code: `MIN_PASSWORD_LENGTH` 8, `MAX_LOGIN_FAILURES` 5, `LOCKOUT_SECONDS` 300, cookie names `smo_session` / `smo_csrf`, header `X-CSRF-Token`.
 
