@@ -27,6 +27,7 @@ import logging
 import os
 import sys
 import uuid
+from typing import Any
 
 from sqlalchemy import JSON, BigInteger, DateTime, Integer, String, Uuid, select
 from sqlalchemy.exc import IntegrityError
@@ -37,6 +38,12 @@ from .db import Base
 log = logging.getLogger(__name__)
 
 GENESIS = "0" * 64
+_STREAM: dict[str, Any] = {"yield_per": 500}                                  # rows fetched at a time by verify and export: memory, not behaviour
+_JSON: dict[str, Any] = {"sort_keys": True, "ensure_ascii": False}           # one row per line: the same bytes for the same row, readable text kept as text
+_FORMATS = ("jsonl", "syslog")
+_PROG, _DESCRIPTION = "python -m smo_shared.audit", (__doc__ or "").split("\n")[0]
+_VERIFY_HELP, _EXPORT_HELP, _SINCE_HELP = ("check the hash chain; exit 1 when it is broken", "write the rows as JSON lines (or syslog) and the head",
+                                           "only rows after this seq")
 FIELDS = ("seq", "audit_id", "occurred_at", "actor", "actor_role", "action", "target", "result", "correlation_id", "detail", "prev_hash")
 
 
@@ -106,7 +113,7 @@ def record(db: Session, *, actor: str, action: str, target: str, result: str, ro
 def verify(db: Session) -> dict | None:
     """None when the chain is intact; else the first problem: {"seq": the row it was found at, "reason": ...}."""
     expected_seq, previous = 1, GENESIS
-    for entry in db.execute(select(AuditEntry).order_by(AuditEntry.seq).execution_options(yield_per=500)).scalars():
+    for entry in db.execute(select(AuditEntry).order_by(AuditEntry.seq).execution_options(**_STREAM)).scalars():
         if entry.seq != expected_seq:
             return {"seq": expected_seq, "reason": f"row {expected_seq} is missing (next row is {entry.seq})"}
         if entry.prev_hash != previous:
@@ -151,15 +158,17 @@ def write_audit(**fields) -> bool:
 
 
 def as_dict(entry: AuditEntry) -> dict:
-    return {**{f: (str(getattr(entry, f)) if f == "audit_id" else getattr(entry, f)) for f in FIELDS if f != "occurred_at"},
+    return {**{f: (str(getattr(entry, f)) if f == "audit_id" else getattr(entry, f)) for f in FIELDS},
             "occurred_at": _iso(entry.occurred_at), "hash": entry.hash}
 
 
-def export(db: Session, since: int = 0, fmt: str = "jsonl", out=None, hostname: str = "smo") -> None:
+def export(db: Session, since: int = 0, fmt: str = _FORMATS[0], out=None, hostname: str = "smo") -> None:
     """The rows after `since`, one per line, then a `head` line (the anchor to keep elsewhere). `syslog` is RFC 5424 with the JSON as the message."""
+    if fmt not in _FORMATS:
+        raise ValueError(f"unknown audit export format {fmt!r}: expected one of {', '.join(_FORMATS)}")
     out = out or sys.stdout
-    for entry in db.execute(select(AuditEntry).where(AuditEntry.seq > since).order_by(AuditEntry.seq).execution_options(yield_per=500)).scalars():
-        line = json.dumps(as_dict(entry), sort_keys=True, ensure_ascii=False)
+    for entry in db.execute(select(AuditEntry).where(AuditEntry.seq > since).order_by(AuditEntry.seq).execution_options(**_STREAM)).scalars():
+        line = json.dumps(as_dict(entry), **_JSON)
         if fmt == "syslog":              # facility 13 (log audit), severity 6 (informational)
             line = f"<110>1 {_iso(entry.occurred_at)} {hostname} smo-audit - {entry.seq} - {line}"
         out.write(line + "\n")
@@ -168,12 +177,12 @@ def export(db: Session, since: int = 0, fmt: str = "jsonl", out=None, hostname: 
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m smo_shared.audit", description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(prog=_PROG, description=_DESCRIPTION)
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("verify", help="check the hash chain; exit 1 when it is broken")
-    exp = sub.add_parser("export", help="write the rows as JSON lines (or syslog) and the head")
-    exp.add_argument("--since", type=int, default=0, help="only rows after this seq")
-    exp.add_argument("--format", choices=("jsonl", "syslog"), default="jsonl")
+    sub.add_parser("verify", help=_VERIFY_HELP)
+    exp = sub.add_parser("export", help=_EXPORT_HELP)
+    exp.add_argument("--since", type=int, default=0, help=_SINCE_HELP)
+    exp.add_argument("--format", choices=_FORMATS, default=_FORMATS[0])
     args = parser.parse_args(argv)
     from .db import SessionLocal
     with SessionLocal() as db:
