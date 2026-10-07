@@ -2,11 +2,15 @@
 """Load runner for the SMO stack (PR-V-8): a weighted mix of the main routes through the R1 gateway, at a fixed concurrency for a fixed time.
 
     scripts/load_run.py [--gateway http://r1-termination:8000] [--sme http://sme:8000] [--duration 30] [--concurrency 20] [--warmup 5] [--out load-results]
+                        [--rate 20] [--stop-file /tmp/stop]
 
 Runs on the compose network (the workflow runs it in a one-shot container, so the load does not share a container's CPU with the stack): it registers one invoker with the
 enrollment secret (`/run/secrets/enrollment_secret`, an SMO module), takes a token, and each worker then picks a route by weight and calls it as fast as the answer comes
 back (a closed loop: the concurrency is the number of calls in flight). Per route it reports requests, requests/s, p50 / p95 / p99 / max latency in ms and the error count
 (status 5xx, or not the one expected); overall too. Writes `<out>/load-results.json` and `<out>/load-results.md` (a table for the job summary and docs/PERFORMANCE.md).
+
+`--rate N` paces the callers to about N calls a second in all (default 0: as fast as the answers come back); `--stop-file PATH` ends the run, after the call in flight, as soon as that file exists (the
+upgrade lane starts the load before `helm upgrade` and stops it afterwards: PR-V-10). The result also says WHEN the errors happened: the calls and errors in each 10 s since the end of the warm-up.
 
 Exit status: 1 if any route answered a 5xx or the unexpected status more than `--max-error-rate` of the time (default 0), else 0. The numbers are the stack's on that runner:
 GitHub's runners vary, so they are compared run against run on the same kind of runner, not against an absolute.
@@ -56,7 +60,7 @@ def percentile(values: list[float], q: float) -> float:
 
 
 async def register(client: httpx.AsyncClient, sme: str) -> dict:
-    secret = Path("/run/secrets/enrollment_secret").read_text(encoding="utf-8").strip()
+    secret = Path(os.environ.get("SMO_ENROLLMENT_SECRET_FILE", "/run/secrets/enrollment_secret")).read_text(encoding="utf-8").strip()
     resp = await client.post(f"{sme}/invoker-registrations", json={"apiInvokerPublicKey": "load"}, headers={"X-SMO-Enrollment": secret})
     resp.raise_for_status()
     return resp.json()
@@ -79,8 +83,17 @@ async def one_call(client: httpx.AsyncClient, gateway: str, sme: str, reg: dict,
     return (await client.get(f"{gateway}{path}", headers=headers)).status_code
 
 
-async def worker(client, gateway, sme, reg, access, deadline: float, record_from: float, series: dict[str, Series], weights, rng: random.Random):
-    while time.monotonic() < deadline:
+BUCKET_SECONDS = 10
+
+
+def stopped(stop_file: str | None) -> bool:
+    return bool(stop_file) and os.path.exists(stop_file)
+
+
+async def worker(client, gateway, sme, reg, access, deadline: float, record_from: float, series: dict[str, Series], weights, rng: random.Random,
+                 timeline: dict[int, list[int]] | None = None, interval: float = 0.0, stop_file: str | None = None):
+    """Calls routes until the deadline (or the stop file); `interval` is the least time one call takes when the load is paced; `timeline` gets [calls, errors] per BUCKET_SECONDS."""
+    while time.monotonic() < deadline and not stopped(stop_file):
         route = rng.choices(ROUTES, weights=weights)[0]
         started = time.monotonic()
         try:
@@ -88,13 +101,24 @@ async def worker(client, gateway, sme, reg, access, deadline: float, record_from
         except httpx.HTTPError:
             status = 0
         elapsed = (time.monotonic() - started) * 1000
-        if started < record_from:
-            continue                                          # warm-up: connections, caches, the pool
-        s = series[route[0]]
-        s.latencies_ms.append(elapsed)
-        s.statuses[status] = s.statuses.get(status, 0) + 1
-        if status not in route[4]:
-            s.errors += 1
+        if started >= record_from:                            # before that: warm-up (connections, caches, the pool)
+            s = series[route[0]]
+            s.latencies_ms.append(elapsed)
+            s.statuses[status] = s.statuses.get(status, 0) + 1
+            failed = status not in route[4]
+            if failed:
+                s.errors += 1
+            if timeline is not None:
+                cell = timeline.setdefault(int((started - record_from) // BUCKET_SECONDS), [0, 0])
+                cell[0] += 1
+                cell[1] += failed
+        if interval and elapsed / 1000 < interval:
+            await asyncio.sleep(interval - elapsed / 1000)
+
+
+def timeline_rows(timeline: dict[int, list[int]]) -> list[dict]:
+    return [{"from_s": bucket * BUCKET_SECONDS, "to_s": (bucket + 1) * BUCKET_SECONDS, "calls": calls, "errors": errors}
+            for bucket, (calls, errors) in sorted(timeline.items())]
 
 
 def summarise(series: dict[str, Series], seconds: float) -> dict:
@@ -114,10 +138,15 @@ def summarise(series: dict[str, Series], seconds: float) -> dict:
 
 
 def markdown(result: dict, args) -> str:
-    lines = [f"Load: {args.concurrency} callers in flight for {args.duration} s after a {args.warmup} s warm-up, through the gateway as an SMO module.", "",
+    paced = f", paced to about {args.rate:g} calls a second" if getattr(args, "rate", 0) else ""
+    measured = result.get("seconds", args.duration)
+    lines = [f"Load: {args.concurrency} callers in flight for {measured:g} s after a {args.warmup:g} s warm-up{paced}, through the gateway as an SMO module.", "",
              "| route | requests | req/s | p50 ms | p95 ms | p99 ms | max ms | errors |", "|---|---:|---:|---:|---:|---:|---:|---:|"]
     for row in result["routes"] + [result["total"]]:
         lines.append(f"| {row['route']} | {row['requests']} | {row['rps']} | {row['p50']} | {row['p95']} | {row['p99']} | {row['max']} | {row['errors']} |")
+    bad = [row for row in result.get("timeline", []) if row["errors"]]
+    lines += ["", ("Errors by time since the end of the warm-up: " + "; ".join(f"{b['from_s']}-{b['to_s']} s: {b['errors']} of {b['calls']}" for b in bad)) if bad
+              else "No errors in any 10 s of the run."]
     return "\n".join(lines) + "\n"
 
 
@@ -130,15 +159,21 @@ async def main_async(args) -> int:
         access = token.json()["access_token"]
         series = {route[0]: Series() for route in ROUTES}
         weights = [route[3] for route in ROUTES]
+        timeline: dict[int, list[int]] = {}
+        interval = args.concurrency / args.rate if args.rate else 0.0
         start = time.monotonic()
         deadline = start + args.warmup + args.duration
         rng = random.Random(args.seed)  # noqa: S311 — picks a route for the load, not a secret
-        await asyncio.gather(*[worker(client, args.gateway, args.sme, reg, access, deadline, start + args.warmup, series, weights, random.Random(rng.random()))  # noqa: S311
-                               for _ in range(args.concurrency)])
-    result = summarise(series, args.duration)
+        await asyncio.gather(*[worker(client, args.gateway, args.sme, reg, access, deadline, start + args.warmup, series, weights, random.Random(rng.random()),  # noqa: S311
+                                      timeline, interval, args.stop_file) for _ in range(args.concurrency)])
+        ended = time.monotonic()
+    seconds = max(1.0, min(args.duration, ended - start - args.warmup))     # a run ended by the stop file measured less than --duration
+    result = summarise(series, seconds)
+    result["timeline"] = timeline_rows(timeline)
+    result["seconds"] = round(seconds, 1)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    (out / "load-results.json").write_text(json.dumps({"concurrency": args.concurrency, "duration": args.duration, **result}, indent=1))
+    (out / "load-results.json").write_text(json.dumps({"concurrency": args.concurrency, "duration": seconds, **result}, indent=1))
     table = markdown(result, args)
     (out / "load-results.md").write_text(table)
     print(table)
@@ -159,6 +194,8 @@ def main() -> int:
     ap.add_argument("--timeout", type=float, default=30)
     ap.add_argument("--max-error-rate", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--rate", type=float, default=0.0, help="about this many calls a second in all (0: as fast as the answers come back)")
+    ap.add_argument("--stop-file", default=None, help="end the run when this file exists")
     ap.add_argument("--out", default=os.environ.get("LOAD_OUT", "load-results"))
     return asyncio.run(main_async(ap.parse_args()))
 
