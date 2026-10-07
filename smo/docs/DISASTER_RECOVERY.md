@@ -68,10 +68,8 @@ is the cluster's `spec.backup.barmanObjectStore`, with base backups from a `Sche
 --set postgres.cnpgBackup.enabled=true --set postgres.cnpgBackup.cluster=smo-pg
 ```
 
-The Cluster itself is not made by the chart (the operator and its object store are yours): copy `ci/cnpg-cluster-backup.yaml`. **Not proved
-here**: the CI cluster (`postgres-ha`) has no object store, so neither the archive nor a recovery from it has run in CI; the example is the operator's
-documented configuration at the pinned version (1.25.1), checked for structure by the tests only. Run the recovery in section 6 once before relying
-on it. For a self-managed Postgres, B means `archive_mode = on`, an `archive_command` that copies segments to the bucket (WAL-G or pgBackRest do this
+The Cluster itself is not made by the chart (the operator and its object store are yours): copy `ci/cnpg-cluster-backup.yaml`. **Proved in CI** (job `cnpg-wal-archive` of `.github/workflows/smo-dr.yml`, weekly and on a change to the example): a single-instance cluster made from `ci/cnpg-cluster-backup.yaml` (the example, with the endpoint and credentials of the test) archives WAL and takes a base backup to an S3-compatible store (moto, on the runner); a NEW cluster is then recovered from that store to a chosen minute in the middle of the writes: the rows from before the base backup and from after it are there, the row written after the chosen minute is not. The base backup and recovery times are in the job summary. **Not proved**: the store is moto, not MinIO or AWS S3; the database is a few hundred rows (a recovery at representative size, DB-6.4 and HA-6.3, needs a host that has one); one instance, not three; the operator version is the pinned 1.25.1. Run the recovery in section 6 once on your own store before relying on it. The operator's metrics the three backup alerts use (`SmoBackupLate`, `SmoWalArchiveLate`, `SmoWalArchiveFailing`) are read from a real instance by the same job.
+For a self-managed Postgres, B means `archive_mode = on`, an `archive_command` that copies segments to the bucket (WAL-G or pgBackRest do this
 with the same S3 settings), a periodic `pg_basebackup`, and `restore_command` plus `recovery_target_time` on recovery. That is a standard setup and
 this repository does not ship it.
 
