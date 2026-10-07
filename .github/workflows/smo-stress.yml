@@ -5,6 +5,8 @@ name: SMO stress and failure injection
 #   oversize  a body over the 1 MiB cap -> 413; the gateway keeps answering
 #   saturate  callers in flight ramped 20 -> 200 (rate limiter off) -> only 200, or 429/503 with Retry-After; no hang, no other 5xx
 #   sme       SME stopped -> 503 with Retry-After within the deadline (the token check cannot be answered); started again -> 200 within 90 s
+#   limiter-shared  three gateway replicas (docker-compose.stress-shared.yml): one burst; with each replica's own buckets (the control) several budgets get through, with R1_RATE_STORE=postgres
+#             about one (SEC-8.5 under load, across replicas); the job also counts the requests each replica answered, so a burst that reached one replica cannot pass for either
 #   database  Postgres stopped -> a database-backed route answers with a 5xx within the deadline (no hang); started again -> 200 within 90 s
 # Nightly, on demand, and on a pull request that changes the script or this workflow. Not a required check yet. Still to add: a slow subscriber through a running stack and a full package volume (a slow or dead subscriber is a unit test of the outbox).
 
@@ -18,6 +20,7 @@ on:
       - "smo/scripts/stress_run.py"
       - "smo/scripts/load_run.py"
       - "smo/docker-compose.stress-limiter.yml"
+      - "smo/docker-compose.stress-shared.yml"
 
 permissions:
   contents: read
@@ -105,3 +108,109 @@ jobs:
         if: ${{ always() }}
         working-directory: smo
         run: docker compose -f docker-compose.yml -f docker-compose.load.yml down -v
+
+  # The gateway's shared rate budget under a burst through three replicas (PR-V-9, SEC-8.5): proved before only at the statement level (tests_integration/test_rate_limit_postgres.py).
+  stress-replicas:
+    name: One rate budget across three gateway replicas
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.stress-shared.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Start the stack, three gateway replicas, each with its own buckets
+        working-directory: smo
+        run: |
+          scripts/init_secrets.sh
+          cp .env.example .env
+          docker compose up -d --build
+          for i in $(seq 1 60); do
+            [ "$(docker compose ps -a migrate --format json | jq -rs '.[0] | "\(.State) \(.ExitCode)"')" = "exited 0" ] && break
+            sleep 3
+          done
+          n=$(docker compose ps r1-termination --status running --format json | jq -s 'length')
+          [ "$n" = "3" ] || { echo "::error::r1-termination has $n running containers, not 3"; docker compose ps; exit 1; }
+
+      - name: Install the script's dependencies into a cache directory
+        working-directory: smo
+        run: |
+          mkdir -p stress-out
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/smo -w /smo -e HOME=/tmp -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
+            python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 \
+            pip install --quiet --no-warn-script-location --require-hashes --target /smo/stress-out/site -r requirements/runtime.txt
+
+      - name: The burst, with each replica's own buckets (the control) and then with the shared store
+        working-directory: smo
+        run: |
+          set -o pipefail
+          network=$(docker inspect "$(docker compose ps -q r1-termination | head -1)" --format '{{range $k, $_ := .NetworkSettings.Networks}}{{$k}}{{end}}')
+          stress() {
+            docker run --rm --network "$network" --user "$(id -u):$(id -g)" -v "$PWD":/smo -w /smo \
+              -v "$PWD/secrets/enrollment_secret":/run/secrets/enrollment_secret:ro -e HOME=/tmp -e PYTHONPATH=/smo/stress-out/site:/smo/scripts \
+              python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 python scripts/stress_run.py --token-file /smo/stress-out/token "$@"
+          }
+          wait_healthy() {
+            for i in $(seq 1 60); do
+              [ "$(for c in $(docker compose ps -q r1-termination); do docker inspect -f '{{.State.Health.Status}}' "$c"; done | sort -u)" = "healthy" ] && return 0
+              sleep 3
+            done
+            echo "::error::the gateway replicas did not become healthy"; return 1
+          }
+          # every replica must have answered proxied calls, or the burst did not go through three replicas and proves nothing about the budget
+          spread() {
+            echo "requests answered per replica:"
+            reached=0
+            for c in $(docker compose ps -q r1-termination); do
+              n=$(docker logs "$c" 2>&1 | grep -c '"route": "/{full_path:path}"' || true)
+              echo "  $(docker inspect -f '{{.Name}}' "$c"): $n"
+              [ "$n" -ge 5 ] && reached=$((reached + 1))
+            done
+            [ "$reached" -ge 2 ] || { echo "FAIL: the calls reached $reached replica(s)"; return 1; }
+          }
+          # what the shared store did on each replica: statements that failed and requests decided by the local bucket after a failure (a fail-open is a failure of the
+          # check's premise, not a measurement), and the log lines of a fail-open
+          store_counters() {
+            for c in $(docker compose ps -q r1-termination); do
+              echo "  $(docker inspect -f '{{.Name}}' "$c"):"
+              docker exec "$c" python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/metrics').read().decode())" 2>&1 | grep -E '^smo_rate_store_(errors|fallbacks)_total' | sed 's/^/    /' || true
+              echo "    fail-open log lines: $(docker logs "$c" 2>&1 | grep -c 'rate limiter store unavailable' || true)"
+            done
+          }
+          status=0
+          {
+            echo "### One rate budget across three gateway replicas"; echo; echo '```'
+            wait_healthy
+            echo "control: R1_RATE_STORE=memory"
+            stress limiter-shared --budget per-replica --burst 120 || status=1
+            spread || status=1
+            store_counters
+            echo "shared: R1_RATE_STORE=postgres"
+            R1_RATE_STORE=postgres docker compose up -d --force-recreate r1-termination
+            wait_healthy
+            stress limiter-shared --budget shared --burst 120 || status=1
+            spread || status=1
+            store_counters
+            echo '```'
+            exit $status
+          } 2>&1 | tee stress-out/stress-shared.md | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Container logs on failure
+        if: ${{ failure() }}
+        working-directory: smo
+        run: docker compose logs --no-color --tail 100 r1-termination sme postgres > stress-out/logs-shared.txt || true
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: stress-shared-results
+          path: |
+            smo/stress-out/stress-shared.md
+            smo/stress-out/logs-shared.txt
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Stop the stack
+        if: ${{ always() }}
+        working-directory: smo
+        run: docker compose down -v
