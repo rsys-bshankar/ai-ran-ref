@@ -5,8 +5,10 @@ name: SMO high availability on a three-node cluster
 # Checked: every replicated deployment has its two pods on two different nodes, before and after the drain; the drained node's pods come back elsewhere; the runbook gate
 # (scripts/compose_e2e.py) and the audit chain pass at the end. The node drained is one that holds neither Postgres nor a volume-holding single pod (onboarding, the GUI backend):
 # those are single by design (Recreate, one volume), so their node is a gap, not a failure.
-# Nightly, on demand, and on a pull request that changes this workflow or the chart's HA values. Not a required check yet. Not yet here: a hard node loss (power off), the replay of the
-# whole runbook through the disturbance, and a zone-level failure.
+# A light load (smo/scripts/k8s_load.sh: 4 callers paced to 20 calls a second through the gateway, as an SMO module) runs through the drain and the kills, and is judged at the end
+# (smo/scripts/upgrade_load_verdict.py). A second job installs the chart with the autoscaler on and metrics-server, drives the gateway hard and checks that it gains replicas and still answers.
+# Nightly, on demand, and on a pull request that changes this workflow or the chart's HA values. Not a required check yet. Not yet here: a hard node loss (power off), a network
+# partition between the modules and Postgres (kind's default network plugin does not enforce NetworkPolicy), PgBouncer failover, and a zone-level failure.
 
 on:
   schedule:
@@ -18,6 +20,9 @@ on:
       - "smo/deploy/helm/smo/ci/kind-3node.yaml"
       - "smo/deploy/helm/smo/ci/ha-values.yaml"
       - "smo/scripts/k8s_rolling_probe.py"
+      - "smo/scripts/k8s_load.sh"
+      - "smo/scripts/load_run.py"
+      - "smo/scripts/upgrade_load_verdict.py"
 
 permissions:
   contents: read
@@ -75,6 +80,13 @@ jobs:
           check_spread
           declare -f check_spread > "$RUNNER_TEMP/check_spread.sh"
 
+      - name: Start a light load through the gateway, on the node the drain will not touch (V-12)
+        working-directory: smo
+        run: |
+          # a pod without a controller cannot be drained: it stays on the node that holds Postgres, which the drain below never picks
+          node=$(kubectl -n smo get pod postgres-0 -o jsonpath='{.spec.nodeName}')
+          scripts/k8s_load.sh start local/smo-r1-termination:ci "$node" 20 4
+
       - name: Drain a node, and kill pods, while the services are probed
         working-directory: smo
         run: |
@@ -111,6 +123,14 @@ jobs:
           kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
           kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
 
+      - name: Stop the load and judge it (V-12)
+        if: ${{ !cancelled() }}
+        working-directory: smo
+        run: |
+          scripts/k8s_load.sh stop "$RUNNER_TEMP/load-out"
+          { echo "### Load through the node drain and the pod kills"; echo; cat "$RUNNER_TEMP/load-out/load-results.md"; } >> "$GITHUB_STEP_SUMMARY"
+          python3 scripts/upgrade_load_verdict.py "$RUNNER_TEMP/load-out/load-results.json"
+
       - name: What the cluster says, when it went wrong
         if: failure()
         run: |
@@ -121,3 +141,88 @@ jobs:
           for pod in $(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed' | cut -d' ' -f1); do
             echo "::group::$pod"; kubectl -n smo describe pod "$pod" | tail -30; echo "::endgroup::"
           done
+
+  # The autoscaler (autoscaling.enabled): metrics-server is installed (pinned and checked, `--kubelet-insecure-tls` because kind's kubelets have self-signed certificates), the
+  # chart is installed with one replica per module and a ceiling of three, and the gateway is driven hard, as fast as the answers come back. Checked: the gateway gains replicas,
+  # the calls are answered while it does (the verdict script), and the gateway's Deployment carries no fixed `replicas` that a `helm upgrade` would reset.
+  hpa:
+    name: The autoscaler adds gateway replicas under load
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build the images from this checkout
+        working-directory: smo
+        run: |
+          pip install --quiet pyyaml
+          python scripts/release_images.py matrix | jq -c '.include[]' | while read -r row; do
+            name=$(jq -r .name <<<"$row"); context=$(jq -r .context <<<"$row"); module=$(jq -r .module <<<"$row")
+            if [ -n "$module" ]; then
+              docker build --quiet -t "local/smo-$name:ci" --build-arg "MODULE=$module" "$context" > /dev/null
+            else
+              docker build --quiet -t "local/smo-$name:ci" "$context" > /dev/null
+            fi
+          done
+
+      - name: Create the cluster, load the images, install metrics-server
+        run: |
+          kind create cluster --name smo --wait 180s
+          kind load docker-image --name smo $(docker image ls 'local/smo-*' --format '{{.Repository}}:{{.Tag}}')
+          curl -fsSL -o metrics-server.yaml https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
+          echo "f103539a54ed72efe66616afc74a8bfaed651703cb3918797599046af5617441  metrics-server.yaml" | sha256sum -c -
+          sed -i 's/^\( *\)- --kubelet-use-node-status-port$/&\n\1- --kubelet-insecure-tls/' metrics-server.yaml
+          grep -q -- '--kubelet-insecure-tls' metrics-server.yaml
+          kubectl apply -f metrics-server.yaml
+          kubectl -n kube-system rollout status deploy/metrics-server --timeout=180s
+
+      - name: Install with the autoscaler on
+        working-directory: smo
+        run: |
+          helm install smo deploy/helm/smo -n smo --create-namespace -f deploy/helm/smo/ci/kind-values.yaml \
+            --set autoscaling.enabled=true --set autoscaling.minReplicas=1 --set autoscaling.maxReplicas=3 --set autoscaling.targetCPUUtilizationPercentage=30 --wait --timeout 15m
+          kubectl -n smo get hpa
+          # the chart's Deployment states no replica count when the autoscaler is on: the autoscaler owns it, and a helm upgrade does not reset it
+          helm template smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml --set autoscaling.enabled=true | python3 -c "
+          import sys, yaml
+          docs = [d for d in yaml.safe_load_all(sys.stdin) if d and d.get('kind') == 'Deployment' and d['metadata']['name'] == 'r1-termination']
+          assert docs and 'replicas' not in docs[0]['spec'], docs and docs[0]['spec'].get('replicas')
+          print('r1-termination: the rendered Deployment has no replicas field')"
+          for i in $(seq 1 60); do kubectl top pods -n smo > /dev/null 2>&1 && break; sleep 5; done
+          kubectl top pods -n smo | head -5
+          kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
+
+      - name: Drive the gateway hard; it gains replicas, and the calls are answered meanwhile
+        working-directory: smo
+        run: |
+          scripts/k8s_load.sh start local/smo-r1-termination:ci "" 0 20
+          scaled=no
+          for i in $(seq 1 60); do
+            now=$(kubectl -n smo get hpa r1-termination -o jsonpath='{.status.currentReplicas}')
+            desired=$(kubectl -n smo get hpa r1-termination -o jsonpath='{.status.desiredReplicas}')
+            ready=$(kubectl -n smo get deploy r1-termination -o jsonpath='{.status.readyReplicas}')
+            echo "gateway replicas: $now, wanted $desired, ready $ready"
+            if [ "${ready:-0}" -ge 2 ]; then scaled=yes; break; fi
+            sleep 10
+          done
+          kubectl -n smo get hpa
+          # a minute more at the new size, so the calls to the new replicas are in the result too
+          sleep 60
+          scripts/k8s_load.sh stop "$RUNNER_TEMP/load-out"
+          { echo "### Load while the autoscaler works"; echo; cat "$RUNNER_TEMP/load-out/load-results.md"; echo; echo "Gateway replicas ready at the end: $(kubectl -n smo get deploy r1-termination -o jsonpath='{.status.readyReplicas}')"; } >> "$GITHUB_STEP_SUMMARY"
+          [ "$scaled" = yes ] || { echo "::error::the gateway did not gain a second replica in ten minutes under load"; exit 1; }
+          python3 scripts/upgrade_load_verdict.py "$RUNNER_TEMP/load-out/load-results.json" --max-error-rate 0.02
+
+      - name: The stack still answers
+        working-directory: smo
+        run: |
+          kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
+          kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
+
+      - name: What the cluster says, when it went wrong
+        if: failure()
+        run: |
+          kubectl -n smo get pods,hpa -o wide || true
+          kubectl top pods -n smo || true
+          kubectl -n smo describe hpa r1-termination | tail -30 || true
+          kubectl -n smo get events --sort-by=.lastTimestamp | tail -40 || true

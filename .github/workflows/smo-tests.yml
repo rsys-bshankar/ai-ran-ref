@@ -1244,6 +1244,44 @@ jobs:
           kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
           psql "$now" "DROP TABLE public.ha_marker"
 
+      - name: A planned switchover to a replica; writes go on, and nothing committed is lost (PR-HA-3.1)
+        working-directory: smo
+        run: |
+          # the operator's planned switchover: the target primary is set, the old primary is demoted cleanly (a checkpoint, then it follows the new one), and the services keep writing
+          # through it. A clean demotion should cost much less than the kill above, which has to be detected and then failed over.
+          primary=$(kubectl -n smo get cluster smo-pg -o jsonpath='{.status.currentPrimary}')
+          target=$(kubectl -n smo get pods -l cnpg.io/cluster=smo-pg,cnpg.io/instanceRole=replica -o jsonpath='{.items[0].metadata.name}')
+          psql() { kubectl -n smo exec "$1" -c postgres -- psql -U postgres -d smo -Atc "$2"; }
+          psql "$primary" "CREATE TABLE IF NOT EXISTS public.ha_marker (n int)"
+          psql "$primary" "INSERT INTO public.ha_marker VALUES (2)"
+          sleep 5
+          pod=$(kubectl -n smo get pod -l app.kubernetes.io/name=sme -o jsonpath='{.items[0].metadata.name}')
+          kubectl -n smo exec "$pod" -- rm -f /tmp/stop
+          kubectl -n smo exec "$pod" -- env FAILOVER_MAX_SECONDS=45 python3 -c "$(cat scripts/k8s_failover_probe.py)" > switch.log 2>&1 &
+          probe=$!
+          sleep 10
+          echo "switching over from $primary to $target"
+          kubectl -n smo patch cluster smo-pg --subresource=status --type=merge -p "{\"status\":{\"targetPrimary\":\"$target\",\"targetPrimaryTimestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}}"
+          for i in $(seq 1 120); do
+            now=$(kubectl -n smo get cluster smo-pg -o jsonpath='{.status.currentPrimary}')
+            ready=$(kubectl -n smo get cluster smo-pg -o jsonpath='{.status.readyInstances}')
+            [ "$now" = "$target" ] && [ "$ready" = "3" ] && break
+            sleep 3
+          done
+          echo "primary was $primary, is $now, $ready instances ready"
+          [ "$now" = "$target" ] && [ "$ready" = "3" ]
+          [ "$(kubectl -n smo get pod "$primary" -o jsonpath='{.metadata.labels.cnpg\.io/instanceRole}')" = "replica" ]
+          sleep 15
+          kubectl -n smo exec "$pod" -- touch /tmp/stop
+          wait "$probe" || { cat switch.log; echo "::error::writes did not recover from the switchover, or took too long to"; exit 1; }
+          cat switch.log
+          echo "### Planned switchover: $(tail -1 switch.log)" >> "$GITHUB_STEP_SUMMARY"
+          [ "$(psql "$now" "SELECT count(*) FROM public.ha_marker WHERE n = 2")" = "1" ]
+          kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
+          kubectl -n smo exec -i deploy/sme -- python3 - < scripts/compose_e2e_roles.py
+          kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
+          psql "$now" "DROP TABLE public.ha_marker"
+
       - name: What the cluster says, when it went wrong
         if: failure()
         run: |
