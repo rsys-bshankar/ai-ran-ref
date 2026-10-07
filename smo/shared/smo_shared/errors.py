@@ -100,6 +100,12 @@ class FrameworkError:
     LCM_OPERATION_NOT_FOUND = ("LCM_OPERATION_NOT_FOUND", 404)
     SERVICE_ORDER_NOT_FOUND = ("SERVICE_ORDER_NOT_FOUND", 404)
     VALUE_OUT_OF_RANGE = ("VALUE_OUT_OF_RANGE", 422)
+    # a request that names something the database does not hold (foreign key), repeats something it holds once (unique) or breaks a rule the
+    # column states (check): the caller's input, found by the authenticated DAST scan (V-7d) as plain-text 500s
+    REFERENCED_RESOURCE_NOT_FOUND = ("REFERENCED_RESOURCE_NOT_FOUND", 422)
+    RESOURCE_ALREADY_EXISTS = ("RESOURCE_ALREADY_EXISTS", 409)
+    CONSTRAINT_VIOLATED = ("CONSTRAINT_VIOLATED", 422)
+    INTERNAL_ERROR = ("INTERNAL_ERROR", 500)
     ALARM_NOT_FOUND = ("ALARM_NOT_FOUND", 404)
     O1_ENDPOINT_NOT_FOUND = ("O1_ENDPOINT_NOT_FOUND", 404)
     O1_HOST_KEY_NOT_FOUND = ("O1_HOST_KEY_NOT_FOUND", 404)
@@ -215,3 +221,43 @@ def install_out_of_range_handler(app) -> None:
 
     app.add_exception_handler(OverflowError, _out_of_range)
     app.add_exception_handler(DataError, _out_of_range)
+
+
+_SQLSTATE_FOREIGN_KEY, _SQLSTATE_UNIQUE, _SQLSTATE_CHECK = "23503", "23505", "23514"
+
+
+def _integrity_problem(exc) -> tuple[str, int, str]:
+    """Which problem a database integrity error is, from its SQLSTATE (Postgres) or its message (SQLite, whose tests run the same routes)."""
+    state = getattr(getattr(exc, "orig", None), "sqlstate", None) or getattr(getattr(getattr(exc, "orig", None), "diag", None), "sqlstate", None)
+    text = str(getattr(exc, "orig", exc)).lower()
+    if state == _SQLSTATE_FOREIGN_KEY or "foreign key" in text:
+        return (*FrameworkError.REFERENCED_RESOURCE_NOT_FOUND, "the request refers to something that does not exist")
+    if state == _SQLSTATE_UNIQUE or "unique constraint" in text or "unique violation" in text:
+        return (*FrameworkError.RESOURCE_ALREADY_EXISTS, "the request repeats something that already exists")
+    if state == _SQLSTATE_CHECK or "check constraint" in text:
+        return (*FrameworkError.CONSTRAINT_VIOLATED, "a value in the request is not one the service accepts")
+    return (*FrameworkError.INTERNAL_ERROR, "the service could not complete the request")
+
+
+def install_integrity_handlers(app) -> None:
+    """The caller's input that the database refuses (a reference to a row that is not there, a duplicate, a value a CHECK rejects) answers 4xx with a
+    problem document, not a bare-text 500; and any other unhandled error answers a problem document too (the exception is still raised on to the
+    server's log, so nothing is hidden from the operator). Routes check what they can say precisely first; this is the net under them.
+    Found by the authenticated DAST scan (V-7d). Installed by `apply_r1_gateway_security`, with `install_out_of_range_handler`."""
+    import logging
+    from fastapi.responses import JSONResponse
+    from sqlalchemy.exc import IntegrityError
+
+    log = logging.getLogger("smo.errors")
+
+    async def _integrity(request, exc):
+        title, status, detail = _integrity_problem(exc)
+        log.warning("%s %s answered %s %s: %s", request.method, request.url.path, status, title, str(getattr(exc, "orig", exc)).splitlines()[0][:200])
+        return JSONResponse(status_code=status, content={"detail": ProblemDetails(title=title, status=status, detail=detail).model_dump()})
+
+    async def _unhandled(request, exc):  # noqa: ARG001
+        title, status = FrameworkError.INTERNAL_ERROR
+        return JSONResponse(status_code=status, content={"detail": ProblemDetails(title=title, status=status, detail="the service could not complete the request").model_dump()})
+
+    app.add_exception_handler(IntegrityError, _integrity)
+    app.add_exception_handler(Exception, _unhandled)

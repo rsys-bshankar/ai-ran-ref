@@ -1879,6 +1879,8 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
     carrying despite the wrapper scope cut; everything else on that
     schema (schedule/priority/multi-instance/reportingPeriod) stays out.
     """
+    if db.get(ManagedEntity, managed_element_ref) is None:      # the subscription refers to the element: no element, no subscription (a 404, not the foreign key's 500)
+        raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
     require_service(db, managed_element_ref, "PM")  # Wave 9 (W9-01)
     engine = {"pull": "ProvMnS", "push": "PMJobControl", "stream": "StreamingDataReporting"}.get(delivery_method, "FileDataReporting")
     sub = PMSubscription(managed_element_ref=managed_element_ref, counter_type=counter_type, delivery_method=delivery_method,
@@ -2234,6 +2236,8 @@ def subscribe_fm(managed_element_ref: str, delivery_method: str, db: Session = D
     PATCH /alarms/{alarm_id}/clear, called by the source NF or an
     operator, unaffected by whether FM is DME-registered.
     """
+    if db.get(ManagedEntity, managed_element_ref) is None:      # the subscription refers to the element: no element, no subscription (a 404, not the foreign key's 500)
+        raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
     require_service(db, managed_element_ref, "FM")  # Wave 9 (W9-01)
     engine = {"pull": "FaultMnS", "push": "FaultMnS", "stream": "StreamingDataReporting"}.get(delivery_method, "FaultMnS")
     sub = FMSubscription(managed_element_ref=managed_element_ref, delivery_method=delivery_method, southbound_engine=engine)

@@ -178,10 +178,10 @@ jobs:
           done
           exit $status
 
-      - name: The stack's logs, when a step failed
+      - name: The modules' errors, when a step failed
         if: failure()
         working-directory: smo
-        run: docker compose logs --no-color --tail=40 r1-termination sme
+        run: docker compose logs --no-color --tail=2000 | grep -E "answered [45][0-9][0-9]|Traceback|Error" | sort | uniq -c | sort -rn | head -40
 
       - name: Keep the reports
         if: always()

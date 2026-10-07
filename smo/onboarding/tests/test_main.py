@@ -934,3 +934,9 @@ def test_a_concurrent_writer_turns_a_transition_into_a_409_and_the_repeat_succee
 
     repeat = client.post(f"/packages/{package_id}/deprecate")
     assert repeat.status_code == 200 and repeat.json()["state"] == "DEPRECATED"
+
+
+def test_an_application_type_the_column_does_not_accept_is_a_422_not_a_500(client):
+    """Found by the authenticated DAST scan (V-7d): `application_type` has a CHECK, and the request took any string."""
+    response = client.post("/packages", json={"location": "http://example.invalid/x.csar", "applicationType": "string"})
+    assert response.status_code == 422
