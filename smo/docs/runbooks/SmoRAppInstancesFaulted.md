@@ -17,7 +17,7 @@ Commands are for the compose lab; in the chart use `kubectl -n <namespace> logs 
 
 ```bash
 docker compose exec rapp-mgmt python -c "import urllib.request as u; print(u.urlopen('http://localhost:8000/metrics').read().decode())" | grep smo_rapp_instances
-docker compose exec postgres psql -U smo smo -c "SELECT instance_id, package_id, state, workload_ref, created_at FROM rapp_instance WHERE state = 'FAULTED'"
+docker compose exec postgres psql -U smo smo -c "SELECT instance_id, package_id, state, workload_ref, created_at FROM rapp_mgmt.rapp_instance WHERE state = 'FAULTED'"
 docker compose logs --since 1h rapp-mgmt | grep -E 'FAULTED|CRASH|BOOTSTRAP_FAILED' | tail -30
 kubectl -n smo get pods | grep <rapp>        # in the chart, an rApp is a module
 ```

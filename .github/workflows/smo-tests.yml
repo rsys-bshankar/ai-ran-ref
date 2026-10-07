@@ -718,9 +718,13 @@ jobs:
         env:
           PGPASSWORD: smo
         run: |
-          count=$(psql -h localhost -U smo -d smo -t -c "select count(*) from information_schema.tables where table_schema='public'")
+          # the tables of the modules live in schemas of their own (0023 to 0025), and since 0029 `public` holds no view of them: count the base tables of every schema
+          count=$(psql -h localhost -U smo -d smo -t -c "select count(*) from information_schema.tables where table_type = 'BASE TABLE' and table_schema not in ('pg_catalog', 'information_schema')")
           echo "Tables created: $count"
           [ "$count" -ge 30 ]
+          views=$(psql -h localhost -U smo -d smo -t -c "select count(*) from information_schema.views where table_schema = 'public'")
+          echo "Views left in public: $views"
+          [ "$views" -eq 0 ]
 
       - name: Every ORM-declared column actually exists in the migrated schema, with matching nullability
         working-directory: smo

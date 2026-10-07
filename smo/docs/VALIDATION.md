@@ -42,7 +42,7 @@ Counts are test functions (`def test_`) at the time of writing: about 1,830 in t
 
 ## 8. Upgrade tests
 **Today**: previous release to this commit with data kept (compose); previous release's code on this schema and its runbook; `helm upgrade` of this chart on kind with every module rolling; a mixed-version note in the changelog.
-**Gaps**: upgrade **from the previous chart** on Kubernetes (not this chart onto itself); skipping a release (0.3.0 to 0.5.0); upgrade with data in the moved tables under load; the compatibility views being dropped in the release after 0.4.0.
+**Gaps**: upgrade **from the previous chart** on Kubernetes (not this chart onto itself); skipping a release (0.3.0 to 0.5.0); upgrade with data in the moved tables under load; (the compatibility views dropped in the release after 0.4.0, revision `0029`, are checked by `tests_integration/test_db_roles.py`, the full-chain round trip in `test_migrations.py` and the previous-release lane on every pull request).
 **Plan**: **V-10** `helm install` of the previous release's published chart, seeded with data, then `helm upgrade` to this checkout under the V-8 load at low rate, then the runbook; the same from two releases back (the 1.0 criterion "upgrade across two releases"). Fails on any non-retried error.
 
 ## 9. Rollback tests

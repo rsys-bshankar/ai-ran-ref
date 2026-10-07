@@ -92,6 +92,16 @@ def _as_role(url, module, password):
     return create_engine(make_url(url).set(username=_role(module), password=password), isolation_level="AUTOCOMMIT")
 
 
+def _missing(engine, statement) -> bool:
+    """True when the statement fails because the relation it names does not exist (no view stands in for a moved table any more)."""
+    try:
+        with engine.connect() as connection:
+            connection.execute(text(statement))
+    except Exception as exc:
+        return "does not exist" in str(exc)
+    return False
+
+
 def _denied(engine, statement) -> bool:
     try:
         with engine.connect() as connection:
@@ -102,7 +112,7 @@ def _denied(engine, statement) -> bool:
 
 
 @needs_postgres
-def test_the_tables_are_in_the_modules_schema_and_the_old_names_still_work_for_the_owner(database):
+def test_the_tables_are_in_the_modules_schema_and_public_holds_no_compatibility_view(database):
     url, env, _, _ = database
     owner = create_engine(url, isolation_level="AUTOCOMMIT")
     with owner.connect() as connection:
@@ -113,13 +123,10 @@ def test_the_tables_are_in_the_modules_schema_and_the_old_names_still_work_for_t
             assert in_schema == set(OWNERS[module]), module
             for table in OWNERS[module]:
                 assert not connection.execute(text("SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = :t"), {"t": table}).first(), table
-                # what the previous release does: name the table with no schema (a view of it stays in public)
-                assert connection.execute(text(f'SELECT count(*) FROM "{table}"')).scalar() == 0
-        # ... and write through the view of one table of each kind: insert, update, delete
-        connection.execute(text("INSERT INTO application_package (application_type, name, version, manifest_ref) VALUES ('rApp', 'old-code', '1', 'm')"))
-        connection.execute(text("UPDATE application_package SET version = '2' WHERE name = 'old-code'"))
-        assert connection.execute(text("SELECT version FROM onboarding.application_package WHERE name = 'old-code'")).scalar() == "2"
-        connection.execute(text("DELETE FROM application_package WHERE name = 'old-code'"))
+                assert not connection.execute(text("SELECT 1 FROM pg_views WHERE schemaname = 'public' AND viewname = :t"), {"t": table}).first(), f"a view {table} is left in public"
+        # the old, unqualified names are gone for the owner too (revision 0029; 0.4.0's modules use their roles' search paths): naming the schema is the way
+        assert connection.execute(text("SELECT count(*) FROM onboarding.application_package")).scalar() == 0
+    assert _missing(owner, "SELECT count(*) FROM application_package")
     owner.dispose()
 
 
@@ -133,6 +140,9 @@ def test_every_role_works_in_its_own_schema_and_is_refused_everywhere_else(datab
     for module in ROLES:
         assert _role(module) in done.stdout
     all_tables = {t for owner, tables in OWNERS.items() if owner != "_comment" for t in tables}
+    def schema_of_owner(owner):             # a module's own schema; the shared tables are in public; the retired A1 tables stayed in the schema 0025 gave them
+        return ROLES[owner]["schema"] or "public" if owner in ROLES else ("a1_related" if owner == "_retired" else "public")
+    schema_of = {t: schema_of_owner(owner) for owner, tables in OWNERS.items() if owner != "_comment" for t in tables}
     for module, spec in ROLES.items():
         role = _as_role(url, module, f"pw-{_short(module)}")
         own = set(OWNERS[module])
@@ -146,7 +156,9 @@ def test_every_role_works_in_its_own_schema_and_is_refused_everywhere_else(datab
             for table in granted_shared:        # readable (the audit chain's head holds a row from the migration, so the count is not asked to be 0)
                 connection.execute(text(f'SELECT count(*) FROM "{table}"')).scalar()
         for table in sorted(all_tables - own - granted_shared - read):
-            assert _denied(role, f'SELECT * FROM "{table}" LIMIT 1'), f"{_role(module)} can read {table}"
+            assert _denied(role, f'SELECT * FROM "{schema_of[table]}"."{table}" LIMIT 1'), f"{_role(module)} can read {table}"
+            if schema_of[table] != "public":        # no compatibility view in public since 0029: the bare name of another module's table is not a thing the role can even name
+                assert _missing(role, f'SELECT * FROM "{table}" LIMIT 1'), f"{_role(module)} resolves the bare name {table}"
         assert _denied(role, "CREATE TABLE public.not_allowed (a int)")
         if spec["schema"]:
             assert _denied(role, f"CREATE TABLE {spec['schema']}.not_allowed (a int)")
@@ -161,7 +173,7 @@ def test_every_role_works_in_its_own_schema_and_is_refused_everywhere_else(datab
         connection.execute(text("INSERT INTO application_package (application_type, name, version, manifest_ref) VALUES ('rApp', 'mine', '1', 'm')"))
         assert connection.execute(text("SELECT count(*) FROM application_package")).scalar() == 1
         connection.execute(text("DELETE FROM application_package"))
-    assert _denied(onboarding, "SELECT * FROM public.application_package")      # the compatibility view is for the old code, which connects as the owner
+    assert _missing(onboarding, "SELECT * FROM public.application_package")     # no compatibility view in public any more (revision 0029)
     onboarding.dispose()
 
 

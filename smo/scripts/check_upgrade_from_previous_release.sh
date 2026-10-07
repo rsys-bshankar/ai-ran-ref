@@ -61,12 +61,12 @@ psql_prev() { compose_prev exec -T postgres psql -U smo -d smo -v ON_ERROR_STOP=
 psql_new() { compose_new exec -T postgres psql -U smo -d smo -v ON_ERROR_STOP=1 -At "$@"; }
 
 # row count of every table (in whatever schema: a module's tables move into a schema of its own, PR-DB-2.5; names are unique across schemas), and the ids of the
-# packages and instances
+# packages and instances (named with their schemas: since 0029 `public` holds no view of a module's table, and before it an ALTER TABLE of the view refused for the wrong reason)
 snapshot() {
   "$1" -c "SELECT table_name || '|' || (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', table_schema, table_name), false, true, '')))[1]::text
            FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_type = 'BASE TABLE' ORDER BY 1"
-  "$1" -c "SELECT 'package|' || package_id FROM application_package ORDER BY 1"
-  "$1" -c "SELECT 'instance|' || instance_id FROM rapp_instance ORDER BY 1"
+  "$1" -c "SELECT 'package|' || package_id FROM onboarding.application_package ORDER BY 1"
+  "$1" -c "SELECT 'instance|' || instance_id FROM rapp_mgmt.rapp_instance ORDER BY 1"
 }
 
 echo "== install the previous release and put data into it (its own runbook)"
@@ -110,11 +110,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE application_package ADD COLUMN seeded_break VARCHAR NOT NULL")
+    op.execute("ALTER TABLE onboarding.application_package ADD COLUMN seeded_break VARCHAR NOT NULL")
 
 
 def downgrade() -> None:
-    op.execute("ALTER TABLE application_package DROP COLUMN seeded_break")
+    op.execute("ALTER TABLE onboarding.application_package DROP COLUMN seeded_break")
 PY
 if host_migrate "$seeded" >/dev/null 2>&1; then
   echo "FAIL: a migration that cannot run on a populated database was accepted: this check cannot fail" >&2
