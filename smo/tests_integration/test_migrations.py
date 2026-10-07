@@ -203,3 +203,24 @@ def test_wait_returns_when_the_schema_is_current_and_fails_when_it_is_not(databa
     assert _run(MIGRATE, url).returncode == 0
     waited = _run(MIGRATE, url, "--wait", "5")
     assert waited.returncode == 0 and "current" in waited.stdout
+
+
+# --- PR-V-13: the whole chain down and up again with data in it --------------------------------------------------------------------------
+
+@needs_postgres
+def test_a_row_naming_something_that_does_not_exist_stops_the_downgrade_across_0022_and_leaves_the_database_where_it_was(databases):
+    """0022 dropped the foreign keys between modules; its downgrade puts them back, and a row written without them, naming a data type that is not there, refuses it. The
+    answer is all or nothing (one transaction for the whole downgrade), and once the row is dealt with the same downgrade goes through."""
+    url = databases["fresh"]
+    assert _run(MIGRATE, url).returncode == 0
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        connection.execute(text("INSERT INTO a1_related.a1_ei_type VALUES ('orphan', 'test', gen_random_uuid())"))
+    refused = _run(MIGRATE, url, "--downgrade", "0021")
+    assert refused.returncode != 0 and "is not present in table" in (refused.stderr + refused.stdout)
+    assert _run(MIGRATE, url, "--current").stdout.strip() == HEAD                              # not half-way down
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM a1_related.a1_ei_type WHERE ei_type_id = 'orphan'"))
+    engine.dispose()
+    assert _run(MIGRATE, url, "--downgrade", "0021").returncode == 0
+    assert _run(MIGRATE, url, "--current").stdout.strip() == "0021"
