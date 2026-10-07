@@ -21,7 +21,7 @@ postgres:
   pullPolicy: IfNotPresent                     # its own: image.pullPolicy is for the SMO images (CI sets it to Never for the ones it built)
   storage: 10Gi
   storageClassName: ""
-  resources:
+  resources:                                   # 150 MiB and 36 % of a core at its peak under the load of docs/SIZING.md (10 000 managed elements); values-sized.yaml asks for 250m
     requests: { cpu: 100m, memory: 256Mi }
     limits: { memory: 1Gi }
   external:
@@ -227,14 +227,14 @@ moduleDefaults:
   podSecurityContext: null   # replaces the pod-wide one for this module
   persistence: null          # {mountPath: /srv/packages, size: 5Gi}
   scratch: null              # an emptyDir at this path, for files copied in
-  resources:
+  resources:                 # measured (docs/SIZING.md): a module's peak is 75 to 135 MiB, nearly idle in CPU; the modules that need more set their own below
     requests: { cpu: 50m, memory: 128Mi }
     limits: { memory: 512Mi }
 
 # The modules. `image` is the image name after the prefix (smo-<image>); the services are named by the key.
 modules:
-  r1-termination: { image: r1-termination, databaseRole: r1-termination, enrollment: false, scratch: /srv/scratch, env: { R1_KILL_SWITCH_SCHEMA: ran_nf_oam, R1_RATE_STORE: memory } }
-  sme: { image: sme, databaseRole: sme }
+  r1-termination: { image: r1-termination, databaseRole: r1-termination, enrollment: false, scratch: /srv/scratch, env: { R1_KILL_SWITCH_SCHEMA: ran_nf_oam, R1_RATE_STORE: memory }, resources: { requests: { cpu: 50m, memory: 192Mi }, limits: { memory: 512Mi } } }   # CPU-bound at about one core per 39 requests/s: values-sized.yaml asks for 500m, scale by replicas (docs/SIZING.md)
+  sme: { image: sme, databaseRole: sme, resources: { requests: { cpu: 50m, memory: 480Mi }, limits: { memory: 768Mi } } }   # the largest module: 361 MiB at its peak (docs/SIZING.md); values-sized.yaml asks for 250m
   dme: { image: dme, databaseRole: dme }
   onboarding: { image: onboarding, databaseRole: onboarding, persistence: { mountPath: /srv/packages, size: 5Gi } }
   rapp-mgmt: { image: rapp-mgmt, databaseRole: rapp-mgmt, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }

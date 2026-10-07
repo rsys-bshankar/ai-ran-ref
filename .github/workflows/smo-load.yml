@@ -25,6 +25,8 @@ on:
       - "smo/scripts/load_run.py"
       - "smo/docker-compose.load.yml"
       - "smo/scripts/load_seed.py"
+      - "smo/scripts/sample_stats.sh"
+      - "smo/scripts/sizing_report.py"
 
 permissions:
   contents: read
@@ -60,6 +62,8 @@ jobs:
         working-directory: smo
         run: |
           mkdir -p load-out
+          rm -f load-out/stats.jsonl.stop
+          scripts/sample_stats.sh load-out/stats.jsonl &
           network=$(docker inspect "$(docker compose ps -q r1-termination)" --format '{{range $k, $_ := .NetworkSettings.Networks}}{{$k}}{{end}}')
           docker run --rm --network "$network" --user "$(id -u):$(id -g)" \
             -v "$PWD":/smo -w /smo \
@@ -68,6 +72,16 @@ jobs:
             -e LOAD_OUT=/smo/load-out -e PIP_DISABLE_PIP_VERSION_CHECK=1 -e HOME=/tmp \
             python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 \
             sh -c 'pip install --quiet --user --require-hashes -r requirements/runtime.txt && python scripts/load_seed.py --elements "$2" && python scripts/load_run.py --duration "$0" --concurrency "$1"' "$DURATION" "$CONCURRENCY" "$ELEMENTS"
+
+      - name: Sizing table from the samples taken during the load (PR-OPS-9.2)
+        if: ${{ !cancelled() }}
+        working-directory: smo
+        run: |
+          touch load-out/stats.jsonl.stop
+          sleep 3
+          python3 scripts/sizing_report.py load-out/stats.jsonl --out load-out || true
+          cat load-out/load-results.md || true
+          { echo; echo "### Sizing from this run (peak memory, CPU while loaded; docs/SIZING.md)"; echo; cat load-out/sizing.md; } >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Container CPU and memory, Postgres connections
         if: ${{ !cancelled() }}

@@ -22,10 +22,10 @@ Every list route counts the whole result for `total` (`COUNT(*)`, 55 ms for a mi
 
 - Cells, managed objects and KPI results are not seeded yet (V-8b seeds managed elements, alarms and performance files).
 - Stress and failure injection beyond the first four scenarios (`scripts/stress_run.py`, `.github/workflows/smo-stress.yml`: limiter burst, oversized body, saturation ramp, Postgres down and back): a slow or dead webhook subscriber, SME down, a full package volume (V-9), and the soak (V-9b).
-- Baseline numbers per release: recorded here once the seeded run exists.
+- Baseline numbers per release: the first is below (0.5.0). Per-container CPU and memory from the same run, and what the chart's `resources` are set from, are in `docs/SIZING.md`.
 
 ## Baselines
 
 | Release | Runner | Concurrency | Requests/s | p95 (ms) | p99 (ms) | Errors |
 |---|---|---|---|---|---|---|
-| 0.5.0 | (first nightly run) | 20 | | | | |
+| 0.5.0 | GitHub ubuntu-latest, 10 000 elements, 120 s (run 37570638155) | 20 | 38.9 | 682 | 772 | 0 |

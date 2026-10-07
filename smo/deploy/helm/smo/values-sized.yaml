@@ -1,0 +1,23 @@
+# The measured sizing profile (PR-OPS-9, docs/SIZING.md): CPU requests from the load run (one gateway replica at about 39 requests/s of the mix in
+# docs/SIZING.md, 10 000 managed elements). Layer it on your values:  helm install smo deploy/helm/smo -f deploy/helm/smo/values-sized.yaml -f my-values.yaml
+# The chart's own defaults ask for little CPU so that it installs on a small lab or trial cluster (kind, a 2 vCPU node); this profile asks for what the
+# stack used under load, about 2.2 cores and 3.7 GiB of requests for one replica of every module and the bundled Postgres. A node pool that cannot hold
+# that cannot hold the load either. Scale the gateway by replicas (`modules.r1-termination.replicas`, one per 30 requests/s), not by a bigger request.
+# No CPU limits on purpose: a limit throttles the gateway when it is busy.
+postgres:
+  resources:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits: { memory: 1Gi }
+modules:
+  r1-termination:
+    resources:
+      requests: { cpu: 500m, memory: 192Mi }
+      limits: { memory: 512Mi }
+  sme:
+    resources:
+      requests: { cpu: 250m, memory: 480Mi }
+      limits: { memory: 768Mi }
+  ran-nf-oam:
+    resources:
+      requests: { cpu: 150m, memory: 128Mi }
+      limits: { memory: 512Mi }

@@ -539,12 +539,9 @@ Tag scheme and `CHANGELOG.md` exist (`PR-OPS-4.1`, `HISTORY.md` §10); no tag ha
 | OPS-8.1 | `flag("NAME")` helper (env-backed, default off) | Unit test | – |
 | OPS-8.2 | Convention: incomplete production items ship behind a flag | Rule in `CLAUDE.md` | OPS-8.1 |
 
-#### PR-OPS-9 — Sizing
+#### PR-OPS-9 — Sizing (done: `HISTORY.md` PR-OPS-9; `docs/SIZING.md`)
 
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| OPS-9.1 | Default CPU and memory requests/limits in `values.yaml` | Pods schedule on kind | OPS-2.2 |
-| OPS-9.2 | Replace guesses by measured values | Table with the load that produced each | QA-1.4 |
+Not done, and not part of 0.5.0: a measurement with more than one replica, with mTLS and with tracing on, and at a million alarms with the bundled Postgres (`docs/SIZING.md`, "What this does not tell you").
 
 #### PR-OPS-10 — Development-sanity pipeline on GitHub Actions (Target 1) (OPS-10.1 to 10.5 done: `HISTORY.md` §10)
 

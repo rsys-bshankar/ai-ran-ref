@@ -34,7 +34,7 @@ Counts are test functions (`def test_`) at the time of writing: about 1,830 in t
 
 ## 6. Load tests
 **Today**: none.
-**Plan**: **V-8** the harness (QA-1): a seed script for N managed elements, cells, PM records and alarms (1k, 10k, 100k); a load script (k6) for the top routes by use (token, service discovery, config job, alarm list, PM query, rApp instance state), run against compose in a nightly lane; baseline numbers (requests/s, p50/p95/p99, error rate, CPU/memory per container, Postgres connections) recorded in `docs/PERFORMANCE.md` per release so a regression is a diff.
+**Plan**: **V-8** the harness (QA-1): a seed script for N managed elements, cells, PM records and alarms (1k, 10k, 100k); a load script (k6) for the top routes by use (token, service discovery, config job, alarm list, PM query, rApp instance state), run against compose in a nightly lane; baseline numbers (requests/s, p50/p95/p99, error rate, CPU/memory per container, Postgres connections) recorded in `docs/PERFORMANCE.md` per release so a regression is a diff. The first baseline and the per-container sizing (`docs/SIZING.md`, `scripts/sizing_report.py`) are recorded for 0.5.0.
 
 ## 7. Stress, soak and failure injection
 **Today**: HA lanes kill a worker, the job runner and the Postgres primary on kind and measure the write gap; nothing pushes past capacity.
