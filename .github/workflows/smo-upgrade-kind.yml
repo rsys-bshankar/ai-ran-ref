@@ -6,8 +6,10 @@ name: SMO upgrade and rollback on kind
 # the runbook replay (scripts/compose_e2e.py of the release that is running) passes, and the audit chain verifies.
 # The rollback is promised to the release before only (expand and contract: this checkout keeps what the previous release needs). The release before that is upgraded from, not rolled
 # back to: its own migrate step does not know a newer schema ("Can't locate revision"), which is a limit of that release's code, so the rollback step is skipped for it.
-# Nightly, on demand, and on a pull request that changes this workflow or the chart's upgrade path. Not a required check yet. Not yet here: a load running through the upgrade,
-# and a deliberately failing migration (V-11's second half).
+# A migration that cannot finish (V-11, second half; for the previous release only): a long transaction holds a lock on a table the newest revision alters, the migrate Job runs out of its
+# deadline and the pre-upgrade hook fails. Checked: `helm upgrade` fails, no Deployment was touched (same generations), the database is at the revision it was and has nothing of the new
+# revisions (the migration is one transaction), every old pod is ready and the previous release's runbook passes; then the lock is released and the same upgrade runs (the next step).
+# Nightly, on demand, and on a pull request that changes this workflow or the chart's upgrade path. Not a required check yet. Not yet here: a load running through the upgrade.
 
 on:
   schedule:
@@ -88,6 +90,45 @@ jobs:
         run: |
           helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml --set image.tag=prev --set migrate.backoffLimit=7 --wait --timeout 12m
           helm history smo -n smo
+
+      - name: A migration that cannot finish leaves the previous release serving, and changes nothing (V-11)
+        if: ${{ matrix.rollback }}
+        working-directory: cur/smo
+        run: |
+          psql() { kubectl -n smo exec postgres-0 -- psql -U smo -d smo -Atc "$1"; }
+          generations() { kubectl -n smo get deploy -o jsonpath='{range .items[*]}{.metadata.name}={.metadata.generation}{"\n"}{end}' | sort; }
+          before=$(psql 'SELECT version_num FROM alembic_version'); generations > "$RUNNER_TEMP/generations_before"
+          echo "database at $before; deployments: $(wc -l < "$RUNNER_TEMP/generations_before")"
+          # a long transaction on a table the newest revision alters (0027 adds a column to nfo.lcm_operation)
+          kubectl -n smo exec postgres-0 -- psql -U smo -d smo -c "BEGIN; LOCK TABLE nfo.lcm_operation IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(900);" > "$RUNNER_TEMP/lock.log" 2>&1 &
+          holder=$!
+          sleep 8
+          [ "$(psql "SELECT count(*) FROM pg_locks l JOIN pg_class c ON c.oid = l.relation WHERE c.relname = 'lcm_operation' AND l.mode = 'AccessExclusiveLock' AND l.granted")" -ge 1 ]
+          set +e
+          helm upgrade smo deploy/helm/smo -n smo -f deploy/helm/smo/ci/kind-values.yaml --set image.tag=cur --set migrate.backoffLimit=0 --set migrate.activeDeadlineSeconds=60 --wait --timeout 6m
+          status=$?
+          set -e
+          echo "helm upgrade exit status: $status"
+          # release the lock whatever happened, so the checks below and the retry are not blocked by it
+          psql "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE '%pg_sleep(900)%' AND pid <> pg_backend_pid()" > /dev/null
+          wait "$holder" || true
+          [ "$status" != "0" ]
+          helm history smo -n smo
+          helm history smo -n smo | tail -1 | grep -q failed
+          kubectl -n smo get jobs
+          kubectl -n smo describe job migrate | tail -15 || true
+          # nothing of the new release was applied
+          generations > "$RUNNER_TEMP/generations_after"
+          diff "$RUNNER_TEMP/generations_before" "$RUNNER_TEMP/generations_after"
+          [ "$(psql 'SELECT version_num FROM alembic_version')" = "$before" ]
+          [ "$(psql "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'nfo' AND table_name = 'lcm_operation' AND column_name = 'created_at'")" = "0" ]
+          [ "$(psql "SELECT count(*) FROM pg_indexes WHERE indexname = 'ix_pm_file_managed_element_ref'")" = "0" ]
+          # the old release is serving
+          [ "$(kubectl -n smo get deploy r1-termination -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')" = "prev" ]
+          kubectl -n smo wait --for=condition=available deploy --all --timeout=180s
+          [ "$(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed|Terminating|Error' | wc -l)" = "0" ]
+          kubectl -n smo exec -i deploy/r1-termination -- python3 - < ../../prev/smo/scripts/compose_e2e.py
+          kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
 
       - name: Upgrade to this checkout
         working-directory: cur/smo
