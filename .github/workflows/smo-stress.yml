@@ -168,6 +168,15 @@ jobs:
             done
             [ "$reached" -ge 2 ] || { echo "FAIL: the calls reached $reached replica(s)"; return 1; }
           }
+          # what the shared store did on each replica: statements that failed and requests decided by the local bucket after a failure (a fail-open is a failure of the
+          # check's premise, not a measurement), and the log lines of a fail-open
+          store_counters() {
+            for c in $(docker compose ps -q r1-termination); do
+              echo "  $(docker inspect -f '{{.Name}}' "$c"):"
+              docker exec "$c" python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/metrics').read().decode())" 2>&1 | grep -E '^smo_rate_store_(errors|fallbacks)_total' | sed 's/^/    /' || true
+              echo "    fail-open log lines: $(docker logs "$c" 2>&1 | grep -c 'rate limiter store unavailable' || true)"
+            done
+          }
           status=0
           {
             echo "### One rate budget across three gateway replicas"; echo; echo '```'
@@ -175,11 +184,13 @@ jobs:
             echo "control: R1_RATE_STORE=memory"
             stress limiter-shared --budget per-replica --burst 120 || status=1
             spread || status=1
+            store_counters
             echo "shared: R1_RATE_STORE=postgres"
             R1_RATE_STORE=postgres docker compose up -d --force-recreate r1-termination
             wait_healthy
             stress limiter-shared --budget shared --burst 120 || status=1
             spread || status=1
+            store_counters
             echo '```'
             exit $status
           } 2>&1 | tee stress-out/stress-shared.md | tee -a "$GITHUB_STEP_SUMMARY"
