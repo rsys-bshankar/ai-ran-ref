@@ -21,8 +21,8 @@ postgres:
   pullPolicy: IfNotPresent                     # its own: image.pullPolicy is for the SMO images (CI sets it to Never for the ones it built)
   storage: 10Gi
   storageClassName: ""
-  resources:                                   # 150 MiB and 36 % of a core at its peak under the load of docs/SIZING.md, with 10 000 managed elements
-    requests: { cpu: 250m, memory: 256Mi }
+  resources:                                   # 150 MiB and 36 % of a core at its peak under the load of docs/SIZING.md (10 000 managed elements); values-sized.yaml asks for 250m
+    requests: { cpu: 100m, memory: 256Mi }
     limits: { memory: 1Gi }
   external:
     host: ""
@@ -233,12 +233,12 @@ moduleDefaults:
 
 # The modules. `image` is the image name after the prefix (smo-<image>); the services are named by the key.
 modules:
-  r1-termination: { image: r1-termination, databaseRole: r1-termination, enrollment: false, scratch: /srv/scratch, env: { R1_KILL_SWITCH_SCHEMA: ran_nf_oam, R1_RATE_STORE: memory }, resources: { requests: { cpu: 500m, memory: 192Mi }, limits: { memory: 512Mi } } }   # CPU-bound: about one core at 39 requests/s (docs/SIZING.md); scale by replicas
-  sme: { image: sme, databaseRole: sme, resources: { requests: { cpu: 250m, memory: 480Mi }, limits: { memory: 768Mi } } }   # the largest module: 361 MiB at its peak (docs/SIZING.md)
+  r1-termination: { image: r1-termination, databaseRole: r1-termination, enrollment: false, scratch: /srv/scratch, env: { R1_KILL_SWITCH_SCHEMA: ran_nf_oam, R1_RATE_STORE: memory }, resources: { requests: { cpu: 50m, memory: 192Mi }, limits: { memory: 512Mi } } }   # CPU-bound at about one core per 39 requests/s: values-sized.yaml asks for 500m, scale by replicas (docs/SIZING.md)
+  sme: { image: sme, databaseRole: sme, resources: { requests: { cpu: 50m, memory: 480Mi }, limits: { memory: 768Mi } } }   # the largest module: 361 MiB at its peak (docs/SIZING.md); values-sized.yaml asks for 250m
   dme: { image: dme, databaseRole: dme }
   onboarding: { image: onboarding, databaseRole: onboarding, persistence: { mountPath: /srv/packages, size: 5Gi } }
   rapp-mgmt: { image: rapp-mgmt, databaseRole: rapp-mgmt, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
-  ran-nf-oam: { image: ran-nf-oam, databaseRole: ran-nf-oam, env: { R1_GATEWAY_URL: "http://r1-termination:8000" }, resources: { requests: { cpu: 150m, memory: 128Mi }, limits: { memory: 512Mi } } }
+  ran-nf-oam: { image: ran-nf-oam, databaseRole: ran-nf-oam, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   # the same image as a worker: the periodic work of RAN NF OAM (PR-MSG-4). Run more than one if you like.
   ran-nf-oam-worker: { image: ran-nf-oam, databaseRole: ran-nf-oam, kind: worker, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   mock-o1-adaptor: { image: mock-o1-adaptor, database: false, enrollment: false, mtls: "off" }

@@ -17,28 +17,30 @@ The `SMO load run` workflow (`.github/workflows/smo-load.yml`, `scripts/load_run
 
 ## Per container, and what the chart sets
 
+The chart has two sets of numbers. Its **defaults** (`values.yaml`) ask for little CPU (50m per module, 100m for Postgres, 1.3 cores in all), so that it installs on a small lab or trial cluster: kind, a node with two cores, and room beside the old pods during a rolling upgrade (a first version of this change put the measured CPU requests in the defaults and the kind upgrade job could no longer schedule Postgres: `Insufficient cpu`). The measured values are in **`deploy/helm/smo/values-sized.yaml`**, a profile to layer on your values (`-f values-sized.yaml`); the table is that profile. The memory settings that the measurement showed to be too tight are in the defaults: SME requests 480Mi with a 768Mi limit (361 MiB at its peak, the old 512Mi limit left 30 %), the gateway 192Mi.
+
 Peak memory and CPU while loaded (a core is 100 %), from 33 samples each:
 
-| Container | Memory peak (MiB) | CPU median (%) | CPU p95 (%) | Chart request (CPU / memory) | Chart memory limit |
+| Container | Memory peak (MiB) | CPU median (%) | CPU p95 (%) | Sized profile: request (CPU / memory) | Memory limit |
 |---|---|---|---|---|---|
 | r1-termination | 134 | 103 | 107 | 500m / 192Mi | 512Mi |
 | sme | 361 | 36 | 51 | 250m / 480Mi | 768Mi |
 | ran-nf-oam | 102 | 17 | 26 | 150m / 128Mi | 512Mi |
 | postgres | 150 | 15 | 36 | 250m / 256Mi | 1Gi |
-| rapp-mgmt, onboarding, dme | 90 to 93 | 2 to 3 | 16 to 18 | 50m / 128Mi (default) | 512Mi (default) |
-| the other modules (AIMGF, FOCOM, MDAF, MLLF, MLMR, NFO, SA-SMOS, SO-SMOS, intent service, RAN analytics, the worker, the four sample rApps) | 75 to 98 | 0 to 0.1 | 7 to 15 | 50m / 128Mi (default) | 512Mi (default) |
-| gui-bff | 86 | 0.1 | 0.1 | 50m / 128Mi (default) | 512Mi (default) |
-| mock-o1-adaptor | 47 | 0.1 | 12 | 50m / 128Mi (default) | 512Mi (default) |
-| gui (nginx) | 4.5 | 0 | 0 | 50m / 128Mi (default) | 512Mi (default) |
+| rapp-mgmt, onboarding, dme | 90 to 93 | 2 to 3 | 16 to 18 | 50m / 128Mi (the chart's default) | 512Mi (default) |
+| the other modules (AIMGF, FOCOM, MDAF, MLLF, MLMR, NFO, SA-SMOS, SO-SMOS, intent service, RAN analytics, the worker, the four sample rApps) | 75 to 98 | 0 to 0.1 | 7 to 15 | 50m / 128Mi (the chart's default) | 512Mi (default) |
+| gui-bff | 86 | 0.1 | 0.1 | 50m / 128Mi (the chart's default) | 512Mi (default) |
+| mock-o1-adaptor | 47 | 0.1 | 12 | 50m / 128Mi (the chart's default) | 512Mi (default) |
+| gui (nginx) | 4.5 | 0 | 0 | 50m / 128Mi (the chart's default) | 512Mi (default) |
 
-How the values were chosen: a memory **request** is the peak times 1.25, not below the chart's 128Mi default; a memory **limit** is twice the peak, not below the 512Mi default (so SME, at 361 MiB, has 768Mi); a CPU **request** is what the container used at its median to p95 under this load, and the quiet modules keep the 50m default. The chart sets **no CPU limits**: a limit throttles the gateway exactly when it is busy. The p95 of a quiet module (about 14 %) is the start of the run (installing the load generator's packages and seeding share the sampling window), so it is not used for a request.
+How the profile's values were chosen: a memory **request** is the peak times 1.25, not below the chart's 128Mi default; a memory **limit** is twice the peak, not below the 512Mi default (so SME, at 361 MiB, has 768Mi); a CPU **request** is what the container used at its median to p95 under this load, and the quiet modules keep the 50m default. The chart and the profile set **no CPU limits**: a limit throttles the gateway exactly when it is busy. The p95 of a quiet module (about 14 %) is the start of the run (installing the load generator's packages and seeding share the sampling window), so it is not used for a request.
 
 ## Sizing a deployment
 
-- **Gateway replicas**: one replica serves about 39 requests/s of this mix at one core. Take 30 requests/s per replica to keep headroom (`ceil(peak requests/s / 30)`), keep the 500m request and give it room to burst to a core. With more than one replica set `R1_RATE_STORE=postgres` so the per-caller budget is shared (`SEC-8.5`), and see the HPA and PodDisruptionBudget values in the chart README.
+- **Gateway replicas**: one replica serves about 39 requests/s of this mix at one core. Take 30 requests/s per replica to keep headroom (`ceil(peak requests/s / 30)`), use the profile's 500m request and give it room to burst to a core. With more than one replica set `R1_RATE_STORE=postgres` so the per-caller budget is shared (`SEC-8.5`), and see the HPA and PodDisruptionBudget values in the chart README.
 - **SME**: every gateway request that carries a token asks SME to introspect it, so SME's load follows the gateway's. At 39 requests/s it used about 0.36 of a core (median), so one SME replica has room for about three gateway replicas' traffic. Its memory (361 MiB) is the largest of the modules.
 - **Postgres**: 150 MiB and about a third of a core at the peak of this load, with 10 000 managed elements. The volume matters more than the request rate: see `docs/PERFORMANCE.md` (the list routes at a million alarms) and size the volume and `shared_buffers` from your data, not from this table. For production use a managed or HA Postgres (`docs/DISASTER_RECOVERY.md`).
-- **The rest**: a module is a few tens of milliseconds of CPU per call it handles and about 100 MiB resident; a node with room for the requests above has room for the stack. Add up the requests (about 2.2 cores and 3.7 GiB for one replica of each of the 24 modules and the bundled Postgres) for the smallest node pool that holds it.
+- **The rest**: a module is a few tens of milliseconds of CPU per call it handles and about 100 MiB resident; a node with room for the requests above has room for the stack. Add up the requests (the profile: about 2.2 cores and 3.7 GiB for one replica of each of the 24 modules and the bundled Postgres) for the smallest node pool that holds it.
 
 ## What this does not tell you
 
