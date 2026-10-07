@@ -26,7 +26,8 @@ EOF
       image: $image
       imagePullPolicy: Never
       command: ["sleep", "10800"]
-      volumeMounts: [{ name: secrets, mountPath: /run/secrets, readOnly: true }]
+      env: [{ name: SMO_ENROLLMENT_SECRET_FILE, value: /enroll/enrollment_secret }]    # not under /run/secrets: /var/run is a link to /run, and the service account's mount goes there
+      volumeMounts: [{ name: secrets, mountPath: /enroll, readOnly: true }]
   volumes:
     - name: secrets
       secret: { secretName: smo-secrets, items: [{ key: enrollment-secret, path: enrollment_secret }] }
@@ -36,7 +37,7 @@ EOF
     kubectl -n "$ns" exec -i loadgen -- sh -c 'cat > /tmp/load_run.py' < "$here/load_run.py"
     kubectl -n "$ns" exec loadgen -- sh -c "cd /tmp && nohup python load_run.py --concurrency $concurrency --rate $rate --duration 10000 --warmup 5 --stop-file /tmp/stop --out /tmp/out --max-error-rate 1 > /tmp/load.log 2>&1 &"
     sleep 20
-    kubectl -n "$ns" exec loadgen -- pgrep -f load_run.py > /dev/null || { kubectl -n "$ns" exec loadgen -- cat /tmp/load.log; echo "::error::the load did not start"; exit 1; }
+    kubectl -n "$ns" exec loadgen -- sh -c 'for p in /proc/[0-9]*; do grep -q "[l]oad_run.py" "$p/cmdline" 2>/dev/null && exit 0; done; exit 1' || { kubectl -n "$ns" exec loadgen -- cat /tmp/load.log; echo "::error::the load did not start"; exit 1; }
     ;;
   stop)
     out=${2:?output directory}
