@@ -215,3 +215,33 @@ groups:
           summary: "The mTLS {{ $labels.file }} certificate of {{ $labels.job }} expires in under 3 days"
           description: "The renewal that SmoMtlsCertExpiring asked for did not happen, or did not reach this module. In 3 days the module stops talking to the others."
           runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoMtlsCertExpiryImminent.md
+
+  # Backups of a CloudNativePG cluster (PR-HA-6), from the operator's own metrics on each instance's :9187 (they exist only where the Postgres is a CloudNativePG cluster with a
+  # backup configured: with another Postgres nothing fires, which is a gap and is said so in docs/DISASTER_RECOVERY.md; the logical backup of the compose lab logs its failures).
+  # The names were read from a real instance by the CI job `cnpg-wal-archive` (.github/workflows/smo-dr.yml). RPO 15 minutes: docs/DISASTER_RECOVERY.md.
+  - name: smo.backup
+    rules:
+      - alert: SmoBackupLate
+        expr: time() - max(cnpg_collector_last_available_backup_timestamp) > 26 * 3600
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "No base backup of the SMO database for over 26 hours"
+          description: "The newest base backup is older than the daily schedule plus two hours, or there has never been one. WAL archiving may still run (SmoWalArchiveLate), but a restore then replays a long stretch of WAL."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoBackupLate.md
+      - alert: SmoWalArchiveLate
+        expr: max(cnpg_pg_stat_archiver_seconds_since_last_archival) > 900
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "No WAL segment of the SMO database archived for over 15 minutes"
+          description: "The newest archived WAL segment is older than the recovery point objective (15 minutes). A quiet database still switches a segment every archive_timeout, so this means the archive is failing or stuck, and a loss of the database now loses more than the objective allows."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoWalArchiveLate.md
+      - alert: SmoWalArchiveFailing
+        expr: increase(cnpg_pg_stat_archiver_failed_count[15m]) > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Archiving WAL segments of the SMO database is failing"
+          description: "Segments are failing to reach the object store (credentials, endpoint, bucket, quota). Postgres keeps the segments and retries, so the disk of the instance fills until the archive works again."
+          runbook_url: https://github.com/rsys-bshankar/ai-ran-ref/blob/main/smo/docs/runbooks/SmoWalArchiveFailing.md

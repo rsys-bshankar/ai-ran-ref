@@ -39,6 +39,6 @@ Everything in this table is initiated by the platform at run time. Nothing else 
 - **Where it runs.** Nothing in the stack needs an Internet connection to run once the images and the database exist. An air-gapped site mirrors the images and sets `image.registry`.
 - **What is published.** Compose publishes R1 `:8080`, the GUI `:3000` and Postgres `:5432`; the `tls` profile adds `:8443` and `:3443`. Unpublish the plain ports and Postgres for anything but a laptop.
 - **Which destinations can be called.** Only by deciding who may register a notification URL or an O1 endpoint (RBAC in the GUI; at R1 an rApp may register subscriptions, not O1 endpoints). A network egress policy is the real boundary: the platform's own URL guard is a safeguard, not an allow-list.
-- **Retention.** Mostly unbuilt: see `PRIVACY.md` section 2 and `DB-3`. Today the operator deletes what must go.
+- **Retention.** Built for alarms, PM files, safeguard refusals, MDAF reports and the GUI audit log, and off until the operator sets a number of days: `docs/RETENTION.md`. Other tables: see `PRIVACY.md` section 2. Otherwise the operator deletes what must go.
 - **Backups and logs**, their location (the off-site bucket included, `docs/DISASTER_RECOVERY.md`), encryption and expiry; the platform writes them in plain files and standard output.
 - **Region.** The platform has no notion of data region or tenant in its data model (`SEC-10.2` would add `region` and `tenant` to `managed_entity`, not built); a deployment per region is the way to keep data in one.

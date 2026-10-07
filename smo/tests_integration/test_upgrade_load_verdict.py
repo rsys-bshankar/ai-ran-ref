@@ -47,3 +47,11 @@ def test_the_command_prints_when_the_errors_were_and_exits_1_on_failure(tmp_path
     assert "120-130 s: 4 errors of 100 calls" in out.out and "0-10 s" not in out.out and "FAIL: alarm list: 4 errors" in out.err
     path.write_text(json.dumps(result()))
     assert v.main([str(path)]) == 0
+
+
+def test_report_only_prints_the_problems_and_exits_zero(tmp_path, capsys):
+    path = tmp_path / "r.json"
+    path.write_text(json.dumps(result(calls=300, errors=100)))
+    assert v.main([str(path)]) == 1
+    assert v.main([str(path), "--report-only"]) == 0
+    assert "NOTE (report only)" in capsys.readouterr().err

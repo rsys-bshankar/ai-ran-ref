@@ -29,6 +29,9 @@ SEVERITIES = {"info", "warning", "critical"}
 PROMQL_WORDS = {"and", "or", "unless", "bool", "offset", "inf", "nan", "sum", "min", "max", "avg", "count", "topk", "bottomk"}
 SCRAPE_LABELS = {"job", "instance", "le", "quantile"}                  # added by Prometheus or the histogram, not by the code
 SECTIONS = ("Symptom", "Impact", "Diagnosis", "Mitigation", "Escalation")
+# Series that are not the code's but the CloudNativePG operator's, read from each instance's :9187. The CI job `cnpg-wal-archive` (.github/workflows/smo-dr.yml) fails unless a real
+# instance exports every name listed here, so they are checked against the operator, not against this file.
+OPERATOR_METRICS = {"cnpg_collector_last_available_backup_timestamp", "cnpg_pg_stat_archiver_seconds_since_last_archival", "cnpg_pg_stat_archiver_failed_count"}
 
 
 def _rules():
@@ -176,7 +179,7 @@ def test_every_metric_and_label_a_rule_uses_is_exported_by_the_code_or_recorded_
         assert used, f"{rule.get('alert') or rule['record']}: no series found in {rule['expr']!r} (is the scan wrong?)"
         for name, labels in used:
             where = rule.get("alert") or rule["record"]
-            if name == "up":
+            if name == "up" or name in OPERATOR_METRICS:
                 continue
             if name.startswith("smo:"):
                 assert name in recorded, f"{where}: {name} is not recorded by this file"
@@ -184,6 +187,14 @@ def test_every_metric_and_label_a_rule_uses_is_exported_by_the_code_or_recorded_
             assert name in exported, f"{where}: {name} is not a metric the code exports"
             unknown = labels - exported[name] - SCRAPE_LABELS
             assert not unknown, f"{where}: {name} has no label {sorted(unknown)} (it has {sorted(exported[name])})"
+
+
+def test_the_operator_metrics_the_backup_alerts_use_are_the_ones_the_ci_job_checks_on_a_real_instance():
+    used = {name for rule in _rules() for name, _ in _selectors(rule["expr"]) if name.startswith("cnpg_")}
+    assert used == OPERATOR_METRICS
+    job = (SMO_ROOT.parent / ".github" / "workflows" / "smo-dr.yml").read_text()
+    for name in OPERATOR_METRICS:
+        assert name in job, f"{name} is not checked against a real instance by the cnpg-wal-archive job"
 
 
 def test_every_recording_rule_is_used_by_an_alert_or_another_rule():
