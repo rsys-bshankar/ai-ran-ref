@@ -24,6 +24,24 @@ Every list route counts the whole result for `total` (`COUNT(*)`, 55 ms for a mi
 
 First run in CI (GitHub ubuntu-latest, Postgres 18, 100 000 elements = 1 000 000 alarms and 500 000 performance files, from 0.4.0's `0026`): `0027` (the performance-file index and `lcm_operation.created_at`) 0.9 s, `0028` 0.5 s, `0029` (drops the compatibility views) 0.6 s, **2.0 s in all** against the 300 s budget; the restore drill on the same data took 6 s to dump (51 MB) and 7 s to restore. Every row is mostly process start, so no revision of 0.5.0 touches the big tables in a way that scales with them; a later revision that does (a new column with a computed default, an index on `alarm`) will show as the row that stands out.
 
+## The upgrade under load (V-10)
+
+A light load (4 callers paced to 20 calls a second, through the gateway as an SMO module, from a pod of its own) runs through the Kubernetes upgrade lane (`.github/workflows/smo-upgrade-kind.yml`): it starts after the previous release is installed and stops after the last step, so the second revision, the migration that cannot finish, the real upgrade and the rollback all happen under it. Single-node kind on a GitHub runner; the achieved rate is about 14 calls a second, not the 20 asked for, because a call waits for its answer.
+
+First numbers (CI run of the pull request that added it):
+
+| From | Calls | Seconds | Errors | Where | p50 | p95 | p99 |
+|---|---:|---:|---:|---|---:|---:|---:|
+| smo-v0.4.0, upgrade then roll back (gates) | 3023 | 210 | 10 (0.33 %) | all on `package list`, in four 10 s slices during the upgrade; no other route had one | 46 ms | 164 ms | 1.7 s |
+| smo-v0.3.0, upgrade (reported, not gated) | 612 | 61 | 142 (23 %) | every route: 401 on a call that had worked, 500 on the token route, a few 502 and refused connections, in the first 60 s of the rollout | 63 ms | 508 ms | 3.3 s |
+
+What this says:
+
+- **One release back, the rolling upgrade is clean except for the package list.** The 10 errors are the onboarding module, which rolls with Recreate because its package store is a volume only one pod may hold (a gap of up to 33 s was seen). The verdict allows errors on that route and nowhere else: at most 1 % overall, none on any other route, at least 2000 calls.
+- **Two releases back, it is not clean.** The 0.3.0 lane has errors on every route during the rollout. The likely cause is that revision `0029` (the contract step of the expand/contract rule) drops the compatibility views that 0.3.0's code still reads, so its pods fail until they are replaced. That fits the policy (a rolling upgrade is guaranteed from the previous release, `docs/RELEASES.md`) and the clean 0.4.0 result, but it was not confirmed by reading the old pods' own errors. That lane runs the load with `--report-only`: its errors are printed in the job summary and do not fail it. An operator on 0.3.0 should upgrade to 0.4.0 first.
+- **The thresholds are first guesses** (1 %, none on the routes that stay up). 0.33 % on a lane that includes a rollback leaves room, and the one allowed route accounts for all of it. Tighten them when a run shows how much the numbers move.
+- **The tail is long** (p99 1.7 s against p50 46 ms) because a module restarting answers slowly before it answers at all; this is the latency the clients see during an upgrade, not in steady state (`docs/SIZING.md` has that).
+
 ## Not yet covered
 
 - Cells, managed objects and KPI results are not seeded yet (V-8b seeds managed elements, alarms and performance files).
