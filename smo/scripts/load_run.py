@@ -60,7 +60,7 @@ def percentile(values: list[float], q: float) -> float:
 
 
 async def register(client: httpx.AsyncClient, sme: str) -> dict:
-    secret = Path("/run/secrets/enrollment_secret").read_text(encoding="utf-8").strip()
+    secret = Path(os.environ.get("SMO_ENROLLMENT_SECRET_FILE", "/run/secrets/enrollment_secret")).read_text(encoding="utf-8").strip()
     resp = await client.post(f"{sme}/invoker-registrations", json={"apiInvokerPublicKey": "load"}, headers={"X-SMO-Enrollment": secret})
     resp.raise_for_status()
     return resp.json()

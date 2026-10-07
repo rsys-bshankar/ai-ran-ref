@@ -101,7 +101,8 @@ jobs:
                 image: local/smo-r1-termination:cur
                 imagePullPolicy: Never
                 command: ["sleep", "10800"]
-                volumeMounts: [{ name: secrets, mountPath: /run/secrets, readOnly: true }]
+                env: [{ name: SMO_ENROLLMENT_SECRET_FILE, value: /enroll/enrollment_secret }]    # not under /run/secrets: /var/run is a link to /run, and the service account's mount goes there
+                volumeMounts: [{ name: secrets, mountPath: /enroll, readOnly: true }]
             volumes:
               - name: secrets
                 secret: { secretName: smo-secrets, items: [{ key: enrollment-secret, path: enrollment_secret }] }
@@ -110,7 +111,7 @@ jobs:
           kubectl -n smo exec -i loadgen -- sh -c 'cat > /tmp/load_run.py' < scripts/load_run.py
           kubectl -n smo exec loadgen -- sh -c 'cd /tmp && nohup python load_run.py --concurrency 4 --rate 20 --duration 10000 --warmup 5 --stop-file /tmp/stop --out /tmp/out --max-error-rate 1 > /tmp/load.log 2>&1 &'
           sleep 20
-          kubectl -n smo exec loadgen -- pgrep -f load_run.py > /dev/null || { kubectl -n smo exec loadgen -- cat /tmp/load.log; echo "::error::the load did not start"; exit 1; }
+          kubectl -n smo exec loadgen -- sh -c 'for p in /proc/[0-9]*; do grep -q load_run "$p/cmdline" 2>/dev/null && exit 0; done; exit 1' || { kubectl -n smo exec loadgen -- cat /tmp/load.log; echo "::error::the load did not start"; exit 1; }
 
       # an operator's history is install, upgrade, upgrade: the migrate Job of an upgrade is a pre-upgrade hook and is not run again by a rollback to it,
       # while the install's is a plain Job that a rollback to revision 1 runs again, with the old image, on the new schema. So the rollback goes to revision 2.

@@ -28,8 +28,8 @@ class SecretFileError(RuntimeError):
 
 
 def read_secret(name: str, environ: Mapping[str, str] = os.environ) -> str | None:
-    value = environ.get(name, "")
-    path = environ.get(f"{name}_FILE", "")
+    value = environ.get(name) or ""
+    path = environ.get(f"{name}_FILE") or ""
     if value and path:
         raise SecretConflict(f"both {name} and {name}_FILE are set: set only one")
     if path:
