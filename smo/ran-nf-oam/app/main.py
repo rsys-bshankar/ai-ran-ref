@@ -947,10 +947,12 @@ def read_configuration(managed_element_ref: str, managed_function_ref: str | Non
     RESTCONF GET of the data resource) — the live value on the NF, not what
     this module last asked for — so a caller can verify that a write
     actually took effect."""
-    require_service(db, managed_element_ref, "PROV")
     me = db.get(ManagedEntity, managed_element_ref)
-    endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id) if me and me.o1_adaptor_endpoint_id else None
-    if me is None or endpoint is None:
+    if me is None:      # an element that does not exist is a 404; 503 is for one that is known and cannot be reached (found by the authenticated DAST scan, V-7d)
+        raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
+    require_service(db, managed_element_ref, "PROV")
+    endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id) if me.o1_adaptor_endpoint_id else None
+    if endpoint is None:
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail=f"{managed_element_ref} has no registered O1 adaptor")
     client = _o1_client(me.o1_protocol, endpoint.transport)
     if client is None:
