@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The verdict of the load that runs through an upgrade (PR-V-10): `scripts/upgrade_load_verdict.py load-results.json [--max-error-rate 0.01] [--min-calls 2000]`.
+"""The verdict of the load that runs through an upgrade (PR-V-10): `scripts/upgrade_load_verdict.py load-results.json [--max-error-rate 0.01] [--min-calls 2000] [--report-only]`.
 
 The load (scripts/load_run.py, paced, started before the first `helm upgrade` and stopped after the last step of the lane) must have run the whole time and must have
 been answered: the error rate over the whole run is at most `--max-error-rate`, and no route other than the ones that restart with a gap (`--allow-errors-on`,
@@ -36,6 +36,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--max-error-rate", type=float, default=0.01)
     ap.add_argument("--min-calls", type=int, default=2000)
     ap.add_argument("--max-route-errors", type=int, default=0)
+    ap.add_argument("--report-only", action="store_true", help="print the verdict but exit 0: a jump over a release is outside the rolling guarantee")
     ap.add_argument("--allow-errors-on", action="append", default=None, help="a route that restarts with a gap (default: package list)")
     args = ap.parse_args(argv)
     result = json.load(open(args.results, encoding="utf-8"))
@@ -45,8 +46,8 @@ def main(argv: list[str]) -> int:
         print(f"  {row['from_s']}-{row['to_s']} s: {row['errors']} errors of {row['calls']} calls")
     problems = verdict(result, args.max_error_rate, args.min_calls, tuple(args.allow_errors_on or ("package list",)), args.max_route_errors)
     for problem in problems:
-        print(f"FAIL: {problem}", file=sys.stderr)
-    return 1 if problems else 0
+        print(f"{'NOTE (report only)' if args.report_only else 'FAIL'}: {problem}", file=sys.stderr)
+    return 1 if problems and not args.report_only else 0
 
 
 if __name__ == "__main__":
