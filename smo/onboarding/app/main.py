@@ -10,7 +10,7 @@ import json
 import uuid
 import zipfile
 from io import BytesIO
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import yaml
@@ -80,7 +80,7 @@ install_health(app, checks=[database_check, sme_token_check])  # /live, /ready a
 
 class OnboardRequest(BaseModel):
     location: str
-    applicationType: str = "rApp"
+    applicationType: Literal["rApp", "xApp", "CloudifiedNF", "PNF"] = "rApp"      # the column's CHECK (migrations/001_init.sql): any other value was a 500
 
 
 @app.post("/packages", status_code=202)

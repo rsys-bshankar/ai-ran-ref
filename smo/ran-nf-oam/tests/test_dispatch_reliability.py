@@ -79,7 +79,8 @@ def test_read_after_write(client, db_session_factory, monkeypatch):
     assert seen == [("ME-1", "NRCellDU=101")]
     monkeypatch.setattr("app.main.send_get_config", lambda *a, **kw: None)
     assert client.get("/managed-entities/ME-1/config").status_code == 503
-    assert client.get("/managed-entities/ghost/config").status_code == 503
+    ghost = client.get("/managed-entities/ghost/config", params={"managed_function_ref": ""})
+    assert ghost.status_code == 404 and ghost.json()["detail"]["title"] == "MANAGED_ENTITY_NOT_FOUND"      # unknown: not found; known with no way to reach it: 503 (above)
 
 
 def test_restconf_uses_the_same_retry_policy_and_alarm(client, db_session_factory, monkeypatch):

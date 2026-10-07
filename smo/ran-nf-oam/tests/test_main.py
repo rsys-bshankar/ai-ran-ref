@@ -33,6 +33,15 @@ def db_session_factory():
     ])
     return sessionmaker(bind=engine)
 
+@pytest.fixture
+def elements(db_session_factory):
+    """ME-1 and ME-2 as managed elements: a subscription refers to its element (a foreign key in Postgres, which these tests' SQLite does not enforce)."""
+    with db_session_factory() as session:
+        for ref in ("ME-1", "ME-2"):
+            session.add(ManagedEntity(managed_element_ref=ref, entity_type="O-DU", o1_protocol="NETCONF"))
+        session.commit()
+
+
 
 @pytest.fixture
 def client(db_session_factory):
@@ -293,7 +302,7 @@ def test_registered_endpoint_can_then_heartbeat_to_active(client, db_session_fac
     assert resp.json()["healthStatus"] == "ACTIVE"
 
 
-def test_subscribe_pm_persists_and_returns_granularity_period(client, db_session_factory, monkeypatch):
+def test_subscribe_pm_persists_and_returns_granularity_period(client, db_session_factory, monkeypatch, elements):
     """HISTORY.md §7 item 4: TS28550_PerfMeasJobCtrlMnS.yaml's
     granularityPeriod (the sampling interval), previously absent
     entirely from PMSubscription — subscribe_pm's own docstring already
@@ -315,7 +324,7 @@ def test_subscribe_pm_persists_and_returns_granularity_period(client, db_session
     assert sub.granularity_period == 900
 
 
-def test_subscribe_pm_without_granularity_period_defaults_to_null(client, db_session_factory, monkeypatch):
+def test_subscribe_pm_without_granularity_period_defaults_to_null(client, db_session_factory, monkeypatch, elements):
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
 
     resp = client.post("/pm-subscriptions", params={
@@ -325,7 +334,7 @@ def test_subscribe_pm_without_granularity_period_defaults_to_null(client, db_ses
     assert resp.json()["granularityPeriod"] is None
 
 
-def test_unsubscribe_pm(client, db_session_factory, monkeypatch):
+def test_unsubscribe_pm(client, db_session_factory, monkeypatch, elements):
     """`docs/call-flows/20-alarm-pm-subscription-lifecycle.md`'s own
     gap, closed: PMSubscription previously had no DELETE route at all,
     unlike every other subscription-shaped resource in this build.
@@ -347,7 +356,7 @@ def test_unsubscribe_unknown_pm_subscription_is_idempotent(client):
     assert resp.status_code == 204
 
 
-def test_subscribe_fm_registers_ran_nf_oam_as_a_dme_producer(client, db_session_factory, monkeypatch):
+def test_subscribe_fm_registers_ran_nf_oam_as_a_dme_producer(client, db_session_factory, monkeypatch, elements):
     """HISTORY.md OI-6.7, closed: unlike PM (subscribe_pm calls
     RegisterDMEType), FM/alarms had no DME producer registration at all.
     subscribe_fm mirrors subscribe_pm's own shape exactly.
@@ -374,7 +383,7 @@ def test_subscribe_fm_registers_ran_nf_oam_as_a_dme_producer(client, db_session_
     assert sub.delivery_method == "push"
 
 
-def test_subscribe_fm_unknown_delivery_method_defaults_to_faultmns(client, db_session_factory, monkeypatch):
+def test_subscribe_fm_unknown_delivery_method_defaults_to_faultmns(client, db_session_factory, monkeypatch, elements):
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
 
     resp = client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "pull"})
@@ -382,7 +391,7 @@ def test_subscribe_fm_unknown_delivery_method_defaults_to_faultmns(client, db_se
     assert resp.json()["southboundEngine"] == "FaultMnS"
 
 
-def test_list_fm_subscriptions_filters_by_managed_element_ref(client, db_session_factory, monkeypatch):
+def test_list_fm_subscriptions_filters_by_managed_element_ref(client, db_session_factory, monkeypatch, elements):
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
     client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "push"})
     client.post("/fm-subscriptions", params={"managed_element_ref": "ME-2", "delivery_method": "push"})
@@ -394,7 +403,7 @@ def test_list_fm_subscriptions_filters_by_managed_element_ref(client, db_session
     assert items[0]["managedElementRef"] == "ME-1"
 
 
-def test_unsubscribe_fm(client, db_session_factory, monkeypatch):
+def test_unsubscribe_fm(client, db_session_factory, monkeypatch, elements):
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
     sub_id = client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "push"}).json()["subscriptionId"]
 
@@ -717,3 +726,11 @@ def test_unknown_ids_are_404_and_malformed_input_is_422_not_500(client):
     assert client.post("/o1-adaptor-endpoints", json=body).status_code == 201
     assert client.post("/o1-adaptor-endpoints", json=body).status_code == 409
     assert client.post("/o1-adaptor-endpoints", json={**body, "managedElementRef": "ManagedElement="}).status_code == 422
+
+
+def test_subscribing_for_an_element_that_does_not_exist_is_a_404_not_a_foreign_key_500(client):
+    """Found by the authenticated DAST scan (V-7d): the subscription refers to the element, and Postgres refused the row."""
+    for path, params in (("/fm-subscriptions", {"managed_element_ref": "no-such-element", "delivery_method": "push"}),
+                         ("/pm-subscriptions", {"managed_element_ref": "no-such-element", "counter_type": "x", "delivery_method": "push"})):
+        response = client.post(path, params=params)
+        assert response.status_code == 404 and response.json()["detail"]["title"] == "MANAGED_ENTITY_NOT_FOUND", (path, response.text)

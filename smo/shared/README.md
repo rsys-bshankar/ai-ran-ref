@@ -84,7 +84,7 @@ Also provided, outside that table: `db` (engine and session), `statemachine` (FS
 | `smo_shared/health.py` | `install_health(app, checks)`: `/live`, `/ready`, `/version` and the `/health` alias; `version_report()`; `database_check`, `sme_token_check`, `run_checks` |
 | `smo_shared/timeouts.py` | `call_timeout()`, `upstream_timeout()`, `introspect_timeout()`: the platform's outbound HTTP timeouts, read from the environment when asked |
 | `smo_shared/statemachine.py` | `StateMachine`, `Transition`, `IllegalTransition` |
-| `smo_shared/errors.py` | `ProblemDetails`, `problem()`, `FrameworkError`, `framework_error()`, `illegal_transition_error()` |
+| `smo_shared/errors.py` | `ProblemDetails`, `problem()`, `FrameworkError`, `framework_error()`, `illegal_transition_error()`, `install_out_of_range_handler()`, `install_integrity_handlers()` (a database integrity error from the caller's input is a 422 or 409 problem document, any other unhandled error a 500 `INTERNAL_ERROR` one) |
 | `smo_shared/pagination.py` | `paginate()`, `paginate_list()`, `PageSize`, `PageLimit`, `PageOffset`, `DEFAULT_LIMIT`, `MAX_LIMIT` |
 | `smo_shared/correlation.py` | `apply_correlation_id()`, `get_correlation_id()`, `HEADER_NAME` |
 | `smo_shared/tracing.py` | W3C `traceparent` / `tracestate` parsing and propagation (a context variable, stdlib only), `get_trace_id()`, `inject_headers()`, the optional OpenTelemetry layer (`configure_tracing()`, `span()`: SERVER span per request, CLIENT span per `R1Client` call, OTLP/HTTP export, `SMO_OTEL_ENDPOINT`, `SMO_OTEL_SAMPLE_RATIO`); the SDK is the `tracing` extra of `pyproject.toml` and `requirements/tracing.txt`; FastAPI's own native server span is switched off so a request has one |

@@ -43,6 +43,12 @@
         "properties": {
           "applicationType": {
             "default": "rApp",
+            "enum": [
+              "rApp",
+              "xApp",
+              "CloudifiedNF",
+              "PNF"
+            ],
             "title": "Applicationtype",
             "type": "string"
           },
