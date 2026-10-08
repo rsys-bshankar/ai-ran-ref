@@ -14,6 +14,7 @@ Entries are written for an operator: what changed in behaviour, configuration or
 - **`scripts/breaking_change_waivers.json` is empty again: `smo-v0.5.0` is the base of the next comparison.** The waivers it held (the three bounded parameters, the removed A1 module and the Near-RT RIC double, the `applicationType` check) were breaks against 0.4.0 and are in the 0.5.0 notes. Any break from here is compared with 0.5.0, so a new one fails the job "R1 contract has no breaking change since the previous release" unless it is waived with a reason.
 
 ### Fixed
+- **`POST /actions` on the DME answered 500 when the first change carried `managedElementRef: null`.** It records the empty reference now, like a change that omits it (found by the contract test).
 - **`python -m smo_shared.audit verify` could still report a broken chain beside a writer: the second read of the head returned the first read's copy (found by the upgrade lane from smo-v0.3.0, v0.5.0's own fix being the cause).** The 0.5.0 fix reads the head before and after the rows, but both reads went through the ORM, and the second returned the object the first had loaded, with the old value: a row committed in between looked like "the head says 96; it ends at 97". The head is now read as plain columns, so each read is fresh. The chain was never damaged, only the check; nothing else changes.
 
 
