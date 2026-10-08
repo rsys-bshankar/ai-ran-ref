@@ -23,6 +23,7 @@ on:
       - "smo/migrations/**"
       - "smo/scripts/load_run.py"
       - "smo/scripts/upgrade_load_verdict.py"
+      - "smo/scripts/k8s_diag.sh"
 
 permissions:
   contents: read
@@ -112,6 +113,12 @@ jobs:
           kubectl -n smo exec loadgen -- sh -c 'cd /tmp && nohup python load_run.py --concurrency 4 --rate 20 --duration 10000 --warmup 5 --stop-file /tmp/stop --out /tmp/out --max-error-rate 1 > /tmp/load.log 2>&1 &'
           sleep 20
           kubectl -n smo exec loadgen -- sh -c 'for p in /proc/[0-9]*; do grep -q "[l]oad_run.py" "$p/cmdline" 2>/dev/null && exit 0; done; exit 1' || { kubectl -n smo exec loadgen -- cat /tmp/load.log; echo "::error::the load did not start"; exit 1; }
+
+      - name: Record the pods' logs, events and database lock waits while the load runs
+        working-directory: cur/smo
+        run: |
+          # a pod that is replaced takes its log with it, so every pod is followed from the moment it runs (scripts/k8s_diag.sh); printed by "What happened to the pods" below
+          scripts/k8s_diag.sh start "$RUNNER_TEMP/diag"
 
       # an operator's history is install, upgrade, upgrade: the migrate Job of an upgrade is a pre-upgrade hook and is not run again by a rollback to it,
       # while the install's is a plain Job that a rollback to revision 1 runs again, with the old image, on the new schema. So the rollback goes to revision 2.
@@ -218,6 +225,21 @@ jobs:
           name: upgrade-load-${{ matrix.from }}
           path: load-out/
           retention-days: 30
+
+      - name: What happened to the pods while the load ran
+        if: ${{ !cancelled() }}
+        working-directory: cur/smo
+        run: |
+          scripts/k8s_diag.sh stop "$RUNNER_TEMP/diag"
+          scripts/k8s_diag.sh report "$RUNNER_TEMP/diag" | tee "$RUNNER_TEMP/diag/report.txt"
+
+      - name: Keep the pods' logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: upgrade-pod-logs-${{ matrix.from }}
+          path: ${{ runner.temp }}/diag/
+          retention-days: 14
 
       - name: Pod logs on failure
         if: ${{ failure() }}

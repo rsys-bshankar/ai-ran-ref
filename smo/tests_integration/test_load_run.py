@@ -62,3 +62,20 @@ def test_the_markdown_says_when_the_errors_were_or_that_there_were_none():
     bad = load_run.markdown({**base, "timeline": load_run.timeline_rows({2: [50, 3]})}, args)
     assert "Errors by time since the end of the warm-up: 20-30 s: 3 of 50" in bad and "for 30 s after a 5 s warm-up, paced to about 20 calls a second" in bad
     assert "No errors in any 10 s of the run." in load_run.markdown({**base, "timeline": load_run.timeline_rows({0: [10, 0]})}, SimpleNamespace(concurrency=4, duration=60, warmup=5, rate=0))
+
+
+def test_a_failed_call_is_listed_with_its_status_and_the_start_of_the_answer(monkeypatch):
+    class Refused(int):
+        detail = '{"code":"AUTH_SERVICE_UNAVAILABLE"}'
+
+    async def one_call(client, gateway, sme, reg, access, route):
+        return Refused(503)
+
+    monkeypatch.setattr(load_run, "one_call", one_call)
+    series = {route[0]: load_run.Series() for route in load_run.ROUTES}
+    failures: list[dict] = []
+    import random
+    now = time.monotonic()
+    asyncio.run(load_run.worker(None, "g", "s", {}, "t", now + 0.05, now, series, [r[3] for r in load_run.ROUTES], random.Random(1), {}, 0.0, None, failures))
+    assert failures and failures[0]["status"] == 503 and "AUTH_SERVICE_UNAVAILABLE" in failures[0]["detail"] and failures[0]["route"] in series
+    assert len(failures) == sum(s.errors for s in series.values()) or len(failures) == load_run.MAX_FAILURES
