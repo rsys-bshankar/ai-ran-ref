@@ -18,10 +18,11 @@ RAN NF OAM's own dispatch client was already built to reach: "give the real call
 something real to call, not a full protocol implementation".
 """
 
+import logging
 import os
 import uuid
 from typing import Any
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlencode
 from xml.sax.saxutils import escape, quoteattr
 
 import defusedxml.ElementTree as ET
@@ -31,10 +32,12 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from smo_shared.webhook import is_safe_webhook_destination
+from smo_shared.webhook import is_safe_webhook_destination, post_webhook
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
 from smo_shared.health import install_health
+
+log = logging.getLogger(__name__)
 
 app = FastAPI(title="Mock O1 Adaptor (NETCONF and RESTCONF test double)")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
@@ -467,16 +470,21 @@ def _emit(kind: str, path: str, target: str | None, *, params: dict | None = Non
     if target:
         if not is_safe_webhook_destination(target):
             return _problem(422, "unusable target", "target must be an http(s) origin that is not a loopback, link-local or unspecified address")
-        origin = target
+        origin = target.strip().rstrip("/")
+        # a destination named by the caller leaves through smo_shared.webhook, the one place a caller-supplied URL is called (CodeQL py/full-ssrf; smo/CLAUDE.md)
+        url = origin + path + (("?" + urlencode(params)) if params else "")
+        resp = post_webhook(url, json=body or {}, timeout=EMIT_TIMEOUT_SECONDS)
+        if resp is None:
+            return _problem(502, "RAN NF OAM unreachable", f"POST to the named target failed or was refused by the destination guard ({kind})")
     else:
-        origin = os.environ.get("MOCK_O1_OAM_URL", "")
-    origin = origin.strip().rstrip("/")
-    if not origin:
-        return _problem(409, "no target configured", "no RAN NF OAM to emit to: set MOCK_O1_OAM_URL, or name a `target` in the request")
-    try:
-        resp = httpx.post(origin + path, params=params, json=body, timeout=EMIT_TIMEOUT_SECONDS)
-    except httpx.HTTPError as exc:
-        return _problem(502, "RAN NF OAM unreachable", f"POST {origin}{path} failed: {type(exc).__name__}: {exc}")
+        origin = os.environ.get("MOCK_O1_OAM_URL", "").strip().rstrip("/")     # the deployment's own setting, not a caller's value
+        if not origin:
+            return _problem(409, "no target configured", "no RAN NF OAM to emit to: set MOCK_O1_OAM_URL, or name a `target` in the request")
+        try:
+            resp = httpx.post(origin + path, params=params, json=body, timeout=EMIT_TIMEOUT_SECONDS)
+        except httpx.HTTPError as exc:
+            log.warning("emit %s to %s%s failed: %s: %s", kind, origin, path, type(exc).__name__, exc)
+            return _problem(502, "RAN NF OAM unreachable", f"POST {origin}{path} failed ({type(exc).__name__}); see the stub's log")
     try:
         answer: Any = resp.json()
     except ValueError:

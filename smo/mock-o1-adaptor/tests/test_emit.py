@@ -115,7 +115,8 @@ def test_the_request_can_name_its_own_target(monkeypatch, oam):
     monkeypatch.delenv("MOCK_O1_OAM_URL")
     resp = client.post("/emit/alarm", json={"managedElementRef": "gnb-1", "severity": "MAJOR", "target": "http://other-oam:9000/"})
     assert resp.status_code == 200 and resp.json()["target"] == "http://other-oam:9000"
-    assert oam.calls[0]["url"] == "http://other-oam:9000/alarms/ingest"
+    url = oam.calls[0]["url"]                         # a named target is called through smo_shared.webhook: the query is part of the URL
+    assert url.startswith("http://other-oam:9000/alarms/ingest?") and "managed_element_ref=gnb-1" in url and "severity=MAJOR" in url
 
 
 @pytest.mark.parametrize("target", ["http://127.0.0.1:8000", "http://localhost:8000", "file:///etc/passwd", "http://169.254.169.254", "not a url"])
