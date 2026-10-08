@@ -166,9 +166,10 @@ def test_an_slo_burn_alert_is_a_pair_of_a_fast_and_a_slow_window_and_the_labels_
 def test_the_metric_scan_finds_the_series_the_rules_rely_on():
     exported = _exported_metrics()
     for name in ("smo_http_requests_total", "smo_http_request_duration_seconds_bucket", "smo_outbox_rows", "smo_rapp_instances", "smo_refusals_total",
-                 "smo_worker_task_runs_total", "smo_audit_writes_total", "smo_db_pool_capacity", "smo_outbound_calls_total"):
+                 "smo_worker_task_runs_total", "smo_audit_writes_total", "smo_db_pool_capacity", "smo_outbound_calls_total", "smo_retention_off_rows"):
         assert name in exported, name
     assert exported["smo_outbox_rows"] == {"module", "status"}
+    assert exported["smo_retention_off_rows"] == {"table"}
 
 
 def test_every_metric_and_label_a_rule_uses_is_exported_by_the_code_or_recorded_by_the_file():

@@ -4,7 +4,7 @@
 """
 
 from smo_shared.db import SessionLocal
-from smo_shared.retention import purge, retention_days
+from smo_shared.retention import purge, report_retention_off, retention_days
 from smo_shared.worker import Task
 
 from .models import MDAFReport
@@ -12,9 +12,10 @@ from .models import MDAFReport
 
 def purge_reports() -> None:
     days = retention_days("SMO_RETENTION_MDAF_REPORTS_DAYS")
-    if days > 0:
-        with SessionLocal() as db:
+    with SessionLocal() as db:
+        if days > 0:
             purge(db, MDAFReport, MDAFReport.generated_at, days)
+        report_retention_off(db, "mdaf_report", MDAFReport, days)       # retention off: the row estimate, the gauge and the daily warning
 
 
 TASKS = [Task("purge-reports", 3600, purge_reports)]

@@ -208,6 +208,7 @@ Each delivery writes an `mda_report_delivery` row, surfaced as `deliveredToReque
 | `R1_GATEWAY_URL` | `http://r1-termination:8000` | Base URL of outbound R1 calls (`smo_shared.r1_client`) |
 | `SMO_INVOKER_ID`, `SMO_INVOKER_SECRET` | unset (the module's shared identity from the `module_identity` table, registered at SME on first use) | OAuth2 client identity for outbound R1 calls |
 
+| `SMO_RETENTION_WARN_ROWS` | `1000000` | With reports kept for ever the worker exports `smo_retention_off_rows{table="mdaf_report"}` and logs one WARNING a day above this many rows (`0` never warns) |
 | `SMO_RETENTION_MDAF_REPORTS_DAYS` | `0` | Read by the worker (`mdaf-worker`): reports generated more than this many days ago are deleted, hourly; `0` keeps them for ever (`../docs/RETENTION.md`) |
 
 The worker (`python -m smo_shared.worker`, `app/tasks.py`) has one task, `purge-reports`.

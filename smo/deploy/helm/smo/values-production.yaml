@@ -1,0 +1,30 @@
+# Production sample: the retention periods proposed in docs/RETENTION.md (DB-3.10). The chart's own defaults keep every row (0), so an upgrade deletes
+# nothing; this file is what an operator who has confirmed the periods layers on top:
+#   helm upgrade --install smo deploy/helm/smo -f deploy/helm/smo/values-production.yaml -f my-values.yaml
+# The numbers are proposals, not legal advice: the retention a law or a contract requires is yours to decide (docs/PRIVACY.md). Change a number here
+# and in docs/RETENTION.md together (tests_integration/test_helm_chart.py checks that this file sets every retention variable of that document).
+# Sizing the disk: docs/SIZING.md. A table whose retention is left at 0 is reported by the metric smo_retention_off_rows{table} and a daily
+# warning once it is large (SMO_RETENTION_WARN_ROWS, default 1000000).
+modules:
+  ran-nf-oam:
+    env:
+      SAFEGUARD_REFUSAL_RETENTION_DAYS: "90"       # safeguard refusals; also what POST /safeguard-refusals/purge uses
+  ran-nf-oam-worker:
+    env:
+      SAFEGUARD_REFUSAL_RETENTION_DAYS: "90"       # task purge-safeguard-refusals, hourly
+      SMO_RETENTION_ALARMS_DAYS: "90"              # task purge-cleared-alarms: only alarms cleared more than 90 days ago; a raised alarm is never removed
+      SMO_RETENTION_PM_FILES_DAYS: "14"            # task purge-pm-files: keep at least the longest KPI look-back
+  mdaf-worker:
+    env:
+      SMO_RETENTION_MDAF_REPORTS_DAYS: "30"        # task purge-reports
+
+# The GUI backend's audit log is purged by a command, not by a worker, and NOT by a CronJob of this chart: its SQLite file is on a volume that
+# one pod may hold (gui-bff rolls with Recreate, ReadWriteOnce), so a second pod cannot open it safely. These two variables go to the gui-bff pod, and
+# the command runs inside that pod, from your scheduler (a CronJob of your own with a service account allowed to `pods/exec`, or the platform's job runner):
+#   kubectl -n smo exec deploy/gui-bff -- python -m app.retention
+# With GUI_AUDIT_EXPORT_DIR set the rows are first written there as JSON lines and only the rows written are deleted; the directory is on the pod's
+# volume (/data), so archive it off the volume (copy it out, or use a backup that takes the volume) before it fills.
+gui:
+  env:
+    GUI_AUDIT_RETENTION_DAYS: "365"
+    GUI_AUDIT_EXPORT_DIR: /data/audit-export

@@ -7,13 +7,16 @@ process. Each task finds what is due from the database, does it in committed ste
   purge-safeguard-refusals  every hour   refusal records older than `SAFEGUARD_REFUSAL_RETENTION_DAYS` (default 0: keep them)
   purge-cleared-alarms      every hour   alarms cleared more than `SMO_RETENTION_ALARMS_DAYS` ago (default 0: keep); an alarm still raised is never purged
   purge-pm-files            every hour   PM files ready more than `SMO_RETENTION_PM_FILES_DAYS` ago (default 0: keep); the content is the row, no file on disk
+
+A purge task whose retention is `0` still estimates its table's rows (`smo_shared.retention.report_retention_off`): the gauge `smo_retention_off_rows{table}`
+and one WARNING a day above `SMO_RETENTION_WARN_ROWS`.
 """
 
 from smo_shared.db import SessionLocal
-from smo_shared.retention import purge, retention_days
+from smo_shared.retention import purge, report_retention_off, retention_days
 from smo_shared.worker import Task
 
-from .models import Alarm, PMFile
+from .models import Alarm, PMFile, SafeguardRefusal
 
 
 def advance_waves() -> None:
@@ -36,23 +39,26 @@ def run_kpi_guards() -> None:
 
 def purge_safeguard_refusals() -> None:
     from . import main
-    if main.SAFEGUARD_REFUSAL_RETENTION_DAYS > 0:
-        with SessionLocal() as db:
+    with SessionLocal() as db:
+        if main.SAFEGUARD_REFUSAL_RETENTION_DAYS > 0:
             main.purge_safeguard_refusals(db, main.SAFEGUARD_REFUSAL_RETENTION_DAYS)
+        report_retention_off(db, "safeguard_refusal", SafeguardRefusal, main.SAFEGUARD_REFUSAL_RETENTION_DAYS)
 
 
 def purge_cleared_alarms() -> None:
     days = retention_days("SMO_RETENTION_ALARMS_DAYS")
-    if days > 0:
-        with SessionLocal() as db:
+    with SessionLocal() as db:
+        if days > 0:
             purge(db, Alarm, Alarm.cleared_at, days)       # a NULL cleared_at never compares older, so a raised alarm stays
+        report_retention_off(db, "alarm", Alarm, days)
 
 
 def purge_pm_files() -> None:
     days = retention_days("SMO_RETENTION_PM_FILES_DAYS")
-    if days > 0:
-        with SessionLocal() as db:
+    with SessionLocal() as db:
+        if days > 0:
             purge(db, PMFile, PMFile.file_ready_time, days)
+        report_retention_off(db, "pm_file", PMFile, days)
 
 
 TASKS = [Task("advance-waves", 15, advance_waves), Task("publish-kpis", 30, publish_kpis), Task("run-kpi-guards", 60, run_kpi_guards),
