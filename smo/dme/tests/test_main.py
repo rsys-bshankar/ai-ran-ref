@@ -1151,6 +1151,12 @@ def test_mediate_action_forwards_to_ran_nf_oam_and_records_provenance(client, ra
     assert action["forwardedJobId"] == "11111111-1111-1111-1111-111111111111"
 
 
+def test_mediate_action_records_a_change_whose_managed_element_is_null(client, ran_nf_oam):
+    resp = client.post("/actions", json={"requestedBy": "r", "changes": [{"managedElementRef": None}]})
+    assert resp.status_code != 500
+    assert client.get(f"/actions/{resp.json()['actionId']}").json()["managedElementRef"] == ""
+
+
 def test_mediate_action_surfaces_a_ran_nf_oam_precheck_refusal(client, ran_nf_oam):
     """Wave 9 (W9-02): a write RAN NF OAM's pre-check refuses (here a
     schema violation) reaches the rApp as that same 4xx; the action is
