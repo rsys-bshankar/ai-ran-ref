@@ -247,17 +247,17 @@ def test_the_runbook_index_lists_every_page_and_its_links_resolve():
 
 # --- the SLO document --------------------------------------------------------------------------------------------------------------
 
-def test_the_slo_document_names_every_slo_alert_and_marks_each_target_proposed():
+def test_the_slo_document_names_every_slo_alert_and_says_for_which_deployment_the_targets_hold():
     text = SLOS.read_text()
     for slo in {rule["labels"]["slo"] for rule in _alerts() if "slo" in rule["labels"]}:
         assert f"`{slo}`" in text, slo
     for rule in _alerts():
         if "slo" in rule["labels"]:
             assert f"`{rule['alert']}`" in text, rule["alert"]
-    assert "**every target below is proposed**" in text
+    assert "accepted as the reference targets" in text and "one-pod lab profile" in text      # decided October 2026: the status and its scope are stated
     targets = text.split("## Targets", 1)[1].split("\n## ", 1)[0]
     rows = [line for line in targets.splitlines() if re.match(r"\| `[a-z-]+` \|", line)]
-    assert len(rows) >= 3 and "(proposed)" in targets.splitlines()[2], "the target table says proposed"
+    assert len(rows) >= 3 and "Target" in targets.splitlines()[2], "the target table is there"
 
 
 # --- the chart ---------------------------------------------------------------------------------------------------------------------
