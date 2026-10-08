@@ -317,6 +317,7 @@ services:
     build: { context: ., args: { <<: *build_info, MODULE: mock-o1-adaptor, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
     environment:
       SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}
+      MOCK_O1_OAM_URL: http://ran-nf-oam:8000    # where POST /emit/alarm, /emit/pm-report, ... send (SB-9.8): this stub is a source of FM, PM, SW and heartbeat for RAN NF OAM
     stop_grace_period: 30s
     <<: *hardening
     healthcheck: *ready_probe

@@ -689,15 +689,6 @@ A CM write's values are checked against the leaf's YANG type, range, length, pat
 | SB-8.4 | MDAF `STREAMING` subscription consumes it (closes `SA-MDA-5`'s recorded-only gap) | End-to-end test | SB-8.3 |
 | SB-8.5 | Backpressure and drop policy | Slow consumer test | SB-8.3 |
 
-#### PR-SB-9 — Vendor adaptor conformance kit
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| SB-9.3 | FM checks | The adaptor's alarms are accepted by RAN NF OAM's ingest | A way to make an adaptor emit (SB-9.8) |
-| SB-9.4 | PM checks | Same, for PM files and reports | SB-9.8 |
-| SB-9.5 | SW checks and the heartbeat | Same (discovery is done: DISC-1 to DISC-3) | SB-9.8 |
-| SB-9.8 | A trigger option in the kit (`--emit-url`, a call that makes the adaptor raise an alarm, report a file, answer a heartbeat), and the same emitter in `mock-o1-adaptor` so the stub is a source of FM and PM for development, not only a target for CM | Kit runs SB-9.3 to 9.5 against the stub in CI | – |
-
 #### PR-SB-10 — First vendor profile
 
 Needs access to a vendor simulator or lab.

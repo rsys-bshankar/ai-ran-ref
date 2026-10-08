@@ -29,6 +29,9 @@ def quiet_and_clean():
     logging.disable(logging.NOTSET)
 
 
+EMITTING = {"FM", "PM", "SW", "HB"}
+
+
 def ctx_for(client, protocols=("netconf", "restconf")) -> Context:
     return Context(client, set(protocols))
 
@@ -40,7 +43,9 @@ def failures(results) -> dict[str, str]:
 def test_the_mock_passes_every_check_in_both_protocols():
     results = run(ctx_for(TestClient(app, base_url="http://mock")))
     assert failures(results) == {}
-    assert summary(results) == {PASS: len(REGISTRY), FAIL: 0, SKIP: 0}
+    emitting = [c for c in REGISTRY if c.group in EMITTING]        # no --oam-url: nothing to read back from, so the emitting groups are skipped (tests_integration/test_o1_conformance_emit.py runs them)
+    assert summary(results) == {PASS: len(REGISTRY) - len(emitting), FAIL: 0, SKIP: len(emitting)}
+    assert all("--oam-url" in r.detail for r in results if r.status == SKIP and r.group in EMITTING)
 
 
 def test_a_second_run_against_the_same_adaptor_passes_too():
@@ -58,7 +63,7 @@ def test_a_protocol_that_is_not_part_of_the_run_is_skipped_not_failed():
 def test_every_check_has_an_id_a_group_and_a_title_and_the_ids_are_unique():
     ids = [c.id for c in REGISTRY]
     assert len(ids) == len(set(ids)) >= 20
-    assert {c.group for c in REGISTRY} == {"DISC", "NETCONF", "RESTCONF"}
+    assert {c.group for c in REGISTRY} == {"DISC", "NETCONF", "RESTCONF"} | EMITTING
     assert all(c.title for c in REGISTRY)
 
 
