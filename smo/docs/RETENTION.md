@@ -1,10 +1,10 @@
 # Retention
 
-How long each high-volume table keeps its rows, which variable changes it, and what removes the rows (`PR-DB-3`). **Nothing is deleted by default**: a retention of `0` keeps the rows for ever, so an upgrade deletes nothing until an operator sets a number. The defaults below are proposals for an operator to confirm, not legal advice; the retention a law or a contract requires is the operator's to decide (`docs/PRIVACY.md`).
+How long each high-volume table keeps its rows, which variable changes it, and what removes the rows (`PR-DB-3`). **Nothing is deleted by default**: a retention of `0` keeps the rows for ever, so an upgrade deletes nothing until an operator sets a number. Decided October 2026: the code defaults stay at `0`, and the values in the "Proposed value" column ship in a production sample values file and in `.env.example` (`DB-3.10`, 0.6.0), not as defaults. They are proposals for an operator to confirm, not legal advice; the retention a law or a contract requires is the operator's to decide (`docs/PRIVACY.md`).
 
 ## The table (`DB-3.1`)
 
-| Table | Module | What a row is | Grows with | Setting (days; `0` keeps) | Proposed value | Removed by | Notes |
+| Table | Module | What a row is | Grows with | Setting (days; `0` keeps) | Proposed value (production sample) | Removed by | Notes |
 |---|---|---|---|---|---|---|---|
 | `alarm` | RAN NF OAM | An alarm | Every alarm ingested | `SMO_RETENTION_ALARMS_DAYS` | 90 | Worker task `purge-cleared-alarms` (hourly) | Only an alarm **cleared** more than N days ago. An alarm still raised is never removed, however old |
 | `pm_file` | RAN NF OAM | A PM file: the measurements are the row's `content`, there is **no file on disk** | Every PM file reported | `SMO_RETENTION_PM_FILES_DAYS` | 14 | Worker task `purge-pm-files` (hourly) | By `file_ready_time`. KPIs (`/kpi-schedules`, `/kpis/...`) read these rows, so keep at least the longest KPI look-back |

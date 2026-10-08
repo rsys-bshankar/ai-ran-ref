@@ -14,7 +14,7 @@ Each item in sections 1–4: what is missing, why it matters, suggested approach
 
 **Out of scope at every stage**: A1, xApps, the Near-RT RIC and E2, and their policy. The `a1-related` module, `mock-near-rt-ric` and the `OI-5-a1-*` items were removed in release 0.5.0 (the code is in the tag `smo-v0.4.0`); A1 stays as a future work item, see "A1 / Near-RT RIC / E2" under 5.8.
 
-**Not decided yet**: what goes in 0.6.0 beyond the items named below, what goes in 0.7.0 (to be discussed once 0.5.0 is done), and when 1.0.0 is cut. The external penetration test is a criterion for 1.0.0 (see `docs/VALIDATION.md`, V-7c); the criteria are in `docs/RELEASES.md`.
+**Not decided yet**: what goes in 0.7.0 (to be discussed once 0.6.0 is done), and when 1.0.0 is cut. The external penetration test is a criterion for 1.0.0 (see `docs/VALIDATION.md`, V-7c); the criteria are in `docs/RELEASES.md`.
 
 ### Release 0.5.0 scope (decided, October 2026)
 
@@ -27,6 +27,19 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 | Operability | OBS-3 traces (Tempo), OBS-4 business metrics, OBS-5 alerts and SLOs, OBS-6 log shipping, OBS-7 runbooks (OBS-4, 5 and 7 are done in part: what remains is under 5.5), OBS-8 `/version`, OPS-6 GitOps example, OPS-7 configuration reference, OPS-9 sizing | – |
 | Disaster recovery | HA-6: RPO 15 minutes, RTO 1 hour, off-site backup shipping, one timed restore drill (built, `docs/DISASTER_RECOVERY.md`; the drill on a real stack is open, HA-6.3) | HA-7 geo-redundancy (after 1.0.0) |
 | Standards and documents | STD-2.1 spec release table; STD-4.1 personal-data inventory; STD-6.1 data residency statement; STD-4.3 erasure procedure for a GUI user; STD-5 control matrix (ISO 27001, NESAS/SCAS) | STD-3 plugfest plan (0.6.0 or later) |
+
+### Release 0.6.0 scope (decided, October 2026)
+
+| Area | In 0.6.0 | Notes |
+|---|---|---|
+| Southbound | SB-9.3 to 9.5 and SB-9.8: the RAN O1 stub emits (alarms, PM reports and files, software-update phases, heartbeats) and the conformance kit checks what RAN NF OAM receives | The stub was configuration-only in 0.5.0 |
+| GUI | New `PR-GUI-8`: one rApps entry in the sidebar with a searchable directory, a detail page per rApp, pages declared by the rApp package and drawn by a generic renderer, per-user pins; the four sample rApps move to it and their hand-written pages go | Replaces "one coded page and one sidebar entry per rApp", which does not scale to 100 rApps and gives a rApp onboarded at run time no page |
+| Security | `PR-SEC-7` MFA: a setting that makes OIDC the only login (the provider's MFA applies), and native one-time-code login for local accounts, mandatory for the admin role, as the break-glass login; SEC-5 signing keys and JWKS; SEC-4.7 external secrets example | Decided: both MFA layers. With OIDC the provider does the second factor, so SEC-7.1 to 7.3 serve the local accounts only |
+| Retention | `DB-3.10`: the proposed periods of `docs/RETENTION.md` ship in a production sample values file and in `.env.example`; the code defaults stay at `0` (keep), so an upgrade deletes nothing; a startup warning and a metric when a table with retention off has grown large | Decided: do not default to deleting |
+| Operability | The SLO targets of `docs/SLOS.md` are accepted as the reference targets (decided October 2026) for a deployment with two or more replicas and a highly available Postgres; the one-pod lab profile is not held to them during an upgrade | Per-route targets and per-deployment tuning stay open |
+| Standards | STD-3 plugfest plan | If time allows |
+
+Not in 0.6.0 (needs a host we control or a decision outside the code): the real-size disaster-recovery drill (HA-6.3), a hard node loss, a network partition, PgBouncer failover, zones, the external penetration test. They are criteria for 1.0.0 (`docs/RELEASES.md`).
 
 **Documentation rule (every pull request):** a change updates the documents it makes stale in the same pull request: the overall `README.md`, the module's own `README.md` (HLD, LLD, tests), `docs/ARCHITECTURE.md` and `docs/STANDARDS.md` where behaviour or a standard's realisation changes, `OPEN_ITEMS.md` (closed items move to `HISTORY.md`), `CHANGELOG.md`, `docs/VALIDATION.md`, and the chart's README for anything an operator deploys.
 
@@ -204,6 +217,7 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 |---|---|---|---|
 | DB-3.8 | Time partitioning for the PM table | Old partition drops in one statement | OPS-1.4 |
 | DB-3.9 | Also: remove `DEAD` outbox rows after a period; prune the platform audit chain behind a signed checkpoint; expire `gui_login_failure` rows | Test deletes only eligible rows; `verify` passes after a prune | DB-3.2 |
+| DB-3.10 | The periods of `docs/RETENTION.md` in a production sample values file (`deploy/helm/smo/ci/` or `values-production.yaml`) and in `.env.example`; code defaults stay `0`. A startup warning and a metric (`smo_retention_off_rows`) when a table whose retention is off has more than a configured number of rows (0.6.0) | Sample renders; warning and metric test | DB-3.7 |
 
 #### PR-DB-4 — Indexes and pagination
 
@@ -358,6 +372,9 @@ SEC-6.1 to 6.7 are done (`HISTORY.md`, PR-SEC-6). What remains:
 | SEC-7.2 | Login second step | Wrong code refused | SEC-7.1 |
 | SEC-7.3 | Recovery codes (hashed) | One-time use | SEC-7.1 |
 | SEC-7.5 | Admin action: revoke a user's sessions (SEC-7.4, logout revocation, is done: `HISTORY.md`) | Route test | – |
+| SEC-7.6 | `GUI_LOGIN_MODE` (`both` default, `oidc`, `local`): with `oidc` the password form is not offered and `POST /api/auth/login` is refused for every account except a break-glass one, so the provider's MFA applies (0.6.0) | Route test; GUI shows no form | – |
+| SEC-7.7 | Break-glass: a local account flagged `breakGlass` signs in with password and one-time code even when the mode is `oidc`; every use is audited and raises an event | Test | SEC-7.2 |
+| SEC-7.8 | `GUI_ADMIN_MFA_REQUIRED` (default off; on in the production sample): a local admin without an enrolled code is sent to enrolment before anything else | Test | SEC-7.1 |
 
 #### PR-SEC-8 — Rate and size limits
 
@@ -1241,6 +1258,21 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 | GUI-7.1 | Inbox page listing pending change-window approvals | Component test | MGT-4.3 |
 | GUI-7.2 | Add pending rApp action approvals | Component test | AI-11.2 |
 | GUI-7.3 | Add model gate approvals | Component test | – |
+
+#### PR-GUI-8 — rApp directory and declared pages (0.6.0)
+
+Why: the sidebar is a fixed list and each of the four sample rApps has a hand-written page compiled into the GUI (and a static entry in the gateway's routes and the GUI backend's permission table). A rApp onboarded at run time shows only on the generic rApps page, and 100 rApps would be 100 coded pages. Design: the sidebar keeps one rApps entry; a directory lists every rApp; what a rApp shows on its page is declared in its package and drawn by a generic renderer, so onboarding it makes its page appear without a GUI build. **Not taken:** a rApp shipping its own JavaScript or an iframe (a security and support problem; after 1.0.0 if ever).
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| GUI-8.1 | ADR: the declaration format (`operatorUi` in the manifest: version, panels of kind table, key-values, KPIs, chart and actions, each bound to a route the rApp declares), the limits (size, panel count), and how the rApp's operator API is reached | ADR merged | – |
+| GUI-8.2 | Manifest schema and Onboarding validation; `docs/RAPP_PACKAGING.md` | A bad declaration (undeclared route, too large, unknown kind) is rejected at onboarding | GUI-8.1 |
+| GUI-8.3 | GUI backend: the directory (`GET /api/rapps`, with search, state, owner), the declaration of one instance, and a proxy for the declared routes whose permission comes from the declaration (read: viewer, change: operator; an undeclared route is refused; every change audited) | Route and RBAC tests | GUI-8.2 |
+| GUI-8.4 | GUI: the directory page (search, filter, state) and the detail page `/rapps/<instance>`: the generic overview (lifecycle, faults, history, KPIs, safeguards) and the declared panels | Component tests | GUI-8.3 |
+| GUI-8.5 | Per-user pins in the sidebar (at most 5; stored in the GUI backend, not the browser) | Test | GUI-8.4 |
+| GUI-8.6 | The four sample rApps declare their pages; their coded pages, static sidebar entries and static permission rules go | Same views from the declaration; browser check | GUI-8.4 |
+| GUI-8.7 | Browser check: onboard a rApp at run time and see its page, with no GUI rebuild; a viewer cannot press a change button | `smo-gui-e2e` | GUI-8.6 |
+| GUI-8.8 | SDK helper to write the declaration; `gui/README.md` | Sample uses it | GUI-8.2 |
 
 ### 5.14 Standards and compliance (`PR-STD`)
 
