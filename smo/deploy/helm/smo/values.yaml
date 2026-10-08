@@ -76,6 +76,9 @@ gui:
   # redirect URI and group map here; the client's credential is better kept in a Secret you make: oidcClientSecretRef.
   env: {}
   oidcClientSecretRef: {}      # {name: my-oidc-secret, key: client-secret}
+  # PR-SEC-7: the key that encrypts the one-time-code secrets of local accounts, from a Secret of your own ({name: my-totp-key, key: totp-key}); the chart passes it
+  # as GUI_TOTP_KEY. With it set, accounts can enrol a one-time code. GUI_LOGIN_MODE (both|oidc|local) and GUI_ADMIN_MFA_REQUIRED go in `env`.
+  totpKeySecretRef: {}
 
 # Where each module keeps files (Onboarding's packages, the GUI backend's database). With persistence off they are emptyDirs and are lost
 # when the pod goes.
