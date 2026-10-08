@@ -193,7 +193,8 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 
 | Variable | Default | Secret | Read in | What it does |
 |---|---|---|---|---|
-| `MOCK_O1_SUPPORTED_SERVICES` | `PROV,FM,PM,FILE,STREAM,SWM,SUBSCRIPTION,HEARTBEAT` |  | `mock-o1-adaptor/app/main.py` | Comma-separated O1 services the mock adaptor reports as supported in its capability answer. Only for tests and demos with the mock. |
+| `MOCK_O1_OAM_URL` | `"" (empty)` |  | `mock-o1-adaptor/app/main.py` | Origin of RAN NF OAM (for example `http://ran-nf-oam:8000`) that the mock O1 adaptor's emit routes (`/emit/alarm`, `/emit/pm-report`, `/emit/pm-file`, `/emit/heartbeat`, `/emit/software-phase`) send to. Unset: an emit route answers 409 unless the request names a `target`. Plain HTTP: not usable towards a RAN NF OAM that requires mutual TLS. Only for tests and demos with the mock. |
+| `MOCK_O1_SUPPORTED_SERVICES` | `PROV,FM,PM,FILE,STREAM,SWM,SUBSCRIPTION,HEARTBEAT` |  | `mock-o1-adaptor/app/main.py` | Comma-separated O1 services the mock adaptor reports as supported in its capability answer, and the services it emits (FM: alarms, PM: reports, FILE: files, SWM: software phases, HEARTBEAT: heartbeats; an emit route for a service not listed answers 409). Only for tests and demos with the mock. |
 | `MOCK_O1_VENDOR_MODES` | `O1_NETCONF,O1_RESTCONF` |  | `mock-o1-adaptor/app/main.py` | Comma-separated vendor modes (`O1_NETCONF`, `O1_RESTCONF`) the mock adaptor reports. Only for tests and demos with the mock. |
 | `MOCK_O1_VENDOR_NAME` | `mock-vendor` |  | `mock-o1-adaptor/app/main.py` | Vendor name the mock O1 adaptor reports. Only for tests and demos with the mock. |
 

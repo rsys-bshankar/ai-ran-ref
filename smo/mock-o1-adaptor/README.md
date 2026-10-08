@@ -1,16 +1,16 @@
 # Mock O1 Adaptor (`mock-o1-adaptor/`)
 
-> An in-memory NETCONF- and RESTCONF-shaped O1 adaptor test double: it answers RAN NF OAM's `edit-config` / `get-config` over HTTP and the same operations as RFC 8040 requests under `/restconf`, declares a configurable vendor capability, and offers test-only fault injection and introspection.
+> An in-memory NETCONF- and RESTCONF-shaped O1 adaptor test double: it answers RAN NF OAM's `edit-config` / `get-config` over HTTP and the same operations as RFC 8040 requests under `/restconf`, declares a configurable vendor capability, offers test-only fault injection and introspection, and **emits** towards RAN NF OAM on request (alarms, PM reports and files, software-management phase results, heartbeats: `POST /emit/...`).
 
 | | |
 |---|---|
 | Standards basis | Test double of an O1 NETCONF / RESTCONF adaptor (not a standard component) |
 | R1 route / port | None: not R1-facing and not routed by R1 Termination. Container :8000 on the default compose network (no isolated segment); a managed element's `adaptor_uri` points at `http://mock-o1-adaptor:8000/edit-config` (NETCONF) or the RESTCONF root `http://mock-o1-adaptor:8000/restconf` |
-| Depends on (over R1) | none |
-| Called by | RAN NF OAM (`POST /edit-config` for both `edit-config` and `get-config`, `/restconf/data/...` for a RESTCONF ME, `GET /capabilities` for vendor discovery); tests and demos (introspection and fault routes) |
+| Depends on (over R1) | none. It calls RAN NF OAM directly (not over R1) when an `/emit/...` route is triggered, at `MOCK_O1_OAM_URL` |
+| Called by | RAN NF OAM (`POST /edit-config` for both `edit-config` and `get-config`, `/restconf/data/...` for a RESTCONF ME, `GET /capabilities` for vendor discovery); tests and demos (introspection, fault and emit routes); the O1 conformance kit (`/capabilities`, the CM routes, the emit routes) |
 | Database tables | none (in-memory dicts) |
-| Unit tests | 40 passed (`tests/`, standalone), among them the O1 conformance kit run against this mock and against faulty fakes |
-| Status | Done (NETCONF and RESTCONF, `OI-1-cm-sync-restconf`). Deliberately not a NETCONF / RESTCONF / YANG implementation (see [section 2.8](#28-limits-and-open-items)) |
+| Unit tests | 64 passed (`tests/`, standalone), among them the emitter and the O1 conformance kit's CM checks run against this mock and against faulty fakes; the emitting checks against the real RAN NF OAM app are in `tests_integration/test_o1_conformance_emit.py` |
+| Status | Done (NETCONF and RESTCONF, `OI-1-cm-sync-restconf`; the emitting side, `SB-9.8`). Deliberately not a NETCONF / RESTCONF / YANG implementation (see [section 2.8](#28-limits-and-open-items)) |
 
 ## 1. High-level design (HLD)
 
@@ -38,10 +38,12 @@ The real O-RAN-SC `sim-o1-interface` (`ntsim-ng`) is a YANG-validated NETCONF / 
  RAN NF OAM --HTTP JSON (PATCH / PUT / POST / DELETE / GET /restconf/data/...)--> mock-o1-adaptor   (RESTCONF ME)
  RAN NF OAM --HTTP GET /capabilities---------------> mock-o1-adaptor   (vendor onboarding discovery)
  tests / demo --HTTP GET /objects, /edit-config/{ref}, POST /faults, DELETE /state --> mock-o1-adaptor
+ tests / demo / conformance kit --HTTP POST /emit/alarm | pm-report | pm-file | heartbeat | software-phase --> mock-o1-adaptor
+ mock-o1-adaptor --HTTP POST /alarms/ingest, /pm-reports, /pm-files, /o1-adaptor-endpoints/{id}/heartbeat, /software-management-jobs/{id}/advance--> RAN NF OAM   (MOCK_O1_OAM_URL)
 ```
 
 - RAN NF OAM is the only product caller; it addresses the mock through the `adaptor_uri` in its own endpoint registry. There is no isolated network segment: no design requirement calls for one.
-- The mock calls nothing and has no database.
+- The mock calls RAN NF OAM only when one of its `/emit/...` routes is triggered, and has no database. Those calls go straight to RAN NF OAM (`MOCK_O1_OAM_URL`, e.g. `http://ran-nf-oam:8000`), as a real adaptor's would, not through R1 Termination.
 
 ### 1.4 Ownership
 
@@ -49,6 +51,7 @@ The real O-RAN-SC `sim-o1-interface` (`ntsim-ng`) is a YANG-validated NETCONF / 
 |---|---|
 | The simulated running configuration per managed function (process memory) | The endpoint registry, vendor capability registry, CM schema checks, retries → RAN NF OAM |
 | Test fault queue | Which changes are legal for a vendor → RAN NF OAM (the mock does not validate attributes) |
+| The emit triggers: what is sent, to where, and the relayed answer | What RAN NF OAM does with it (an alarm's `alarmId`, severity normalisation, the job FSM, the endpoint health FSM, the PM subscription check) → RAN NF OAM |
 | The configurable vendor declaration | Real device behaviour → a real vendor adaptor |
 
 ### 1.5 Design decisions
@@ -60,6 +63,11 @@ The real O-RAN-SC `sim-o1-interface` (`ntsim-ng`) is a YANG-validated NETCONF / 
 - **Faults are consumed.** An injected fault applies to the next `count` matching `edit-config` calls, then disappears; this makes retry sequences deterministic.
 - **`IGNORE_WRITE` models a lying agent**: `<ok/>` is returned but nothing is applied, so read-after-write verification can be tested.
 - **One image, many vendors.** The capability declaration comes from environment variables.
+- **The stub is a source as well as a target (`SB-9.8`).** A real adaptor sends alarms, PM, software-phase results and heartbeats; the stub does so when asked (`POST /emit/<kind>`, one route per kind), so a developer has an FM/PM source and the conformance kit has something to run its FM, PM, SW and HB checks against. Nothing is sent on its own: no timer, no background task.
+- **The answer is the adaptor's word, not the proof.** Each trigger returns `{emitted, status, response, target}`: `emitted` is whether RAN NF OAM answered 2xx. A refusal from RAN NF OAM (an unknown severity, an element that does not offer the service, no PM subscription) is **relayed** with `emitted: false` and RAN NF OAM's status and body, never raised as a 500; RAN NF OAM unreachable is a 502 (`application/problem+json`); no target configured, or a service this adaptor does not declare, is a 409. The kit checks RAN NF OAM's state, not this answer.
+- **It emits only what it declares.** `GET /capabilities` and the emit routes read the same `MOCK_O1_SUPPORTED_SERVICES`: `FM` (alarm), `PM` (pm-report), `FILE` (pm-file), `HEARTBEAT` (heartbeat), `SWM` (software-phase). Without a service in the list its route answers 409 and the kit skips that group, as it skips a CM protocol the adaptor does not speak.
+- **The target is the environment's, or the request's.** `MOCK_O1_OAM_URL`; a request may name its own `target`, which must be an http(s) origin that is not a literal loopback, link-local or unspecified address (`smo_shared.webhook.is_safe_webhook_destination`, the build's guard for caller-supplied destinations: 422 otherwise). A caller-supplied `target` is also why a developer who runs RAN NF OAM on `localhost` sets the environment variable and not the field.
+- **Plain HTTP.** The mock is not an SMO module and has no certificate (`mtls: "off"` in the chart): with `SMO_MTLS=on` at RAN NF OAM the emit calls fail and the triggers answer 502. A known limit, documented in `docker-compose.mtls.yml` and the conformance README.
 
 ## 2. Low-level design (LLD)
 
@@ -67,7 +75,7 @@ The real O-RAN-SC `sim-o1-interface` (`ntsim-ng`) is a YANG-validated NETCONF / 
 
 | File | Responsibility |
 |---|---|
-| `app/main.py` | The whole service: RPC handling, the RESTCONF routes over the same state, defaults, capability declaration, fault and introspection routes |
+| `app/main.py` | The whole service: RPC handling, the RESTCONF routes over the same state, defaults, capability declaration, fault and introspection routes, and the emit triggers (`_emit` and the five `/emit/...` routes) |
 
 ### 2.2 Data model
 
@@ -97,7 +105,7 @@ None: stateless with respect to lifecycle. Setting `energySavingControl` also se
 
 ### 2.4 API
 
-Not R1-facing. The OpenAPI document is [`../docs/openapi/mock-o1-adaptor.json`](../docs/openapi/mock-o1-adaptor.json) (9 paths).
+Not R1-facing. The OpenAPI document is [`../docs/openapi/mock-o1-adaptor.json`](../docs/openapi/mock-o1-adaptor.json) (18 paths).
 
 **NETCONF-shaped surface (used by RAN NF OAM)**
 
@@ -119,6 +127,22 @@ Not R1-facing. The OpenAPI document is [`../docs/openapi/mock-o1-adaptor.json`](
 
 A body that is not the single list entry of the target, or whose key leaf differs from the target's, or a path other than these resources, is refused (`malformed-message` 400, `invalid-value` 400). Faults injected with `POST /faults` apply to RESTCONF writes too (`TIMEOUT` -> 504, `RPC_ERROR` -> 500 `operation-failed`, `IGNORE_WRITE` -> success status, not applied). `/edit-config/{ref}` and `/objects/{ref}` introspection see RESTCONF writes, and each protocol reads back the other's writes.
 
+**Emit triggers (towards RAN NF OAM; the contract the conformance kit uses, `../conformance/README.md`)**
+
+All `POST`, JSON body, `200` [`EmitResult`](../docs/openapi/mock-o1-adaptor.json) `{emitted, status, response, target}`; each body may carry `target` (see 1.5).
+
+| Path | Body | Sends |
+|---|---|---|
+| `/emit/alarm` | `managedElementRef`, `severity` (a PerceivedSeverity, any case), `sourceAlarmId?` (default a new UUID), `probableCause?`, `specificProblem?`, `managedFunctionRef?`, `alarmType?`, `correlationGroup?` | `POST {oam}/alarms/ingest` with the fields as **query parameters** (`source_alarm_id`, `managed_element_ref`, `severity`, `probable_cause`, `specific_problem`, `managed_function_ref`, `alarm_type`, `correlation_group`; unset ones left out) |
+| `/emit/pm-report` | `managedElementRef`, `counterType`, `measurements[{cellId, timestamp, value?, values?, relation?}]` | `POST {oam}/pm-reports` with the body as JSON |
+| `/emit/pm-file` | the same, plus `fileDataType="Performance"`, `fileFormat="json"`, `fileCompression?`, `jobId?`, `fileExpirationTime?` | `POST {oam}/pm-files` |
+| `/emit/heartbeat` | `endpointId` | `POST {oam}/o1-adaptor-endpoints/{endpointId}/heartbeat` |
+| `/emit/software-phase` | `jobId`, `succeeded=true` | `POST {oam}/software-management-jobs/{jobId}/advance?succeeded=true\|false` |
+
+Other answers: `409` ProblemDetails-shaped body (`{type, title, status, detail}`, `application/problem+json`): no target (`MOCK_O1_OAM_URL` unset and no `target`), or the service is not in `MOCK_O1_SUPPORTED_SERVICES`; `422` an unusable `target` or a body of the wrong shape; `502` RAN NF OAM unreachable (connect error, timeout: the bound is 5 s). Ids placed in a path are percent-encoded.
+
+For RAN NF OAM to accept what is sent, it needs the things a real adaptor would have set up: a managed element and its endpoint (`POST /o1-adaptor-endpoints`, with the service in its `supportedServices`), and for PM a subscription (`POST /pm-subscriptions`). The conformance kit does that itself with `--oam-url`; by hand, see `DEMO_RUNBOOK.md`.
+
 **Test-only**
 
 | Method | Path | Purpose |
@@ -130,27 +154,29 @@ A body that is not the single list entry of the target, or whose key leaf differ
 
 ### 2.5 Interactions
 
-Inbound HTTP only. No outbound calls, callbacks or background tasks.
+Inbound HTTP, and one outbound call per emit trigger (`httpx.post` to RAN NF OAM, 5 s timeout, no retry, nothing kept). No callbacks, no background tasks.
 
 ### 2.6 Configuration
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `MOCK_O1_VENDOR_NAME` | `mock-vendor` | `vendorName` in `GET /capabilities` |
-| `MOCK_O1_SUPPORTED_SERVICES` | `PROV,FM,PM,FILE,STREAM,SWM,SUBSCRIPTION,HEARTBEAT` | Comma-separated `supportedServices` |
+| `MOCK_O1_SUPPORTED_SERVICES` | `PROV,FM,PM,FILE,STREAM,SWM,SUBSCRIPTION,HEARTBEAT` | Comma-separated `supportedServices`, and the services the emit routes are offered for (1.5) |
+| `MOCK_O1_OAM_URL` | unset | RAN NF OAM's origin for the emit routes; compose and the chart set `http://ran-nf-oam:8000`. Unset: the emit routes answer 409 unless the request names a `target` |
 | `MOCK_O1_VENDOR_MODES` | `O1_NETCONF,O1_RESTCONF` | Comma-separated `supportedVendorModes` |
 
 The variables are read on every request. The container listens on :8000.
 
 ### 2.7 Error codes
 
-No ProblemDetails. RESTCONF failures are `ietf-restconf:errors` bodies (`application/yang-data+json`, `error-type application`) with the RFC 8040 status: `invalid-value` / `malformed-message` 400, `data-missing` 404, `operation-not-supported` 405 (declared, not currently emitted), `data-exists` 409, `operation-failed` 500 (`RPC_ERROR` fault), and plain 504 for `TIMEOUT`; RAN NF OAM maps these to `RESTCONF_REQUEST_FAILED` (error body, not retried) and the retryable `RESTCONF_TIMEOUT`. NETCONF failures are NETCONF `<rpc-error>` replies with `error-type application` and `error-tag` `malformed-message`, `invalid-value` or `operation-failed`, or HTTP 504 for the `TIMEOUT` fault, which RAN NF OAM maps to `NETCONF_RPC_FAILED` (rpc-error) and the retryable `NETCONF_TIMEOUT` respectively.
+No ProblemDetails on the CM routes; the emit routes answer a ProblemDetails-shaped body (2.4). RESTCONF failures are `ietf-restconf:errors` bodies (`application/yang-data+json`, `error-type application`) with the RFC 8040 status: `invalid-value` / `malformed-message` 400, `data-missing` 404, `operation-not-supported` 405 (declared, not currently emitted), `data-exists` 409, `operation-failed` 500 (`RPC_ERROR` fault), and plain 504 for `TIMEOUT`; RAN NF OAM maps these to `RESTCONF_REQUEST_FAILED` (error body, not retried) and the retryable `RESTCONF_TIMEOUT`. NETCONF failures are NETCONF `<rpc-error>` replies with `error-type application` and `error-tag` `malformed-message`, `invalid-value` or `operation-failed`, or HTTP 504 for the `TIMEOUT` fault, which RAN NF OAM maps to `NETCONF_RPC_FAILED` (rpc-error) and the retryable `NETCONF_TIMEOUT` respectively.
 
 ### 2.8 Limits and open items
 
 - **Not NETCONF / RESTCONF.** No SSH / TLS, no YANG, no capability negotiation, no attribute validation, no `create` / `replace` semantics distinct from `merge` (only `delete` / `remove` are special-cased). The RESTCONF side does distinguish `create` (POST, 409 if present), `replace` (PUT) and `merge` (PATCH).
 - **`_applied_changes` is per `ref`**, not per function: a later write to another function of the same ME overwrites the introspection value (the running state in `_object_state` is per function).
-- **No heartbeat or alarm emission.** The mock never calls RAN NF OAM; endpoint heartbeats and alarms must be sent by the test or demo.
+- **Emission is on request only.** There is no periodic heartbeat and no alarm storm: a test or a developer triggers each one. Not emitted at all: streaming data, VES, alarm clear and acknowledge, file-ready notifications; no retry of an emit that failed.
+- **Emit calls are plain HTTP** (no mutual TLS; 1.5).
 - **Volatile.** All state is process memory.
 - **Open items:** none.
 
@@ -166,15 +192,17 @@ cd smo/mock-o1-adaptor && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 | Test file | Covers | Count |
 |---|---|---|
+| `tests/test_emit.py` | The emitter: each of the five triggers posts the right URL, query or JSON (unset fields left out, a new UUID `sourceAlarmId` per call, path ids encoded); a refusal from RAN NF OAM is relayed with `emitted: false`; non-JSON answers relayed as text; connect error and timeout are a 502 problem body; no target is a 409; a request `target` is honoured and a loopback, `file:` or link-local one is a 422 and nothing is sent; a service not in `MOCK_O1_SUPPORTED_SERVICES` is a 409 (all five parametrised) and absent from `/capabilities`; the OpenAPI document lists the error responses | 24 |
 | `tests/test_main.py` | `edit-config` ok / applied-change recording / empty payload rejected / delete and remove with empty payload accepted / malformed XML / entity-expansion XML rejected; introspection of an unknown ref; configurable capability declaration; per-function state read back via `get-config`; fault consumption order; neighbour-relation, DMRO, coverage and frequency-relation defaults and writes; RESTCONF: root discovery, GET answering IOC defaults, PATCH merge read back by both protocols, PUT replace (201 / 204), POST create once (409 `data-exists`), DELETE of a missing object (`data-missing`), mismatched or malformed bodies and unmodelled paths refused, shared fault injection | 25 |
 
 An autouse fixture resets state with `DELETE /state`.
 
 ### 3.3 What is not covered here
 
+- The stub wired to the real RAN NF OAM app (the emitted alarm listed by `GET /alarms`, the file stored, the job finishing COMPLETED, the endpoint ACTIVE after the heartbeat): `tests_integration/test_o1_conformance_emit.py`, which runs the kit's FM, PM, SW and HB checks through the in-process mesh, and CI job `compose-e2e` (step "O1 conformance kit, emitting side") against the real containers.
 - The RAN NF OAM <-> mock round trip (dispatch, retry on `TIMEOUT`, `RPC_ERROR` without retry, the same over RESTCONF, `IGNORE_WRITE` detected by read-back, vendor onboarding discovery, rApp closed loops): `tests/` of `ran-nf-oam` use their own stubs; the real round trip is in `tests_integration/`.
 - Real NETCONF / RESTCONF behaviour: not implemented.
-- The O1 conformance kit (`../conformance/README.md`, `conformance/o1`) is the specification of what an adaptor, this mock included, must do for RAN NF OAM: `tests/test_conformance_kit.py` runs it against this mock (all 24 checks pass), against fakes that each break one thing, and against this mock with an `IGNORE_WRITE` fault; CI job `o1-conformance` runs it over HTTP against this mock as a process.
+- The O1 conformance kit (`../conformance/README.md`, `conformance/o1`) is the specification of what an adaptor, this mock included, must do for RAN NF OAM: `tests/test_conformance_kit.py` runs it against this mock (its 24 CM checks pass, the 12 emitting checks are skipped without `--oam-url`), against fakes that each break one thing, and against this mock with an `IGNORE_WRITE` fault; CI job `o1-conformance` runs it over HTTP against this mock as a process.
 
 ## 4. References
 

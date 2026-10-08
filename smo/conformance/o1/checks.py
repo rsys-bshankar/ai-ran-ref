@@ -358,3 +358,7 @@ def rc_empty_patch(ctx: Context) -> None:
     ref = ctx.new_ref()
     _expect(_put(ctx, ref, {"userLabel": "x"}), 201, 204, 200, what="the PUT")
     _expect(_patch(ctx, ref, {}), 400, what="an empty PATCH")
+
+
+# the emitting groups (FM, PM, SW, HB) register themselves here, after the CM groups
+from . import emit_checks  # noqa: E402,F401
