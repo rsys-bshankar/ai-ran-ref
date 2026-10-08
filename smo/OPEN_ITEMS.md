@@ -217,6 +217,7 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 |---|---|---|---|
 | DB-3.8 | Time partitioning for the PM table | Old partition drops in one statement | OPS-1.4 |
 | DB-3.9 | Also: remove `DEAD` outbox rows after a period; prune the platform audit chain behind a signed checkpoint; expire `gui_login_failure` rows | Test deletes only eligible rows; `verify` passes after a prune | DB-3.2 |
+| DB-3.10 | The periods of `docs/RETENTION.md` in a production sample values file (`deploy/helm/smo/ci/` or `values-production.yaml`) and in `.env.example`; code defaults stay `0`. A startup warning and a metric (`smo_retention_off_rows`) when a table whose retention is off has more than a configured number of rows (0.6.0) | Sample renders; warning and metric test | DB-3.7 |
 
 #### PR-DB-4 — Indexes and pagination
 
