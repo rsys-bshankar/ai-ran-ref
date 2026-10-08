@@ -7,6 +7,7 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ### Changed
 - **The scope of 0.6.0 is decided (`OPEN_ITEMS.md`), and the SLO targets are accepted as the reference targets.** In: the emitting RAN O1 stub (SB-9.8), a rApp directory and pages declared by the rApp package in place of one coded page per rApp (`PR-GUI-8`), MFA (an OIDC-only login mode, and native one-time codes for local accounts, mandatory for admins), signing keys and an external-secrets example, and sample retention periods (the code defaults stay at keep). `docs/SLOS.md`: the four targets hold for a deployment with two or more replicas and a highly available Postgres; the one-pod lab profile is not held to them during an upgrade. Documentation only.
+- **`scripts/breaking_change_waivers.json` is empty again: `smo-v0.5.0` is the base of the next comparison.** The waivers it held (the three bounded parameters, the removed A1 module and the Near-RT RIC double, the `applicationType` check) were breaks against 0.4.0 and are in the 0.5.0 notes. Any break from here is compared with 0.5.0, so a new one fails the job "R1 contract has no breaking change since the previous release" unless it is waived with a reason.
 
 ## [0.5.0] - 2026-10-08
 
