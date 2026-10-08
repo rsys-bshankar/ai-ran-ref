@@ -1,7 +1,12 @@
 // Response shapes, taken from each module's own view functions
 // (smo/<module>/app/main.py) — docs/openapi/<module>.json is the contract.
 
-export interface Me { username: string; role: "viewer" | "operator" | "admin"; csrfToken?: string }
+// local / totpEnrolled / mfaEnrolmentRequired: PR-SEC-7 (a user of the identity provider is not local and has no one-time code here;
+// mfaEnrolmentRequired is true for a local admin who must enrol one before anything else, GUI_ADMIN_MFA_REQUIRED)
+export interface Me { username: string; role: "viewer" | "operator" | "admin"; csrfToken?: string; local?: boolean; totpEnrolled?: boolean; mfaEnrolmentRequired?: boolean }
+export interface TotpStatus { available: boolean; enrolled: boolean; pending: boolean; recoveryCodesLeft: number; reason?: string }
+export interface TotpBegin { secret: string; otpauthUri: string; issuer: string; account: string }
+export interface TotpConfirmed { status: string; recoveryCodes: string[]; recoveryCodesLeft: number }
 
 // ready / version / buildSha / builtAt: PR-OBS-8.2 — null when the module could not be asked (down, or an older build with no /version)
 export interface ModuleStatus {
@@ -193,7 +198,7 @@ export interface DmeType { dmeTypeId: string; dmeTypeIdStruct: Record<string, st
 export interface DmeProducer { producerId: string; producerHealthCallbackUrl: string; jobCallbackUrl: string; supportedTypeIds: string[] }
 
 // ---- BFF admin
-export interface GuiUser { username: string; role: "viewer" | "operator" | "admin"; active: boolean; createdAt: string }
+export interface GuiUser { username: string; role: "viewer" | "operator" | "admin"; active: boolean; createdAt: string; breakGlass?: boolean; totpEnrolled?: boolean }
 export interface AuditEntry { id: number; at: string; username: string | null; role: string | null; action: string; method: string | null; path: string | null; statusCode: number | null; detail: string | null }
 
 // ---- GUI pass 2: DME, SME registries, onboarding/NFO detail

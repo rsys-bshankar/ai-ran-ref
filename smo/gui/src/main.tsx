@@ -6,6 +6,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-route
 import { ApiError } from "./api/client";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { roleAtLeast, type Role } from "./auth/rbac";
+import { mustEnrol } from "./lib/mfa";
 import { Layout } from "./components/Layout";
 import { ToastProvider } from "./components/Toast";
 import { Admin } from "./pages/Admin";
@@ -24,6 +25,7 @@ import { Coverage } from "./pages/Coverage";
 import { TrafficSteering } from "./pages/TrafficSteering";
 import { Rapps } from "./pages/Rapps";
 import { Safeguards } from "./pages/Safeguards";
+import { Security } from "./pages/Security";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -42,6 +44,8 @@ function RequireAuth({ children, minRole }: { children: ReactNode; minRole?: Rol
   const location = useLocation();
   if (loading) return <div className="boot muted">Loading…</div>;
   if (!me) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  // PR-SEC-7.8: a local admin who must enrol a one-time code sees nothing else until they have (the backend refuses every other route)
+  if (mustEnrol(me, location.pathname)) return <Navigate to="/security" replace />;
   if (minRole && !roleAtLeast(me.role, minRole)) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
@@ -69,6 +73,7 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="traffic-steering" element={<TrafficSteering />} />
                 <Route path="infrastructure" element={<Infrastructure />} />
                 <Route path="data" element={<Data />} />
+                <Route path="security" element={<Security />} />
                 <Route path="admin" element={<RequireAuth minRole="admin"><Admin /></RequireAuth>} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />

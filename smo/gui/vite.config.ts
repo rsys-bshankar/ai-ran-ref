@@ -16,5 +16,5 @@ export default defineConfig({
     proxy: { "/api": { target: process.env.GUI_BFF_URL ?? "http://localhost:8090", changeOrigin: false } },
   },
   build: { sourcemap: false, chunkSizeWarningLimit: 800 },
-  test: { include: ["src/**/*.test.ts"] },
+  test: { include: ["src/**/*.test.{ts,tsx}"] },
 });
