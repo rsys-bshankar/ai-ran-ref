@@ -4,6 +4,7 @@ The parity tests read the two files and need nothing else. The render tests need
 """
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -284,6 +285,41 @@ def test_a_disruption_budget_goes_only_to_a_module_that_runs_more_than_one_pod()
     assert budgets("--set", "modules.sme.replicas=2", "--set", "modules.dme.replicas=3") == {"sme", "dme"}
     assert {"sme", "mock-o1-adaptor"} <= budgets("--set", "autoscaling.enabled=true")   # the autoscaler's minimum is 2: every module that can scale may be budgeted
     assert budgets("--set", "autoscaling.enabled=true", "--set", "autoscaling.minReplicas=1") == set()    # a minimum of one and no second pod yet: none
+
+
+def _pod_templates(docs: list[dict]) -> dict:
+    return {f"{d['kind']}/{d['metadata']['name']}": d["spec"]["template"] for d in docs if d["kind"] in ("Deployment", "StatefulSet", "DaemonSet")}
+
+
+@helm
+def test_a_new_chart_version_changes_no_pod_template_so_it_restarts_nothing(tmp_path):
+    """The chart's version was in every pod's labels, so the release that raised it restarted every pod, the database among them (found by the upgrade lane under load,
+    V-10: a few seconds without Postgres, every route answering 401, 500 or 502). A pod template changes only for a reason that should restart the pod."""
+    other = tmp_path / "smo"
+    shutil.copytree(CHART, other)
+    chart_yaml = (other / "Chart.yaml").read_text()
+    assert "version: " in chart_yaml
+    (other / "Chart.yaml").write_text(re.sub(r"(?m)^version: .*$", "version: 99.0.0", chart_yaml, count=1))
+    args = ["--set", "observability.tempo.enabled=true", "--set", "observability.loki.enabled=true", "--set", "observability.grafana.enabled=true", "--set", "observability.fluentBit.enabled=true"]
+
+    def templates(chart):
+        result = subprocess.run(["helm", "template", "smo", str(chart), "-n", "smo", "--kube-version", "1.30.0", *args], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        return _pod_templates([d for d in yaml.safe_load_all(result.stdout) if d])
+
+    before, after = templates(CHART), templates(other)
+    assert "StatefulSet/postgres" in before and len(before) > 20
+    assert before == after
+    assert not [name for name, t in before.items() if "helm.sh/chart" in t["metadata"]["labels"] and name != "StatefulSet/postgres"]
+
+
+@helm
+def test_the_database_pod_keeps_the_labels_release_0_4_0_gave_it_so_the_upgrade_does_not_restart_it():
+    """Frozen on purpose: the upgrade lane (from smo-v0.4.0, under load) fails when the bundled database restarts. If this has to change, the release says that the
+    database restarts once on the upgrade."""
+    postgres = _pod_templates(_render())["StatefulSet/postgres"]
+    assert postgres["metadata"]["labels"] == {"app.kubernetes.io/part-of": "smo", "app.kubernetes.io/managed-by": "Helm", "app.kubernetes.io/instance": "smo",
+                                              "helm.sh/chart": "smo-0.4.0", "app.kubernetes.io/name": "postgres"}
 
 
 @helm

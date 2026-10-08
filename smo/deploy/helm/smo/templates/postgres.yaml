@@ -33,7 +33,11 @@ spec:
   template:
     metadata:
       labels:
-        {{- $labels | nindent 8 }}
+        {{- include "smo.podLabels" (dict "root" $) | nindent 8 }}
+        # Frozen at the value release 0.4.0 rendered. A pod label is part of the pod template, and a changed template restarts the database: with the chart's version here every
+        # chart release restarted it (found by the upgrade lane under load, V-10: the 401s, 500s and 502s of a database that is gone for a few seconds). Do not change it, and never
+        # put the chart version, a checksum or a timestamp in this pod's labels or annotations: only a change that must restart the database may.
+        helm.sh/chart: smo-0.4.0
         app.kubernetes.io/name: postgres
     spec:
       automountServiceAccountToken: false

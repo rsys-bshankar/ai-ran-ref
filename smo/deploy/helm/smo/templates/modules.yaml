@@ -37,7 +37,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- $labels | nindent 8 }}
+        {{- include "smo.podLabels" (dict "root" $) | nindent 8 }}
         app.kubernetes.io/name: {{ $name }}
       annotations:
         {{- /* a changed secret or value that the pod reads at start rolls the pod */}}

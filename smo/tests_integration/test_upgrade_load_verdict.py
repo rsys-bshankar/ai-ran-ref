@@ -55,3 +55,13 @@ def test_report_only_prints_the_problems_and_exits_zero(tmp_path, capsys):
     assert v.main([str(path)]) == 1
     assert v.main([str(path), "--report-only"]) == 0
     assert "NOTE (report only)" in capsys.readouterr().err
+
+
+def test_the_failed_calls_are_printed_for_the_log(tmp_path, capsys):
+    result = {"total": {"requests": 3000, "errors": 1}, "routes": [], "timeline": [{"from_s": 140, "to_s": 150, "calls": 18, "errors": 1}],
+              "failures": [{"at": "02:44:41.123", "t_s": 140.2, "route": "alarm list", "status": 503, "ms": 812, "detail": "AUTH_SERVICE_UNAVAILABLE"}]}
+    path = tmp_path / "r.json"
+    path.write_text(json.dumps(result))
+    assert v.main([str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "02:44:41.123" in out and "alarm list" in out and "503" in out and "AUTH_SERVICE_UNAVAILABLE" in out

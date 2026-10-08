@@ -44,6 +44,11 @@ def main(argv: list[str]) -> int:
     print(f"{result['total']['requests']} calls over {result.get('seconds', '?')} s, {result['total']['errors']} errors")
     for row in bad:
         print(f"  {row['from_s']}-{row['to_s']} s: {row['errors']} errors of {row['calls']} calls")
+    failures = result.get("failures", [])
+    if failures:                                                  # when each failed call started and what it was told: the cause is found from these and the pods' logs
+        print(f"the failed calls (UTC time the call ended, seconds after the warm-up, route, status, ms, start of the answer), {len(failures)} of {result['total']['errors']}:")
+        for f in failures[:150]:
+            print(f"  {f['at']} t={f['t_s']:>6} {f['route']:<18} {f['status']} {f['ms']:>6} ms  {f['detail']}")
     problems = verdict(result, args.max_error_rate, args.min_calls, tuple(args.allow_errors_on or ("package list",)), args.max_route_errors)
     for problem in problems:
         print(f"{'NOTE (report only)' if args.report_only else 'FAIL'}: {problem}", file=sys.stderr)

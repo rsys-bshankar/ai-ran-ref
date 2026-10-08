@@ -22,6 +22,14 @@ app.kubernetes.io/instance: {{ .root.Release.Name }}
 helm.sh/chart: {{ printf "%s-%s" .root.Chart.Name .root.Chart.Version | replace "+" "_" }}
 {{- end -}}
 
+{{/* The labels of a pod template: the same without the chart version. A pod template that names the chart version is a changed pod template on every chart release, and a changed
+     pod template restarts the pod; the chart version belongs on the objects (smo.labels), not on the pods they make. */}}
+{{- define "smo.podLabels" -}}
+app.kubernetes.io/part-of: smo
+app.kubernetes.io/managed-by: {{ .root.Release.Service }}
+app.kubernetes.io/instance: {{ .root.Release.Name }}
+{{- end -}}
+
 {{/* The Secret holding db-password and enrollment-secret. */}}
 {{- define "smo.secretName" -}}
 {{- default "smo-secrets" .Values.secrets.existingSecret -}}

@@ -51,7 +51,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- $labels | nindent 8 }}
+        {{- include "smo.podLabels" (dict "root" $) | nindent 8 }}
         app.kubernetes.io/name: {{ $name }}
       annotations:
         checksum/config: {{ $.Files.Get (printf "files/observability/%s" $c.file) | sha256sum }}
@@ -140,7 +140,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- $labels | nindent 8 }}
+        {{- include "smo.podLabels" (dict "root" $) | nindent 8 }}
         app.kubernetes.io/name: grafana
       annotations:
         checksum/config: {{ .Files.Get "files/observability/grafana-datasources.yaml" | sha256sum }}
@@ -213,7 +213,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- $labels | nindent 8 }}
+        {{- include "smo.podLabels" (dict "root" $) | nindent 8 }}
         app.kubernetes.io/name: fluent-bit
       annotations:
         checksum/config: {{ printf "%s%s" (.Files.Get "files/observability/fluent-bit-k8s.conf") (.Files.Get "files/observability/parsers.conf") | sha256sum }}

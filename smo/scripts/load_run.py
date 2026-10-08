@@ -18,6 +18,7 @@ GitHub's runners vary, so they are compared run against run on the same kind of 
 
 import argparse
 import asyncio
+import datetime
 import json
 import os
 import random
@@ -71,19 +72,32 @@ async def get_token(client: httpx.AsyncClient, sme: str, reg: dict) -> httpx.Res
                                                           "client_secret": reg["onboardingSecret"], "scope": "smo-internal"})
 
 
+class Outcome(int):
+    """A status code that also carries the start of the body of a refusal, for the list of failed calls."""
+    detail = ""
+
+
+def outcome(resp: httpx.Response) -> Outcome:
+    result = Outcome(resp.status_code)
+    if resp.status_code >= 400:
+        result.detail = resp.text[:200]
+    return result
+
+
 async def one_call(client: httpx.AsyncClient, gateway: str, sme: str, reg: dict, access: str, route) -> int:
     name, method, path, _, _ = route
     if method == "TOKEN":
-        return (await get_token(client, sme, reg)).status_code
+        return outcome(await get_token(client, sme, reg))
     headers = {"Authorization": f"Bearer {access}"}
     path = path.replace("{invoker}", reg["apiInvokerId"])
     if method == "POST":
         headers["Idempotency-Key"] = str(uuid.uuid4())
-        return (await client.post(f"{gateway}{path}", json=DRY_RUN, headers=headers)).status_code
-    return (await client.get(f"{gateway}{path}", headers=headers)).status_code
+        return outcome(await client.post(f"{gateway}{path}", json=DRY_RUN, headers=headers))
+    return outcome(await client.get(f"{gateway}{path}", headers=headers))
 
 
 BUCKET_SECONDS = 10
+MAX_FAILURES = 400
 
 
 def stopped(stop_file: str | None) -> bool:
@@ -91,15 +105,19 @@ def stopped(stop_file: str | None) -> bool:
 
 
 async def worker(client, gateway, sme, reg, access, deadline: float, record_from: float, series: dict[str, Series], weights, rng: random.Random,
-                 timeline: dict[int, list[int]] | None = None, interval: float = 0.0, stop_file: str | None = None):
-    """Calls routes until the deadline (or the stop file); `interval` is the least time one call takes when the load is paced; `timeline` gets [calls, errors] per BUCKET_SECONDS."""
+                 timeline: dict[int, list[int]] | None = None, interval: float = 0.0, stop_file: str | None = None, failures: list[dict] | None = None):
+    """Calls routes until the deadline (or the stop file); `interval` is the least time one call takes when the load is paced; `timeline` gets [calls, errors] per BUCKET_SECONDS;
+    `failures` gets one entry per failed call (when it started, in seconds after the warm-up and in UTC, the route, the status, the time it took, the start of the answer), up to MAX_FAILURES."""
     while time.monotonic() < deadline and not stopped(stop_file):
         route = rng.choices(ROUTES, weights=weights)[0]
         started = time.monotonic()
+        detail = ""
         try:
             status = await one_call(client, gateway, sme, reg, access, route)
-        except httpx.HTTPError:
+            detail = getattr(status, "detail", "")
+        except httpx.HTTPError as exc:
             status = 0
+            detail = f"{type(exc).__name__}: {exc}"[:200]
         elapsed = (time.monotonic() - started) * 1000
         if started >= record_from:                            # before that: warm-up (connections, caches, the pool)
             s = series[route[0]]
@@ -108,6 +126,9 @@ async def worker(client, gateway, sme, reg, access, deadline: float, record_from
             failed = status not in route[4]
             if failed:
                 s.errors += 1
+                if failures is not None and len(failures) < MAX_FAILURES:
+                    failures.append({"t_s": round(started - record_from, 1), "at": datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S.%f")[:-3],
+                                     "route": route[0], "status": int(status), "ms": round(elapsed), "detail": detail})
             if timeline is not None:
                 cell = timeline.setdefault(int((started - record_from) // BUCKET_SECONDS), [0, 0])
                 cell[0] += 1
@@ -160,16 +181,18 @@ async def main_async(args) -> int:
         series = {route[0]: Series() for route in ROUTES}
         weights = [route[3] for route in ROUTES]
         timeline: dict[int, list[int]] = {}
+        failures: list[dict] = []
         interval = args.concurrency / args.rate if args.rate else 0.0
         start = time.monotonic()
         deadline = start + args.warmup + args.duration
         rng = random.Random(args.seed)  # noqa: S311 — picks a route for the load, not a secret
         await asyncio.gather(*[worker(client, args.gateway, args.sme, reg, access, deadline, start + args.warmup, series, weights, random.Random(rng.random()),  # noqa: S311
-                                      timeline, interval, args.stop_file) for _ in range(args.concurrency)])
+                                      timeline, interval, args.stop_file, failures) for _ in range(args.concurrency)])
         ended = time.monotonic()
     seconds = max(1.0, min(args.duration, ended - start - args.warmup))     # a run ended by the stop file measured less than --duration
     result = summarise(series, seconds)
     result["timeline"] = timeline_rows(timeline)
+    result["failures"] = sorted(failures, key=lambda f: f["t_s"])
     result["seconds"] = round(seconds, 1)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)

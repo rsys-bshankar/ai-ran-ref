@@ -132,7 +132,8 @@ jobs:
         run: |
           scripts/k8s_load.sh stop "$RUNNER_TEMP/load-out"
           { echo "### Load through the node drain and the pod kills"; echo; cat "$RUNNER_TEMP/load-out/load-results.md"; } >> "$GITHUB_STEP_SUMMARY"
-          python3 scripts/upgrade_load_verdict.py "$RUNNER_TEMP/load-out/load-results.json"
+          # a pod killed without a grace period (above) drops the calls it is serving, so one dropped connection on a route is what the lane is made of, not a finding: two per route at most, and 1 % overall
+          python3 scripts/upgrade_load_verdict.py "$RUNNER_TEMP/load-out/load-results.json" --max-route-errors 2
 
       - name: What the cluster says, when it went wrong
         if: failure()
