@@ -231,6 +231,7 @@ smo/
   <module>/app/             one directory per SMO module (models.py, statemachine.py, main.py)
   <module>/tests/           that module's unit tests (standalone, SQLite)
   mock-o1-adaptor/          NETCONF / RESTCONF O1 test double (RAN NF OAM's southbound)
+  conformance/o1/           O1 adaptor conformance kit: `python -m conformance.o1 --adaptor URL` (conformance/README.md)
   sdk/smo_sdk/              AI Runtime SDK: data, analytics, models, lifecycle, intent, platform clients
   gui/                      React + TypeScript operator console (nginx)
   gui-bff/                  GUI backend-for-frontend: auth, RBAC (app/rbac.py), audit, R1 proxy

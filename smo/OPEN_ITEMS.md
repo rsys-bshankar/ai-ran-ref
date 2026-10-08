@@ -684,13 +684,10 @@ A CM write's values are checked against the leaf's YANG type, range, length, pat
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SB-9.1 | List of checks per service: CM, FM, PM, SW, discovery, heartbeat | Doc | – |
-| SB-9.2 | CM checks as a test pack | Pack passes against the mock | SB-9.1 |
-| SB-9.3 | FM checks | Same | SB-9.1 |
-| SB-9.4 | PM checks | Same | SB-9.1 |
-| SB-9.5 | SW and discovery checks | Same | SB-9.1 |
-| SB-9.6 | CLI runner and a report file | Report generated | SB-9.2 |
-| SB-9.7 | CI runs it against the mock adaptor | Job green | SB-9.6 |
+| SB-9.3 | FM checks | The adaptor's alarms are accepted by RAN NF OAM's ingest | A way to make an adaptor emit (SB-9.8) |
+| SB-9.4 | PM checks | Same, for PM files and reports | SB-9.8 |
+| SB-9.5 | SW checks and the heartbeat | Same (discovery is done: DISC-1 to DISC-3) | SB-9.8 |
+| SB-9.8 | A trigger option in the kit (`--emit-url`, a call that makes the adaptor raise an alarm, report a file, answer a heartbeat), and the same emitter in `mock-o1-adaptor` so the stub is a source of FM and PM for development, not only a target for CM | Kit runs SB-9.3 to 9.5 against the stub in CI | – |
 
 #### PR-SB-10 — First vendor profile
 
