@@ -34,7 +34,7 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 |---|---|---|
 | Southbound | SB-9.3 to 9.5 and SB-9.8: the RAN O1 stub emits (alarms, PM reports and files, software-update phases, heartbeats) and the conformance kit checks what RAN NF OAM receives | The stub was configuration-only in 0.5.0 |
 | GUI | `PR-GUI-8` (built except its browser check `GUI-8.7`: `HISTORY.md` PR-GUI-8a and PR-GUI-8b): one rApps entry in the sidebar with a searchable directory, a detail page per rApp, pages declared by the rApp package and drawn by a generic renderer, per-user pins; the four sample rApps moved to it and their hand-written pages are gone | Replaces "one coded page and one sidebar entry per rApp", which does not scale to 100 rApps and gives a rApp onboarded at run time no page |
-| Security | SEC-5 signing keys and JWKS; SEC-4.7 external secrets example (`PR-SEC-7` MFA, both layers, is built: `HISTORY.md`) | The production sample values file of `DB-3.10` also sets `GUI_ADMIN_MFA_REQUIRED: "true"` and `GUI_LOGIN_MODE: oidc` where the deployment has a provider |
+| Security | SEC-5 signing keys and JWKS; SEC-4.7 external secrets example (`PR-SEC-7` MFA, both layers, is built: `HISTORY.md`) | The production sample values file carries `GUI_ADMIN_MFA_REQUIRED` and `GUI_LOGIN_MODE: oidc` as a commented block with the `kubectl create secret` for the key: they are not switched on in the sample, because the backend refuses to start with `GUI_ADMIN_MFA_REQUIRED=true` and no `GUI_TOTP_KEY`, and a sample cannot create your Secret |
 | Retention | `DB-3.10` (built, see `HISTORY.md` PR-DB-3): the proposed periods of `docs/RETENTION.md` ship in a production sample values file and in `.env.example`; the code defaults stay at `0` (keep), so an upgrade deletes nothing; a startup warning and a metric when a table with retention off has grown large | Decided: do not default to deleting |
 | Operability | The SLO targets of `docs/SLOS.md` are accepted as the reference targets (decided October 2026) for a deployment with two or more replicas and a highly available Postgres; the one-pod lab profile is not held to them during an upgrade | Per-route targets and per-deployment tuning stay open |
 | Standards | STD-3 plugfest plan | If time allows |
@@ -342,7 +342,7 @@ who can ask, are in `r1-termination/README.md` and `HISTORY.md` PR-SEC-9) and se
 |---|---|---|---|
 | SEC-4.4 | Same for GUI admin password and session key | Same | – |
 | SEC-4.5 | Same for the module invoker secret (`module_identity.invoker_secret`, or `SMO_INVOKER_SECRET`, which already overrides it) | Same | – |
-| SEC-4.7 | External Secrets or Vault example manifest | Example applies on a lab cluster | OPS-2.3 |
+| SEC-4.7 | External Secrets or Vault example manifest | Built (`deploy/external-secrets`, checked against the chart by a test); **not yet applied on a cluster**: it applies on a lab cluster (the owner, or CI with a cluster, confirms) | OPS-2.3 |
 
 #### PR-SEC-5 — Signing keys and token caching
 
@@ -1256,8 +1256,7 @@ Built except its browser check (`HISTORY.md` PR-GUI-8a and PR-GUI-8b: the declar
 |---|---|---|---|---|
 | STD-1 | STD-1.1 | Close the §3 items (`SA-MLMR-1/6/7`, `SA-FOCOM-6/7`, `SA-RANOAM-1/4/8`, `SA-O1-4`); do not duplicate them here | §3 empty | – |
 | STD-2 | STD-2.2 | List newer releases and what changes for the SMO (`specs/README.md` has the release table and a minimal list of what is certain; everything else there says "not assessed") | List with item IDs | – |
-| STD-3 | STD-3.1 | Map each interface to the O-RAN test specification | Table | – |
-| STD-3 | STD-3.2 | Plugfest plan | One page | STD-3.1 |
+| STD-3 | STD-3.3 | The plugfest itself: run `docs/PLUGFEST.md` with a counterparty, settle its "to be confirmed against the current O-RAN specification release" cells, record the result (STD-3.1 table and STD-3.2 plan are written, `HISTORY.md` PR-STD-3) | A recorded result for one interface | A counterparty; the owner's answers to the open questions in `docs/PLUGFEST.md` |
 | STD-4 | STD-4.2 | Retention per item (the inventory is `docs/PRIVACY.md`; its retention column says "none" for most rows) | Linked to `DB-3` | DB-3.1 |
 | STD-4 | STD-4.4 | Access logging for personal data reads | Rows appear | SEC-11.2 |
 | STD-4 | STD-4.5 | Erasure beyond the account (`docs/PRIVACY.md` section 4): write an opaque per-user id instead of the username in `gui_audit_log` and in the module columns that take `smo-gui:<username>` / `ack_user_id`, so deleting the user severs the link and the rows stay; or a tested SQL procedure per table. Decide first whether the audit rows are kept with a stated period instead | A deleted user's name appears in no table; a test shows it | – |

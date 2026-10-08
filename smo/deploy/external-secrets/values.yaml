@@ -1,0 +1,9 @@
+# Helm values that make the chart read the Secrets external-secrets.yaml creates (helm install ... -f deploy/external-secrets/values.yaml).
+# EXAMPLE ONLY, not applied to a cluster (README.md). Names only: no value of any secret is here.
+secrets:
+  existingSecret: smo-secrets            # keys db-password, enrollment-secret
+databaseRoles:
+  existingSecret: smo-role-secrets       # keys db-password-<role>, one per role
+gui:
+  oidcClientSecretRef: { name: smo-gui-oidc, key: client-secret }   # only with gui.env GUI_OIDC_ENABLED=true
+  totpKeySecretRef: { name: smo-gui-totp, key: totp-key }           # only to let local accounts enrol a one-time code
