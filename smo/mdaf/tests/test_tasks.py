@@ -40,3 +40,11 @@ def test_only_reports_older_than_the_retention_go(db_session_factory, monkeypatc
 
 def test_the_task_list_is_what_the_docs_say():
     assert {t.name: t.interval_seconds for t in tasks.TASKS} == {"purge-reports": 3600}
+
+
+def test_reports_with_retention_off_are_counted_for_the_gauge(db_session_factory, monkeypatch):
+    from prometheus_client import REGISTRY
+    _reports(db_session_factory)
+    monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
+    tasks.purge_reports()
+    assert REGISTRY.get_sample_value("smo_retention_off_rows", {"table": "mdaf_report"}) == 2

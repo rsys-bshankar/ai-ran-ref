@@ -234,3 +234,14 @@ def test_only_pm_files_older_than_the_retention_go(db_session_factory, monkeypat
     monkeypatch.setenv("SMO_RETENTION_PM_FILES_DAYS", "30")
     tasks.purge_pm_files()
     assert _left(db_session_factory)[1] == ["new"]
+
+
+def test_a_table_with_retention_off_reports_its_rows_and_one_with_retention_on_does_not(db_session_factory, monkeypatch):
+    from prometheus_client import REGISTRY
+    _alarms_and_files(db_session_factory)
+    monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
+    monkeypatch.setenv("SMO_RETENTION_PM_FILES_DAYS", "30")
+    tasks.purge_cleared_alarms()
+    tasks.purge_pm_files()
+    assert REGISTRY.get_sample_value("smo_retention_off_rows", {"table": "alarm"}) == 3
+    assert REGISTRY.get_sample_value("smo_retention_off_rows", {"table": "pm_file"}) is None

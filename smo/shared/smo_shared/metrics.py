@@ -41,6 +41,8 @@ Business series (PR-OBS-4), all low-cardinality (a label is a state, a status, a
   smo_intents{admin_state}                                intent-service: intents (the policy objects, since A1 left) by admin state
   smo_worker_task_runs_total{module,task,outcome}         a worker's periodic tasks that ran (`ok` or `failed`; a skipped offer is not counted)
   smo_worker_task_last_success_timestamp_seconds{module,task}
+  smo_retention_off_rows{table}                           rows (an estimate) of a table whose retention is `0`, set by the worker's purge task each hour
+                                                          (`smo_shared.retention.report_retention_off`); no series for a table whose retention is on
 
 State gauges are read from the database when Prometheus scrapes (`register_query_gauge`, cached `SMO_BUSINESS_METRICS_TTL_SECONDS`, default 15):
 the request path pays nothing, "values match the DB" is true by construction, and a database that cannot answer yields no series for that
@@ -202,6 +204,34 @@ class _WorkerSuccessCollector:
 
 
 REGISTRY.register(_WorkerSuccessCollector())
+
+
+_retention_off_rows: dict[str, float] = {}
+
+
+def record_retention_off_rows(table: str, rows: float | None) -> None:
+    """Set the estimated row count of a table whose retention is off; None drops the series (the retention was switched on)."""
+    with _worker_lock:
+        if rows is None:
+            _retention_off_rows.pop(table, None)
+        else:
+            _retention_off_rows[table] = float(rows)
+
+
+class _RetentionOffCollector:
+    def describe(self):
+        return []
+
+    def collect(self):
+        family = GaugeMetricFamily("smo_retention_off_rows", "Estimated rows of a table whose retention is off (0 keeps everything).", labels=["table"])
+        with _worker_lock:
+            items = sorted(_retention_off_rows.items())
+        for table, rows in items:
+            family.add_metric([table], rows)
+        yield family
+
+
+REGISTRY.register(_RetentionOffCollector())
 
 
 class _MtlsCertCollector:

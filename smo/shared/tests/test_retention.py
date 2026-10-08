@@ -86,3 +86,99 @@ def test_a_table_without_a_single_column_key_is_refused(db):
     db.commit()
     with pytest.raises(ValueError, match="single-column primary key"):
         retention.purge(db, Pair, Pair.at, 30, now=NOW)
+
+
+# --- retention off: the row estimate, the gauge and the daily warning (DB-3.10) ---------------------------------------------------------
+
+def _gauge(table):
+    from prometheus_client import REGISTRY
+    return REGISTRY.get_sample_value("smo_retention_off_rows", {"table": table})
+
+
+@pytest.fixture
+def fresh(monkeypatch):
+    monkeypatch.setattr(retention, "_warned", {})
+    monkeypatch.delenv("SMO_RETENTION_WARN_ROWS", raising=False)
+
+
+@pytest.mark.parametrize("value, limit", [(None, 1_000_000), ("", 1_000_000), ("0", 0), ("250", 250), ("-3", 0), ("many", 1_000_000)])
+def test_the_warning_threshold(monkeypatch, value, limit):
+    monkeypatch.delenv("SMO_RETENTION_WARN_ROWS", raising=False)
+    if value is not None:
+        monkeypatch.setenv("SMO_RETENTION_WARN_ROWS", value)
+    assert retention.warn_rows() == limit
+
+
+def test_the_estimate_counts_rows_on_sqlite(db):
+    assert retention.estimate_rows(db, Row) == 6
+
+
+def test_the_postgres_estimate_reads_reltuples_without_scanning():
+    seen = []
+    value = [12345.0]
+
+    class Bind:
+        class dialect:                                                       # noqa: N801
+            name = "postgresql"
+
+    class Result:
+        def scalar(self):
+            return value[0]
+
+    class Fake:
+        def get_bind(self):
+            return Bind
+
+        def execute(self, statement, params=None):
+            seen.append((str(statement), params))
+            return Result()
+
+    assert retention.estimate_rows(Fake(), Row) == 12345
+    assert "pg_class" in seen[0][0] and "count" not in seen[0][0].lower()
+    assert seen[0][1] == {"name": '"row"'}
+    value[0] = -1.0                                                          # never analysed
+    assert retention.estimate_rows(Fake(), Row) == 0
+
+
+def test_a_large_table_with_retention_off_sets_the_gauge_and_warns_once_a_day(db, fresh, monkeypatch, caplog):
+    monkeypatch.setenv("SMO_RETENTION_WARN_ROWS", "5")
+    day = datetime.date(2026, 10, 1)
+    with caplog.at_level("WARNING", logger="smo_shared.retention"):
+        retention.report_retention_off(db, "row", Row, 0, today=day)
+        retention.report_retention_off(db, "row", Row, 0, today=day)
+        assert len(caplog.records) == 1 and "row" in caplog.text and "SMO_RETENTION_WARN_ROWS=5" in caplog.text
+        retention.report_retention_off(db, "row", Row, 0, today=day + datetime.timedelta(days=1))
+        assert len(caplog.records) == 2
+    assert _gauge("row") == 6
+
+
+def test_a_table_at_or_under_the_limit_does_not_warn(db, fresh, monkeypatch, caplog):
+    monkeypatch.setenv("SMO_RETENTION_WARN_ROWS", "6")
+    with caplog.at_level("WARNING", logger="smo_shared.retention"):
+        retention.report_retention_off(db, "row_small", Row, 0)
+    assert not caplog.records and _gauge("row_small") == 6
+
+
+def test_a_limit_of_zero_never_warns(db, fresh, monkeypatch, caplog):
+    monkeypatch.setenv("SMO_RETENTION_WARN_ROWS", "0")
+    with caplog.at_level("WARNING", logger="smo_shared.retention"):
+        retention.report_retention_off(db, "row_never", Row, 0)
+    assert not caplog.records and _gauge("row_never") == 6
+
+
+def test_with_retention_on_the_series_goes_and_nothing_is_warned(db, fresh, monkeypatch, caplog):
+    monkeypatch.setenv("SMO_RETENTION_WARN_ROWS", "1")
+    retention.report_retention_off(db, "row_on", Row, 0)
+    assert _gauge("row_on") == 6
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="smo_shared.retention"):
+        retention.report_retention_off(db, "row_on", Row, 30)
+    assert _gauge("row_on") is None and not caplog.records
+
+
+def test_a_failed_estimate_never_raises(db, fresh, monkeypatch):
+    def broken(*_):
+        raise RuntimeError("down")
+    monkeypatch.setattr(retention, "estimate_rows", broken)
+    retention.report_retention_off(db, "row_err", Row, 0)
+    assert _gauge("row_err") is None

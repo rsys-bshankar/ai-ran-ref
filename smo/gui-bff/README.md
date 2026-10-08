@@ -235,7 +235,8 @@ All read in `app/config.py` at import time.
 | `GUI_TOTP_KEY`, `GUI_TOTP_KEY_FILE` | unset | PR-SEC-7.1: the key, at least 32 characters, that encrypts one-time-code secrets and keys the recovery-code hash; the file form is a mounted secret (a trailing newline is removed). Both set, an unreadable file or a short key stops the start. Unset: enrolment is refused (503 `TOTP_UNAVAILABLE`) and an account already enrolled cannot sign in (503 `TOTP_KEY_UNAVAILABLE`) |
 | `GUI_TOTP_ISSUER` | `SMO Operator Console` | The issuer an authenticator app shows |
 | `GUI_ADMIN_MFA_REQUIRED` | `false` | PR-SEC-7.8: a local admin without an enrolled code reaches only `GET /api/me` and the enrolment routes (`/api/me/totp`, `/begin`, `/confirm`); every other route answers 403 `MFA_ENROLMENT_REQUIRED`. Needs a key, or the start fails. An `oidc:` admin is not asked |
-| `GUI_AUDIT_RETENTION_DAYS` | `0` | Read by `python -m app.retention` (run it from cron or a CronJob): audit rows older than this many days are deleted; `0` keeps them (`../docs/RETENTION.md`) |
+| `GUI_AUDIT_RETENTION_DAYS` | `0` | Read by `python -m app.retention` (run it from cron, or `kubectl exec` on Kubernetes): audit rows older than this many days are deleted; `0` keeps them (`../docs/RETENTION.md`) |
+| `SMO_RETENTION_WARN_ROWS` | `1000000` | With `GUI_AUDIT_RETENTION_DAYS` at `0`, `python -m app.retention` counts the audit rows and logs a WARNING above this many (`0` never warns) |
 | `GUI_AUDIT_EXPORT_DIR` | unset | `python -m app.retention` first writes the rows it will delete there as JSON lines and deletes only those written |
 
 Constants in code: `MIN_PASSWORD_LENGTH` 8, `MAX_LOGIN_FAILURES` 5, `LOCKOUT_SECONDS` 300, cookie names `smo_session` / `smo_csrf`, header `X-CSRF-Token`.
