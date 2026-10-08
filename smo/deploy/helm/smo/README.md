@@ -53,7 +53,7 @@ The schema is brought to the release's by one Job (`scripts/migrate.py`, the sam
 
 Every module that uses the database has an init container, `wait-for-schema`, that blocks until the database is at (or past) the head revision of its own image. A new pod never serves on an older schema, and a rolling update (`maxUnavailable: 0`) leaves the old pods in service until the new ones are ready. Because schema changes follow the expand/contract rule (`smo/CLAUDE.md`), the old pods run on the new schema in between.
 
-`modules.<name>.replicas`, `podDisruptionBudget.enabled` and `autoscaling.enabled` are in the chart, off by default: running a module with more than one replica is the work of the HA release (`OPEN_ITEMS.md`, `PR-HA`). The GUI backend and Onboarding hold a volume and stay at one replica (they use the `Recreate` strategy).
+`modules.<name>.replicas`, `podDisruptionBudget.enabled` and `autoscaling.enabled` are in the chart, off by default (a disruption budget is rendered only for a module that runs, or may autoscale to, more than one pod: on a module with one pod it would block every drain of its node, as the node-drain lane found): running a module with more than one replica is the work of the HA release (`OPEN_ITEMS.md`, `PR-HA`). The GUI backend and Onboarding hold a volume and stay at one replica (they use the `Recreate` strategy).
 
 ### Rolling back
 

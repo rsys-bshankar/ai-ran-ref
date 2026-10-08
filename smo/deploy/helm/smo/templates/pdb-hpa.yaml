@@ -1,8 +1,10 @@
-{{- /* Off by default (PR-OPS-2.7): a budget on a single replica would block every node drain, and an autoscaler needs a module that can run more than one. */}}
+{{- /* Off by default (PR-OPS-2.7): a budget on a single replica would block every node drain, so a module with one replica gets none even when budgets are on, and an autoscaler needs a module that can run more than one. */}}
 {{- range $name, $_ := .Values.modules }}
 {{- $m := include "smo.module" (dict "root" $ "name" $name) | fromYaml }}
 {{- if and $m.enabled (eq $m.kind "service") (not $m.persistence) }}
-{{- if $.Values.podDisruptionBudget.enabled }}
+{{- /* a budget on a module that runs one pod blocks every drain of its node (minAvailable 1 can never be met by evicting it): only a module that has, or may autoscale to, a second pod gets one */}}
+{{- $several := or (gt (int $m.replicas) 1) (and $.Values.autoscaling.enabled (gt (int $.Values.autoscaling.minReplicas) 1)) }}
+{{- if and $.Values.podDisruptionBudget.enabled $several }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
