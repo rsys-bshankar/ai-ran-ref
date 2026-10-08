@@ -16,7 +16,7 @@ SMO_Wave_10_Consolidated.docx (Wave 10 v1.0, canonical over `[W10]`).
 - [Frozen decisions](#frozen-decisions)
 - [Standards compliance](#standards-compliance): [TS 28.105](#ts-28105) · [TS 28.104](#ts-28104) · [TS 28.312](#ts-28312)
 - [Runtime realization](#runtime-realization)
-- Related: the release of every specification this build is checked against is the table in [`../../specs/README.md`](../../specs/README.md#specification-release-table-std-21); the security and privacy mapping is in [CONTROL_MATRIX.md](CONTROL_MATRIX.md), [PRIVACY.md](PRIVACY.md) and [DATA_RESIDENCY.md](DATA_RESIDENCY.md)
+- Related: the release of every specification this build is checked against is the table in [`../../specs/README.md`](../../specs/README.md#specification-release-table-std-21); the interface-to-O-RAN-test-specification table and the plugfest plan are in [PLUGFEST.md](PLUGFEST.md); the security and privacy mapping is in [CONTROL_MATRIX.md](CONTROL_MATRIX.md), [PRIVACY.md](PRIVACY.md) and [DATA_RESIDENCY.md](DATA_RESIDENCY.md)
 
 ## Frozen decisions
 
