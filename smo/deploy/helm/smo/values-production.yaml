@@ -28,3 +28,13 @@ gui:
   env:
     GUI_AUDIT_RETENTION_DAYS: "365"
     GUI_AUDIT_EXPORT_DIR: /data/audit-export
+
+# Sign-in (PR-SEC-7), NOT switched on here because it needs a Secret that only you can create: GUI_ADMIN_MFA_REQUIRED=true makes a local admin enrol a one-time
+# code first, and the backend refuses to start with it unless it has the key for the code secrets. To switch it on, create the Secret and uncomment:
+#   kubectl -n smo create secret generic gui-totp --from-literal=totp-key="$(openssl rand -base64 32)"
+# gui:
+#   totpKeySecretRef: { name: gui-totp, key: totp-key }
+#   env:
+#     GUI_ADMIN_MFA_REQUIRED: "true"
+#     GUI_LOGIN_MODE: oidc          # only with the OIDC settings in gui.env; "both" (the default) keeps the password form
+# gui-bff/README.md, "Multi-factor sign-in".
