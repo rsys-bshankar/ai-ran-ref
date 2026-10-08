@@ -971,7 +971,7 @@ def test_the_adr_worked_example_onboards_and_is_stored_in_ai_capabilities(client
     answer, pkg = _onboard_raw(client, monkeypatch, _EXAMPLE.read_text())
     assert pkg["state"] == "AVAILABLE" and "failureReason" not in answer
     stored = pkg["aiCapabilities"]["operatorUi"]
-    assert [p["id"] for p in stored["panels"]] == ["instance", "controls", "cells", "history"] and stored["readOnly"] is False
+    assert [p["id"] for p in stored["panels"]] == ["instance", "controls", "cells"] and stored["readOnly"] is False
     # the GUI backend reads it from the route rapp-mgmt already uses
     status = client.get(f"/packages/{answer['packageId']}/onboarding-status").json()
     assert status["aiCapabilities"]["operatorUi"] == stored
@@ -1007,9 +1007,15 @@ def _mutate(fn):
     (_mutate(lambda d: d["panels"][1]["actions"][0].update(path="/instances/{instanceId}/../admin")), "must not contain '..'"),
     (_mutate(lambda d: d["panels"][0]["source"].update(path="/a/%2e%2e/b")), "operatorUi.panels[0].source.path"),
     (_mutate(lambda d: d["panels"][2]["columns"][0].update(path="a..b")), "operatorUi.panels[2].columns[0].path: must not contain '..'"),
-    (_mutate(lambda d: d["panels"].extend({**d["panels"][3], "id": f"extra-{i}"} for i in range(20))), "operatorUi.panels: must have 1 to 20 entries"),
-    (_mutate(lambda d: d["panels"][3].update(id="cells")), "'cells' is used by an earlier panel"),
+    (_mutate(lambda d: d["panels"].extend({**d["panels"][1], "id": f"extra-{i}"} for i in range(20))), "operatorUi.panels: must have 1 to 20 entries"),
+    (_mutate(lambda d: d["panels"][2].update(id="instance")), "'instance' is used by an earlier panel"),
     (_mutate(lambda d: d["panels"][1]["actions"][1].update(id="evaluate")), "'evaluate' is used twice"),
+    (_mutate(lambda d: d["panels"][2]["rowDetail"]["blocks"][0].update(kind="map")), "operatorUi.panels[2].rowDetail.blocks[0].kind: 'map' is not a rowDetail block kind"),
+    (_mutate(lambda d: d["panels"][2]["rowDetail"]["blocks"].extend([d["panels"][2]["rowDetail"]["blocks"][1]] * 4)), "rowDetail.blocks: must have 1 to 6 entries"),
+    (_mutate(lambda d: d["panels"][2]["rowDetail"]["blocks"][2]["source"].update(method="DELETE")), "rowDetail.blocks[2].source.method: a panel source must be a GET"),
+    (_mutate(lambda d: d["panels"][2]["rowDetail"]["blocks"][2]["source"].update(path="/instances/{instanceId}/../x")), "must not contain '..'"),
+    (_mutate(lambda d: d["panels"][2]["rowDetail"]["blocks"][2]["source"]["query"].update(cell_id="{row.nope}")), "{row.nope} names a field"),
+    (_mutate(lambda d: d["panels"][2]["rowDetail"]["blocks"][1].update(rowDetail={"blocks": []})), "cannot be nested inside a rowDetail"),
     (_mutate(lambda d: d.update(version=2)), "operatorUi.version: 2 is not supported"),
     (_mutate(lambda d: d.update(colour="red")), "unknown key 'colour'"),
     (_mutate(lambda d: d["panels"][0].update(title="x" * 100_000)), "over the limit of 65536"),
@@ -1040,3 +1046,11 @@ def test_other_failures_report_their_kind_not_internals(client, monkeypatch):
     monkeypatch.setattr("app.main.httpx.get", lambda location, timeout=None: FakeHttpResponse())
     answer = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()
     assert answer["failureReason"] == "BadZipFile"
+
+
+def test_the_row_detail_is_stored_and_its_per_row_source_is_a_declared_read(client, monkeypatch):
+    from smo_shared.operator_ui import declared_routes
+    _, pkg = _onboard_raw(client, monkeypatch, _EXAMPLE.read_text())
+    stored = pkg["aiCapabilities"]["operatorUi"]
+    assert [b["kind"] for b in stored["panels"][2]["rowDetail"]["blocks"]] == ["chart", "json", "table"]
+    assert ("GET", "/instances/{instanceId}/decisions") in declared_routes(stored)

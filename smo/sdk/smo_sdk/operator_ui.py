@@ -75,9 +75,36 @@ def _panel(kind: str, id: str, title: str, src: str | dict | None, **fields: Any
 
 
 def table(id: str, title: str, src: str | dict, *, row_key: str, columns: list[dict], rows: str | None = None,  # noqa: A002
-          row_actions: list[dict] | None = None, empty: str | None = None) -> dict:
-    """A table of the list at `rows` (a field path; omit when the answer itself is the list), one line per element, identified by `row_key`."""
-    return _panel("table", id, title, src, rows=rows, rowKey=row_key, columns=columns, rowActions=row_actions, empty=empty)
+          row_actions: list[dict] | None = None, empty: str | None = None, row_detail: dict | None = None) -> dict:
+    """A table of the list at `rows` (a field path; omit when the answer itself is the list), one line per element, identified by `row_key`.
+    `row_detail` (see `row_detail()`) is the drawer a click on a row opens. `{row.<field>}` in a row action or a detail source must name `row_key` or a column."""
+    return _panel("table", id, title, src, rows=rows, rowKey=row_key, columns=columns, rowActions=row_actions, empty=empty, rowDetail=row_detail)
+
+
+def row_detail(*blocks: dict, title: str | None = None) -> dict:
+    """The drawer of a table row: 1 to 6 blocks (`json_block`, `key_values_block`, `table_block`, `chart_block`). `title` may use `{row.<field>}`."""
+    return _drop_none(title=title, blocks=list(blocks))
+
+
+def json_block(title: str, path: str | None = None, *, empty: str | None = None) -> dict:
+    """The row, or the sub-object at `path`, as formatted text; `empty` is shown when it is missing."""
+    return _drop_none(kind="json", title=title, path=path, empty=empty)
+
+
+def key_values_block(title: str, items: list[dict]) -> dict:
+    return {"kind": "keyValues", "title": title, "items": items}
+
+
+def table_block(title: str, columns: list[dict], *, rows: str | None = None, src: str | dict | None = None, empty: str | None = None) -> dict:
+    """A table of a list field of the row (`rows`), or of a per-row GET `src` whose path and query values may use `{row.<field>}` (`rows` then picks the
+    list in the answer)."""
+    return _drop_none(kind="table", title=title, columns=columns, rows=rows, empty=empty, source=source(src) if isinstance(src, str) else src)
+
+
+def chart_block(title: str, *, points: str, x: str, y: str, type: str = "line", src: str | dict | None = None,  # noqa: A002
+                series_by: str | None = None, unit: str | None = None) -> dict:
+    return _drop_none(kind="chart", title=title, type=type, points=points, x=x, y=y, seriesBy=series_by, unit=unit,
+                      source=source(src) if isinstance(src, str) else src)
 
 
 def key_values(id: str, title: str, src: str | dict, items: list[dict]) -> dict:  # noqa: A002

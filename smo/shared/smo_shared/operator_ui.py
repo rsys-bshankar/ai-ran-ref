@@ -29,6 +29,7 @@ MAX_ITEMS = 30                # key-value rows in a keyValues panel
 MAX_TILES = 12
 MAX_ACTIONS = 10              # per actions panel
 MAX_ROW_ACTIONS = 5           # per table
+MAX_BLOCKS = 6                # per rowDetail
 MAX_INPUTS = 8                # per action
 MAX_OPTIONS = 50              # per enum input
 MAX_QUERY = 8                 # query parameters of one source
@@ -39,6 +40,7 @@ MAX_TITLE, MAX_LABEL, MAX_CONFIRM, MAX_SUCCESS, MAX_VALUE = 80, 60, 300, 200, 10
 
 PANEL_KINDS = ("table", "keyValues", "kpis", "chart", "actions")
 FORMATS = ("text", "number", "percent", "datetime", "badge", "id", "boolean", "list", "sparkline")
+BLOCK_KINDS = ("json", "keyValues", "table", "chart")
 ACTION_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 TONES = ("default", "primary", "danger")
 INPUT_TYPES = ("string", "integer", "number", "boolean", "enum")
@@ -50,6 +52,7 @@ _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,39}")
 _SEGMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 _STATIC = re.compile(r"[A-Za-z0-9._~-]+")
 _PARAM = re.compile(r"\{(instanceId|row\.[A-Za-z_][A-Za-z0-9_]*)\}")
+_ROW_REF = re.compile(r"\{row\.([A-Za-z_][A-Za-z0-9_]*)\}")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
@@ -169,7 +172,14 @@ def _field_path(value: Any, where: str, *, allow_empty: bool = False, allow_list
     return value
 
 
-def _route(value: Any, where: str, params: tuple[str, ...]) -> str:
+def _check_row_refs(text: str, where: str, row_fields: set[str] | None) -> None:
+    """Every `{row.<field>}` in `text` must name the table's `rowKey` or one of its columns' paths: a field the page itself shows."""
+    for field in _ROW_REF.findall(text):
+        if row_fields is None or field not in row_fields:
+            _fail(where, f"{{row.{field}}} names a field that is not the table's rowKey or one of its columns")
+
+
+def _route(value: Any, where: str, params: tuple[str, ...], row_fields: set[str] | None = None) -> str:
     """A route template relative to the rApp's operator API base: `/instances/{instanceId}/cells`. `params` says which `{...}` may appear
     (`instanceId`; in a row action also `row.<field>`). Percent signs, `..`, empty segments, a query or a fragment are refused."""
     if not isinstance(value, str) or not value.startswith("/"):
@@ -183,8 +193,10 @@ def _route(value: Any, where: str, params: tuple[str, ...]) -> str:
             _fail(where, "must not have an empty segment ('//' or a trailing '/')")
         param = _PARAM.fullmatch(segment)
         if param:
-            if not (param.group(1) == "instanceId" or "row" in params) :
+            if not (param.group(1) == "instanceId" or "row" in params):
                 _fail(where, f"{segment} is not allowed here (only {{instanceId}} here)")
+            if param.group(1) != "instanceId":
+                _check_row_refs(segment, where, row_fields)
             continue
         if not _STATIC.fullmatch(segment) or segment == ".":
             _fail(where, f"segment {segment!r} may hold only letters, digits and '._~-', or one of {{instanceId}} / {{row.<field>}}")
@@ -193,11 +205,12 @@ def _route(value: Any, where: str, params: tuple[str, ...]) -> str:
 
 # ------------------------------------------------------------------ the pieces
 
-def _source(value: Any, where: str) -> dict:
+def _source(value: Any, where: str, row_fields: set[str] | None = None) -> dict:
+    """A GET route. In a `rowDetail` block (`row_fields` given) the path and the whole-string query values may use `{row.<field>}`."""
     out = _mapping(value, where, ("path",), ("method", "query", "refreshSeconds"))
     if "method" in out and out["method"] != "GET":
         _fail(f"{where}.method", f"a panel source must be a GET, not {out['method']!r}")
-    out["path"] = _route(out["path"], f"{where}.path", ("instanceId",))
+    out["path"] = _route(out["path"], f"{where}.path", ("instanceId", "row") if row_fields is not None else ("instanceId",), row_fields)
     if "query" in out:
         query = out["query"]
         if not isinstance(query, dict) or len(query) > MAX_QUERY:
@@ -206,6 +219,10 @@ def _source(value: Any, where: str) -> dict:
             if not _NAME.fullmatch(name):
                 _fail(f"{where}.query", f"parameter name {name!r} is not a plain name")
             _scalar(v, f"{where}.query.{name}")
+            if isinstance(v, str) and ("{" in v or "}" in v):
+                if row_fields is None or not _ROW_REF.fullmatch(v):
+                    _fail(f"{where}.query.{name}", "braces are only allowed as a whole value {row.<field>} in a rowDetail source")
+                _check_row_refs(v, f"{where}.query.{name}", row_fields)
     if "refreshSeconds" in out:
         _int(out["refreshSeconds"], f"{where}.refreshSeconds", MIN_REFRESH, MAX_REFRESH)
     return out
@@ -259,7 +276,7 @@ def _when(value: Any, where: str) -> dict:
     return out
 
 
-def _action(value: Any, where: str, *, row: bool, seen: set[str]) -> dict:
+def _action(value: Any, where: str, *, row: bool, seen: set[str], row_fields: set[str] | None = None) -> dict:
     out = _mapping(value, where, ("id", "label", "method", "path", "success"),
                    ("confirm", "tone", "inputs", "body") + (("when",) if row else ()))
     if not _ID.fullmatch(str(out["id"])):
@@ -271,7 +288,7 @@ def _action(value: Any, where: str, *, row: bool, seen: set[str]) -> dict:
     if out["method"] == "GET":
         _fail(f"{where}.method", "an action must change something (POST, PUT, PATCH or DELETE); a read is a panel source")
     _one_of(out["method"], f"{where}.method", ACTION_METHODS)
-    out["path"] = _route(out["path"], f"{where}.path", ("instanceId", "row") if row else ("instanceId",))
+    out["path"] = _route(out["path"], f"{where}.path", ("instanceId", "row") if row else ("instanceId",), row_fields)
     _text(out["success"], f"{where}.success", MAX_SUCCESS)
     if "confirm" in out:
         _text(out["confirm"], f"{where}.confirm", MAX_CONFIRM)
@@ -299,14 +316,10 @@ def _action(value: Any, where: str, *, row: bool, seen: set[str]) -> dict:
     return out
 
 
-def _table(panel: dict, where: str, seen: set[str]) -> dict:
-    out = _mapping(panel, where, ("id", "title", "kind", "source", "rowKey", "columns"), ("rows", "rowActions", "empty"))
-    out["rows"] = _field_path(out.get("rows", ""), f"{where}.rows", allow_empty=True, allow_list=False)
-    _field_path(out["rowKey"], f"{where}.rowKey", allow_list=False)
-    if "empty" in out:
-        _text(out["empty"], f"{where}.empty", MAX_LABEL)
-    for i, column in enumerate(_list(out["columns"], f"{where}.columns", 1, MAX_COLUMNS)):
-        w = f"{where}.columns[{i}]"
+def _columns(columns: Any, where: str) -> list:
+    out: list = []
+    for i, column in enumerate(_list(columns, where, 1, MAX_COLUMNS)):
+        w = f"{where}[{i}]"
         c = _mapping(column, w, ("path", "label"), ("format", "y", "unit"))
         _field_path(c["path"], f"{w}.path")
         _text(c["label"], f"{w}.label", MAX_LABEL, empty=True)
@@ -320,16 +333,35 @@ def _table(panel: dict, where: str, seen: set[str]) -> dict:
             _fail(w, "format 'sparkline' needs 'y': the field of each element that holds the value (the column path is the list)")
         if "unit" in c:
             _text(c["unit"], f"{w}.unit", 10)
-        out["columns"][i] = c
+        out.append(c)
+    return out
+
+
+def _table(panel: dict, where: str, seen: set[str]) -> dict:
+    out = _mapping(panel, where, ("id", "title", "kind", "source", "rowKey", "columns"), ("rows", "rowActions", "empty", "rowDetail"))
+    out["rows"] = _field_path(out.get("rows", ""), f"{where}.rows", allow_empty=True, allow_list=False)
+    _field_path(out["rowKey"], f"{where}.rowKey", allow_list=False)
+    if "empty" in out:
+        _text(out["empty"], f"{where}.empty", MAX_LABEL)
+    out["columns"] = _columns(out["columns"], f"{where}.columns")
+    row_fields = {out["rowKey"]} | {c["path"] for c in out["columns"] if "[]" not in c["path"]}
     row_actions = _list(out.get("rowActions", []), f"{where}.rowActions", 0, MAX_ROW_ACTIONS)
-    out["rowActions"] = [_action(a, f"{where}.rowActions[{i}]", row=True, seen=seen) for i, a in enumerate(row_actions)]
+    out["rowActions"] = [_action(a, f"{where}.rowActions[{i}]", row=True, seen=seen, row_fields=row_fields) for i, a in enumerate(row_actions)]
+    if "rowDetail" in out:
+        out["rowDetail"] = _row_detail(out["rowDetail"], f"{where}.rowDetail", row_fields)
     return out
 
 
 def _key_values(panel: dict, where: str, seen: set[str]) -> dict:
     out = _mapping(panel, where, ("id", "title", "kind", "source", "items"), ())
-    for i, item in enumerate(_list(out["items"], f"{where}.items", 1, MAX_ITEMS)):
-        w = f"{where}.items[{i}]"
+    out["items"] = _items(out["items"], f"{where}.items")
+    return out
+
+
+def _items(items: Any, where: str) -> list:
+    result = []
+    for i, item in enumerate(_list(items, where, 1, MAX_ITEMS)):
+        w = f"{where}[{i}]"
         it = _mapping(item, w, ("label", "path"), ("format", "unit"))
         _text(it["label"], f"{w}.label", MAX_LABEL)
         _field_path(it["path"], f"{w}.path")
@@ -338,8 +370,8 @@ def _key_values(panel: dict, where: str, seen: set[str]) -> dict:
                 _fail(f"{w}.format", "'sparkline' is a table column format")
         if "unit" in it:
             _text(it["unit"], f"{w}.unit", 10)
-        out["items"][i] = it
-    return out
+        result.append(it)
+    return result
 
 
 def _kpis(panel: dict, where: str, seen: set[str]) -> dict:
@@ -370,12 +402,63 @@ def _kpis(panel: dict, where: str, seen: set[str]) -> dict:
 
 def _chart(panel: dict, where: str, seen: set[str]) -> dict:
     out = _mapping(panel, where, ("id", "title", "kind", "source", "type", "points", "x", "y"), ("seriesBy", "unit"))
+    _chart_fields(out, where)
+    return out
+
+
+def _chart_fields(out: dict, where: str) -> None:
     _one_of(out["type"], f"{where}.type", CHART_TYPES)
     _field_path(out["points"], f"{where}.points", allow_list=False)
     for key in ("x", "y") + (("seriesBy",) if "seriesBy" in out else ()):
         _field_path(out[key], f"{where}.{key}", allow_list=False)
     if "unit" in out:
         _text(out["unit"], f"{where}.unit", 10)
+
+
+def _row_detail(value: Any, where: str, row_fields: set[str]) -> dict:
+    """The drawer a click on a row opens: up to MAX_BLOCKS blocks. A block reads the row itself (`json`, `keyValues`, and a `table` or `chart` whose
+    list is a field of the row) or, for `table` and `chart`, a per-row GET `source` whose route and query values may use `{row.<field>}`.
+    A rowDetail cannot hold another rowDetail, and a row's own buttons stay in the table."""
+    out = _mapping(value, where, ("blocks",), ("title",))
+    if "title" in out:
+        _text(out["title"], f"{where}.title", MAX_TITLE)
+        _check_row_refs(out["title"], f"{where}.title", row_fields)
+    blocks = _list(out["blocks"], f"{where}.blocks", 1, MAX_BLOCKS)
+    for i, block in enumerate(blocks):
+        w = f"{where}.blocks[{i}]"
+        if not isinstance(block, dict):
+            _fail(w, "must be a mapping")
+        kind = block.get("kind")
+        if kind not in BLOCK_KINDS:
+            _fail(f"{w}.kind", f"{kind!r} is not a rowDetail block kind ({', '.join(BLOCK_KINDS)})")
+        if "rowDetail" in block:
+            _fail(f"{w}.rowDetail", "a rowDetail cannot be nested inside a rowDetail")
+        common = ("kind", "title")
+        if kind == "json":
+            b = _mapping(block, w, common, ("path", "empty"))
+            if "path" in b:
+                _field_path(b["path"], f"{w}.path", allow_list=False)
+            if "empty" in b:
+                _text(b["empty"], f"{w}.empty", MAX_LABEL)
+        elif kind == "keyValues":
+            b = _mapping(block, w, common + ("items",), ())
+            b["items"] = _items(b["items"], f"{w}.items")
+        elif kind == "table":
+            b = _mapping(block, w, common + ("columns",), ("source", "rows", "empty"))
+            b["columns"] = _columns(b["columns"], f"{w}.columns")
+            if "source" not in b and not b.get("rows"):
+                _fail(w, "needs 'rows' (a list field of the row) or a per-row 'source'")
+            b["rows"] = _field_path(b.get("rows", ""), f"{w}.rows", allow_empty=True, allow_list=False)
+            if "empty" in b:
+                _text(b["empty"], f"{w}.empty", MAX_LABEL)
+        else:
+            b = _mapping(block, w, common + ("type", "points", "x", "y"), ("source", "seriesBy", "unit"))
+            _chart_fields(b, w)
+        _text(b["title"], f"{w}.title", MAX_TITLE)
+        if "source" in b:
+            b["source"] = _source(b["source"], f"{w}.source", row_fields)
+        blocks[i] = b
+    out["blocks"] = blocks
     return out
 
 
@@ -437,8 +520,8 @@ def validate_operator_ui(declaration: Any) -> dict:
 # ------------------------------------------------------------------ what the declaration allows
 
 def declared_routes(declaration: dict) -> list[tuple[str, str]]:
-    """The set of `(method, path-template)` the GUI backend may forward for this rApp: the union of every panel `source` (GET) and every
-    action route, and nothing else. `declaration` is a validated one."""
+    """The set of `(method, path-template)` the GUI backend may forward for this rApp: the union of every panel `source` (GET), every
+    action route and every per-row `rowDetail` block source (GET), and nothing else. `declaration` is a validated one."""
     routes: list[tuple[str, str]] = []
 
     def add(method: str, path: str) -> None:
@@ -450,6 +533,9 @@ def declared_routes(declaration: dict) -> list[tuple[str, str]]:
             add("GET", panel["source"]["path"])
         for action in panel.get("actions", []) + panel.get("rowActions", []):
             add(action["method"], action["path"])
+        for block in panel.get("rowDetail", {}).get("blocks", []):
+            if "source" in block:
+                add("GET", block["source"]["path"])
     return routes
 
 
@@ -489,12 +575,15 @@ _S_FIELD = {"type": "string", "minLength": 1, "maxLength": MAX_FIELD_PATH,
 _S_ROUTE = {"type": "string", "maxLength": MAX_PATH,
             "pattern": r"^(/([A-Za-z0-9._~-]+|\{instanceId\}|\{row\.[A-Za-z_][A-Za-z0-9_]*\}))+$", "not": {"pattern": r"\.\."}}
 _S_SCALAR = {"type": ["string", "number", "boolean"]}
-_S_SOURCE = {
+_S_SOURCE: dict[str, Any] = {
     "type": "object", "required": ["path"], "additionalProperties": False, "patternProperties": {"^x-": {}},
     "properties": {"method": {"const": "GET"}, "path": _S_ROUTE,
                    "query": {"type": "object", "maxProperties": MAX_QUERY, "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]{0,39}$"},
                              "additionalProperties": _S_SCALAR},
                    "refreshSeconds": {"type": "integer", "minimum": MIN_REFRESH, "maximum": MAX_REFRESH}}}
+_S_SOURCE_ROW = {**_S_SOURCE, "properties": {**_S_SOURCE["properties"], "query": {
+    "type": "object", "maxProperties": MAX_QUERY, "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]{0,39}$"},
+    "additionalProperties": {"type": ["string", "number", "boolean"]}}}}
 _S_INPUT = {
     "type": "object", "required": ["name", "label", "type"], "additionalProperties": False, "patternProperties": {"^x-": {}},
     "properties": {"name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,39}$"}, "label": _s_text(MAX_LABEL),
@@ -537,10 +626,25 @@ def operator_ui_json_schema() -> dict:
             "properties": {"label": _s_text(MAX_LABEL), "path": _S_FIELD, "kpi": _s_text(80),
                            "format": {"enum": [f for f in FORMATS if f not in ("sparkline", "list")]}, "unit": _s_text(10)},
             "oneOf": [{"required": ["path"]}, {"required": ["kpi"]}]}
+    cols = {"type": "array", "minItems": 1, "maxItems": MAX_COLUMNS, "items": column}
+    block_base = {"type": "object", "additionalProperties": False, "patternProperties": {"^x-": {}}}
+    blocks = [
+        {**block_base, "required": ["kind", "title"], "properties": {"kind": {"const": "json"}, "title": _s_text(MAX_TITLE), "path": _S_FIELD, "empty": _s_text(MAX_LABEL)}},
+        {**block_base, "required": ["kind", "title", "items"], "properties": {
+            "kind": {"const": "keyValues"}, "title": _s_text(MAX_TITLE), "items": {"type": "array", "minItems": 1, "maxItems": MAX_ITEMS, "items": item}}},
+        {**block_base, "required": ["kind", "title", "columns"], "properties": {
+            "kind": {"const": "table"}, "title": _s_text(MAX_TITLE), "columns": cols, "source": _S_SOURCE_ROW,
+            "rows": {"type": "string", "maxLength": MAX_FIELD_PATH}, "empty": _s_text(MAX_LABEL)}},
+        {**block_base, "required": ["kind", "title", "type", "points", "x", "y"], "properties": {
+            "kind": {"const": "chart"}, "title": _s_text(MAX_TITLE), "type": {"enum": list(CHART_TYPES)}, "points": _S_FIELD, "x": _S_FIELD, "y": _S_FIELD,
+            "seriesBy": _S_FIELD, "unit": _s_text(10), "source": _S_SOURCE_ROW}},
+    ]
+    row_detail = {"type": "object", "required": ["blocks"], "additionalProperties": False, "patternProperties": {"^x-": {}},
+                  "properties": {"title": _s_text(MAX_TITLE), "blocks": {"type": "array", "minItems": 1, "maxItems": MAX_BLOCKS, "items": {"oneOf": blocks}}}}
     panels = [
         _s_panel("table", ["rowKey", "columns"], {
             "rows": {"type": "string", "maxLength": MAX_FIELD_PATH}, "rowKey": _S_FIELD, "empty": _s_text(MAX_LABEL),
-            "columns": {"type": "array", "minItems": 1, "maxItems": MAX_COLUMNS, "items": column},
+            "columns": cols, "rowDetail": row_detail,
             "rowActions": {"type": "array", "maxItems": MAX_ROW_ACTIONS, "items": _s_action(True)}}, True),
         _s_panel("keyValues", ["items"], {"items": {"type": "array", "minItems": 1, "maxItems": MAX_ITEMS, "items": item}}, True),
         _s_panel("kpis", ["tiles"], {"tiles": {"type": "array", "minItems": 1, "maxItems": MAX_TILES, "items": tile}}, False),

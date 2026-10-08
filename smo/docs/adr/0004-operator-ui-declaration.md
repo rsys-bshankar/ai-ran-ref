@@ -55,7 +55,7 @@ on a manual refresh). A source is a GET. `method` may be written, and only `GET`
 
 | Kind | Fields | Draws |
 |---|---|---|
-| `table` | `rows` (field path of the list in the answer; omitted: the answer is the list), `rowKey` (field of a row that identifies it), `columns` (1 to 20), optional `rowActions` (at most 5), `empty` (text for no rows) | A table, one line per element. |
+| `table` | `rows` (field path of the list in the answer; omitted: the answer is the list), `rowKey` (field of a row that identifies it), `columns` (1 to 20), optional `rowActions` (at most 5), optional `rowDetail` (the drawer of a row, below), `empty` (text for no rows) | A table, one line per element; a click on a line opens its drawer. |
 | `keyValues` | `items` (1 to 30 of `label`, `path`, `format`, `unit`) | A two-column list of labelled values from one object. |
 | `kpis` | `tiles` (1 to 12 of `label` and one of `path` or `kpi`, `format`, `unit`) | Number tiles. `path` reads a number from the source's answer. `kpi` names a KPI the platform holds for the instance (the performance reports of rApp Management); such a tile needs no source, and the panel has none when every tile is bound by `kpi`. |
 | `chart` | `type` (`line` or `bar`), `points` (field path of a list), `x`, `y` (fields of each point), optional `seriesBy` (field that splits the points into series, at most 8 drawn), `unit` | A chart of one numeric series per `seriesBy` value, `x` being a time or a label. |
@@ -75,6 +75,25 @@ either an input or fixed. The fixed string `"{user}"` is replaced by the **GUI b
 browser sent, so a rApp can attribute an override to the real operator. A `DELETE` has no body. A row action also has `when`
 (`{path, exists}`, `{path, equals}` or `{path, notEquals}` on a field of the row) to show the button only for some rows, such as "Override"
 for a cell with none and "Clear override" for one with it.
+
+**`rowDetail`** (a field of a `table`) is what a click on a row opens: a drawer with an optional `title` (text, which may use `{row.<field>}`) and
+1 to 6 `blocks`, drawn in order. It was first proposed as a version 2 feature, because the first draft of this record left it out; the owner decided
+to build it before the sample pages are migrated, and since nothing of version 1 has been released it is part of version 1 (`version: 1` is unchanged).
+A block has a `kind` and a `title` (at most 80), and is one of:
+
+| Block | Fields | Draws |
+|---|---|---|
+| `json` | optional `path` (field path of a sub-object of the row; omitted: the row itself), optional `empty` (text when it is missing) | The value as formatted text (indented JSON, in a monospaced box). |
+| `keyValues` | `items` as in a key-values panel, read from the row | Labelled values of the row. |
+| `table` | `columns` as in a table, and one of `rows` (a list field of the row) or a per-row `source` (with `rows` then picking the list in its answer), optional `empty` | A table of a list the row carries, or of a list fetched for this row. |
+| `chart` | `type`, `points`, `x`, `y`, `seriesBy`, `unit` as in a chart panel, and optionally a per-row `source`; without one, `points` is a list field of the row | A chart of the row's own series, or of a fetched one. |
+
+A per-row `source` is a GET like every source; its route may use `{instanceId}` and `{row.<field>}`, and a query value may be the whole string
+`{row.<field>}` (`query: {cell_id: "{row.cellId}"}`), nothing else with braces. A `{row.<field>}` anywhere (a detail source, the drawer title, and
+equally a row action's route) must name the table's `rowKey` or the `path` of one of its columns: a field the page itself shows, so an author cannot
+refer to a field the table does not carry. A block cannot hold a `rowDetail` (no nesting), and the table's own buttons stay in the table
+(`rowActions`), not in the drawer. The drawer reads the row the table already has; a fetched block is requested when the drawer opens and when
+its `refreshSeconds` (if any) elapses, and only for the open row.
 
 **Path parameters.** A route template may contain `{instanceId}`: the GUI substitutes the id of the rApp instance whose page is open (the
 instance id rApp Management assigned; the sample rApps already use it as their own instance id). In a table's row actions it may also contain
@@ -131,7 +150,7 @@ Onboarding refuses a package over any of these (`smo_shared/operator_ui.py`, con
 | Values (objects, lists, scalars) in it | 4 000 (this also stops a YAML alias bomb before anything expands it) |
 | Nesting | 10 levels |
 | Panels per rApp | 20 |
-| Columns per table / row actions per table | 20 / 5 |
+| Columns per table / row actions per table / blocks per `rowDetail` | 20 / 5 / 6 |
 | Items per key-values panel / tiles per KPI panel | 30 / 12 |
 | Actions per actions panel | 10 |
 | Inputs, fixed body values, query parameters, per action or source | 8 |
@@ -150,12 +169,14 @@ Onboarding refuses a package over any of these (`smo_shared/operator_ui.py`, con
 - **Unknown kinds:** Onboarding refuses a kind that is not one of version 1's. The GUI is separately defensive, because the stored
   declaration may come from a newer Onboarding than the GUI build, or be edited in the database: a panel whose `kind` the renderer does not know is
   drawn as a card with its `title` and "unsupported panel", the other panels are drawn, and nothing throws. The same holds for an unknown `format`
-  (drawn as text) and an unknown column or tile shape (the panel is "unsupported").
+  (drawn as text) and an unknown column or tile shape (the panel is "unsupported"). A `rowDetail` block whose `kind` the renderer does not know is
+  drawn as "unsupported block" with its `title`, and the drawer's other blocks are drawn.
 
 ### 7. Permission: exactly the declared routes
 
 The GUI backend forwards a call for rApp instance *X* only if `(method, path)` is one of the **declared routes** of *X*'s package: the union of
-every panel's `source` (all `GET`) and every action's route (`actions` panels and `rowActions`), with `{instanceId}` set to *X* and `{row.<field>}`
+every panel's `source` (all `GET`), every action's route (`actions` panels and `rowActions`) and every `rowDetail` block's per-row `source`
+(also `GET`, so reading a drawer needs viewer), with `{instanceId}` set to *X* and `{row.<field>}`
 matching one safe segment, and nothing else. `smo_shared.operator_ui.declared_routes` computes the set and `route_allowed` is the match
 (it refuses `..`, `%`, `//`, `?`, `#` and any segment outside `A-Za-z0-9._~-`). Then:
 
@@ -182,12 +203,14 @@ Onboarding validates `operatorUi` with `smo_shared.operator_ui.validate_operator
 place and the rule, for instance `operatorUi.panels[2].columns[1].path: must not contain '..'`. Refused:
 
 - an unknown or missing `kind`, an unknown key, a version other than 1;
-- a `source` that is not a GET, an action that is a GET or any method outside `POST`, `PUT`, `PATCH`, `DELETE`;
+- a `source` (a panel's or a `rowDetail` block's) that is not a GET, an action that is a GET or any method outside `POST`, `PUT`, `PATCH`, `DELETE`;
 - a route that does not start with `/`, is over 200 characters, contains `..`, `.` or an empty segment, `%`, `?`, `#`, a space, or a `{...}` other
   than `{instanceId}` (and `{row.<field>}` in a row action);
 - a field path outside the subset (including `..`, `$`, an index, two `[]`);
 - more panels, columns, items, tiles, actions, inputs, options or query parameters than the limits; a declaration over the byte or value limit;
 - a duplicate panel id, a duplicate action id (across the whole declaration), two inputs of one name, a name that is both an input and a fixed value;
+- a `rowDetail` with an unknown block kind, with no blocks or more than 6, nested in a block, a `table` block with neither `rows` nor a `source`, braces in a
+  query value other than a whole `{row.<field>}`, and a `{row.<field>}` (in a detail source, the drawer title or a row action) that names no column or `rowKey`;
 - `readOnly` with an action; a `sparkline` column without `y`, or `y` without `sparkline`; a tile with both or neither of `path` and `kpi`; a tile
   `path` with no panel `source`;
 - strings with control characters or over their length; values that are not JSON (YAML dates, `.nan`).
@@ -209,7 +232,8 @@ validates it with the same code, and appends it to a `manifest.yaml`. `sdk/examp
 
 `gui/src/pages/EnergySaving.tsx` shows, for one instance: the instance (`GET /instances/{id}`: managed element, autonomy mode, actuator, model),
 the two buttons "Evaluate now" and "Reconcile approvals", the cells table (`GET /instances/{id}/dashboard`, `cells`: state, O1 value, PRB trend,
-prediction, decision, outcome) with a per-cell "Override: unlock" / "Clear override", and a history (`GET /instances/{id}/decisions`). As a
+prediction, decision, outcome) with a per-cell "Override: unlock" / "Clear override", and, in a drawer opened by a click on a cell, the PRB chart, the latest execution as JSON
+(`CellDrawer`) and that cell's last 20 decisions (`GET /instances/{id}/decisions?cell_id=…`). As a
 declaration (the file `docs/schemas/operator-ui.energy-saving.example.yaml`; the Onboarding and shared tests load this file, and a test fails if
 this text and the file differ):
 
@@ -280,47 +304,68 @@ operatorUi:
           path: "/instances/{instanceId}/cells/{row.cellId}/override"
           success: Override cleared
           when: {path: overrideBy, exists: true}
-    - id: history
-      title: Recent decisions
-      kind: table
-      source:
-        path: "/instances/{instanceId}/decisions"
-        query: {limit: 20}
-      rows: items
-      rowKey: decisionId
-      columns:
-        - {path: observedAt, label: Observed, format: datetime}
-        - {path: cellId, label: Cell}
-        - {path: prb, label: PRB, format: percent}
-        - {path: decision, label: Decision, format: badge}
-        - {path: reason, label: Reason}
-        - {path: outcome, label: Outcome, format: badge}
-        - {path: executionId, label: Execution, format: id}
+      rowDetail:
+        title: "Cell {row.cellId}"
+        blocks:
+          - kind: chart
+            title: PRB utilisation (%)
+            type: line
+            points: prbTrend
+            x: t
+            y: v
+          - kind: json
+            title: Latest execution (audit trail)
+            path: latestDecision
+            empty: No decision yet.
+          - kind: table
+            title: History
+            source:
+              path: "/instances/{instanceId}/decisions"
+              query: {cell_id: "{row.cellId}", limit: 20}
+            rows: items
+            empty: No decisions.
+            columns:
+              - {path: observedAt, label: Observed, format: datetime}
+              - {path: prb, label: PRB, format: percent}
+              - {path: decision, label: Decision, format: badge}
+              - {path: reason, label: Reason}
+              - {path: outcome, label: Outcome, format: badge}
+              - {path: executionId, label: Execution, format: id}
 ```
 
 The routes it allows are exactly these seven: `GET /instances/{instanceId}`, `POST …/evaluate`, `POST …/reconcile`, `GET …/dashboard`,
-`POST …/cells/{row.cellId}/override`, `DELETE …/cells/{row.cellId}/override`, `GET …/decisions`. The rApp's `…/lifecycle/train`, `…/start`
+`POST …/cells/{row.cellId}/override`, `DELETE …/cells/{row.cellId}/override`, `GET …/decisions` (the drawer's history, bound to the clicked cell by `{row.cellId}` in the query). The rApp's `…/lifecycle/train`, `…/start`
 and `…/sim-producer/*` are not declared, so the GUI backend refuses them for this rApp (today they sit in `gui-bff/app/rbac.py` as operator and
 admin rules).
 
 ## What the four sample pages need that the declaration cannot express
 
-The four pages share a shape (instance block, two buttons, a cells or relations table with a drawer, a history); the Energy Saving page above
-is the closest fit. What does not map one to one:
+The four pages share a shape: an instance block, two buttons, a cells (or relations) table, and a drawer opened from a row. With `rowDetail` all
+four drawers are expressible. Read against `Mobility.tsx`, `Coverage.tsx`, `TrafficSteering.tsx` and `EnergySaving.tsx`:
 
-| Need | In the pages | Verdict |
-|---|---|---|
-| A sparkline in every row (PRB trend, KPI trend) | `Sparkline` in a table cell, five uses in Coverage | **Added to version 1** as the column format `sparkline` (list of points in `path`, value field in `y`): a table feature, not a new panel kind. |
-| A drawer opened by clicking a row, with that row's history (`/decisions?cell_id=…`), a larger chart and the latest execution as JSON | `Drawer` in all four pages, five uses each | **Not in version 1.** The honest reduction is the second table above (recent decisions of the instance, unfiltered) and the sparkline in the row: the per-row filter and the raw JSON are lost. The minimum extra is a table field `rowDetail` (a nested list of panels whose sources may use `{row.<field>}`), a version 2 feature; the owner decides at `GUI-8.6` whether the loss is acceptable or `rowDetail` is built first. The raw JSON "audit trail" view stays on the generic detail page (the overview shows the instance's history and faults). |
-| Operator overrides with a free-text reason | a body of `operator` and `reason` | Covered: `body` holds the fixed reason, `"{user}"` the operator; an `inputs` entry `reason` makes the reason typed. |
-| Key-values that join a map (`datasets`: stage → dataset) | one line "Datasets" built from an object | Not covered: a path reads a value or a list, not an object's entries. Shown as nothing; the rApp can expose a flat `datasetNames` list, or the line goes. |
-| Custom composition (a model line `id v3 (artifact 2)` built from three fields), derived text ("CESManagementFunction.energySavingControl" from `actuator`) | `KeyValue` with JSX | Not covered. One field per line; the rApp's answer carries the text it wants shown. |
-| Colour by threshold, tooltips, columns that merge several fields | `Safety`, `Prediction`, `Execution` cells | Not covered; each field becomes its own column, `badge` carries the state colour. |
-| The instance selector in the page header | a `<select>` of instances | Not needed: the directory lists the rApps and the page is `/rapps/<instance>`. |
-| Pages for a family of instances sharing a package | | Same declaration for every instance of the package. |
+| In the pages | Declared as |
+|---|---|
+| Per-row sparklines (PRB trend, failure-rate trend, excess, congestion score) | column format `sparkline` with `y` |
+| Drawer: a larger chart of the row's trend (all four) | a `chart` block with `points` the trend field |
+| Coverage drawer: three sparklines of one list (`shareTrend` with `WEAK_COVERAGE`, `OVERSHOOT`, `PILOT_POLLUTION` per point) | three `chart` blocks over the same `points: shareTrend`, `y` naming each |
+| Drawer: "Latest execution (audit trail)" as JSON, "No decision yet." | a `json` block with `path: latestDecision` and `empty` |
+| Drawer: the last 20 decisions of this cell or relation (`?cell_id=` for Energy Saving, Coverage and Traffic Steering, `?relation=` for Mobility) | a `table` block with a per-row `source` and `query: {cell_id: "{row.cellId}"}` (Mobility: `{row.relation}`, a column or the `rowKey`) |
+| Drawer title `Cell C1`, `Relation A → B`, `Cell C1 (layer)` | `rowDetail.title` with `{row.<field>}` (the fields must be columns) |
+| Operator override with a reason | `body` with `"{user}"`, or an `inputs` entry |
+| The instance selector in the page header | not needed: the directory lists the rApps and the page is `/rapps/<instance>` |
 
-Everything else (the start and lifecycle buttons, simulator producer routes) is operator or admin work that stays on the generic detail page
-or in the API, not in a declared page.
+What **still cannot be expressed** (each loses a little, none loses a function):
+
+- **Text composed from several fields or computed:** `source → target`, `fromCio → toCio`, `1500 MHz → 1800 MHz` settings, the model line `id v3 (artifact 2)`,
+  `CESManagementFunction.energySavingControl` derived from `actuator`. A column or item shows one field; the rApp's answer should carry the composed
+  text it wants shown (an extra field), or the pieces become separate columns. The drawer title is the one place where fields are joined.
+- **A map's entries** (`datasets`: stage → dataset): paths read a value or a list, not an object's keys. Shown as nothing, unless the rApp answers with a flat list.
+- **Threshold colours, tooltips, inline mixed cells** (a badge followed by its reason in one cell; `Safety`, `Prediction`, `Execution` cells): each field is its own
+  column, and `badge` carries the state colour.
+- **Chart presentation** (`floor`, fixed height and width, a label per sparkline): the renderer decides the size and the axis; a chart `unit` is the only label.
+- **A raw execution view with its own routes beyond a list** (for example opening an execution from the history table): there is no second drawer level
+  (`rowDetail` does not nest). The `json` block of the row's latest decision covers the audit trail the pages show today.
+- **Start and lifecycle buttons and the simulator producer routes** are operator or admin work that stays on the generic detail page or in the API.
 
 ## Consequences
 
@@ -328,5 +373,5 @@ or in the API, not in a declared page.
   same format in TypeScript and is checked against the example above.
 - No schema migration in this step. `GUI-8.3` adds one nullable column (`operatorApiBase`) to `rapp_instance`, additive.
 - The four sample rApps are not changed here; `GUI-8.6` gives them declarations, rebuilds their packages and removes their coded pages.
-- A rApp author gets a bounded, reviewable page; an operator gets one place to find every rApp. The price is the table above: pages as rich as
-  the hand-written ones need `rowDetail`, and anything beyond it needs a new version of this format, not a code upload.
+- A rApp author gets a bounded, reviewable page; an operator gets one place to find every rApp. The price is the list of what cannot be
+  expressed above (composed text, map entries, presentation detail); anything beyond it needs a new version of this format, not a code upload.

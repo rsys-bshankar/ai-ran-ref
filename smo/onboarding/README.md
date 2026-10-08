@@ -9,7 +9,7 @@
 | Depends on (over R1) | NFO (`POST /nfo/descriptors`); the package location itself (plain HTTP GET, not over R1) |
 | Called by | rApp Management (`onboarding-status`, `usage/start`, `usage/stop`); AIMgF (`onboarding-status`, for `aiCapabilities.runtimeProfiles`); GUI BFF (operator and admin actions); operators |
 | Database tables | `application_package` (versioned), `artifact`, `package_usage_registration` |
-| Unit tests | 125 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 132 passed (`tests/`, SQLite, standalone) |
 | Status | Done. Package signature verification is not performed (see 1.5, 2.8) |
 
 ## 1. High-level design (HLD)
@@ -75,7 +75,7 @@ Onboarding never calls rApp Management, AIMgF or SME. The FK from NFO's descript
 |---|---|
 | `POST /packages` answers `202`, but validation, descriptor creation and the state change all happen inside the request. The response carries the final state implicitly: poll `onboarding-status`. | Keeps the API shape of an async operation without a worker; the pipeline is short. |
 | The package row is committed (not just flushed) before NFO is called. | NFO's descriptor row has a real FK on `application_package`; under PostgreSQL's read-committed isolation, NFO's connection cannot see an uncommitted row. |
-| `manifest.yaml` may carry `operatorUi`, the operator page the rApp declares (`PR-GUI-8`, `docs/adr/0004-operator-ui-declaration.md`). It is validated by `smo_shared.operator_ui` (kinds, GET sources, routes without `..`, limits, duplicate ids) and stored in `aiCapabilities.operatorUi`; no new column. A bad one lands the package in `FAILED` like any validation failure, and the message (place and rule) is returned as `failureReason` in the `202` answer and logged, not stored. | The GUI needs the declaration at run time without a GUI build; the manifest and `aiCapabilities` already carry the package's AI part to the readers that need it. A stored reason would need a migration; a failed package is onboarded again once fixed. |
+| `manifest.yaml` may carry `operatorUi`, the operator page the rApp declares (`PR-GUI-8`, `docs/adr/0004-operator-ui-declaration.md`). It is validated by `smo_shared.operator_ui` (kinds, GET sources, routes without `..`, limits, duplicate ids, the `rowDetail` drawer of a table row and its `{row.<field>}` references) and stored in `aiCapabilities.operatorUi`; no new column. A bad one lands the package in `FAILED` like any validation failure, and the message (place and rule) is returned as `failureReason` in the `202` answer and logged, not stored. | The GUI needs the declaration at run time without a GUI build; the manifest and `aiCapabilities` already carry the package's AI part to the readers that need it. A stored reason would need a migration; a failed package is onboarded again once fixed. |
 | Any known validation failure (bad zip, missing entry, unreachable location, NFO not answering 201, duplicate, malformed YAML or JSON, invalid runtime profile) lands the package in `FAILED` with a normal `202`, not an HTTP error. | Failing to validate is an expected outcome of onboarding. |
 | `FAILED` is terminal and is deleted directly, skipping the cascade check. | Nothing can depend on a package that never became `AVAILABLE`. |
 | A byte-identical package already onboarded is rejected, but one whose earlier package is `DELETING` or `FAILED` does not count. | Identity is the content hash; a deleted package may be onboarded again. |
@@ -222,7 +222,7 @@ cd smo/onboarding && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | Test file | Covers | Count |
 |---|---|---|
 | `tests/test_main.py` | Onboarding success (descriptor created via NFO, no ACM file needed, identity and ASD descriptor fields resolved, placeholder kept when absent) | 6 |
-| | `operatorUi` (GUI-8.2): the ADR's Energy Saving example onboards and is stored, accepted under `rappManifest` too, absent leaves the package unchanged, `x-` keys dropped, 14 refusals each with the place and rule in `failureReason` (unknown kind, a POST source, a GET action, `..` in a route, `%2e%2e`, `..` in a field path, too many panels, duplicate panel and action ids, version 2, unknown key, over the size limit, `readOnly` with actions, not a mapping), the refusal logged, a non-declaration failure reporting only its kind | 20 |
+| | `operatorUi` (GUI-8.2): the ADR's Energy Saving example onboards and is stored, accepted under `rappManifest` too, absent leaves the package unchanged, `x-` keys dropped, 14 refusals each with the place and rule in `failureReason` (unknown kind, a POST source, a GET action, `..` in a route, `%2e%2e`, `..` in a field path, too many panels, duplicate panel and action ids, version 2, unknown key, over the size limit, `readOnly` with actions, not a mapping), 6 `rowDetail` refusals (unknown block kind, too many blocks, a non-GET per-row source, `..`, a `{row.x}` that names no column, nesting), the stored drawer and its per-row read, the refusal logged, a non-declaration failure reporting only its kind | 27 |
 | | Onboarding failures to `FAILED` (NFO refuses, malformed zip, not `.csar`, malformed capabilities YAML, malformed SME JSON, byte-identical duplicate) | 6 |
 | | `manifest.yaml` / `capabilities.yaml`: null when absent, parsed when present, capabilities alone, execution modes and runtime profiles, four invalid-profile cases | 8 |
 | | SME declarations: null when absent, parsed | 2 |
@@ -235,7 +235,7 @@ cd smo/onboarding && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Package row committed before the NFO call | 1 |
 | `tests/test_statemachine.py` | The FSM alone: success and failure onboarding, deprecate round trip, delete guards (child, usage, after stop), no transition from `FAILED`, prime / deprime round trip and guard, no `ONBOARDING → PRIME`, no `PRIMED → DELETE` | 11 |
 | `tests/test_business_metrics.py` | `smo_rapp_packages` counts packages by state with every state of `PackageState` present | 1 |
-| | Total (the listed rows do not add up to the whole: the file also holds the limits and other manifest tests) | 125 |
+| | Total (the listed rows do not add up to the whole: the file also holds the limits and other manifest tests) | 132 |
 
 
 ### 3.3 What is not covered here

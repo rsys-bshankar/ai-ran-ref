@@ -62,6 +62,25 @@ def test_a_declaration_with_a_sparkline_row_action_and_a_kpi_panel_builds():
         ("GET", "/instances/{instanceId}/cells"), ("DELETE", "/instances/{instanceId}/cells/{row.cellId}/override"), ("GET", "/instances/{instanceId}/load")]
 
 
+def test_a_table_with_a_row_detail_builds_and_its_per_row_source_is_a_declared_read():
+    out = ui.declaration(ui.table(
+        "cells", "Cells", "/instances/{instanceId}/cells", rows="items", row_key="cellId", columns=[ui.column("cellId", "Cell"), ui.column("trend", "Trend", "sparkline", y="v")],
+        row_detail=ui.row_detail(
+            ui.chart_block("Trend", points="trend", x="t", y="v"),
+            ui.json_block("Latest", "latestDecision", empty="None yet."),
+            ui.key_values_block("Fields", [ui.item("State", "state", "badge")]),
+            ui.table_block("History", [ui.column("at", "At", "datetime")], rows="items",
+                           src=ui.source("/instances/{instanceId}/decisions", query={"cell_id": "{row.cellId}"})),
+            title="Cell {row.cellId}")))
+    assert [b["kind"] for b in out["panels"][0]["rowDetail"]["blocks"]] == ["chart", "json", "keyValues", "table"]
+    assert ("GET", "/instances/{instanceId}/decisions") in ui.declared_routes(out)
+    with pytest.raises(ui.OperatorUiInvalid, match="names a field that is not"):
+        ui.declaration(ui.table("t", "T", "/t", row_key="id", columns=[ui.column("id", "Id")],
+                                row_detail=ui.row_detail(ui.table_block("H", [ui.column("a", "A")], src="/h/{row.nope}", rows="items"))))
+    with pytest.raises(ui.OperatorUiInvalid, match="needs 'rows'"):
+        ui.declaration(ui.table("t", "T", "/t", row_key="id", columns=[ui.column("id", "Id")], row_detail=ui.row_detail(ui.table_block("H", [ui.column("a", "A")]))))
+
+
 def test_yaml_output_round_trips_in_block_style():
     out = ui.declaration(ui.table("t", "T", "/instances/{instanceId}/t", row_key="id", columns=[ui.column("id", "Id")]))
     text = ui.to_yaml(out)
@@ -112,6 +131,7 @@ def test_the_minimal_example_builds_a_package_whose_declaration_passes_onboardin
     declared = ui.validate(manifest["operatorUi"])
     assert [p["kind"] for p in declared["panels"]] == ["keyValues", "kpis", "table", "actions"]
     assert ("POST", "/instances/{instanceId}/run") in ui.declared_routes(declared)
+    assert ("GET", "/instances/{instanceId}/runs/{row.runId}/steps") in ui.declared_routes(declared)
     assert hello.build_bytes() == hello.build_bytes()          # byte-identical rebuilds
 
 

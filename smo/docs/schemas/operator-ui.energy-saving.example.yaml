@@ -64,19 +64,30 @@ operatorUi:
           path: "/instances/{instanceId}/cells/{row.cellId}/override"
           success: Override cleared
           when: {path: overrideBy, exists: true}
-    - id: history
-      title: Recent decisions
-      kind: table
-      source:
-        path: "/instances/{instanceId}/decisions"
-        query: {limit: 20}
-      rows: items
-      rowKey: decisionId
-      columns:
-        - {path: observedAt, label: Observed, format: datetime}
-        - {path: cellId, label: Cell}
-        - {path: prb, label: PRB, format: percent}
-        - {path: decision, label: Decision, format: badge}
-        - {path: reason, label: Reason}
-        - {path: outcome, label: Outcome, format: badge}
-        - {path: executionId, label: Execution, format: id}
+      rowDetail:
+        title: "Cell {row.cellId}"
+        blocks:
+          - kind: chart
+            title: PRB utilisation (%)
+            type: line
+            points: prbTrend
+            x: t
+            y: v
+          - kind: json
+            title: Latest execution (audit trail)
+            path: latestDecision
+            empty: No decision yet.
+          - kind: table
+            title: History
+            source:
+              path: "/instances/{instanceId}/decisions"
+              query: {cell_id: "{row.cellId}", limit: 20}
+            rows: items
+            empty: No decisions.
+            columns:
+              - {path: observedAt, label: Observed, format: datetime}
+              - {path: prb, label: PRB, format: percent}
+              - {path: decision, label: Decision, format: badge}
+              - {path: reason, label: Reason}
+              - {path: outcome, label: Outcome, format: badge}
+              - {path: executionId, label: Execution, format: id}

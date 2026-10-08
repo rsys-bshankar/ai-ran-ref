@@ -10,7 +10,7 @@
 | Called by | The four sample rApps (`../samples/{energy-saving,mobility-optimization,coverage-optimization,traffic-steering}-rapp/app/main.py`); any rApp author. No SMO module imports it |
 | Database tables | None |
 | Retries and idempotency | Every POST carries a generated `Idempotency-Key`; a mutating call that lost a write race (`409 CONCURRENT_MODIFICATION`) is sent once more with the same key (`smo_sdk/_common.py`) |
-| Unit tests | 147 passed (`tests/`, no network: a recording fake `R1Client`) |
+| Unit tests | 148 passed (`tests/`, no network: a recording fake `R1Client`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -91,9 +91,10 @@ declaration a rApp package carries in `manifest.yaml` (format and limits: [`../d
 | Function | Returns / does |
 |---|---|
 | `declaration(*panels, read_only=False)` | The validated `operatorUi` mapping (without `x-` keys); raises `OperatorUiInvalid` naming the place and the rule |
-| `table(id, title, src, *, row_key, columns, rows=None, row_actions=None, empty=None)`, `key_values(id, title, src, items)`, `kpis(id, title, tiles, src=None)`, `chart(id, title, src, *, points, x, y, type="line", series_by=None, unit=None)`, `actions(id, title, buttons, src=None)` | One panel; `src` is a route string or `source(...)` |
+| `table(id, title, src, *, row_key, columns, rows=None, row_actions=None, empty=None, row_detail=None)`, `key_values(id, title, src, items)`, `kpis(id, title, tiles, src=None)`, `chart(id, title, src, *, points, x, y, type="line", series_by=None, unit=None)`, `actions(id, title, buttons, src=None)` | One panel; `src` is a route string or `source(...)` |
 | `source(path, *, query=None, refresh_seconds=None)`, `column(path, label, format=None, *, y=None, unit=None)`, `item(label, path, format=None, *, unit=None)`, `tile(label, *, path=None, kpi=None, format=None, unit=None)` | The parts of the panels |
 | `action(id, label, method, path, *, success, confirm=None, tone=None, inputs=None, body=None, when=None)`, `input_field(name, label, type="string", *, required=None, options=None, min=None, max=None, max_length=None)` | A button and an input it asks for |
+| `row_detail(*blocks, title=None)`, `json_block(title, path=None, *, empty=None)`, `key_values_block(title, items)`, `table_block(title, columns, *, rows=None, src=None, empty=None)`, `chart_block(title, *, points, x, y, type="line", src=None, series_by=None, unit=None)` | The drawer of a table row (1 to 6 blocks); `src` is a per-row GET whose route and query may use `{row.<field>}` |
 | `validate(declared)`, `to_yaml(declared)` | The check alone; the `operatorUi:` block as YAML text |
 | `add_to_manifest(path, declared)` | Appends the block to a `manifest.yaml` (created if missing), keeping every existing line and comment; refuses a manifest that already has an `operatorUi` |
 | `declared_routes`, `route_allowed`, `required_role`, `operator_ui_json_schema` | Re-exported from `smo_shared.operator_ui`: the `(method, template)` set a declaration allows, the match of a concrete path, viewer or operator by method, and the JSON Schema |
@@ -300,7 +301,7 @@ Each test asserts the verb, path, params and body the client sends against a scr
 | `tests/test_models.py` | Register (with domain and vendors), discover, get, update, deregister, upload, download (raw response, `SdkError` on 4xx), coordination groups | 11 |
 | `tests/test_alarm_scope.py` | Which cell an alarm is about (cell IOCs, relation IOCs, element-level functions, no ref); a cell alarm holds that cell only; an element alarm holds every cell; only critical alarms hold; `query_critical_alarms` | 16 |
 | `tests/test_platform.py` | Provider register/deregister, publish/list/unpublish service, discover, event subscribe (with every CAPIFEventFilter)/list/unsubscribe; 4xx | 11 |
-| `tests/test_operator_ui.py` | Builders drop unset fields; a mistake is raised where it is written (`..`, a GET action, a sparkline without `y`); block-style YAML round trip; `add_to_manifest` keeps comments, creates the file, refuses a second declaration and writes nothing when the check fails; the minimal example builds a byte-identical package whose declaration passes; the ADR example loads | 11 |
+| `tests/test_operator_ui.py` | Builders drop unset fields; a mistake is raised where it is written (`..`, a GET action, a sparkline without `y`); block-style YAML round trip; `add_to_manifest` keeps comments, creates the file, refuses a second declaration and writes nothing when the check fails; a table with a row detail builds and its per-row source is a declared read, a `{row.x}` naming no column is refused; the minimal example (with a row drawer) builds a byte-identical package whose declaration passes; the ADR example loads | 12 |
 | `tests/test_wave10_wrappers.py` | `get_dataset` (reuses the consumer's job, pages records oldest first; creates a job; 404 for unknown dataset), `store_model` (registers once, then adds artifact versions), the `start_*`/`complete_*` wrappers, `execute_action`, `read_config`, autonomy dispatch | 5 |
 
 ### 3.3 What is not covered here

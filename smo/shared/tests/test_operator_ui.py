@@ -33,7 +33,7 @@ def decl(*panels, **kw) -> dict:
 
 def test_the_adr_worked_example_is_accepted_and_keeps_its_shape():
     out = validate_operator_ui(example())
-    assert [p["id"] for p in out["panels"]] == ["instance", "controls", "cells", "history"]
+    assert [p["id"] for p in out["panels"]] == ["instance", "controls", "cells"]
     assert out["readOnly"] is False
 
 
@@ -304,3 +304,87 @@ def test_read_only_allows_only_reads():
 
 def test_the_role_follows_the_method():
     assert [ui.required_role(m) for m in ("GET", "POST", "PUT", "PATCH", "DELETE")] == ["viewer", "operator", "operator", "operator", "operator"]
+
+
+# ------------------------------------------------------------------ rowDetail
+
+def detail(*blocks, **kw) -> dict:
+    return {"blocks": list(blocks), **kw}
+
+
+JSON_BLOCK = {"kind": "json", "title": "Raw", "path": "latestDecision", "empty": "None yet."}
+TABLE_BLOCK = {"kind": "table", "title": "History", "rows": "history", "columns": [{"path": "at", "label": "At", "format": "datetime"}]}
+FETCH_BLOCK = {"kind": "table", "title": "History", "source": {"path": "/instances/{instanceId}/decisions", "query": {"cell_id": "{row.cellId}", "limit": 20}},
+               "rows": "items", "columns": [{"path": "at", "label": "At"}]}
+
+
+def test_every_row_detail_block_kind_is_accepted():
+    blocks = [JSON_BLOCK, {"kind": "keyValues", "title": "Fields", "items": [{"label": "A", "path": "a.b", "format": "number"}]}, TABLE_BLOCK, FETCH_BLOCK,
+              {"kind": "chart", "title": "Trend", "type": "line", "points": "trend", "x": "t", "y": "v"},
+              {"kind": "chart", "title": "Fetched", "type": "bar", "points": "items", "x": "t", "y": "v", "source": {"path": "/c/{row.cellId}/load"}}]
+    out = validate_operator_ui(decl(table(rowDetail=detail(*blocks, title="Cell {row.cellId}"))))
+    assert len(out["panels"][0]["rowDetail"]["blocks"]) == 6
+    jsonschema.validate(out, json.loads(SCHEMA_FILE.read_text()))
+
+
+def test_a_row_detail_table_may_use_a_sparkline_column():
+    block = {**TABLE_BLOCK, "columns": [{"path": "points", "label": "Trend", "format": "sparkline", "y": "v"}]}
+    assert validate_operator_ui(decl(table(rowDetail=detail(block))))
+
+
+def test_the_per_row_sources_join_the_declared_routes_as_reads():
+    chart = {"kind": "chart", "title": "C", "type": "line", "points": "p", "x": "t", "y": "v", "source": {"path": "/c/{row.cellId}/load"}}
+    d = validate_operator_ui(decl(table(rowDetail=detail(FETCH_BLOCK, chart))))
+    assert ui.declared_routes(d) == [("GET", "/instances/{instanceId}/cells"), ("GET", "/instances/{instanceId}/decisions"), ("GET", "/c/{row.cellId}/load")]
+    assert ui.route_allowed(d, "GET", "/c/C1/load") and ui.route_allowed(d, "GET", "/instances/abc/decisions")
+    assert not ui.route_allowed(d, "POST", "/c/C1/load") and not ui.route_allowed(d, "GET", "/c/C1/other") and not ui.route_allowed(d, "GET", "/c/../load")
+    assert ui.required_role("GET") == "viewer"
+
+
+def test_row_detail_in_a_read_only_declaration_is_allowed_and_stays_a_read():
+    d = validate_operator_ui(decl(table(rowDetail=detail(FETCH_BLOCK)), readOnly=True))
+    assert ui.route_allowed(d, "GET", "/instances/abc/decisions")
+
+
+def with_source(**source) -> dict:
+    return {**FETCH_BLOCK, "source": source}
+
+
+def test_row_detail_refusals():
+    rejects(decl(table(rowDetail=detail({"kind": "map", "title": "M"}))), "rowDetail.blocks[0].kind: 'map' is not a rowDetail block kind")
+    rejects(decl(table(rowDetail=detail(*[JSON_BLOCK] * 7))), "rowDetail.blocks: must have 1 to 6 entries")
+    rejects(decl(table(rowDetail=detail())), "rowDetail.blocks: must have 1 to 6 entries")
+    rejects(decl(table(rowDetail=detail(with_source(path="/c", method="POST")))), "a panel source must be a GET")
+    rejects(decl(table(rowDetail=detail(with_source(path="/instances/{instanceId}/../x")))), "must not contain '..'")
+    rejects(decl(table(rowDetail=detail(with_source(path="/c/{row.cellId}/%2e%2e")))), "rowDetail.blocks[0].source.path")
+    rejects(decl(table(rowDetail=detail({**JSON_BLOCK, "path": "a..b"}))), "must not contain '..'")
+    rejects(decl(table(rowDetail=detail({**TABLE_BLOCK, "rows": "a..b"}))), "must not contain '..'")
+    rejects(decl(table(rowDetail=detail(with_source(path="/c/{row.nope}/x")))), "{row.nope} names a field that is not the table's rowKey or one of its columns")
+    rejects(decl(table(rowDetail=detail(with_source(path="/c", query={"q": "{row.nope}"})))), "{row.nope} names a field")
+    rejects(decl(table(rowDetail=detail(with_source(path="/c", query={"q": "x{row.cellId}"})))), "braces are only allowed as a whole value")
+    rejects(decl(table(rowDetail=detail(JSON_BLOCK, title="Cell {row.nope}"))), "{row.nope} names a field")
+    rejects(decl(table(rowDetail=detail({**JSON_BLOCK, "rowDetail": detail(JSON_BLOCK)}))), "cannot be nested inside a rowDetail")
+    rejects(decl(table(rowDetail=detail({"kind": "table", "title": "T", "columns": [{"path": "a", "label": "A"}]}))), "needs 'rows'")
+    rejects(decl(table(rowDetail=detail({**TABLE_BLOCK, "columns": []}))), "columns: must have 1 to 20")
+    rejects(decl(table(rowDetail=detail({**TABLE_BLOCK, "columns": [{"path": "p", "label": "P", "format": "sparkline"}]}))), "needs 'y'")
+    rejects(decl(table(rowDetail=detail({"kind": "chart", "title": "C", "type": "pie", "points": "p", "x": "t", "y": "v"}))), "'pie' is not one of")
+    rejects(decl(table(rowDetail=detail({**JSON_BLOCK, "source": {"path": "/x"}}))), "unknown key 'source'")
+    rejects(decl(table(rowDetail=detail({"kind": "json"}))), "'title' is required")
+    rejects(decl(table(rowDetail=detail(JSON_BLOCK, colour="red"))), "unknown key 'colour'")
+    rejects(decl(table(rowDetail="x")), "rowDetail: must be a mapping")
+    # a top-level source cannot take a row value, and rowDetail exists only in a table
+    rejects(decl(table(source={"path": "/c", "query": {"q": "{row.cellId}"}})), "braces are only allowed")
+    kv = {"id": "kv", "title": "K", "kind": "keyValues", "source": {"path": "/k"}, "items": [{"label": "L", "path": "p"}], "rowDetail": detail(JSON_BLOCK)}
+    rejects(decl(kv), "unknown key 'rowDetail'")
+
+
+def test_row_actions_may_only_name_declared_row_fields_too():
+    a = {"id": "go", "label": "G", "method": "POST", "path": "/cells/{row.other}/x", "success": "ok"}
+    rejects(decl(table(rowActions=[a])), "{row.other} names a field that is not the table's rowKey or one of its columns")
+    assert validate_operator_ui(decl(table(columns=[{"path": "other", "label": "O"}], rowActions=[a])))
+
+
+def test_row_detail_counts_toward_the_limits():
+    block = {**TABLE_BLOCK, "title": "x" * 80, "columns": [{"path": "c", "label": "y" * 60} for _ in range(20)]}
+    big = detail(*[block for _ in range(6)])
+    rejects(decl(*[table(id=f"t{i}", rowDetail=big) for i in range(ui.MAX_PANELS)]), "the declaration is too large")

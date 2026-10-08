@@ -6,7 +6,7 @@ it is not one of the sample rApps (`samples/`) and is not onboarded by the demo.
     PYTHONPATH=sdk:shared python sdk/examples/hello_operator_ui.py [output-dir]     # writes hello-operator-ui.csar
 
 The rApp it describes would serve, under its operator API base, `GET /instances/{id}/status` (an object with `state`, `mode`, `processed`,
-`lastRunAt`), `GET /instances/{id}/runs` (`{"items": [{"runId", "startedAt", "result", "changed"}]}`) and `POST /instances/{id}/run`.
+`lastRunAt`), `GET /instances/{id}/runs` (`{"items": [{"runId", "startedAt", "result", "changed"}]}`), `GET /instances/{id}/runs/{runId}/steps` (the drawer of a run) and `POST /instances/{id}/run`.
 """
 
 import io
@@ -30,7 +30,11 @@ def page() -> dict:
         ui.kpis("kpis", "Platform KPIs", [ui.tile("Config success", kpi="config_success_rate", format="percent")]),
         ui.table("runs", "Recent runs", ui.source("/instances/{instanceId}/runs", query={"limit": 20}), rows="items", row_key="runId", columns=[
             ui.column("startedAt", "Started", "datetime"), ui.column("result", "Result", "badge"), ui.column("changed", "Changed", "number"),
-        ], empty="No runs yet."),
+        ], empty="No runs yet.", row_detail=ui.row_detail(
+            ui.json_block("Run", empty="No detail."),
+            ui.table_block("Steps", [ui.column("name", "Step"), ui.column("result", "Result", "badge")],
+                           src=ui.source("/instances/{instanceId}/runs/{row.runId}/steps"), rows="items", empty="No steps."),
+            title="Run {row.runId}")),
         ui.actions("controls", "Controls", [
             ui.action("run", "Run now", "POST", "/instances/{instanceId}/run", success="Run started", tone="primary",
                       confirm="Start a run now?", inputs=[ui.input_field("dryRun", "Dry run", "boolean")]),
