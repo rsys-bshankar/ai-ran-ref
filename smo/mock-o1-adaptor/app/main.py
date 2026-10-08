@@ -37,8 +37,6 @@ from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
 from smo_shared.health import install_health
 
-log = logging.getLogger(__name__)
-
 app = FastAPI(title="Mock O1 Adaptor (NETCONF and RESTCONF test double)")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
 install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
@@ -388,15 +386,16 @@ def query_object(managed_object_ref: str, function_ref: str | None = None):
 # own `target`. Calls go over plain HTTP: with SMO_MTLS=on RAN NF OAM wants a client certificate this stub does not present (a known limit).
 
 EMIT_TIMEOUT_SECONDS = 5.0
+log = logging.getLogger(__name__)
 # the trigger -> the MnS service that must be in /capabilities' supportedServices for the stub to emit it
 EMIT_SERVICES = {"alarm": "FM", "pm-report": "PM", "pm-file": "FILE", "heartbeat": "HEARTBEAT", "software-phase": "SWM"}
 
 
 class Problem(BaseModel):
     type: str = "about:blank"
-    title: str
-    status: int
-    detail: str
+    title: str | None = None
+    status: int | None = None
+    detail: str | list[dict]
 
 
 class EmitResult(BaseModel):
@@ -470,21 +469,23 @@ def _emit(kind: str, path: str, target: str | None, *, params: dict | None = Non
     if target:
         if not is_safe_webhook_destination(target):
             return _problem(422, "unusable target", "target must be an http(s) origin that is not a loopback, link-local or unspecified address")
-        origin = target.strip().rstrip("/")
-        # a destination named by the caller leaves through smo_shared.webhook, the one place a caller-supplied URL is called (CodeQL py/full-ssrf; smo/CLAUDE.md)
-        url = origin + path + (("?" + urlencode(params)) if params else "")
+        origin = target
+    else:
+        origin = os.environ.get("MOCK_O1_OAM_URL", "")
+    origin = origin.strip().rstrip("/")
+    if not origin:
+        return _problem(409, "no target configured", "no RAN NF OAM to emit to: set MOCK_O1_OAM_URL, or name a `target` in the request")
+    if target:   # a caller-supplied origin goes through the guarded sender (smo_shared.webhook)
+        url = origin + path + ("?" + urlencode(params) if params else "")
         resp = post_webhook(url, json=body or {}, timeout=EMIT_TIMEOUT_SECONDS)
         if resp is None:
-            return _problem(502, "RAN NF OAM unreachable", f"POST to the named target failed or was refused by the destination guard ({kind})")
+            return _problem(502, "RAN NF OAM unreachable", f"POST to {kind} target failed")
     else:
-        origin = os.environ.get("MOCK_O1_OAM_URL", "").strip().rstrip("/")     # the deployment's own setting, not a caller's value
-        if not origin:
-            return _problem(409, "no target configured", "no RAN NF OAM to emit to: set MOCK_O1_OAM_URL, or name a `target` in the request")
         try:
             resp = httpx.post(origin + path, params=params, json=body, timeout=EMIT_TIMEOUT_SECONDS)
         except httpx.HTTPError as exc:
             log.warning("emit %s to %s%s failed: %s: %s", kind, origin, path, type(exc).__name__, exc)
-            return _problem(502, "RAN NF OAM unreachable", f"POST {origin}{path} failed ({type(exc).__name__}); see the stub's log")
+            return _problem(502, "RAN NF OAM unreachable", f"POST {path} failed: {type(exc).__name__}")
     try:
         answer: Any = resp.json()
     except ValueError:
@@ -492,10 +493,12 @@ def _emit(kind: str, path: str, target: str | None, *, params: dict | None = Non
     return JSONResponse(content={"emitted": 200 <= resp.status_code < 300, "status": resp.status_code, "response": answer, "target": origin})
 
 
+_PROBLEM_JSON = {"application/problem+json": {"schema": {"$ref": "#/components/schemas/Problem"}}}
 EMIT_RESPONSES: dict[int | str, dict[str, Any]] = {
-    409: {"model": Problem, "description": "no RAN NF OAM target configured, or this adaptor does not declare the service"},
-    422: {"model": Problem, "description": "unusable target, or a body of the wrong shape"},
-    502: {"model": Problem, "description": "RAN NF OAM could not be reached"},
+    400: {"model": MockError, "description": "the body is not JSON"},
+    409: {"model": Problem, "content": _PROBLEM_JSON, "description": "no RAN NF OAM target configured, or this adaptor does not declare the service"},
+    422: {"model": Problem, "content": _PROBLEM_JSON, "description": "unusable target, or a body of the wrong shape"},
+    502: {"model": Problem, "content": _PROBLEM_JSON, "description": "RAN NF OAM could not be reached"},
 }
 
 

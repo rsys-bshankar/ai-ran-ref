@@ -97,7 +97,7 @@ def _subscribed_counter(ctx: Context) -> str:
         ref, _ = _element(ctx)
         counter = f"ConfPm{ctx.run_id}"
         made = _oam(ctx, "POST", "/pm-subscriptions", "subscribing to PM on the managed element", ok=(200, 201),
-                    params={"managed_element_ref": ref, "counter_type": counter, "delivery_method": "file"})
+                    params={"managed_element_ref": ref, "counter_type": counter, "delivery_method": "pull"})
         listed = _items(ctx, "/pm-subscriptions", "reading the PM subscriptions", {"managed_element_ref": ref})
         if not any(s.get("subscriptionId") == made.get("subscriptionId") and s.get("counterType") == counter for s in listed):
             raise Fail(f"the PM subscription {made.get('subscriptionId')} on {ref} is not in the subscription list")

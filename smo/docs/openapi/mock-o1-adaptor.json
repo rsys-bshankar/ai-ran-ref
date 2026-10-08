@@ -415,16 +415,41 @@
       "Problem": {
         "properties": {
           "detail": {
-            "title": "Detail",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Detail"
           },
           "status": {
-            "title": "Status",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
           },
           "title": {
-            "title": "Title",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
           },
           "type": {
             "default": "about:blank",
@@ -433,8 +458,6 @@
           }
         },
         "required": [
-          "title",
-          "status",
           "detail"
         ],
         "title": "Problem",
@@ -651,9 +674,24 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MockError"
+                }
+              }
+            },
+            "description": "the body is not JSON"
+          },
           "409": {
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
@@ -667,6 +705,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
               }
             },
             "description": "unusable target, or a body of the wrong shape"
@@ -674,6 +717,11 @@
           "502": {
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
@@ -710,9 +758,24 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MockError"
+                }
+              }
+            },
+            "description": "the body is not JSON"
+          },
           "409": {
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
@@ -726,6 +789,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
               }
             },
             "description": "unusable target, or a body of the wrong shape"
@@ -733,6 +801,11 @@
           "502": {
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
@@ -769,9 +842,24 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MockError"
+                }
+              }
+            },
+            "description": "the body is not JSON"
+          },
           "409": {
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
@@ -785,6 +873,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
               }
             },
             "description": "unusable target, or a body of the wrong shape"
@@ -792,6 +885,11 @@
           "502": {
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
@@ -828,9 +926,24 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MockError"
+                }
+              }
+            },
+            "description": "the body is not JSON"
+          },
           "409": {
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
@@ -844,6 +957,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
               }
             },
             "description": "unusable target, or a body of the wrong shape"
@@ -851,6 +969,11 @@
           "502": {
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
@@ -887,9 +1010,24 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MockError"
+                }
+              }
+            },
+            "description": "the body is not JSON"
+          },
           "409": {
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
@@ -903,6 +1041,11 @@
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
               }
             },
             "description": "unusable target, or a body of the wrong shape"
@@ -910,6 +1053,11 @@
           "502": {
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
