@@ -22,6 +22,7 @@ export const NAV: { to: string; label: string; icon: string; minRole?: Role }[] 
   { to: "/traffic-steering", label: "Traffic Steering", icon: "⇶" },
   { to: "/infrastructure", label: "Infrastructure", icon: "▤" },
   { to: "/data", label: "Data & Exposure", icon: "⇄" },
+  { to: "/security", label: "Account security", icon: "⚿" },
   { to: "/admin", label: "Admin", icon: "⚙", minRole: "admin" },
 ];
 
@@ -34,7 +35,7 @@ export function Layout() {
       <nav className="sidebar" aria-label="Main">
         <div className="brand"><span className="brand-mark">M</span><div><strong>SMO</strong><span>Operator Console</span></div></div>
         <ul>
-          {NAV.filter((n) => !n.minRole || roleAtLeast(me.role, n.minRole)).map((n) => (
+          {NAV.filter((n) => (!n.minRole || roleAtLeast(me.role, n.minRole)) && (!me.mfaEnrolmentRequired || n.to === "/security")).map((n) => (
             <li key={n.to}>
               <NavLink to={n.to} end={n.to === "/"} className={({ isActive }) => (isActive ? "nav active" : "nav")}>
                 <span className="nav-icon" aria-hidden>{n.icon}</span>{n.label}

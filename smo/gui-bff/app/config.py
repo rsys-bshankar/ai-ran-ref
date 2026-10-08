@@ -42,6 +42,28 @@ def _client_credential() -> str:
     return value
 
 
+def _totp_key() -> str:
+    """The key that encrypts one-time-code secrets at rest (PR-SEC-7): `GUI_TOTP_KEY`, or the file named by `GUI_TOTP_KEY_FILE` (a mounted secret). Same rules as the OIDC
+    client credential: both set is an error, an unreadable file stops the start. Empty means no key, and enrolment is then refused."""
+    value, path = os.environ.get("GUI_TOTP_KEY", ""), os.environ.get("GUI_TOTP_KEY_FILE", "")
+    if value and path:
+        raise ValueError("both GUI_TOTP_KEY and GUI_TOTP_KEY_FILE are set: set only one")
+    if path:
+        try:
+            with open(path, encoding="utf-8") as handle:
+                value = handle.read().removesuffix("\n")
+        except OSError as exc:
+            raise ValueError(f"GUI_TOTP_KEY_FILE={path} cannot be read: {exc.strerror or type(exc).__name__}") from exc
+    return value
+
+
+def _login_mode() -> str:
+    mode = os.environ.get("GUI_LOGIN_MODE", "").strip().lower() or "both"
+    if mode not in ("both", "oidc", "local"):
+        raise ValueError(f"GUI_LOGIN_MODE={mode!r} is not one of both, oidc, local")
+    return mode
+
+
 def _bool(name: str, default: bool) -> bool:
     raw = os.environ.get(name)
     return default if raw is None else raw.strip().lower() in ("1", "true", "yes", "on")
@@ -83,6 +105,13 @@ class Settings:
     oidc_post_logout_redirect_uri: str = field(default_factory=lambda: os.environ.get("GUI_OIDC_POST_LOGOUT_REDIRECT_URI", "").strip())
     oidc_allow_http: bool = field(default_factory=lambda: _bool("GUI_OIDC_ALLOW_HTTP", False))
     oidc_timeout_seconds: float = field(default_factory=lambda: float(os.environ.get("GUI_OIDC_TIMEOUT_SECONDS", "10")))
+    # ---- PR-SEC-7: multi-factor sign-in. `both` offers OIDC (when configured) and the local form; `oidc` closes the local form to every account but a break-glass one,
+    # so the identity provider's second factor applies; `local` does not offer OIDC even when it is configured.
+    login_mode: str = field(default_factory=_login_mode)
+    # A local admin without an enrolled one-time code can reach only the enrolment routes (off by default).
+    admin_mfa_required: bool = field(default_factory=lambda: _bool("GUI_ADMIN_MFA_REQUIRED", False))
+    totp_key: str = field(default_factory=_totp_key)
+    totp_issuer: str = field(default_factory=lambda: os.environ.get("GUI_TOTP_ISSUER", "").strip() or "SMO Operator Console")
     jwt_secret_generated: bool = False
 
     def __post_init__(self) -> None:

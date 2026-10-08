@@ -46,6 +46,9 @@ docker compose up --build
 | `GUI_SESSION_TTL_SECONDS` | `28800` | Session lifetime |
 | `GUI_OIDC_ENABLED` and the other `GUI_OIDC_*` | `false` | OIDC sign-in next to the password form (PR-SEC-6): issuer, client id, `GUI_OIDC_CLIENT_SECRET[_FILE]`, redirect URI, scopes, the groups claim, `GUI_OIDC_GROUP_ROLE_MAP` (`group=role,...`), `GUI_OIDC_DEFAULT_ROLE`, `GUI_OIDC_PROVIDER_NAME`; see [`../gui-bff/README.md`](../gui-bff/README.md) section 2.9 |
 | `GUI_LOCAL_LOGIN_ENABLED` | `true` | `false` hides the password form and refuses `/api/login` and `/api/token` (needs OIDC on); leave `true` for the break-glass admin |
+| `GUI_LOGIN_MODE` | `both` | `oidc`: the sign-in page shows only "Sign in with <provider>" (a small "Break-glass sign-in" link opens the form for accounts an admin flagged break-glass); `local`: OIDC is not offered even when configured (PR-SEC-7.6) |
+| `GUI_TOTP_KEY` / `GUI_TOTP_KEY_FILE`, `GUI_TOTP_ISSUER` | unset | The key that makes one-time codes (authenticator app) available to local accounts: Account security then offers "Set up a one-time code"; without it the page says so (PR-SEC-7.1) |
+| `GUI_ADMIN_MFA_REQUIRED` | `false` | `true`: a local admin without a one-time code sees only Account security until they have enrolled one (PR-SEC-7.8) |
 
 No password ever lives in git: seed users are hashed (salted scrypt) from
 the environment on the first boot, and never touched again after that.
@@ -63,7 +66,7 @@ Tests:
 
 ```bash
 cd smo/gui-bff && PYTHONPATH=. python -m pytest tests -q     # auth, CSRF, RBAC, proxy, health, admin/audit
-cd smo/gui && npm test && npm run typecheck && npm run build   # Vitest: role gating, API helpers, domain logic
+cd smo/gui && npm test && npm run typecheck && npm run build   # Vitest: role gating, API helpers, domain logic, the sign-in, one-time-code and enrolment pages
 ```
 
 `src/auth/permissions.fixture.json` is a snapshot of the BFF's permission
@@ -105,6 +108,12 @@ the admin state of exactly the intents it created).
   `GUI_OIDC_GROUP_ROLE_MAP` (a user in no mapped group is refused), creates the user `oidc:<subject>` on first sign-in with no password, and then issues the
   same cookie session as a password login. Multi-factor is the provider's. Signing out also offers the provider's end-session page. The local admin stays
   as the break-glass account. An error from the provider is shown as a fixed sentence per reason, never the provider's own text.
+- One-time codes for local accounts (PR-SEC-7, [`../gui-bff/README.md`](../gui-bff/README.md) section 2.10). After the password, an account with a code is asked for the 6-digit code of its
+  authenticator app, or one recovery code (the sign-in page's second step; a wrong code counts towards the same lockout as a wrong password). **Account security** (sidebar, every role) sets
+  the code up: it shows the setup key to type into an app (there is no QR image) and an `otpauth://` link, activates it with the first valid code, then shows ten recovery codes **once**
+  ("I have saved them" closes the page; a copy button helps); an enrolled account sees how many recovery codes are left and can make new ones with a current code. After a recovery code
+  the sign-in says how many are left. Admin, Users shows each user's code (enrolled / not set up), a Break-glass checkbox, and the buttons "Revoke sessions" and "Reset one-time code"
+  (a lost device). With `GUI_ADMIN_MFA_REQUIRED` an admin without a code is sent to Account security and the sidebar shows nothing else until it is done.
 - Roles are read from the user table on every request: a demotion applies
   immediately, and a password reset or deactivation revokes existing sessions.
 - 5 failed logins lock an account for 5 minutes. Unknown users cost the same
@@ -169,7 +178,7 @@ rows read as a story: the state before an action, then the state after it.
 
 | Screen | What it shows |
 |---|---|
-| [Sign in](docs/screenshots/generic/login.png) | The only page reachable signed out. With OIDC on it also offers "Sign in with <provider>" (not in the screenshot: it shows the default, password only) |
+| [Sign in](docs/screenshots/generic/login.png) | The only page reachable signed out. With OIDC on it also offers "Sign in with <provider>"; for an account with a one-time code a second step asks for the code (not in the screenshot: it shows the default, password only) |
 | [Failed sign-in](docs/screenshots/generic/login-failed.png) | Wrong password: a generic error that does not say which half was wrong; 5 failures lock the account for 5 minutes |
 | [Account locked](docs/screenshots/generic/login-locked.png) | After 5 failed attempts the account is locked for 5 minutes; the message does not say whether the user exists |
 | [Dashboard](docs/screenshots/pages/dashboard.png) | Module health for every service, open alarms by severity, SA SMOS escalations, model KPIs, rApp performance and fleet counts |

@@ -25,7 +25,7 @@ from playwright.sync_api import sync_playwright
 
 SMO = Path(__file__).resolve().parent.parent
 PAGES = ["/", "/flows", "/rapps", "/safeguards", "/aiml", "/alarms", "/kpis", "/policy", "/energy-saving", "/mobility", "/coverage", "/traffic-steering",
-         "/infrastructure", "/data", "/admin"]
+         "/infrastructure", "/data", "/security", "/admin"]
 LOGIN = "/login"
 BAD_API_STATUS = (401, 500, 501, 502, 503, 504)
 WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]

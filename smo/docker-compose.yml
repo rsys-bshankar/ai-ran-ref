@@ -624,6 +624,13 @@ services:
       GUI_OIDC_POST_LOGOUT_REDIRECT_URI: ${GUI_OIDC_POST_LOGOUT_REDIRECT_URI:-}
       GUI_OIDC_ALLOW_HTTP: ${GUI_OIDC_ALLOW_HTTP:-false}
       GUI_LOCAL_LOGIN_ENABLED: ${GUI_LOCAL_LOGIN_ENABLED:-true}
+      # Multi-factor sign-in (PR-SEC-7), all off or unchanged by default: GUI_LOGIN_MODE=oidc makes the identity provider the only way in (a break-glass
+      # account keeps password + one-time code), GUI_TOTP_KEY switches on one-time codes for local accounts (prefer a file: GUI_TOTP_KEY_FILE, mounted
+      # by an override), GUI_ADMIN_MFA_REQUIRED=true makes every local admin enrol one. gui-bff/README.md "One-time codes", docs/CONFIGURATION.md.
+      GUI_LOGIN_MODE: ${GUI_LOGIN_MODE:-both}
+      GUI_TOTP_KEY: ${GUI_TOTP_KEY:-}
+      GUI_TOTP_ISSUER: ${GUI_TOTP_ISSUER:-SMO Operator Console}
+      GUI_ADMIN_MFA_REQUIRED: ${GUI_ADMIN_MFA_REQUIRED:-false}
     volumes:
       - gui_bff_data:/data   # GUI users, audit log, the BFF's SME invoker credential
 

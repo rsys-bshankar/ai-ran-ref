@@ -108,7 +108,10 @@ The schema is created and upgraded by the `migrate` one-shot service (Alembic, `
   Optional OpenID Connect sign-in (`GUI_OIDC_ENABLED=true` and the issuer, client and
   redirect settings in `.env.example`, `gui-bff/README.md` section 2.9): the sign-in
   page then also offers "Sign in with <provider>", roles come from the provider's groups,
-  and the local admin stays as the break-glass account.
+  and the local admin stays as the break-glass account. Multi-factor (PR-SEC-7, `gui-bff/README.md`
+  section 2.10): `GUI_LOGIN_MODE=oidc` makes the provider the only way in (its MFA applies); with
+  `GUI_TOTP_KEY` set, local accounts can enrol a one-time code (Account security) and
+  `GUI_ADMIN_MFA_REQUIRED=true` makes every local admin do it.
   See [`gui/README.md`](gui/README.md) for the other GUI variables and roles.
 - A guided walk-through of every module, with copy-pasteable commands:
   [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md).

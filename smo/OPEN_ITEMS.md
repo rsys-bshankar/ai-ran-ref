@@ -23,7 +23,7 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 | Area | In 0.5.0 | Moved to 0.6.0 or later |
 |---|---|---|
 | API | `?total=false` on every list route (opt out of the page `COUNT(*)`; default unchanged) | – |
-| Security | SEC-9 `/bootstrap` exposure; SEC-8.5 shared rate limiter; SEC-7 logout revocation (done, V-13c); SEC-2 mTLS between services (done except SEC-2.4, Postgres `verify-full`: `HISTORY.md` PR-SEC-2); SEC-3 mesh option (decided: not taken, mTLS instead); SEC-6 OIDC login for the GUI (done: `HISTORY.md`; SEC-6.8 LDAP stays open and optional) | SEC-5 signing keys and JWKS, SEC-4.7 external secrets example (both 0.6.0). SEC-7.1 to 7.3 (native TOTP) only if required: with OIDC the identity provider does the second factor, and local login stays as break-glass |
+| Security | SEC-9 `/bootstrap` exposure; SEC-8.5 shared rate limiter; SEC-7 MFA and logout revocation (done: `HISTORY.md` PR-SEC-7); SEC-2 mTLS between services (done except SEC-2.4, Postgres `verify-full`: `HISTORY.md` PR-SEC-2); SEC-3 mesh option (decided: not taken, mTLS instead); SEC-6 OIDC login for the GUI (done: `HISTORY.md`; SEC-6.8 LDAP stays open and optional) | SEC-5 signing keys and JWKS, SEC-4.7 external secrets example (both 0.6.0) |
 | Operability | OBS-3 traces (Tempo), OBS-4 business metrics, OBS-5 alerts and SLOs, OBS-6 log shipping, OBS-7 runbooks (OBS-4, 5 and 7 are done in part: what remains is under 5.5), OBS-8 `/version`, OPS-6 GitOps example, OPS-7 configuration reference, OPS-9 sizing | – |
 | Disaster recovery | HA-6: RPO 15 minutes, RTO 1 hour, off-site backup shipping, one timed restore drill (built, `docs/DISASTER_RECOVERY.md`; the drill on a real stack is open, HA-6.3) | HA-7 geo-redundancy (after 1.0.0) |
 | Standards and documents | STD-2.1 spec release table; STD-4.1 personal-data inventory; STD-6.1 data residency statement; STD-4.3 erasure procedure for a GUI user; STD-5 control matrix (ISO 27001, NESAS/SCAS) | STD-3 plugfest plan (0.6.0 or later) |
@@ -34,7 +34,7 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 |---|---|---|
 | Southbound | SB-9.3 to 9.5 and SB-9.8: the RAN O1 stub emits (alarms, PM reports and files, software-update phases, heartbeats) and the conformance kit checks what RAN NF OAM receives | The stub was configuration-only in 0.5.0 |
 | GUI | New `PR-GUI-8`: one rApps entry in the sidebar with a searchable directory, a detail page per rApp, pages declared by the rApp package and drawn by a generic renderer, per-user pins; the four sample rApps move to it and their hand-written pages go | Replaces "one coded page and one sidebar entry per rApp", which does not scale to 100 rApps and gives a rApp onboarded at run time no page |
-| Security | `PR-SEC-7` MFA: a setting that makes OIDC the only login (the provider's MFA applies), and native one-time-code login for local accounts, mandatory for the admin role, as the break-glass login; SEC-5 signing keys and JWKS; SEC-4.7 external secrets example | Decided: both MFA layers. With OIDC the provider does the second factor, so SEC-7.1 to 7.3 serve the local accounts only |
+| Security | SEC-5 signing keys and JWKS; SEC-4.7 external secrets example (`PR-SEC-7` MFA, both layers, is built: `HISTORY.md`) | The production sample values file of `DB-3.10` also sets `GUI_ADMIN_MFA_REQUIRED: "true"` and `GUI_LOGIN_MODE: oidc` where the deployment has a provider |
 | Retention | `DB-3.10`: the proposed periods of `docs/RETENTION.md` ship in a production sample values file and in `.env.example`; the code defaults stay at `0` (keep), so an upgrade deletes nothing; a startup warning and a metric when a table with retention off has grown large | Decided: do not default to deleting |
 | Operability | The SLO targets of `docs/SLOS.md` are accepted as the reference targets (decided October 2026) for a deployment with two or more replicas and a highly available Postgres; the one-pod lab profile is not held to them during an upgrade | Per-route targets and per-deployment tuning stay open |
 | Standards | STD-3 plugfest plan | If time allows |
@@ -217,7 +217,7 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 |---|---|---|---|
 | DB-3.8 | Time partitioning for the PM table | Old partition drops in one statement | OPS-1.4 |
 | DB-3.9 | Also: remove `DEAD` outbox rows after a period; prune the platform audit chain behind a signed checkpoint; expire `gui_login_failure` rows | Test deletes only eligible rows; `verify` passes after a prune | DB-3.2 |
-| DB-3.10 | The periods of `docs/RETENTION.md` in a production sample values file (`deploy/helm/smo/ci/` or `values-production.yaml`) and in `.env.example`; code defaults stay `0`. A startup warning and a metric (`smo_retention_off_rows`) when a table whose retention is off has more than a configured number of rows (0.6.0) | Sample renders; warning and metric test | DB-3.7 |
+| DB-3.10 | The periods of `docs/RETENTION.md` (and `GUI_ADMIN_MFA_REQUIRED: "true"`, `SEC-7.8`) in a production sample values file (`deploy/helm/smo/ci/` or `values-production.yaml`) and in `.env.example`; code defaults stay `0`. A startup warning and a metric (`smo_retention_off_rows`) when a table whose retention is off has more than a configured number of rows (0.6.0) | Sample renders; warning and metric test | DB-3.7 |
 
 #### PR-DB-4 — Indexes and pagination
 
@@ -366,15 +366,7 @@ SEC-6.1 to 6.7 are done (`HISTORY.md`, PR-SEC-6). What remains:
 
 #### PR-SEC-7 — MFA and logout revocation
 
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| SEC-7.1 | `gui_user_totp` table and enrol route | QR secret generated and verified | – |
-| SEC-7.2 | Login second step | Wrong code refused | SEC-7.1 |
-| SEC-7.3 | Recovery codes (hashed) | One-time use | SEC-7.1 |
-| SEC-7.5 | Admin action: revoke a user's sessions (SEC-7.4, logout revocation, is done: `HISTORY.md`) | Route test | – |
-| SEC-7.6 | `GUI_LOGIN_MODE` (`both` default, `oidc`, `local`): with `oidc` the password form is not offered and `POST /api/auth/login` is refused for every account except a break-glass one, so the provider's MFA applies (0.6.0) | Route test; GUI shows no form | – |
-| SEC-7.7 | Break-glass: a local account flagged `breakGlass` signs in with password and one-time code even when the mode is `oidc`; every use is audited and raises an event | Test | SEC-7.2 |
-| SEC-7.8 | `GUI_ADMIN_MFA_REQUIRED` (default off; on in the production sample): a local admin without an enrolled code is sent to enrolment before anything else | Test | SEC-7.1 |
+Done (`HISTORY.md`, PR-SEC-7: SEC-7.1 to 7.8). Not built, and not planned unless a deployment asks: WebAuthn / FIDO2 security keys beside the one-time code, SMS or e-mail codes, a QR image for the enrolment, a "remember this device" bypass; and the browser check of the second step (`docs/VALIDATION.md`, V-13c, "Not yet").
 
 #### PR-SEC-8 — Rate and size limits
 

@@ -8,17 +8,19 @@ directly: that would need CORS on every module and bypass the role checks.
 
 Routes (all under /api, which nginx forwards here unchanged):
   GET  /api/auth/config         what the sign-in page may offer: local login, OIDC and the provider's name (no session needed)
-  POST /api/login               username/password -> httpOnly session cookie
+  POST /api/login               username/password -> httpOnly session cookie; for an account with a one-time code, a challenge instead (PR-SEC-7)
+  POST /api/login/totp          the challenge and a one-time code (or a recovery code) -> the session cookie
   GET  /api/oidc/login          start an OIDC sign-in (authorization code + PKCE): redirect to the provider        (PR-SEC-6)
   GET  /api/oidc/callback       finish it: validate the ID token, create/update the user, set the session cookie, redirect to the GUI
   POST /api/token               OAuth2 password grant -> Bearer JWT (scripts/CLI)
   POST /api/logout              ends the session; an OIDC user also gets the provider's end-session URL when it has one
   GET  /api/me                  current user, role, CSRF token
   POST /api/me/password
+  GET|POST /api/me/totp[...]    one-time-code enrolment: status, begin, confirm (recovery codes shown once), new recovery codes (PR-SEC-7)
   GET  /api/permissions         the RBAC table, so the SPA gates on the same rules
   GET  /api/modules/status      every module's health, readiness and build version via R1, probed in parallel
   *    /api/smo/{module}/...    RBAC-checked proxy to R1 Termination
-  /api/admin/users[...]         user + role CRUD (admin)
+  /api/admin/users[...]         user + role CRUD, break-glass flag, revoke a user's sessions, reset a user's one-time code (admin)
   GET  /api/admin/audit         the append-only audit log (admin)
 """
 
@@ -44,6 +46,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from .config import Settings, settings as default_settings
+from . import totp
 from .db import AuditEntry, Database, GuiUser, LoginFailure
 from .oidc import LOGIN_TTL_SECONDS, MAX_PENDING_LOGINS, OidcClient, OidcConfig, OidcError
 from .rbac import MODULES, RULES, Role, Rule, User, decide
@@ -66,6 +69,13 @@ USERNAME_RE = re.compile(r"^[a-z][a-z0-9_.-]{1,31}$")
 # and the stored "hash" can never verify (no salt:digest in it), so the row has no password at all.
 OIDC_PREFIX = "oidc:"
 UNUSABLE_HASH = "!"
+# PR-SEC-7: the second step of a sign-in. The challenge is a token signed with a key derived from the session key (so it is never a session), valid five
+# minutes, and spent by the first correct code.
+CHALLENGE_TTL_SECONDS = 300
+CHALLENGE_USE = "login-totp"
+MIN_TOTP_KEY_LENGTH = 32
+# With GUI_ADMIN_MFA_REQUIRED, a local admin without an enrolled one-time code reaches only these (the SPA sends them to enrolment).
+MFA_OPEN_PATHS = frozenset({"/api/me", "/api/me/totp", "/api/me/totp/begin", "/api/me/totp/confirm"})
 OIDC_COOKIE = "smo_oidc"      # the browser binding of a sign-in in flight; Lax because the provider's redirect back is a cross-site navigation
 
 # RFC 7230 section 6.1 hop-by-hop headers, plus headers the BFF must own
@@ -206,9 +216,16 @@ class Session:
 
 def create_app(cfg: Settings = default_settings, db: Database | None = None, gateway: R1Gateway | None = None,
                oidc_transport: httpx.BaseTransport | None = None) -> FastAPI:
-    oidc: OidcClient | None = OidcClient(OidcConfig.from_settings(cfg), transport=oidc_transport) if cfg.oidc_enabled else None
+    if cfg.login_mode == "oidc" and not cfg.oidc_enabled:
+        raise ValueError("GUI_LOGIN_MODE=oidc needs GUI_OIDC_ENABLED=true (and the provider's settings): with the local form closed and no provider, nobody could sign in")
+    # GUI_LOGIN_MODE=local: OIDC is not offered even when it is configured (and not even built, so a stale provider setting cannot stop the start)
+    oidc: OidcClient | None = OidcClient(OidcConfig.from_settings(cfg), transport=oidc_transport) if cfg.oidc_enabled and cfg.login_mode != "local" else None
     if not cfg.local_login_enabled and oidc is None:
-        raise ValueError("GUI_LOCAL_LOGIN_ENABLED=false needs GUI_OIDC_ENABLED=true: with neither, nobody could sign in")
+        raise ValueError("GUI_LOCAL_LOGIN_ENABLED=false needs GUI_OIDC_ENABLED=true (and GUI_LOGIN_MODE other than local): with neither, nobody could sign in")
+    if cfg.totp_key and len(cfg.totp_key) < MIN_TOTP_KEY_LENGTH:
+        raise ValueError(f"GUI_TOTP_KEY must be at least {MIN_TOTP_KEY_LENGTH} characters (for example `openssl rand -base64 32`)")
+    if cfg.admin_mfa_required and not cfg.totp_key:
+        raise ValueError("GUI_ADMIN_MFA_REQUIRED=true needs GUI_TOTP_KEY or GUI_TOTP_KEY_FILE: without a key no admin could enrol")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -271,7 +288,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             app.state.db.record_login_failure(username, LOCKOUT_SECONDS, time.time())
             audit("LOGIN_FAILED", username=username)
             return _problem(401, "INVALID_CREDENTIALS")
-        app.state.db.clear_login_failures(username)
+        # The failure counter is not cleared here: with a one-time code the sign-in is not over yet, and a guesser who knows the password must not get a
+        # fresh budget of code guesses from every password round. complete_login (and the token grant) clear it.
         return user
 
     def current_session(request: Request) -> Session:
@@ -291,6 +309,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             sent = request.headers.get(CSRF_HEADER, "")
             if not sent or not hmac.compare_digest(sent, str(claims.get("csrf", ""))):
                 raise _problem_exception(403, "CSRF_TOKEN_INVALID", "missing or invalid CSRF token")
+        # PR-SEC-7.8: a local admin who has no one-time code yet may only enrol one. A user of the identity provider is not asked: its provider does that.
+        if (cfg.admin_mfa_required and user.role == Role.ADMIN and user.password_hash != UNUSABLE_HASH and request.url.path not in MFA_OPEN_PATHS
+                and not app.state.db.totp_state(user.username)[0]):
+            raise _problem_exception(403, "MFA_ENROLMENT_REQUIRED", "an admin must enrol a one-time code before using the console: open Account security")
         # Role always read from the user table, never from the token: a role
         # change or demotion applies on the very next request.
         return Session(user=User(user.username, Role(user.role)), csrf=claims.get("csrf"), via_cookie=via_cookie)
@@ -306,11 +328,93 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         username: str
         password: str
 
+    class TotpLoginRequest(BaseModel):
+        challenge: str
+        code: str = Field(min_length=1, max_length=64)
+
     @app.get("/api/auth/config")
     def auth_config():
-        """Unauthenticated: what the sign-in page may offer. Nothing here is secret (the provider's display name and where to start)."""
-        return {"localLogin": cfg.local_login_enabled,
+        """Unauthenticated: what the sign-in page may offer. Nothing here is secret (the provider's display name and where to start).
+        `localLogin` is whether the password form is the normal way in; with GUI_LOGIN_MODE=oidc it is false and `breakGlass` says that a
+        break-glass account can still use the form (the page keeps it behind a link)."""
+        return {"localLogin": cfg.local_login_enabled and cfg.login_mode != "oidc", "loginMode": cfg.login_mode,
+                "breakGlass": cfg.local_login_enabled and cfg.login_mode == "oidc",
                 "oidc": ({"enabled": True, "providerName": cfg.oidc_provider_name, "loginUrl": "/api/oidc/login"} if oidc else {"enabled": False})}
+
+    # ------------------------------------------------------------ one-time codes: the helpers (PR-SEC-7)
+
+    def challenge_key() -> str:
+        """The key the challenge is signed with: derived from the session key, so a challenge is never a valid session token (and the other way round).
+        Read when used, because an unset GUI_JWT_SECRET is replaced by the shared one at start-up."""
+        return hmac.new(cfg.jwt_secret.encode(), b"smo-gui-login-challenge", hashlib.sha256).hexdigest()
+
+    def issue_challenge(user: GuiUser) -> str:
+        jti = secrets.token_urlsafe(24)
+        app.state.db.create_challenge(jti, user.username, time.time() + CHALLENGE_TTL_SECONDS, time.time())
+        return issue_jwt({"use": CHALLENGE_USE, "sub": user.username, "ver": user.token_version, "jti": jti}, challenge_key(), CHALLENGE_TTL_SECONDS)
+
+    def mode_refusal(user: GuiUser, enrolled: bool) -> JSONResponse | None:
+        """What GUI_LOGIN_MODE and the break-glass rule say about an account whose password was right (PR-SEC-7.6, 7.7): nothing for most, else the refusal."""
+        if cfg.login_mode == "oidc" and not user.break_glass:
+            audit("LOGIN_REFUSED", username=user.username, detail="GUI_LOGIN_MODE=oidc: not a break-glass account")
+            return _problem(403, "LOGIN_MODE_OIDC_ONLY", f"local sign-in is closed: sign in through {cfg.oidc_provider_name}. Only a break-glass account can use a password.")
+        if user.break_glass and not enrolled:
+            audit("LOGIN_REFUSED", username=user.username, detail="break-glass account without an enrolled one-time code")
+            return _problem(403, "BREAK_GLASS_NEEDS_TOTP", "a break-glass account signs in with a one-time code and has none enrolled: ask another admin to reset it, then enrol")
+        return None
+
+    def check_second_factor(user: GuiUser, code: str) -> tuple[str, int | None]:
+        """Test a one-time code or a recovery code for `user`: ("ok", recovery codes left or None), ("bad", None), or ("key", None) when the stored secret cannot
+        be read (no key, or a different one). A failure counts towards the lockout. The code is never logged or audited."""
+        key = cfg.totp_key
+        stored = app.state.db.totp_secret(user.username)
+        if stored is None or not stored[1]:
+            return "bad", None
+        if not key:
+            return "key", None
+        if totp.looks_like_recovery_code(code):
+            left = app.state.db.use_recovery_code(user.username, totp.hash_recovery_code(key, user.username, code))
+            if left is not None:
+                return "ok", left
+        else:
+            try:
+                secret = totp.decrypt_secret(key, user.username, stored[0])
+            except totp.TotpKeyError:
+                return "key", None
+            step = totp.verify(secret, code, time.time(), stored[2])
+            if step is not None and app.state.db.use_totp_step(user.username, step):
+                return "ok", None
+        app.state.db.record_login_failure(user.username, LOCKOUT_SECONDS, time.time())
+        audit("LOGIN_FAILED", username=user.username, detail="one-time code")
+        return "bad", None
+
+    def key_problem(username: str) -> JSONResponse:
+        log.error("the one-time-code secret of %s cannot be read: GUI_TOTP_KEY is missing or is not the key it was stored with", username)
+        return _problem(503, "TOTP_KEY_UNAVAILABLE", "the one-time code cannot be checked: ask an administrator (GUI_TOTP_KEY)")
+
+    def mfa_view(username: str, role: str) -> dict:
+        """What the SPA needs to know about the second factor of the signed-in user: local or not, enrolled or not, and whether it must enrol now (PR-SEC-7.8)."""
+        local = not username.startswith(OIDC_PREFIX)
+        enrolled = local and app.state.db.totp_state(username)[0]
+        return {"local": local, "totpEnrolled": enrolled, "mfaEnrolmentRequired": bool(cfg.admin_mfa_required and local and role == Role.ADMIN and not enrolled)}
+
+    def complete_login(user: GuiUser, response: Response, *, how: str, recovery_left: int | None = None) -> dict:
+        """The session after every check has passed: cookies, the audit row (a break-glass sign-in has its own action and a warning in the log)."""
+        app.state.db.clear_login_failures(user.username)
+        token, csrf = issue_session(user)
+        set_session_cookies(response, token, csrf)
+        who = User(user.username, Role(user.role))
+        if user.break_glass:
+            log.warning("break-glass sign-in: %s (role %s)", user.username, user.role)
+            audit("BREAK_GLASS_LOGIN", who, detail=how)
+        else:
+            audit("LOGIN", who, detail=how if how != "password" else None)
+        if recovery_left is not None:
+            audit("RECOVERY_CODE_USED", who, detail=f"{recovery_left} left")
+        body: dict = {"username": user.username, "role": user.role, "csrfToken": csrf, **mfa_view(user.username, user.role)}
+        if recovery_left is not None:
+            body["recoveryCodesLeft"] = recovery_left
+        return body
 
     @app.post("/api/login")
     def login(body: LoginRequest, response: Response):
@@ -319,17 +423,54 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         user = check_credentials(body.username, body.password)
         if isinstance(user, JSONResponse):
             return user
-        token, csrf = issue_session(user)
-        set_session_cookies(response, token, csrf)
-        audit("LOGIN", User(user.username, Role(user.role)))
-        return {"username": user.username, "role": user.role, "csrfToken": csrf}
+        enrolled = app.state.db.totp_state(user.username)[0]
+        refusal = mode_refusal(user, enrolled)
+        if refusal is not None:
+            return refusal
+        if enrolled:
+            # The password alone does not make a session: a challenge, spent by the second step (POST /api/login/totp).
+            if not cfg.totp_key:
+                return key_problem(user.username)
+            challenge = issue_challenge(user)
+            audit("MFA_CHALLENGE", User(user.username, Role(user.role)))
+            return {"mfaRequired": True, "challenge": challenge, "expiresIn": CHALLENGE_TTL_SECONDS}
+        return complete_login(user, response, how="password")
+
+    @app.post("/api/login/totp")
+    def login_totp(body: TotpLoginRequest, response: Response):
+        claims = decode_jwt(body.challenge, challenge_key())
+        if claims is None or claims.get("use") != CHALLENGE_USE or not isinstance(claims.get("jti"), str) or not isinstance(claims.get("sub"), str):
+            return _problem(401, "CHALLENGE_INVALID", "the sign-in took too long or did not start here: enter the password again")
+        username, jti = claims["sub"], claims["jti"]
+        # the same lockout as a wrong password: failures of either step are counted under the user name
+        if app.state.db.login_locked(username, MAX_LOGIN_FAILURES, LOCKOUT_SECONDS, time.time()):
+            audit("LOGIN_LOCKED", username=username)
+            return _problem(429, "TOO_MANY_ATTEMPTS", "account temporarily locked after repeated failures")
+        with app.state.db.session() as s:
+            user = s.get(GuiUser, username)
+        if (user is None or not user.active or user.token_version != claims.get("ver") or not cfg.local_login_enabled
+                or not app.state.db.challenge_pending(jti, username, time.time())):
+            return _problem(401, "CHALLENGE_INVALID", "the sign-in took too long or did not start here: enter the password again")
+        refusal = mode_refusal(user, enrolled=True)
+        if refusal is not None:
+            return refusal
+        outcome, left = check_second_factor(user, body.code)
+        if outcome == "key":
+            return key_problem(username)
+        if outcome != "ok":
+            return _problem(401, "INVALID_CODE", "the code is wrong, or was already used")
+        if not app.state.db.consume_challenge(jti, username, time.time()):     # spent by a request that got here first
+            return _problem(401, "CHALLENGE_INVALID", "the sign-in took too long or did not start here: enter the password again")
+        return complete_login(user, response, how="recovery code" if left is not None else "password+code", recovery_left=left)
 
     @app.post("/api/token")
-    def oauth2_password_grant(grant_type: str = Form(...), username: str = Form(...), password: str = Form(...)):
+    def oauth2_password_grant(grant_type: str = Form(...), username: str = Form(...), password: str = Form(...), otp: str = Form("", max_length=64)):
         """RFC 6749 section 4.3 resource-owner password grant, for scripts
         and CLI use: the same users and roles as the GUI, sent as
         `Authorization: Bearer`. No CSRF check applies to Bearer calls
-        (a browser never attaches them on its own).
+        (a browser never attaches them on its own). An account with a one-time
+        code sends it as the extra form field `otp` (a recovery code works too):
+        the grant must not be a way round the second factor.
         """
         if grant_type != "password":
             return JSONResponse(status_code=400, content={"error": "unsupported_grant_type"})
@@ -339,8 +480,29 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         if isinstance(user, JSONResponse):
             return JSONResponse(status_code=400 if user.status_code == 401 else user.status_code,
                                 content={"error": "invalid_grant"})
+        enrolled = app.state.db.totp_state(user.username)[0]
+        refusal = mode_refusal(user, enrolled)
+        if refusal is not None:
+            return JSONResponse(status_code=403, content={"error": "unauthorized_client", "error_description": "local sign-in is not open to this account"})
+        left = None
+        if enrolled:
+            if not otp:
+                return JSONResponse(status_code=400, content={"error": "invalid_grant", "error_description": "this account needs a one-time code: send it as the form field otp"})
+            outcome, left = check_second_factor(user, otp)
+            if outcome == "key":
+                return JSONResponse(status_code=503, content={"error": "temporarily_unavailable"})
+            if outcome != "ok":
+                return JSONResponse(status_code=400, content={"error": "invalid_grant"})
+        app.state.db.clear_login_failures(user.username)
         token, _ = issue_session(user)
-        audit("TOKEN", User(user.username, Role(user.role)))
+        who = User(user.username, Role(user.role))
+        if user.break_glass:
+            log.warning("break-glass sign-in (token grant): %s (role %s)", user.username, user.role)
+            audit("BREAK_GLASS_LOGIN", who, detail="token grant")
+        else:
+            audit("TOKEN", who)
+        if left is not None:
+            audit("RECOVERY_CODE_USED", who, detail=f"{left} left")
         return {"access_token": token, "token_type": "Bearer", "expires_in": cfg.session_ttl_seconds}
 
     @app.post("/api/logout")
@@ -456,7 +618,102 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.get("/api/me")
     def me(session: Session = Depends(current_session)):
-        return {"username": session.user.username, "role": session.user.role, "csrfToken": session.csrf}
+        # mfaEnrolmentRequired: the SPA sends such an admin to the enrolment page, because every other route answers 403 MFA_ENROLMENT_REQUIRED (PR-SEC-7.8)
+        return {"username": session.user.username, "role": session.user.role, "csrfToken": session.csrf, **mfa_view(session.user.username, session.user.role)}
+
+    # ------------------------------------------------------------ one-time code enrolment (PR-SEC-7.1, 7.3)
+
+    class CodeRequest(BaseModel):
+        code: str = Field(min_length=1, max_length=64)
+
+    def enrolment_refusal(session: Session) -> JSONResponse | None:
+        if session.user.username.startswith(OIDC_PREFIX):
+            return _problem(409, "OIDC_USER", "this user signs in through the identity provider, which asks for the second factor")
+        if not cfg.totp_key:
+            return _problem(503, "TOTP_UNAVAILABLE", "one-time codes are not set up on this server: an administrator must set GUI_TOTP_KEY (or GUI_TOTP_KEY_FILE)")
+        return None
+
+    def code_attempt_refusal(username: str) -> JSONResponse | None:
+        """A code typed in a signed-in session is guessable too: the wrong ones count towards the same lockout as at sign-in."""
+        if app.state.db.login_locked(username, MAX_LOGIN_FAILURES, LOCKOUT_SECONDS, time.time()):
+            audit("LOGIN_LOCKED", username=username)
+            return _problem(429, "TOO_MANY_ATTEMPTS", "too many wrong codes: try again in a few minutes")
+        return None
+
+    def check_own_code(username: str, secret_b32: str, code: str, last_step: int | None) -> int | None:
+        step = totp.verify(secret_b32, code, time.time(), last_step)
+        if step is None:
+            app.state.db.record_login_failure(username, LOCKOUT_SECONDS, time.time())
+            audit("LOGIN_FAILED", username=username, detail="one-time code (enrolment)")
+        return step
+
+    @app.get("/api/me/totp")
+    def totp_status(session: Session = Depends(current_session)):
+        username = session.user.username
+        if username.startswith(OIDC_PREFIX):
+            return {"available": False, "enrolled": False, "pending": False, "recoveryCodesLeft": 0, "reason": "identity provider"}
+        enrolled, pending = app.state.db.totp_state(username)
+        return {"available": bool(cfg.totp_key), "enrolled": enrolled, "pending": pending,
+                "recoveryCodesLeft": app.state.db.recovery_codes_left(username) if enrolled else 0}
+
+    @app.post("/api/me/totp/begin")
+    def totp_begin(session: Session = Depends(current_session)):
+        """Generate a secret and keep it, encrypted and not yet active. The secret and the otpauth:// URI are in this answer and nowhere else; there is no QR image."""
+        refusal = enrolment_refusal(session)
+        if refusal is not None:
+            return refusal
+        username = session.user.username
+        secret = totp.new_secret()
+        if not app.state.db.begin_totp(username, totp.encrypt_secret(cfg.totp_key, username, secret)):
+            return _problem(409, "TOTP_ALREADY_ENROLLED", "a one-time code is already set up: an admin must reset it before another can be enrolled")
+        audit("TOTP_ENROL_STARTED", session.user)
+        return {"secret": secret, "otpauthUri": totp.provisioning_uri(cfg.totp_issuer, username, secret), "issuer": cfg.totp_issuer, "account": username}
+
+    @app.post("/api/me/totp/confirm")
+    def totp_confirm(body: CodeRequest, session: Session = Depends(current_session)):
+        """The first valid code from the new secret makes it active, and returns the recovery codes: the only time they are shown."""
+        refusal = enrolment_refusal(session) or code_attempt_refusal(session.user.username)
+        if refusal is not None:
+            return refusal
+        username = session.user.username
+        stored = app.state.db.totp_secret(username)
+        if stored is None or stored[1]:
+            return _problem(409, "NO_ENROLMENT_IN_PROGRESS", "start the enrolment first" if stored is None else "a one-time code is already set up")
+        try:
+            secret = totp.decrypt_secret(cfg.totp_key, username, stored[0])
+        except totp.TotpKeyError:
+            return key_problem(username)
+        step = check_own_code(username, secret, body.code, None)
+        if step is None:
+            return _problem(400, "INVALID_CODE", "the code does not match: check the device clock and try the next code")
+        codes = totp.new_recovery_codes()
+        if not app.state.db.confirm_totp(username, step, [totp.hash_recovery_code(cfg.totp_key, username, c) for c in codes]):
+            return _problem(409, "NO_ENROLMENT_IN_PROGRESS", "the enrolment was already confirmed")
+        app.state.db.clear_login_failures(username)
+        audit("TOTP_ENROLLED", session.user, detail=f"{len(codes)} recovery codes issued")
+        return {"status": "enrolled", "recoveryCodes": codes, "recoveryCodesLeft": len(codes)}
+
+    @app.post("/api/me/totp/recovery-codes")
+    def totp_new_recovery_codes(body: CodeRequest, session: Session = Depends(current_session)):
+        """Ten new recovery codes, replacing all the old ones; asks for a current one-time code (not a recovery code)."""
+        refusal = enrolment_refusal(session) or code_attempt_refusal(session.user.username)
+        if refusal is not None:
+            return refusal
+        username = session.user.username
+        stored = app.state.db.totp_secret(username)
+        if stored is None or not stored[1]:
+            return _problem(409, "NOT_ENROLLED", "no one-time code is set up")
+        try:
+            secret = totp.decrypt_secret(cfg.totp_key, username, stored[0])
+        except totp.TotpKeyError:
+            return key_problem(username)
+        step = check_own_code(username, secret, body.code, stored[2])
+        if step is None or not app.state.db.use_totp_step(username, step):
+            return _problem(400, "INVALID_CODE", "the code is wrong, or was already used: wait for the next one")
+        codes = totp.new_recovery_codes()
+        app.state.db.replace_recovery_codes(username, [totp.hash_recovery_code(cfg.totp_key, username, c) for c in codes])
+        audit("RECOVERY_CODES_REGENERATED", session.user, detail=f"{len(codes)} issued")
+        return {"recoveryCodes": codes, "recoveryCodesLeft": len(codes)}
 
     class ChangePasswordRequest(BaseModel):
         currentPassword: str
@@ -601,9 +858,13 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         role: Role | None = None
         active: bool | None = None
         password: str | None = Field(default=None, min_length=MIN_PASSWORD_LENGTH)
+        breakGlass: bool | None = None
 
-    def _user_view(u: GuiUser) -> dict:
-        return {"username": u.username, "role": u.role, "active": u.active, "createdAt": u.created_at.isoformat()}
+    def _user_view(u: GuiUser, enrolled: set[str] | None = None) -> dict:
+        if enrolled is None:
+            enrolled = {u.username} if app.state.db.totp_state(u.username)[0] else set()
+        return {"username": u.username, "role": u.role, "active": u.active, "createdAt": u.created_at.isoformat(),
+                "breakGlass": u.break_glass, "totpEnrolled": u.username in enrolled}
 
     def _active_admins(s) -> int:
         return len(s.scalars(select(GuiUser).where(GuiUser.role == Role.ADMIN, GuiUser.active.is_(True))).all())
@@ -611,7 +872,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
     @app.get("/api/admin/users")
     def list_users(session: Session = Depends(require_admin)):
         with app.state.db.session() as s:
-            return [_user_view(u) for u in s.scalars(select(GuiUser).order_by(GuiUser.username)).all()]
+            enrolled = app.state.db.totp_enrolled_users()
+            return [_user_view(u, enrolled) for u in s.scalars(select(GuiUser).order_by(GuiUser.username)).all()]
 
     @app.post("/api/admin/users", status_code=201)
     def create_user(body: CreateUserRequest, session: Session = Depends(require_admin)):
@@ -649,6 +911,11 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
                 changes.append("activated" if body.active else "deactivated")
                 user.active = body.active
                 user.token_version += 1
+            if body.breakGlass is not None and body.breakGlass != user.break_glass:
+                if body.breakGlass and user.password_hash == UNUSABLE_HASH:
+                    return _problem(409, "OIDC_USER", "a break-glass account is a local one: this user signs in through the identity provider")
+                changes.append("break-glass on" if body.breakGlass else "break-glass off")
+                user.break_glass = body.breakGlass
             if body.password is not None:
                 changes.append("password reset")
                 user.password_hash = hash_password(body.password)
@@ -674,8 +941,33 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             s.execute(delete(LoginFailure).where(LoginFailure.username == username))
             s.delete(user)
             s.commit()
+        app.state.db.reset_totp(username)       # the one-time-code secret, recovery codes and open challenges go with the account (docs/PRIVACY.md)
         audit("USER_DELETED", session.user, detail=username)
         return Response(status_code=204)
+
+    @app.post("/api/admin/users/{username}/revoke-sessions")
+    def revoke_user_sessions(username: str, session: Session = Depends(require_admin)):
+        """End every session of a user at once, in every instance: a session token carries the user's token version, and bumping it makes all of them
+        (cookie sessions and tokens from /api/token) answer 401 SESSION_REVOKED. A sign-in half done (a challenge) ends too. PR-SEC-7.5."""
+        with app.state.db.session() as s:
+            user = s.get(GuiUser, username)
+            if user is None:
+                return _problem(404, "NO_SUCH_USER")
+            user.token_version += 1
+            s.commit()
+        audit("USER_SESSIONS_REVOKED", session.user, detail=username)
+        return {"status": "sessions revoked", "username": username}
+
+    @app.post("/api/admin/users/{username}/reset-totp")
+    def reset_user_totp(username: str, session: Session = Depends(require_admin)):
+        """Remove a user's one-time code and recovery codes (a lost device): the user signs in with the password alone until a new code is enrolled. For a
+        break-glass account that means it cannot sign in at all until then. Existing sessions stay; revoke them as well if the device may be in other hands."""
+        with app.state.db.session() as s:
+            if s.get(GuiUser, username) is None:
+                return _problem(404, "NO_SUCH_USER")
+        had = app.state.db.reset_totp(username)
+        audit("TOTP_RESET", session.user, detail=f"{username}: {'removed' if had else 'none was set'}")
+        return {"status": "one-time code removed" if had else "no one-time code was set", "username": username}
 
     @app.get("/api/admin/audit")
     def list_audit(limit: int = PageLimit, offset: int = PageOffset, username: str | None = None, action: str | None = None,
