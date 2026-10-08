@@ -275,6 +275,18 @@ def test_the_optional_templates_render_when_switched_on():
 
 
 @helm
+def test_a_disruption_budget_goes_only_to_a_module_that_runs_more_than_one_pod():
+    """A budget of minAvailable 1 on a module with one pod can never be satisfied by evicting it, so a node drain that reaches that pod waits for ever (found by the
+    high-availability lane: mock-o1-adaptor has one replica)."""
+    def budgets(*args):
+        return {d["metadata"]["name"] for d in _render("--set", "podDisruptionBudget.enabled=true", *args) if d["kind"] == "PodDisruptionBudget"}
+    assert budgets() == set()                                                           # every module at its default of one replica
+    assert budgets("--set", "modules.sme.replicas=2", "--set", "modules.dme.replicas=3") == {"sme", "dme"}
+    assert {"sme", "mock-o1-adaptor"} <= budgets("--set", "autoscaling.enabled=true")   # the autoscaler's minimum is 2: every module that can scale may be budgeted
+    assert budgets("--set", "autoscaling.enabled=true", "--set", "autoscaling.minReplicas=1") == set()    # a minimum of one and no second pod yet: none
+
+
+@helm
 def test_credential_delivery_is_off_by_default_and_gives_no_pod_a_service_account():
     docs = _render()
     assert not [d for d in docs if d["kind"] in ("ServiceAccount", "Role", "RoleBinding")]

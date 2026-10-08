@@ -1257,7 +1257,7 @@ jobs:
           sleep 5
           pod=$(kubectl -n smo get pod -l app.kubernetes.io/name=sme -o jsonpath='{.items[0].metadata.name}')
           kubectl -n smo exec "$pod" -- rm -f /tmp/stop
-          kubectl -n smo exec "$pod" -- env FAILOVER_MAX_SECONDS=45 python3 -c "$(cat scripts/k8s_failover_probe.py)" > switch.log 2>&1 &
+          kubectl -n smo exec "$pod" -- env FAILOVER_MAX_SECONDS=20 python3 -c "$(cat scripts/k8s_failover_probe.py)" > switch.log 2>&1 &
           probe=$!
           sleep 10
           echo "switching over from $primary to $target"
