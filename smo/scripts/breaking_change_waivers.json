@@ -1,8 +1,1 @@
-{
-  "* narrowed-parameter GET * query offset": "0.5.0 bounds a list offset at 2147483647 (the database integer); a larger value made the database fail and the module answer 500 (found by the contract test, V-3), so no working request is refused",
-  "sme narrowed-parameter POST /invoker-registrations/purge-stale query unused_for_days": "0.5.0 bounds it at 36500 days; a larger value overflowed the date arithmetic and answered 500 (V-3)",
-  "mlmr narrowed-parameter GET /models/{model_id}/artifact/{artifact_version} path artifact_version": "0.5.0 bounds the version at 2147483647 (the database integer); a larger value made the database fail and the module answer 500 (found by the contract test, V-3)",
-  "a1-related removed-module": "A1 policy management is out of scope at every stage; the module was removed in 0.5.0 (announced in the same release: nothing consumed it outside this repository's own rApps, none of which used A1)",
-  "mock-near-rt-ric removed-module": "the Near-RT RIC test double went with the A1 module (out of scope)",
- "onboarding narrowed-parameter POST /packages body.applicationType": "applicationType takes only rApp, xApp, CloudifiedNF and PNF, the values the application_package CHECK constraint has always accepted (migrations/001_init.sql). Any other string was accepted by the API and refused by the database as a 500, so no client has a working request that this rejects; it is now a 422. Found by the authenticated DAST scan (V-7d)."
-}
+{}
