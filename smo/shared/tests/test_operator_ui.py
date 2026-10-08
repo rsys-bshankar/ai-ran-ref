@@ -11,7 +11,15 @@ import yaml
 from smo_shared import operator_ui as ui
 from smo_shared.operator_ui import OperatorUiInvalid, validate_operator_ui
 
-DOCS = Path(__file__).resolve().parents[2] / "docs"
+def _find_docs() -> Path:
+    """smo/docs, found by walking up: the mutation run (scripts/mutation_pilot.sh) executes these tests one directory deeper, from shared/mutants/tests."""
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "docs" / "adr" / "0004-operator-ui-declaration.md").exists():
+            return parent / "docs"
+    raise FileNotFoundError("smo/docs with the operator-ui ADR was not found above the test file")
+
+
+DOCS = _find_docs()
 EXAMPLE = DOCS / "schemas" / "operator-ui.energy-saving.example.yaml"
 SCHEMA_FILE = DOCS / "schemas" / "operator-ui-1.schema.json"
 
