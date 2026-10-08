@@ -134,6 +134,32 @@ def test_a_head_that_appears_while_the_rows_are_read_is_not_a_break(db):
     assert audit.verify(db) is None
 
 
+def test_the_second_head_read_is_fresh_not_the_first_reads_identity_mapped_copy(db):
+    """Found by the upgrade lane from smo-v0.3.0: the head said 96, the rows 97. A writer commits (here: a Core update, which does not touch the verifying session's
+    objects, as another connection's commit would not) after the first head read; the second read must see it."""
+    _fill(db, 4)
+    head = audit.AuditHead.__table__
+    h3, h4 = db.get(audit.AuditEntry, 3).hash, db.get(audit.AuditEntry, 4).hash
+    db.execute(update(head).where(head.c.head_id == 1).values(last_seq=3, last_hash=h3))        # as if the writer of row 4 had not committed yet
+    db.commit()
+    db.expunge_all()
+    real, state = db.execute, {"seen": 0}
+
+    def execute(statement, *a, **kw):
+        out = real(statement, *a, **kw)
+        if "audit_head" in str(statement):
+            state["seen"] += 1
+            if state["seen"] == 1:                       # the first head read is done: the writer's commit lands
+                real(update(head).where(head.c.head_id == 1).values(last_seq=4, last_hash=h4))
+        return out
+
+    db.execute = execute
+    try:
+        assert audit.verify(db) is None
+    finally:
+        del db.execute
+
+
 def test_rows_past_the_head_are_found(db):
     _fill(db)
     db.execute(update(audit.AuditHead).where(audit.AuditHead.head_id == 1).values(last_seq=3, last_hash=db.get(audit.AuditEntry, 3).hash))
