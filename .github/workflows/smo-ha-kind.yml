@@ -21,6 +21,7 @@ on:
       - "smo/deploy/helm/smo/ci/ha-values.yaml"
       - "smo/scripts/k8s_rolling_probe.py"
       - "smo/scripts/k8s_load.sh"
+      - "smo/scripts/k8s_pin_state.py"
       - "smo/scripts/load_run.py"
       - "smo/scripts/upgrade_load_verdict.py"
 
@@ -61,9 +62,11 @@ jobs:
       - name: Install with two replicas, hard placement and disruption budgets
         working-directory: smo
         run: |
+          # Postgres and the two single-pod volumes stay on one worker (a post-renderer adds the selector), so another worker is always free to drain
+          kubectl label "$(kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o name | head -1)" smo-state=true
           helm install smo deploy/helm/smo -n smo --create-namespace \
             -f deploy/helm/smo/ci/kind-values.yaml -f deploy/helm/smo/ci/ha-values.yaml \
-            --set placement.mode=hard --set podDisruptionBudget.enabled=true --wait --timeout 15m
+            --set placement.mode=hard --set podDisruptionBudget.enabled=true --post-renderer scripts/k8s_pin_state.py --wait --timeout 15m
           kubectl -n smo get pods -o wide
           kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
 
