@@ -3,13 +3,16 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, ApiError } from "../api/client";
 import type { Me } from "../api/types";
+import { isChallenge, type LoginChallenge, type SignedIn } from "../lib/mfa";
 import { can as canWith, type PermissionRule, type QueryValues, type Role } from "./rbac";
 
 interface AuthState {
   me: Me | null;
   loading: boolean;
   role: Role | undefined;
-  login: (username: string, password: string) => Promise<void>;
+  /** Null when signed in; a challenge when the account has a one-time code and the second step (`loginWithCode`) is next. */
+  login: (username: string, password: string) => Promise<LoginChallenge | null>;
+  loginWithCode: (challenge: string, code: string) => Promise<SignedIn>;
   logout: () => Promise<void>;
   can: (method: string, path: string, query?: QueryValues) => boolean;
 }
@@ -38,7 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const rulesQuery = useQuery<{ role: Role; rules: PermissionRule[] }, ApiError>({
     queryKey: ["bff", "permissions", me?.username],
     queryFn: () => api("/permissions"),
-    enabled: me !== null,
+    enabled: me !== null && !me.mfaEnrolmentRequired,       // every other route answers 403 until the admin has enrolled
     staleTime: 5 * 60_000,
   });
 
@@ -49,14 +52,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("smo:unauthorized", onUnauthorized);
   }, [qc]);
 
-  const login = useCallback(async (username: string, password: string) => {
-    const result = await api<Me>("/login", { method: "POST", json: { username, password } });
+  const startSession = useCallback((result: SignedIn) => {
     // Update the live "me" entry in place (qc.clear() would orphan the
     // observer above, leaving the app stuck on the login page), then drop
     // whatever the previous user had cached.
     qc.setQueryData(["bff", "me"], result);
     qc.removeQueries({ predicate: (q) => !isMeQuery(q.queryKey) });
   }, [qc]);
+
+  const login = useCallback(async (username: string, password: string) => {
+    const result = await api<SignedIn | LoginChallenge>("/login", { method: "POST", json: { username, password } });
+    if (isChallenge(result)) return result;       // PR-SEC-7.2: no session yet
+    startSession(result);
+    return null;
+  }, [startSession]);
+
+  const loginWithCode = useCallback(async (challenge: string, code: string) => {
+    const result = await api<SignedIn>("/login/totp", { method: "POST", json: { challenge, code } });
+    startSession(result);
+    return result;
+  }, [startSession]);
 
   const logout = useCallback(async () => {
     let endSessionUrl: string | undefined;
@@ -75,10 +90,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading: meQuery.isLoading,
       role: me?.role,
       login,
+      loginWithCode,
       logout,
       can: (method, path, query) => canWith(rules, me?.role, method, path, query),
     };
-  }, [me, meQuery.isLoading, rulesQuery.data, login, logout]);
+  }, [me, meQuery.isLoading, rulesQuery.data, login, loginWithCode, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

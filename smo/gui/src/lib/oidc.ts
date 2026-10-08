@@ -3,6 +3,9 @@
 
 export interface AuthConfig {
   localLogin: boolean;
+  // PR-SEC-7.6: "oidc" closes the password form to every account but a break-glass one (`breakGlass` says one can still be used)
+  loginMode?: "both" | "oidc" | "local";
+  breakGlass?: boolean;
   oidc: { enabled: boolean; providerName?: string; loginUrl?: string };
 }
 

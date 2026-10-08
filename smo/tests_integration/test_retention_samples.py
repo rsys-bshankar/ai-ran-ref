@@ -112,7 +112,7 @@ def _render(*args: str) -> list[dict]:
 
 def _deployment_env(docs: list[dict], name: str) -> dict:
     deployment = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == name)
-    return {e["name"]: e.get("value") for e in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
+    return {e["name"]: e.get("value") for e in deployment["spec"]["template"]["spec"]["containers"][0].get("env") or []}
 
 
 @helm

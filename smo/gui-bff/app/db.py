@@ -12,7 +12,7 @@ import time
 
 from typing import cast
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, create_engine, delete, event, func, select, update
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, create_engine, delete, event, false, func, inspect, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -38,6 +38,44 @@ class GuiUser(Base):
     # the version it was issued under, so old sessions stop working at once.
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+    # PR-SEC-7.7: a local account an admin has flagged as the break-glass login. It signs in with password and one-time code even when GUI_LOGIN_MODE=oidc.
+    # Added after the first release of this table: `Database._add_missing_columns` adds it to a database made before (default false, so the previous
+    # release's code keeps working on it).
+    break_glass: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+
+
+class GuiUserTotp(Base):
+    """A local user's one-time-code secret (PR-SEC-7.1). `secret_enc` is AES-GCM ciphertext (app/totp.py), never the secret. A row is `confirmed` only
+    after the user typed one valid code from it; an unconfirmed row is an enrolment in progress and is never used to sign in. `last_step` is the
+    time step of the last code accepted (replay protection: a code is good once), kept here so every instance sharing the database agrees."""
+    __tablename__ = "gui_user_totp"
+
+    username: Mapped[str] = mapped_column(String, primary_key=True)
+    secret_enc: Mapped[str] = mapped_column(String, nullable=False)
+    confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_step: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+    confirmed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class GuiRecoveryCode(Base):
+    """One of a user's recovery codes (PR-SEC-7.3): only a keyed hash is stored, and `used_at` is set the one time it is spent."""
+    __tablename__ = "gui_recovery_code"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    code_hash: Mapped[str] = mapped_column(String, nullable=False)
+    used_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LoginChallenge(Base):
+    """The second step of a sign-in (PR-SEC-7.2): written when the password was right, deleted when the code was right, so it works once. The signed
+    token the browser holds names `jti`; the row says it is still unspent. Rows past `expires_at` are removed whenever a new one is written."""
+    __tablename__ = "gui_login_challenge"
+
+    jti: Mapped[str] = mapped_column(String, primary_key=True)
+    username: Mapped[str] = mapped_column(String, nullable=False)
+    expires_at: Mapped[float] = mapped_column(Float, nullable=False, index=True)   # unix seconds
 
 
 class AuditEntry(Base):
@@ -140,6 +178,23 @@ class Database:
                 if attempt == 3:
                     raise
                 time.sleep(0.25)
+        self._add_missing_columns()
+
+    def _add_missing_columns(self) -> None:
+        """`create_all` makes absent tables but never alters a table that exists, so a column added to one later is added here (expand only: nullable or
+        with a default, so the previous release's code keeps working on the upgraded database). The BFF's tables are not in the Alembic history."""
+        wanted = {"gui_user": [("break_glass", "BOOLEAN NOT NULL DEFAULT " + ("false" if self.engine.dialect.name == "postgresql" else "0"))]}
+        for table, columns in wanted.items():
+            for name, ddl in columns:
+                if name in {c["name"] for c in inspect(self.engine).get_columns(table)}:
+                    continue
+                try:
+                    with self.engine.begin() as conn:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+                except (OperationalError, ProgrammingError):
+                    # another instance added it first: fine if it is there now, an error if not
+                    if name not in {c["name"] for c in inspect(self.engine).get_columns(table)}:
+                        raise
 
     def session(self) -> Session:
         return self.sessions()
@@ -233,6 +288,114 @@ class Database:
             if removed.rowcount != 1 or row.expires_at <= now:
                 return None
             return row
+
+    # ------------------------------------------------------------ one-time codes (PR-SEC-7)
+
+    def totp_state(self, username: str) -> tuple[bool, bool]:
+        """(enrolled, pending): a confirmed secret, or one waiting for its first code."""
+        with self.session() as s:
+            row = s.get(GuiUserTotp, username)
+            return (row is not None and row.confirmed, row is not None and not row.confirmed)
+
+    def totp_enrolled_users(self) -> set[str]:
+        with self.session() as s:
+            return set(s.scalars(select(GuiUserTotp.username).where(GuiUserTotp.confirmed.is_(True))).all())
+
+    def begin_totp(self, username: str, secret_enc: str) -> bool:
+        """Store a new, unconfirmed secret (replacing an earlier unconfirmed one). False when the user already has a confirmed one."""
+        for _ in range(2):
+            with self.session() as s:
+                row = s.get(GuiUserTotp, username)
+                if row is not None and row.confirmed:
+                    return False
+                if row is None:
+                    s.add(GuiUserTotp(username=username, secret_enc=secret_enc, confirmed=False))
+                else:
+                    row.secret_enc, row.created_at = secret_enc, _now()
+                try:
+                    s.commit()
+                    return True
+                except IntegrityError:      # another instance began an enrolment for the same user at the same moment: update its row
+                    s.rollback()
+        raise RuntimeError(f"could not store the one-time-code secret for {username!r}")
+
+    def totp_secret(self, username: str) -> tuple[str, bool, int | None] | None:
+        """(encrypted secret, confirmed, last step) of the user's row."""
+        with self.session() as s:
+            row = s.get(GuiUserTotp, username)
+            return None if row is None else (row.secret_enc, row.confirmed, row.last_step)
+
+    def confirm_totp(self, username: str, step: int, recovery_hashes: list[str]) -> bool:
+        """Make the pending secret live, remember the step of the code that proved it (it cannot be used again to sign in) and store the recovery codes,
+        in one transaction. False when there is nothing pending (another request confirmed it first)."""
+        with self.session() as s:
+            done = cast(CursorResult, s.execute(update(GuiUserTotp).where(GuiUserTotp.username == username, GuiUserTotp.confirmed.is_(False))
+                                                .values(confirmed=True, last_step=step, confirmed_at=_now())))
+            if done.rowcount != 1:
+                s.rollback()
+                return False
+            s.execute(delete(GuiRecoveryCode).where(GuiRecoveryCode.username == username))
+            s.add_all(GuiRecoveryCode(username=username, code_hash=h) for h in recovery_hashes)
+            s.commit()
+            return True
+
+    def use_totp_step(self, username: str, step: int) -> bool:
+        """Accept the code of time step `step` once: true only for the request whose UPDATE moves the stored step forward, so a replay, or the same
+        code sent to two instances at once, fails."""
+        with self.session() as s:
+            done = cast(CursorResult, s.execute(update(GuiUserTotp).where(
+                GuiUserTotp.username == username, GuiUserTotp.confirmed.is_(True), (GuiUserTotp.last_step.is_(None)) | (GuiUserTotp.last_step < step))
+                .values(last_step=step)))
+            s.commit()
+            return done.rowcount == 1
+
+    def use_recovery_code(self, username: str, code_hash: str) -> int | None:
+        """Spend a recovery code: the number left afterwards, or None when no unused code matches."""
+        with self.session() as s:
+            done = cast(CursorResult, s.execute(update(GuiRecoveryCode).where(
+                GuiRecoveryCode.username == username, GuiRecoveryCode.code_hash == code_hash, GuiRecoveryCode.used_at.is_(None)).values(used_at=_now())))
+            s.commit()
+            if done.rowcount != 1:
+                return None
+        return self.recovery_codes_left(username)
+
+    def recovery_codes_left(self, username: str) -> int:
+        with self.session() as s:
+            return s.scalar(select(func.count()).select_from(GuiRecoveryCode).where(GuiRecoveryCode.username == username, GuiRecoveryCode.used_at.is_(None))) or 0
+
+    def replace_recovery_codes(self, username: str, recovery_hashes: list[str]) -> None:
+        with self.session() as s:
+            s.execute(delete(GuiRecoveryCode).where(GuiRecoveryCode.username == username))
+            s.add_all(GuiRecoveryCode(username=username, code_hash=h) for h in recovery_hashes)
+            s.commit()
+
+    def reset_totp(self, username: str) -> bool:
+        """Remove the user's one-time-code secret, recovery codes and open challenges (an admin's reset, or the user's deletion). True when there was a secret."""
+        with self.session() as s:
+            removed = cast(CursorResult, s.execute(delete(GuiUserTotp).where(GuiUserTotp.username == username)))
+            s.execute(delete(GuiRecoveryCode).where(GuiRecoveryCode.username == username))
+            s.execute(delete(LoginChallenge).where(LoginChallenge.username == username))
+            s.commit()
+            return removed.rowcount > 0
+
+    def create_challenge(self, jti: str, username: str, expires_at: float, now: float) -> None:
+        with self.session() as s:
+            s.execute(delete(LoginChallenge).where(LoginChallenge.expires_at <= now))
+            s.add(LoginChallenge(jti=jti, username=username, expires_at=expires_at))
+            s.commit()
+
+    def challenge_pending(self, jti: str, username: str, now: float) -> bool:
+        with self.session() as s:
+            row = s.get(LoginChallenge, jti)
+            return row is not None and row.username == username and row.expires_at > now
+
+    def consume_challenge(self, jti: str, username: str, now: float) -> bool:
+        """Spend the challenge: of two requests at once only the one whose DELETE removes the row gets true."""
+        with self.session() as s:
+            done = cast(CursorResult, s.execute(delete(LoginChallenge).where(
+                LoginChallenge.jti == jti, LoginChallenge.username == username, LoginChallenge.expires_at > now)))
+            s.commit()
+            return done.rowcount == 1
 
     def clear_login_failures(self, username: str) -> None:
         with self.session() as s:

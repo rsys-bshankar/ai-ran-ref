@@ -23,6 +23,10 @@ describe("describeError", () => {
   it("reads the BFF's problem shape", () => {
     expect(describeError(403, { title: "FORBIDDEN", status: 403, detail: "requires role admin" })).toEqual({ title: "FORBIDDEN", detail: "requires role admin" });
   });
+  it("reads an error the BFF raised from a dependency, wrapped as {detail: {title, detail}}", () => {
+    expect(describeError(403, { detail: { title: "MFA_ENROLMENT_REQUIRED", status: 403, detail: "enrol first" } })).toEqual({ title: "MFA_ENROLMENT_REQUIRED", detail: "enrol first" });
+    expect(describeError(401, { detail: { title: "SESSION_REVOKED", status: 401 } })).toEqual({ title: "SESSION_REVOKED", detail: undefined });
+  });
   it("reads FastAPI's detail string and validation arrays", () => {
     expect(describeError(404, { detail: "no such model" })).toEqual({ title: "HTTP 404", detail: "no such model" });
     expect(describeError(422, { detail: [{ loc: ["body", "version"], msg: "Field required" }] }).detail).toBe("version Field required");

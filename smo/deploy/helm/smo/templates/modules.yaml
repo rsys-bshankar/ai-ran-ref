@@ -149,6 +149,13 @@ spec:
               valueFrom: { secretKeyRef: { name: {{ .name | quote }}, key: {{ .key | default "client-secret" | quote }} } }
             {{- end }}
             {{- end }}
+            {{- with $.Values.gui.totpKeySecretRef }}
+            {{- if .name }}
+            # PR-SEC-7: the key for the one-time-code secrets, from a Secret of your own
+            - name: GUI_TOTP_KEY
+              valueFrom: { secretKeyRef: { name: {{ .name | quote }}, key: {{ .key | default "totp-key" | quote }} } }
+            {{- end }}
+            {{- end }}
             {{- end }}
           {{- if eq $m.kind "service" }}
           {{- if $m.preStopSeconds }}

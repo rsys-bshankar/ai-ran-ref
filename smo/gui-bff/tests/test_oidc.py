@@ -194,14 +194,14 @@ def test_auth_config_reports_oidc_off_by_default(db, idp):
     cfg = make_cfg(oidc_enabled=False)
     app = make_app(idp, db, cfg)
     body = TestClient(app).get("/api/auth/config").json()
-    assert body == {"localLogin": True, "oidc": {"enabled": False}}
+    assert body == {"localLogin": True, "loginMode": "both", "breakGlass": False, "oidc": {"enabled": False}}
     assert TestClient(app, follow_redirects=False).get("/api/oidc/login").status_code == 404
     assert TestClient(app, follow_redirects=False).get("/api/oidc/callback", params={"code": "x", "state": "y"}).status_code == 404
 
 
 def test_auth_config_when_enabled_names_the_provider_and_needs_no_session(client):
     body = client.get("/api/auth/config").json()
-    assert body == {"localLogin": True, "oidc": {"enabled": True, "providerName": "Keycloak", "loginUrl": "/api/oidc/login"}}
+    assert body == {"localLogin": True, "loginMode": "both", "breakGlass": False, "oidc": {"enabled": True, "providerName": "Keycloak", "loginUrl": "/api/oidc/login"}}
 
 
 # ---------------------------------------------------------------- the happy path

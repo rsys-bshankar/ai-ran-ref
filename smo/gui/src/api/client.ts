@@ -49,6 +49,11 @@ export function describeError(status: number, body: unknown): { title: string; d
       const msgs = detail.map((d) => (d && typeof d === "object" ? `${(d as { loc?: unknown[] }).loc?.slice(1).join(".") ?? ""} ${(d as { msg?: string }).msg ?? ""}`.trim() : String(d)));
       return { title: String(b.title ?? `HTTP ${status}`), detail: msgs.join("; ") };
     }
+    // an error raised from a dependency of the BFF (a revoked session, MFA_ENROLMENT_REQUIRED) is wrapped as {detail: {title, status, detail}}
+    if (detail && typeof detail === "object" && typeof (detail as { title?: unknown }).title === "string") {
+      const inner = detail as { title: string; detail?: unknown };
+      return { title: inner.title, detail: typeof inner.detail === "string" ? inner.detail : undefined };
+    }
     if (typeof b.title === "string") return { title: b.title, detail: typeof detail === "string" ? detail : undefined };
     if (typeof detail === "string") return { title: `HTTP ${status}`, detail };
     if (typeof b.error === "string") return { title: b.error, detail: typeof b.error_description === "string" ? b.error_description : undefined };
@@ -86,7 +91,7 @@ export async function api<T = unknown>(path: string, opts: RequestOptions = {}):
     try { parsed = JSON.parse(text); } catch { /* keep text */ }
   }
   if (!resp.ok) {
-    if (resp.status === 401 && path !== "/login") window.dispatchEvent(new Event("smo:unauthorized"));
+    if (resp.status === 401 && path !== "/login" && path !== "/login/totp") window.dispatchEvent(new Event("smo:unauthorized"));
     const { title, detail } = describeError(resp.status, parsed);
     throw new ApiError(resp.status, title, detail, parsed);
   }
