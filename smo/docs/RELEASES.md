@@ -59,6 +59,8 @@ A criterion that cannot be met is not waived silently: the release notes say whi
 
 A person cuts the tag. It is not something an automated change does on its own.
 
+Before merging the release PR every check must be finished and green, CodeQL included: its jobs are the only gate on the sign-in and signing code. If the CodeQL jobs of the release PR sit queued and the Actions page offers no re-run (this happened for 0.6.0: queued for two hours, the run marked failed, re-run refused), push a real commit to the release branch (a documentation fix, or a merge of `main`) so that a new scan starts; do not push an empty commit or close and reopen the PR, and do not merge without CodeQL.
+
 ## Publishing images, signatures and notes
 
 `release-images.yml` runs on a pushed `smo-v*` tag, or by hand (`workflow_dispatch`, input `tag`) for a tag that already exists. It
