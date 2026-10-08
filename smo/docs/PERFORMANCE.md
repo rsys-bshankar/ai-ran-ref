@@ -44,6 +44,21 @@ What this says:
 - **The other thresholds are first guesses** (1 % overall). 0.33 % on a lane that includes a rollback leaves room, and the one allowed route accounts for all of it. Tighten them when a run shows how much the numbers move.
 - **The tail is long** (p99 1.7 s against p50 46 ms) because a module restarting answers slowly before it answers at all; this is the latency the clients see during an upgrade, not in steady state (`docs/SIZING.md` has that).
 
+## High availability under load (V-12)
+
+Measured on the kind lanes in `smo-ha-kind.yml` (3 workers, state pods pinned to one worker). These are CI-runner numbers: they show that the behaviour holds, not what a production host will do.
+
+| Check | Result |
+|---|---|
+| Autoscaler, gateway | 1 to 3 ready replicas about 42 s after the load started; 20 callers for 96 s, 3523 calls, 0 errors, p50 528 ms, p95 752 ms, 36.7 req/s. The gateway's CPU was 1012 % of a 50m request (target 30 %); SME scaled to 3 as well. |
+| Node drain under load | 3460 calls in 192.8 s, 0 errors; p50 75.5 ms, p95 237 ms, p99 872 ms, max 2440 ms. The node without state (`smo-worker2`) was drained and the stack kept answering. |
+| Postgres primary killed | Longest write gap 2.6 s (1 of 116 probe writes failed) and 1.6 s (1 of 121) in two runs. |
+| Postgres planned switchover | Longest write gap 5.8 s (8 of 115 failed) and 2.2 s (6 of 135 failed). A planned switchover was not faster than the kill; it is bounded at 20 s. |
+
+The first drain run found a chart fault: a disruption budget on the single-replica `mock-o1-adaptor` blocked the drain. The chart now makes a budget only for a module with more than one pod.
+
+Not measured: a hard node loss, a partition between modules and Postgres, PgBouncer failover.
+
 ## Not yet covered
 
 - Cells, managed objects and KPI results are not seeded yet (V-8b seeds managed elements, alarms and performance files).
