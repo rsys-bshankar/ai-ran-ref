@@ -117,7 +117,7 @@ def verify(db: Session) -> dict | None:
     (a row and the head move together, so a writer that commits while the rows are read leaves the chain ahead of the first read
     and behind the second). Rows missing from the end, or rows past the head, still break it.
     """
-    first = db.execute(select(AuditHead).where(AuditHead.head_id == 1)).scalar_one_or_none()
+    first = db.execute(select(AuditHead.last_seq, AuditHead.last_hash).where(AuditHead.head_id == 1)).first()   # columns, not the ORM object: the second read must not be the first one's identity-mapped copy
     first_seq, first_hash = (first.last_seq, first.last_hash) if first else (0, GENESIS)
     expected_seq, previous = 1, GENESIS
     at = {0: GENESIS}                                                    # the hash of the row the first head named
@@ -132,7 +132,7 @@ def verify(db: Session) -> dict | None:
         if entry.seq == first_seq:
             at[first_seq] = entry.hash
     last_seq = expected_seq - 1
-    head = db.execute(select(AuditHead).where(AuditHead.head_id == 1)).scalar_one_or_none()
+    head = db.execute(select(AuditHead.last_seq, AuditHead.last_hash).where(AuditHead.head_id == 1)).first()
     if head is None:
         return None if last_seq == 0 else {"seq": last_seq, "reason": "the head row is missing"}
     if not first_seq <= last_seq <= head.last_seq or at.get(first_seq) != first_hash or (last_seq == head.last_seq and head.last_hash != previous):
