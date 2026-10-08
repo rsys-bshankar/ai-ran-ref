@@ -4,6 +4,7 @@ The parity tests read the two files and need nothing else. The render tests need
 """
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -298,7 +299,7 @@ def test_a_new_chart_version_changes_no_pod_template_so_it_restarts_nothing(tmp_
     shutil.copytree(CHART, other)
     chart_yaml = (other / "Chart.yaml").read_text()
     assert "version: " in chart_yaml
-    (other / "Chart.yaml").write_text(chart_yaml.replace("\nversion: ", "\nversion: 99.", 1))
+    (other / "Chart.yaml").write_text(re.sub(r"(?m)^version: .*$", "version: 99.0.0", chart_yaml, count=1))
     args = ["--set", "observability.tempo.enabled=true", "--set", "observability.loki.enabled=true", "--set", "observability.grafana.enabled=true", "--set", "observability.fluentBit.enabled=true"]
 
     def templates(chart):

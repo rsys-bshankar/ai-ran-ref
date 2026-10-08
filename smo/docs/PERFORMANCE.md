@@ -57,6 +57,8 @@ Measured on the kind lanes in `smo-ha-kind.yml` (3 workers, state pods pinned to
 | Postgres primary killed | Longest write gap 2.6 s (1 of 116 probe writes failed) and 1.6 s (1 of 121) in two runs. |
 | Postgres planned switchover | Longest write gap 5.8 s (8 of 115 failed) and 2.2 s (6 of 135 failed). A planned switchover was not faster than the kill; it is bounded at 20 s. |
 
+The drain lane kills one pod of each replicated deployment without a grace period, so a call that pod is serving is dropped. The first runs had none (3460 calls, 0 errors), the run on the release pull request had one dropped connection (`RemoteProtocolError`, 1 of 2562 calls, 20 s in), and the lane's verdict was written for zero. It now allows two per route (and 1 % overall, as before), the same as the upgrade lane; the 7980-call probe that retries once had 1 retry and no call failed twice.
+
 The first drain run found a chart fault: a disruption budget on the single-replica `mock-o1-adaptor` blocked the drain. The chart now makes a budget only for a module with more than one pod.
 
 Not measured: a hard node loss, a partition between modules and Postgres, PgBouncer failover.
