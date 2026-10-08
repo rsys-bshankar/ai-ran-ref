@@ -342,7 +342,7 @@ who can ask, are in `r1-termination/README.md` and `HISTORY.md` PR-SEC-9) and se
 |---|---|---|---|
 | SEC-4.4 | Same for GUI admin password and session key | Same | – |
 | SEC-4.5 | Same for the module invoker secret (`module_identity.invoker_secret`, or `SMO_INVOKER_SECRET`, which already overrides it) | Same | – |
-| SEC-4.7 | External Secrets or Vault example manifest | Example applies on a lab cluster | OPS-2.3 |
+| SEC-4.7 | External Secrets or Vault example manifest | Built (`deploy/external-secrets`, checked against the chart by a test); **not yet applied on a cluster**: it applies on a lab cluster (the owner, or CI with a cluster, confirms) | OPS-2.3 |
 
 #### PR-SEC-5 — Signing keys and token caching
 
@@ -1260,8 +1260,7 @@ Why: the sidebar is a fixed list and each of the four sample rApps has a hand-wr
 |---|---|---|---|---|
 | STD-1 | STD-1.1 | Close the §3 items (`SA-MLMR-1/6/7`, `SA-FOCOM-6/7`, `SA-RANOAM-1/4/8`, `SA-O1-4`); do not duplicate them here | §3 empty | – |
 | STD-2 | STD-2.2 | List newer releases and what changes for the SMO (`specs/README.md` has the release table and a minimal list of what is certain; everything else there says "not assessed") | List with item IDs | – |
-| STD-3 | STD-3.1 | Map each interface to the O-RAN test specification | Table | – |
-| STD-3 | STD-3.2 | Plugfest plan | One page | STD-3.1 |
+| STD-3 | STD-3.3 | The plugfest itself: run `docs/PLUGFEST.md` with a counterparty, settle its "to be confirmed against the current O-RAN specification release" cells, record the result (STD-3.1 table and STD-3.2 plan are written, `HISTORY.md` PR-STD-3) | A recorded result for one interface | A counterparty; the owner's answers to the open questions in `docs/PLUGFEST.md` |
 | STD-4 | STD-4.2 | Retention per item (the inventory is `docs/PRIVACY.md`; its retention column says "none" for most rows) | Linked to `DB-3` | DB-3.1 |
 | STD-4 | STD-4.4 | Access logging for personal data reads | Rows appear | SEC-11.2 |
 | STD-4 | STD-4.5 | Erasure beyond the account (`docs/PRIVACY.md` section 4): write an opaque per-user id instead of the username in `gui_audit_log` and in the module columns that take `smo-gui:<username>` / `ack_user_id`, so deleting the user severs the link and the rows stay; or a tested SQL procedure per table. Decide first whether the audit rows are kept with a stated period instead | A deleted user's name appears in no table; a test shows it | – |
