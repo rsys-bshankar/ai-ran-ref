@@ -672,6 +672,42 @@ jobs:
         working-directory: smo
         run: docker compose --profile netconf-lab down -v
 
+  o1-conformance:
+    name: O1 adaptor conformance kit passes the mock adaptor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: smo/requirements/*.txt
+
+      - name: Install the runtime dependencies
+        working-directory: smo
+        run: pip install --require-hashes -r requirements/runtime.txt && pip install --no-deps -e shared
+
+      # PR-SB-9.7: the kit is run over real HTTP against the mock adaptor as a process (the unit tests run it in process). Twice, against the same process: a run
+      # leaves objects behind and the second must not meet them.
+      - name: Start the mock adaptor and run the kit twice
+        working-directory: smo
+        run: |
+          (cd mock-o1-adaptor && PYTHONPATH=.:../shared nohup python -m uvicorn app.main:app --port 8000 > "$RUNNER_TEMP/mock.log" 2>&1 &)
+          for i in $(seq 1 30); do curl -fsS -o /dev/null http://localhost:8000/live && break; sleep 1; done
+          python -m conformance.o1 --adaptor http://localhost:8000 --out "$RUNNER_TEMP/o1-conformance"
+          python -m conformance.o1 --adaptor http://localhost:8000 --protocol both
+          { echo "### O1 adaptor conformance, the mock adaptor"; echo; cat "$RUNNER_TEMP/o1-conformance.md"; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: The report is kept
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: o1-conformance-report
+          path: ${{ runner.temp }}/o1-conformance.*
+          if-no-files-found: warn
+
   migration-postgres:
     name: Consolidated migration applies to real Postgres
     runs-on: ubuntu-latest

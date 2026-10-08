@@ -9,7 +9,7 @@
 | Depends on (over R1) | none |
 | Called by | RAN NF OAM (`POST /edit-config` for both `edit-config` and `get-config`, `/restconf/data/...` for a RESTCONF ME, `GET /capabilities` for vendor discovery); tests and demos (introspection and fault routes) |
 | Database tables | none (in-memory dicts) |
-| Unit tests | 25 passed (`tests/`, standalone) |
+| Unit tests | 40 passed (`tests/`, standalone), among them the O1 conformance kit run against this mock and against faulty fakes |
 | Status | Done (NETCONF and RESTCONF, `OI-1-cm-sync-restconf`). Deliberately not a NETCONF / RESTCONF / YANG implementation (see [section 2.8](#28-limits-and-open-items)) |
 
 ## 1. High-level design (HLD)
@@ -174,6 +174,7 @@ An autouse fixture resets state with `DELETE /state`.
 
 - The RAN NF OAM <-> mock round trip (dispatch, retry on `TIMEOUT`, `RPC_ERROR` without retry, the same over RESTCONF, `IGNORE_WRITE` detected by read-back, vendor onboarding discovery, rApp closed loops): `tests/` of `ran-nf-oam` use their own stubs; the real round trip is in `tests_integration/`.
 - Real NETCONF / RESTCONF behaviour: not implemented.
+- The O1 conformance kit (`../conformance/README.md`, `conformance/o1`) is the specification of what an adaptor, this mock included, must do for RAN NF OAM: `tests/test_conformance_kit.py` runs it against this mock (all 24 checks pass), against fakes that each break one thing, and against this mock with an `IGNORE_WRITE` fault; CI job `o1-conformance` runs it over HTTP against this mock as a process.
 
 ## 4. References
 
