@@ -51,3 +51,158 @@ runtimeProfiles:
     cpu: 1
     memory: 2Gi
     gpu: 0
+
+# The page the operator console draws for this rApp (PR-GUI-8, docs/adr/0004-operator-ui-declaration.md): the routes below are this rApp's own API,
+# read and changed only through the GUI backend, which allows exactly these routes. The page needs no code in the console.
+operatorUi:
+  version: 1
+  panels:
+  - id: instance
+    title: Instance
+    kind: keyValues
+    items:
+    - label: Managed element
+      path: managedElementRef
+    - label: Autonomy mode
+      path: autonomyMode
+      format: badge
+    - label: Baseline tilt
+      path: baselineTilt
+      format: number
+      unit: 1/10°
+    - label: Baseline power
+      path: baselinePower
+      format: number
+      unit: dBm
+    - label: Model
+      path: modelId
+      format: id
+    - label: Model version
+      path: modelVersion
+      format: number
+    - label: Artifact version
+      path: artifactVersion
+      format: number
+    - label: EnergySaving instance
+      path: energySavingInstanceId
+      format: id
+    - label: Mobility instance
+      path: mobilityInstanceId
+      format: id
+    source:
+      path: /instances/{instanceId}
+      refreshSeconds: 30
+  - id: controls
+    title: Closed loop
+    kind: actions
+    actions:
+    - id: evaluate
+      label: Evaluate now
+      method: POST
+      path: /instances/{instanceId}/evaluate
+      success: Closed-loop pass complete
+      tone: primary
+    - id: reconcile
+      label: Reconcile approvals
+      method: POST
+      path: /instances/{instanceId}/reconcile
+      success: ASSIST dispatches reconciled
+  - id: cells
+    title: Cells
+    kind: table
+    rows: cells
+    rowKey: cellId
+    columns:
+    - path: cellId
+      label: Cell
+    - path: state
+      label: State
+      format: badge
+    - path: digitalTilt
+      label: Tilt
+      format: number
+      unit: 1/10°
+    - path: configuredMaxTxPower
+      label: Power
+      format: number
+      unit: dBm
+    - path: excessTrend
+      label: Excess
+      format: sparkline
+      y: v
+    - path: latestDecision.shares.WEAK_COVERAGE
+      label: Weak coverage
+      format: percent
+    - path: latestDecision.shares.OVERSHOOT
+      label: Overshoot
+      format: percent
+    - path: latestDecision.shares.PILOT_POLLUTION
+      label: Pilot pollution
+      format: percent
+    - path: latestDecision.decision
+      label: Decision
+      format: badge
+    - path: latestDecision.reason
+      label: Reason
+    - path: latestDecision.outcome
+      label: Outcome
+      format: badge
+    empty: No managed cells.
+    rowDetail:
+      title: Cell {row.cellId}
+      blocks:
+      - kind: chart
+        title: Weak coverage (%)
+        type: line
+        points: shareTrend
+        x: t
+        y: WEAK_COVERAGE
+      - kind: chart
+        title: Overshoot (%)
+        type: line
+        points: shareTrend
+        x: t
+        y: OVERSHOOT
+      - kind: chart
+        title: Pilot pollution (%)
+        type: line
+        points: shareTrend
+        x: t
+        y: PILOT_POLLUTION
+      - kind: json
+        title: Latest execution (audit trail)
+        path: latestDecision
+        empty: No decision yet.
+      - kind: table
+        title: History
+        columns:
+        - path: observedAt
+          label: Observed
+          format: datetime
+        - path: fromSetting
+          label: From setting
+        - path: toSetting
+          label: To setting
+        - path: decision
+          label: Decision
+          format: badge
+        - path: reason
+          label: Reason
+        - path: outcome
+          label: Outcome
+          format: badge
+        - path: executionId
+          label: Execution
+          format: id
+        rows: items
+        empty: No decisions.
+        source:
+          path: /instances/{instanceId}/decisions
+          query:
+            cell_id: '{row.cellId}'
+            limit: 20
+    source:
+      path: /instances/{instanceId}/dashboard
+      query:
+        points: 48
+      refreshSeconds: 15

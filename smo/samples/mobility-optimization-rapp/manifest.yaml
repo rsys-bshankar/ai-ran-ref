@@ -50,3 +50,149 @@ runtimeProfiles:
     cpu: 1
     memory: 2Gi
     gpu: 0
+
+# The page the operator console draws for this rApp (PR-GUI-8, docs/adr/0004-operator-ui-declaration.md): the routes below are this rApp's own API,
+# read and changed only through the GUI backend, which allows exactly these routes. The page needs no code in the console.
+operatorUi:
+  version: 1
+  panels:
+  - id: instance
+    title: Instance
+    kind: keyValues
+    items:
+    - label: Managed element
+      path: managedElementRef
+    - label: Autonomy mode
+      path: autonomyMode
+      format: badge
+    - label: Baseline CIO
+      path: baselineCio
+      format: number
+      unit: dB
+    - label: DMRO bounds
+      path: dmroBounds
+    - label: Model
+      path: modelId
+      format: id
+    - label: Model version
+      path: modelVersion
+      format: number
+    - label: Artifact version
+      path: artifactVersion
+      format: number
+    - label: EnergySaving instance
+      path: energySavingInstanceId
+      format: id
+    - label: Traffic Steering instance
+      path: trafficSteeringInstanceId
+      format: id
+    source:
+      path: /instances/{instanceId}
+      refreshSeconds: 30
+  - id: controls
+    title: Closed loop
+    kind: actions
+    actions:
+    - id: evaluate
+      label: Evaluate now
+      method: POST
+      path: /instances/{instanceId}/evaluate
+      success: Closed-loop pass complete
+      tone: primary
+    - id: reconcile
+      label: Reconcile approvals
+      method: POST
+      path: /instances/{instanceId}/reconcile
+      success: ASSIST dispatches reconciled
+  - id: relations
+    title: Neighbour relations
+    kind: table
+    rows: relations
+    rowKey: relation
+    columns:
+    - path: source
+      label: Source
+    - path: target
+      label: Target
+    - path: state
+      label: State
+      format: badge
+    - path: cio
+      label: CIO
+      format: number
+      unit: dB
+    - path: rateTrend
+      label: Failure rate
+      format: sparkline
+      y: v
+    - path: latestDecision.prediction.model.rate
+      label: Rate
+      format: percent
+    - path: latestDecision.prediction.model.futureRate
+      label: Predicted
+      format: percent
+    - path: latestDecision.prediction.model.recommendation
+      label: Recommendation
+      format: badge
+    - path: latestDecision.decision
+      label: Decision
+      format: badge
+    - path: latestDecision.reason
+      label: Reason
+    - path: latestDecision.outcome
+      label: Outcome
+      format: badge
+    empty: No managed relations.
+    rowDetail:
+      title: Relation {row.source} → {row.target}
+      blocks:
+      - kind: chart
+        title: Mobility failure rate (%)
+        type: line
+        points: rateTrend
+        x: t
+        y: v
+      - kind: json
+        title: Latest execution (audit trail)
+        path: latestDecision
+        empty: No decision yet.
+      - kind: table
+        title: History
+        columns:
+        - path: observedAt
+          label: Observed
+          format: datetime
+        - path: rate
+          label: Rate
+          format: percent
+        - path: fromCio
+          label: From CIO
+          format: number
+          unit: dB
+        - path: toCio
+          label: To CIO
+          format: number
+          unit: dB
+        - path: decision
+          label: Decision
+          format: badge
+        - path: reason
+          label: Reason
+        - path: outcome
+          label: Outcome
+          format: badge
+        - path: executionId
+          label: Execution
+          format: id
+        rows: items
+        empty: No decisions.
+        source:
+          path: /instances/{instanceId}/decisions
+          query:
+            relation: '{row.relation}'
+            limit: 20
+    source:
+      path: /instances/{instanceId}/dashboard
+      query:
+        points: 48
+      refreshSeconds: 15

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { api } from "../api/client";
+import { usePins } from "../api/rapps";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast, type Role } from "../auth/rbac";
 import { Field, Modal } from "./ui";
@@ -16,15 +17,29 @@ export const NAV: { to: string; label: string; icon: string; minRole?: Role }[] 
   { to: "/alarms", label: "Alarms", icon: "⚠" },
   { to: "/kpis", label: "KPIs & Assurance", icon: "∿" },
   { to: "/policy", label: "Intents", icon: "⚖" },
-  { to: "/energy-saving", label: "Energy Saving", icon: "☾" },
-  { to: "/mobility", label: "Mobility", icon: "⇆" },
-  { to: "/coverage", label: "Coverage", icon: "◎" },
-  { to: "/traffic-steering", label: "Traffic Steering", icon: "⇶" },
   { to: "/infrastructure", label: "Infrastructure", icon: "▤" },
   { to: "/data", label: "Data & Exposure", icon: "⇄" },
   { to: "/security", label: "Account security", icon: "⚿" },
   { to: "/admin", label: "Admin", icon: "⚙", minRole: "admin" },
 ];
+
+/** The rApps the user pinned (at most 5, kept by the GUI backend), listed under the one "rApps" entry. */
+export function PinnedRapps() {
+  const pins = usePins();
+  const items = pins.data?.items ?? [];
+  if (items.length === 0) return null;
+  return (
+    <ul className="pins" aria-label="Pinned rApps">
+      {items.map((p) => (
+        <li key={p.instanceId}>
+          <NavLink to={`/rapps/${p.instanceId}`} className={({ isActive }) => (isActive ? "nav sub active" : "nav sub")} title={`${p.name ?? ""} ${p.version ?? ""} ${p.state ?? ""}`.trim()}>
+            <span className="nav-icon" aria-hidden>↳</span>{p.name ?? `${p.instanceId.slice(0, 8)}…`}
+          </NavLink>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function Layout() {
   const { me, logout } = useAuth();
@@ -40,6 +55,7 @@ export function Layout() {
               <NavLink to={n.to} end={n.to === "/"} className={({ isActive }) => (isActive ? "nav active" : "nav")}>
                 <span className="nav-icon" aria-hidden>{n.icon}</span>{n.label}
               </NavLink>
+              {n.to === "/rapps" && !me.mfaEnrolmentRequired && <PinnedRapps />}
             </li>
           ))}
         </ul>

@@ -435,9 +435,9 @@ def test_the_guards_block_every_cell_and_the_audit_trail_says_why(client, platfo
     platform.guards = [{"cellId": "301", "cellClass": "EMERGENCY"}]
     platform.alarms = [{"alarmId": "al-1", "severity": "critical", "probableCause": "x", "managedFunctionRef": "NRCellDU=302"}]
     platform.config["NRCellDU=303"] = {"administrativeState": "LOCKED"}
-    r1.paths["/energy-saving-rapp/instances/es-1/cells"] = (200, {"items": [{"cellId": "304", "state": "SLEEP",
+    r1.paths["/rapps/es-1/operator/instances/es-1/cells"] = (200, {"items": [{"cellId": "304", "state": "SLEEP",
                                                                           "lastUnlockedAt": "2026-09-04T11:50:00Z"}]})
-    r1.paths["/mobility-optimization-rapp/instances/mo-1/relations"] = (200, {"items": [
+    r1.paths["/rapps/mo-1/operator/instances/mo-1/relations"] = (200, {"items": [
         {"relation": "301-302", "source": "301", "target": "302", "state": "OBSERVING"},
         {"relation": "303-304", "source": "303", "target": "304", "state": "STEADY"}]})
     body = _evaluate(client, instance_id)

@@ -16,4 +16,6 @@ shared/smo_shared/retention.py:module-state:_warned  # the UTC day this process 
 shared/smo_shared/metrics.py:module-state:_query_gauges  # registry of the scrape-time gauges so each registers once per process; each reads the database when scraped, the source of truth is Postgres (PR-OBS-4)
 shared/smo_shared/killswitch.py:module-state:_cache  # a few-second cache of the kill-switch table (per invoker, bounded, refilled from the database): each replica may hold a different, equally valid copy; the source of truth is rapp_kill (AI-10.4)
 shared/smo_shared/killswitch.py:module-state:_lock  # guards that cache only
+r1-termination/app/operator_api.py:module-state:_cache  # a few-second cache (R1_OPERATOR_API_CACHE_SECONDS) of the operator API base each rApp instance registered, per instance, bounded, refilled from rApp Management: each replica may hold a different, equally valid copy; the source of truth is rapp_instance.operator_api_base (GUI-8.3)
+r1-termination/app/operator_api.py:module-state:_lock  # guards that cache only
 shared/smo_shared/outbox.py:background-work:ThreadPoolExecutor  # one short-lived pool per drain call, only so a destination that does not answer does not hold up the others; the rows are claimed in Postgres before and recorded after, nothing is kept between calls (V-9)

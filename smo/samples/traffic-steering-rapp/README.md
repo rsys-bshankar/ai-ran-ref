@@ -13,7 +13,7 @@ cell individual offset.
 | O1 targets | `NRFreqRelation.cellReselectionPriority` (idle), `NRCellRelation.cellIndividualOffset` (connected) |
 | Datasets | `LOAD_PERFORMANCE` (live, training), `LOAD_PERFORMANCE_SIM` (Digital Twin, emulation; published by this rApp) |
 | Autonomy modes | SHADOW, ASSIST, AUTONOMOUS |
-| R1 route | `/traffic-steering-rapp` (r1-termination, `TRAFFIC_STEERING_RAPP_URL`) |
+| Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [25 Traffic Steering closed loop](../../docs/call-flows/25-traffic-steering-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 27](../../DEMO_RUNBOOK.md) (Demo 00-11) |
 | Unit tests | 55 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
@@ -86,6 +86,7 @@ CIO envelope. This rApp publishes its observed relations at
 | `app/producer.py` | Sample load model and `LOAD_PERFORMANCE_SIM` producer |
 | `app/model/` | `SteeringModel.py` (forecast, planner), `series.py` (score), one logic file per execution mode |
 | `demo.py`, `tests/` | Demo 00-11 script; engine, model and route unit tests |
+| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, and reads only fields its own answers carry (4 tests) |
 | `manifest.yaml`, `capabilities.yaml`, `Definitions/`, `TOSCA-Metadata/` | Package content |
 
 ## Package

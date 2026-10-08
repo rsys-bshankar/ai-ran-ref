@@ -66,6 +66,7 @@ def onboard(mesh):
 
 def create_instance(mesh, package_id, mode, actuator="ADMINISTRATIVE_STATE", cells=CELLS):
     created = ok(mesh["rapp-mgmt"].post("/instances", json={
+        "operatorApiBase": "http://energy-saving-rapp:8000",     # where the gateway's /rapps/{instanceId}/operator/... reaches this rApp (GUI-8.3)
         "packageId": package_id, "autonomyMode": mode,
         "config": {"managedElementRef": ME, "cells": cells, "actuator": actuator},
         "regionScope": {"objectInstance": ME, "cells": cells}}))

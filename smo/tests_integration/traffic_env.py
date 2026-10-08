@@ -80,6 +80,7 @@ def region(neighbours, layers) -> list[str]:
 def create_instance(mesh, package_id, mode, neighbours, layers, me=ME, **config):
     cells = [{"cellId": c, "layer": layer} for c, layer in layers.items()]
     created = ok(mesh["rapp-mgmt"].post("/instances", json={
+        "operatorApiBase": "http://traffic-steering-rapp:8000",     # where the gateway's /rapps/{instanceId}/operator/... reaches this rApp (GUI-8.3)
         "packageId": package_id, "autonomyMode": mode, "config": {"managedElementRef": me, "cells": cells, **config},
         "regionScope": {"objectInstance": me, "cells": region(neighbours, layers)}}))
     return created["instanceId"]

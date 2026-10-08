@@ -21,6 +21,10 @@ from smo_shared.metrics import count_by, install_metrics, register_query_gauge
 from smo_shared.health import database_check, install_health, sme_token_check
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error, illegal_transition_error
+from smo_shared import roles
+from smo_shared.errors import problem
+from smo_shared.invoker import INVOKER_ID_HEADER
+from smo_shared.webhook import normalise_base_url
 from smo_shared.r1_client import R1Client  # noqa: F401 — the class every R1 call here uses (tests patch it as app.main.R1Client)
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
@@ -59,6 +63,8 @@ class CreateInstanceRequest(BaseModel):
     # same shape config already is.
     autonomyMode: Literal["AUTONOMOUS", "ASSIST", "SHADOW"] = "SHADOW"
     regionScope: dict | None = None
+    # PR-GUI-8: where the new instance's operator API is reached; an operator may give it here, the instance can register it later (PUT .../operator-api)
+    operatorApiBase: str | None = None
 
 
 class UpgradeRequest(BaseModel):
@@ -129,10 +135,22 @@ def create_instance(body: CreateInstanceRequest, request: Request, db: Session =
     TERMINATE hands it back to NFO. The same path provisions an upgrade's
     replacement instance (provisioning.py).
     """
+    base = _checked_operator_api_base(body.operatorApiBase) if body.operatorApiBase is not None else None
     inst = provision_instance(db, body.packageId, configuration=body.config, autonomy_mode=body.autonomyMode,
                               region_scope=body.regionScope)
+    inst.operator_api_base = base
     db.commit()
     return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id}
+
+
+def _checked_operator_api_base(value: str) -> str:
+    """The base URL as it will be stored, or 422: http(s) only, no credentials, query or fragment, and not a loopback, link-local or metadata address
+    (smo_shared.webhook.normalise_base_url, the guard every caller-supplied destination passes)."""
+    base = normalise_base_url(value)
+    if base is None:
+        raise problem(422, "OPERATOR_API_BASE_INVALID", "operatorApiBase must be an http or https URL without credentials, query or fragment, "
+                                                         "and not a loopback, link-local or metadata address")
+    return base
 
 
 def _on_bootstrap(inst) -> None:
@@ -495,6 +513,54 @@ def report_fault(instance_id: uuid.UUID, severity: str, description: str = "", d
     return {"status": "recorded", "instanceState": inst.state}
 
 
+class OperatorApiRequest(BaseModel):
+    operatorApiBase: str
+
+
+def _own_instance_or_operator(request: Request, inst: RAppInstance) -> None:
+    """An rApp may register only for itself: the invoker id the gateway stamped must be this instance's credential. Any other role (the
+    operator's GUI, an SMO module, a call that did not come through the gateway) is trusted as elsewhere in this module."""
+    if request.headers.get(roles.ROLE_HEADER) == roles.ROLE_RAPP and (not inst.oauth_client_id or request.headers.get(INVOKER_ID_HEADER) != inst.oauth_client_id):
+        raise problem(403, "NOT_THIS_INSTANCE", "a rApp may register the operator API of its own instance only")
+
+
+def _serves(inst: RAppInstance) -> bool:
+    return inst.state != InstanceState.UNDEPLOYED
+
+
+@app.put("/instances/{instance_id}/operator-api")
+def register_operator_api(instance_id: uuid.UUID, body: OperatorApiRequest, request: Request, db: Session = Depends(get_session)):
+    """GUI-8.3: register where this instance's operator API is reached (docs/adr/0004-operator-ui-declaration.md, 4): the base URL R1 Termination
+    resolves `/rapps/{instanceId}/operator/...` to. Accepted from an operator, or from the instance itself (a caller with the rApp role whose invoker
+    id is this instance's `oauthClientId`; another rApp is refused, 403). The URL must be http or https, carry no credentials, query or fragment and
+    not be a loopback, link-local or metadata address (422); the same check runs again before every call the gateway makes. Replaces an earlier value.
+    A terminated instance is refused with 409: it has nothing to serve."""
+    inst = _load_instance(db, instance_id)
+    _own_instance_or_operator(request, inst)
+    if not _serves(inst):
+        raise framework_error(FrameworkError.LIFECYCLE_ILLEGAL_TRANSITION, detail=f"RAppInstance {instance_id} is {inst.state}: it has no operator API to register")
+    inst.operator_api_base = _checked_operator_api_base(body.operatorApiBase)
+    db.commit()
+    return {"instanceId": str(inst.instance_id), "operatorApiBase": inst.operator_api_base}
+
+
+@app.delete("/instances/{instance_id}/operator-api", status_code=204)
+def clear_operator_api(instance_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    """GUI-8.3: forget the registered operator API (the instance's declared page then shows "not registered"). Same callers as the PUT; idempotent."""
+    inst = _load_instance(db, instance_id)
+    _own_instance_or_operator(request, inst)
+    inst.operator_api_base = None
+    db.commit()
+
+
+@app.get("/instances/{instance_id}/operator-api")
+def get_operator_api(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """GUI-8.3: the registered operator API base of an instance (null: none), with its state. What R1 Termination reads to resolve the
+    `/rapps/{instanceId}/operator/...` prefix. A terminated instance answers null: it has nothing to serve."""
+    inst = _load_instance(db, instance_id)
+    return {"instanceId": str(inst.instance_id), "state": inst.state, "operatorApiBase": inst.operator_api_base if _serves(inst) else None}
+
+
 @app.get("/instances")
 def list_instances(state: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                     db: Session = Depends(get_session)):
@@ -506,7 +572,7 @@ def list_instances(state: str | None = None, limit: int = PageLimit, offset: int
         stmt = stmt.where(RAppInstance.state == state)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"instanceId": str(i.instance_id), "packageId": str(i.package_id), "state": i.state,
-             "autonomyMode": i.autonomy_mode} for i in page["items"]]}
+             "autonomyMode": i.autonomy_mode, "operatorApiBase": i.operator_api_base} for i in page["items"]]}
 
 
 @app.get("/instances/{instance_id}")
@@ -538,7 +604,7 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
         "pendingUpgradeInstanceId": str(inst.pending_upgrade_instance_id) if inst.pending_upgrade_instance_id else None,
         "smeServiceIds": inst.sme_service_ids,
         "autonomyMode": inst.autonomy_mode, "regionScope": inst.region_scope,
-        "lastTeardown": inst.last_teardown,
+        "lastTeardown": inst.last_teardown, "operatorApiBase": inst.operator_api_base,
     }
 
 

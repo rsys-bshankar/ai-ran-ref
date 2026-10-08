@@ -205,11 +205,16 @@ what Onboarding validates) is documented in [RAPP_PACKAGING.md](RAPP_PACKAGING.m
 rApps entry and a directory of every rApp; what a rApp's page shows is not coded in the GUI but declared by the rApp's package
 (`operatorUi` in `manifest.yaml`: ordered panels of table, key-values, KPI, chart and action kinds, each bound to a GET route of the rApp's
 operator API) and drawn by a generic renderer, so onboarding a rApp makes its page appear without a GUI build. Onboarding validates the
-declaration (`smo_shared/operator_ui.py`) and stores it in `aiCapabilities.operatorUi`. The rApp instance registers an `operatorApiBase`; the
-GUI backend reaches the declared routes through the R1 gateway, and its permission to call one is derived from the declaration: exactly the
-panels' sources and the actions' routes, reads for a viewer, changes for an operator, every change audited, anything else refused. A rApp does
-not ship JavaScript or an iframe. Today only the format, the check and the SDK helper exist (stage 1); the GUI backend proxy, the pages and the
-migration of the four samples are the open steps `GUI-8.3` to `8.7`.
+declaration (`smo_shared/operator_ui.py`) and stores it in `aiCapabilities.operatorUi`. The rApp instance has an `operatorApiBase`
+(a nullable column of `rapp_instance`, registered by the instance or an operator, checked like every caller-supplied destination); the R1 gateway resolves
+the dynamic prefix `/rapps/{instanceId}/operator/...` to it (cached for seconds, so a rApp onboarded at run time is reachable with no change to the
+gateway's table), forwarding no credentials of the caller. The GUI backend reaches the declared routes through that prefix, and its permission to
+call one is derived from the declaration: exactly the panels' sources, the row drawers' sources and the actions' routes for *that* instance, reads for a viewer,
+changes for an operator (nobody, for a `readOnly` page), the body limited to the declared inputs and fixed values (`"{user}"` is the signed-in user), every
+change audited before it is sent and after it answers, anything else refused. The browser never sees the rApp's address. A rApp does not ship
+JavaScript or an iframe. The four sample rApps' hand-written pages, static sidebar entries, static gateway routes and static permission rules are gone;
+the browser check against the compose stack (`GUI-8.7`) is the one open step. **Peer coordination** goes the same way: a rApp reads another's
+published cells or relations at `/rapps/{peerInstance}/operator/...` (reads are open to a valid token; a rApp's change there is refused).
 
 ## R1 API conventions
 

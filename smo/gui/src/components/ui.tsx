@@ -115,7 +115,7 @@ export function KeyValue({ items }: { items: [ReactNode, ReactNode][] }) {
 }
 
 export function Json({ value }: { value: unknown }) {
-  return <pre className="json">{JSON.stringify(value, null, 2)}</pre>;
+  return <pre className="json" tabIndex={0}>{JSON.stringify(value, null, 2)}</pre>;
 }
 
 export function ErrorBox({ error }: { error: unknown }) {
@@ -133,7 +133,7 @@ export function DataTable<T>({ rows, columns, rowKey, loading, error, empty = "N
 }) {
   if (error) return <ErrorBox error={error} />;
   return (
-    <div className="table-wrap">
+    <div className="table-wrap" tabIndex={0}>
       <table className="table">
         <thead><tr>{columns.map((c, i) => <th key={i} className={c.className}>{c.header}</th>)}</tr></thead>
         <tbody>
@@ -161,7 +161,7 @@ export function Drawer({ title, onClose, children }: { title: ReactNode; onClose
     <div className="overlay" onClick={onClose}>
       <aside className="drawer" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="drawer-head"><h2>{title}</h2><button className="btn ghost" onClick={onClose} aria-label="Close">✕</button></div>
-        <div className="drawer-body">{children}</div>
+        <div className="drawer-body" tabIndex={0}>{children}</div>
       </aside>
     </div>
   );

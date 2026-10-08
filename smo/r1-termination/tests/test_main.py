@@ -59,11 +59,7 @@ def test_route_table_covers_every_module():
         "/sme", "/dme", "/dme-push", "/dme-pull", "/onboarding", "/rapp-mgmt",
         "/ran-nf-oam", "/nfo", "/focom", "/aimgf", "/mlmr", "/mllf",
         "/ran-analytics", "/mdaf", "/intent-service", "/so-smos", "/sa-smos",
-        "/energy-saving-rapp",  # Wave 10.1: the reference rApp's own northbound API
-        "/mobility-optimization-rapp",  # Wave 10.2
-        "/coverage-optimization-rapp",  # Wave 10.3
-        "/traffic-steering-rapp",  # Wave 10.4
-    }
+    }   # a rApp's own operator API is the dynamic prefix /rapps/{instanceId}/operator (test_operator_api.py), not a route of this table
     assert set(ROUTES.keys()) == expected_prefixes
 
 

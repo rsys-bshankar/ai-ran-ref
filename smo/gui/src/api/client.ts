@@ -68,11 +68,13 @@ export interface RequestOptions {
   json?: unknown;
   body?: BodyInit;
   signal?: AbortSignal;
+  /** Extra request headers (the declared-action id of a rApp page). The content type, the accept type and the CSRF token are set here. */
+  headers?: Record<string, string>;
 }
 
 export async function api<T = unknown>(path: string, opts: RequestOptions = {}): Promise<T> {
   const method = (opts.method ?? "GET").toUpperCase();
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = { Accept: "application/json", ...opts.headers };
   let body = opts.body;
   if (opts.json !== undefined) {
     headers["Content-Type"] = "application/json";

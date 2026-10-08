@@ -79,18 +79,6 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("DELETE", "/ran-nf-oam/vendor-capabilities/acme", "admin"),
     ("PUT", "/ran-nf-oam/managed-entities/me-1/cells/1/guards", "admin"),
     ("GET", "/ran-nf-oam/cell-guards", "viewer"),
-    # Wave 10.1: the EnergySaving rApp's operator API
-    ("GET", "/energy-saving-rapp/instances/i/dashboard", "viewer"),
-    ("POST", "/energy-saving-rapp/instances/i/evaluate", "operator"),
-    ("POST", "/energy-saving-rapp/instances/i/lifecycle/train", "operator"),
-    ("POST", "/energy-saving-rapp/instances/i/cells/101/override", "operator"),
-    ("DELETE", "/energy-saving-rapp/instances/i/cells/101/override", "operator"),
-    ("POST", "/energy-saving-rapp/sim-producer/publish", "admin"),
-    # Wave 10.2: the Mobility Optimization rApp
-    ("GET", "/mobility-optimization-rapp/instances/i/dashboard", "viewer"),
-    ("POST", "/mobility-optimization-rapp/instances/i/evaluate", "operator"),
-    ("POST", "/mobility-optimization-rapp/instances/i/lifecycle/deploy", "operator"),
-    ("POST", "/mobility-optimization-rapp/sim-producer/publish", "admin"),
     # AI-10.x: the safeguards of an rApp
     ("GET", "/rapp-mgmt/instances/i/safeguards", "viewer"),
     ("GET", "/ran-nf-oam/safeguard-refusals", "viewer"),
@@ -115,16 +103,6 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/ran-nf-oam/kpi-definitions/standard", "admin"),
     ("PUT", "/ran-nf-oam/kpi-schedules/s", "admin"),
     ("DELETE", "/ran-nf-oam/kpi-schedules/s", "admin"),
-    # Wave 10.3: the Coverage Optimization rApp
-    ("GET", "/coverage-optimization-rapp/instances/i/dashboard", "viewer"),
-    ("POST", "/coverage-optimization-rapp/instances/i/evaluate", "operator"),
-    ("POST", "/coverage-optimization-rapp/instances/i/lifecycle/train", "operator"),
-    ("POST", "/coverage-optimization-rapp/sim-producer/register", "admin"),
-    # Wave 10.4: the Traffic Steering rApp
-    ("GET", "/traffic-steering-rapp/instances/i/relations", "viewer"),
-    ("POST", "/traffic-steering-rapp/instances/i/evaluate", "operator"),
-    ("POST", "/traffic-steering-rapp/instances/i/lifecycle/emulate", "operator"),
-    ("POST", "/traffic-steering-rapp/sim-producer/publish", "admin"),
 ])
 def test_minimum_role_per_route(method, path, minimum):
     order = ["viewer", "operator", "admin"]

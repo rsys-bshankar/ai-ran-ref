@@ -446,8 +446,8 @@ def test_the_source_guards_block_a_cell_and_the_audit_trail_says_why(client, pla
     assert d["decision"] == "NO_CHANGE" and d["reason"] == "SAFETY_BLOCKED:PROTECTED_CELL" and platform.dispatches == []
     # an asleep source (published by the EnergySaving rApp) is blocked too, as is one the Coverage rApp is observing
     platform.guards = []
-    r1.paths["/energy-saving-rapp/instances/es-1/cells"] = (200, {"items": [{"cellId": "401", "state": "SLEEP", "lastUnlockedAt": "2026-09-04T11:50:00Z"}]})
-    r1.paths["/coverage-optimization-rapp/instances/co-1/cells"] = (200, {"items": [{"cellId": "401", "state": "OBSERVING"}]})
+    r1.paths["/rapps/es-1/operator/instances/es-1/cells"] = (200, {"items": [{"cellId": "401", "state": "SLEEP", "lastUnlockedAt": "2026-09-04T11:50:00Z"}]})
+    r1.paths["/rapps/co-1/operator/instances/co-1/cells"] = (200, {"items": [{"cellId": "401", "state": "OBSERVING"}]})
     d = {x["cellId"]: x for x in _evaluate(client, instance_id)["decisions"]}["401"]
     assert "CELL_ASLEEP" in d["reason"] and "COVERAGE_OBSERVING" in d["reason"] and d["safety"]["esState"] == "SLEEP"
 
@@ -457,7 +457,7 @@ def test_unsuitable_targets_are_excluded_from_the_options(client, platform, r1):
     platform.guards = [{"cellId": "402", "incidentZone": "flood-7"}]
     platform.alarms = [{"alarmId": "al-1", "severity": "critical", "probableCause": "x", "managedFunctionRef": "NRCellDU=411"}]
     platform.config["NRCellDU=412"] = {"administrativeState": "LOCKED"}
-    r1.paths["/mobility-optimization-rapp/instances/mo-1/relations"] = (200, {"items": [
+    r1.paths["/rapps/mo-1/operator/instances/mo-1/relations"] = (200, {"items": [
         {"relation": "401-402", "source": "401", "target": "402", "state": "OBSERVING"}]})
     d = {x["cellId"]: x for x in _evaluate(client, instance_id)["decisions"]}["401"]
     excluded = {(e["target"], e["reason"]) for e in d["safety"]["excluded"] if "target" in e}

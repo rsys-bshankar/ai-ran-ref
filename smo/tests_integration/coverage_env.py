@@ -70,6 +70,7 @@ def topology(loaded_apps, cells=None) -> dict[str, list[str]]:
 def create_instance(mesh, package_id, mode, me=ME, cells=None, **config):
     cells = cells or ["301", "302", "303", "304"]
     created = ok(mesh["rapp-mgmt"].post("/instances", json={
+        "operatorApiBase": "http://coverage-optimization-rapp:8000",     # where the gateway's /rapps/{instanceId}/operator/... reaches this rApp (GUI-8.3)
         "packageId": package_id, "autonomyMode": mode, "config": {"managedElementRef": me, "cells": cells, **config},
         "regionScope": {"objectInstance": me, "cells": cells}}))
     return created["instanceId"]

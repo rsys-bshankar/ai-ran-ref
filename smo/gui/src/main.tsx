@@ -19,11 +19,8 @@ import { Infrastructure } from "./pages/Infrastructure";
 import { Kpis } from "./pages/Kpis";
 import { Login } from "./pages/Login";
 import { Policy } from "./pages/Policy";
-import { EnergySaving } from "./pages/EnergySaving";
-import { Mobility } from "./pages/Mobility";
-import { Coverage } from "./pages/Coverage";
-import { TrafficSteering } from "./pages/TrafficSteering";
 import { Rapps } from "./pages/Rapps";
+import { RappDetail } from "./pages/RappDetail";
 import { Safeguards } from "./pages/Safeguards";
 import { Security } from "./pages/Security";
 import "./styles.css";
@@ -62,15 +59,12 @@ createRoot(document.getElementById("root")!).render(
                 <Route index element={<Dashboard />} />
                 <Route path="flows" element={<Flows />} />
                 <Route path="rapps" element={<Rapps />} />
+                <Route path="rapps/:instanceId" element={<RappDetail />} />
                 <Route path="safeguards" element={<Safeguards />} />
                 <Route path="aiml" element={<Aiml />} />
                 <Route path="alarms" element={<Alarms />} />
                 <Route path="kpis" element={<Kpis />} />
                 <Route path="policy" element={<Policy />} />
-                <Route path="energy-saving" element={<EnergySaving />} />
-                <Route path="mobility" element={<Mobility />} />
-                <Route path="coverage" element={<Coverage />} />
-                <Route path="traffic-steering" element={<TrafficSteering />} />
                 <Route path="infrastructure" element={<Infrastructure />} />
                 <Route path="data" element={<Data />} />
                 <Route path="security" element={<Security />} />

@@ -12,7 +12,7 @@ A Non-RT RIC rApp that predicts sustained low PRB utilisation from O1 PM data, p
 | O1 actuators (per instance) | `NRCellDU.administrativeState` (`LOCKED` / `UNLOCKED`, default) or `CESManagementFunction.energySavingControl` (`TO_BE_ENERGY_SAVING` / `TO_BE_NOT_ENERGY_SAVING`) |
 | Datasets | `PRB_UTILIZATION` (training, validation, inference); `PRB_UTILIZATION_SIM` (emulation, Digital Twin) |
 | Autonomy modes | SHADOW, ASSIST, AUTONOMOUS |
-| R1 route | `/energy-saving-rapp` on R1 Termination (service `energy-saving-rapp:8000`) |
+| Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [22-energy-saving-closed-loop.md](../../docs/call-flows/22-energy-saving-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md](../../DEMO_RUNBOOK.md) section 24 (`demo.py` steps 00-11) |
 | Unit tests | 51 passed (98 % of `app/`) |
@@ -66,6 +66,7 @@ Decision logic (`app/engine.py`, pure functions). Cell states are internal: SERV
 | `app/model/` | `EnergyModel`, `TrainingLogic`, `ValidationLogic`, `EmulationLogic`, `InferenceLogic`, `series` helpers |
 | `demo.py` | Demo steps 00-11 against a running stack |
 | `tests/` | `test_engine.py`, `test_model.py`, `test_routes.py` (the routes, with the SDK replaced by a platform double), `conftest.py` |
+| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, and reads only fields its own answers carry (5 tests) |
 
 ## Package
 
@@ -78,7 +79,7 @@ Layout and field semantics: [RAPP_PACKAGING.md](../../docs/RAPP_PACKAGING.md).
 
 ## Service API
 
-Served on port 8000; reached through R1 Termination at `/energy-saving-rapp`.
+Served on port 8000. R1 Termination reaches it at `/rapps/<instance>/operator/...` once the instance has registered its base URL (`operatorApiBase` in `POST /rapp-mgmt/instances`; `demo.py` and the integration environments pass it). The GUI draws its page from the `operatorUi` at the end of `manifest.yaml` (the worked example of `docs/adr/0004-operator-ui-declaration.md`): the instance block, Evaluate now and Reconcile approvals, and the cells table with a per-cell Override and a drawer (PRB chart, the latest execution, the last 20 decisions). Only those routes are reachable from the GUI; `start`, `lifecycle/*` and `sim-producer/*` are API calls.
 
 | Route | Purpose |
 |---|---|

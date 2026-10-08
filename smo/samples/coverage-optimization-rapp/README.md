@@ -11,7 +11,7 @@ A Non-RT RIC rApp that learns how weak coverage, overshoot and pilot pollution r
 | O1 targets | `CommonBeamformingFunction.digitalTilt` (0.1 degree units, positive = downtilt), `NRSectorCarrier.configuredMaxTxPower` |
 | Datasets | `COVERAGE_PERFORMANCE` (training, validation, inference); `COVERAGE_PERFORMANCE_SIM` (Digital Twin, emulation) |
 | Autonomy modes | SHADOW, ASSIST, AUTONOMOUS |
-| R1 route | `/coverage-optimization-rapp/...` (R1 Termination proxies to this service) |
+| Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [24 Coverage Optimization closed loop](../../docs/call-flows/24-coverage-optimization-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 26](../../DEMO_RUNBOOK.md) (Demo 00-11) |
 | Unit tests | 48 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
@@ -47,7 +47,7 @@ Logic is in `app/engine.py` (guards, bounds, KPI check; no I/O) and `app/model/C
   - `PACING`: cell changed less than 60 minutes ago.
 - **Validation.** RMSE of predicted share changes at most 1.0 and direction accuracy at least 0.85 on held-out history.
 - **Emulation.** At least 90 % of faulty windows get the right move and a healthy cluster gets none.
-- **Peers.** Optional `energySavingInstanceId` and `mobilityInstanceId` in the instance config make it read those rApps' published states over R1 (`/energy-saving-rapp/.../cells`, `/mobility-optimization-rapp/.../relations`).
+- **Peers.** Optional `energySavingInstanceId` and `mobilityInstanceId` in the instance config make it read those rApps' published states over R1 (`/rapps/<instance>/operator/instances/<instance>/cells` and `.../relations`, the operator API that peer instance registered; a peer without one is read as "publishes nothing").
 
 ## Files
 
@@ -62,6 +62,7 @@ Logic is in `app/engine.py` (guards, bounds, KPI check; no I/O) and `app/model/C
 | `app/models.py` | Instance, cell and decision tables |
 | `demo.py` | Demo 00-11 script |
 | `tests/` | Engine, model and route unit tests (routes through the TestClient on SQLite, the SDK replaced by a platform double) |
+| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, and reads only fields its own answers carry (4 tests) |
 | `manifest.yaml`, `capabilities.yaml`, `Definitions/asd.yaml`, `TOSCA-Metadata/` | CSAR package content |
 
 ## Package

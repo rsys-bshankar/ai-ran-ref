@@ -100,8 +100,10 @@ declaration a rApp package carries in `manifest.yaml` (format and limits: [`../d
 | `declared_routes`, `route_allowed`, `required_role`, `operator_ui_json_schema` | Re-exported from `smo_shared.operator_ui`: the `(method, template)` set a declaration allows, the match of a concrete path, viewer or operator by method, and the JSON Schema |
 
 `examples/hello_operator_ui.py` builds a complete minimal package (`PYTHONPATH=sdk:shared python sdk/examples/hello_operator_ui.py`
-writes `hello-operator-ui.csar`) and is what `tests/test_operator_ui.py` checks. The four sample rApps are not changed by it
-(`GUI-8.6` gives them declarations). PyYAML is imported only by `to_yaml` and `add_to_manifest`.
+writes `hello-operator-ui.csar`) and is what `tests/test_operator_ui.py` checks. The four sample rApps declare their pages with it (their manifests end with the block it writes; the Energy Saving one is the ADR's example).
+The package says which routes the GUI may call; **where** the rApp serves them is not in the package: the instance's base URL is registered at rApp Management
+(`PUT /rapp-mgmt/instances/{id}/operator-api`, by the instance when it runs with its own credentials, or `operatorApiBase` when an operator creates the instance), and a rApp that
+reads another's published lists reaches them at `/rapps/{instance}/operator/...` through `R1Client`. PyYAML is imported only by `to_yaml` and `add_to_manifest`.
 
 ### 2.2 Data model
 

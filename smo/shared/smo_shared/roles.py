@@ -94,6 +94,8 @@ RAPP_MAY_CHANGE: dict[str, tuple[tuple[frozenset[str], re.Pattern], ...] | None]
             (("PATCH",), r"^/models/[^/]+/phase-info$"),
         ),
         "/mllf": ((("POST",), r"^/models/[^/]+/deploy$"),),
+        # GUI-8.3: a rApp registers (or withdraws) the operator API of its own instance; rApp Management checks that the instance is the caller's
+        "/rapp-mgmt": ((("PUT", "DELETE"), r"^/instances/[^/]+/operator-api$"),),
         "/mdaf": (
             (("POST",), r"^/(subscriptions|mda-requests|mda-reports|reports)$"),
             (("DELETE",), r"^/(subscriptions|mda-requests)/[^/]+$"),

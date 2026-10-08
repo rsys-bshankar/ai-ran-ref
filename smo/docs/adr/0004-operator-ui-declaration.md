@@ -1,6 +1,6 @@
 # ADR 0004 — The operator page a rApp declares (`operatorUi`)
 
-Status: accepted (`PR-GUI-8`, steps `GUI-8.1`, `GUI-8.2`, `GUI-8.8`). Date: 2026-10-08. Release 0.6.0.
+Status: accepted (`PR-GUI-8`, steps `GUI-8.1`, `GUI-8.2`, `GUI-8.8`; built in `GUI-8.3` to `GUI-8.6`). Date: 2026-10-08. Release 0.6.0.
 
 ## Context
 
@@ -13,7 +13,7 @@ Decided with the owner: the sidebar keeps **one** rApps entry; a directory lists
 its package and drawn by one generic renderer in the GUI**, so onboarding the rApp makes its page appear without a GUI build. The rApp's
 declared routes are reached through the GUI backend, with permissions derived from the declaration. This record fixes the declaration, its
 limits, how the rApp's operator API is reached, and what the check at onboarding refuses. The GUI backend, the directory and the renderer
-are the later steps of `PR-GUI-8` (`OPEN_ITEMS.md`).
+are `PR-GUI-8`'s later steps (built in `HISTORY.md` PR-GUI-8b; the browser check, `GUI-8.7`, is open in `OPEN_ITEMS.md`).
 
 **Not taken:** a rApp shipping its own JavaScript or an iframe. Code from a package would run in the operator's browser session with the
 operator's rights; reviewing it, sandboxing it and supporting it across GUI releases is a cost a declarative format does not have. After
@@ -369,9 +369,10 @@ What **still cannot be expressed** (each loses a little, none loses a function):
 
 ## Consequences
 
-- Onboarding, the SDK and, from stage 2, the GUI backend share one definition (`smo_shared/operator_ui.py`); the GUI renderer implements the
-  same format in TypeScript and is checked against the example above.
-- No schema migration in this step. `GUI-8.3` adds one nullable column (`operatorApiBase`) to `rapp_instance`, additive.
-- The four sample rApps are not changed here; `GUI-8.6` gives them declarations, rebuilds their packages and removes their coded pages.
+- Onboarding and the SDK share one definition (`smo_shared/operator_ui.py`); the GUI backend carries a vendored copy of the matcher
+  (its image does not install `smo_shared`; a parity test fails when the copy differs); the GUI renderer implements the same format in TypeScript and is
+  tested against the example above.
+- No schema migration in the first step. `GUI-8.3` added one nullable column (`operator_api_base`, revision `0030`) to `rapp_instance`, additive.
+- The four sample rApps now declare their pages, their packages are rebuilt and their coded pages, sidebar entries, static permission rules and gateway routes are gone.
 - A rApp author gets a bounded, reviewable page; an operator gets one place to find every rApp. The price is the list of what cannot be
   expressed above (composed text, map entries, presentation detail); anything beyond it needs a new version of this format, not a code upload.

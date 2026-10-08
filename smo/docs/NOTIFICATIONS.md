@@ -18,6 +18,10 @@ RMIH callback, so no A-class site needed the response: the first sort of site th
 moved (`PR-MSG-1.5`–`1.9`); `PR-MSG-1.10` moved the one class-B DELETE as a `DELETE` row; what is left inline is the two class-C reads.
 After the move, a notification is sent after the transaction that caused it commits, never before, and a rolled-back change sends nothing.
 
+## Not a notification: the gateway's forward to a rApp's operator API
+
+`smo_shared.webhook.forward_to_destination` (`PR-GUI-8`) is a fourth helper beside `post_webhook`, `get_webhook` and `delete_webhook`, used by R1 Termination's `_forward_operator_api` only. The destination is a base URL a rApp instance registered (`rapp_instance.operator_api_base`), so it gets the same guard (`is_safe_webhook_destination`, again before every call) and, for an https destination inside the deployment, the same client certificate. It is not a row of the table below because it is not a notification: the caller of the gateway waits for the answer, nothing is stored or retried, and an unreachable rApp is a 502 to that caller, not a lost message. The inventory test lists `post_webhook`, `get_webhook`, `delete_webhook` and `enqueue` only, so a new use of any of those still needs a row.
+
 ## Call sites
 
 | File | Function | Helper | Class | What it tells whom | Moves in |

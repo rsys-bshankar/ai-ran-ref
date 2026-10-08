@@ -28,7 +28,7 @@ sequenceDiagram
     MRO->>DME: sdk.data.get_dataset(HO_PERFORMANCE, INFERENCE), per-relation series
     MRO->>OAM: GET /managed-entities/{me}/config, current CIO and isHOAllowed per relation, target cell state
     MRO->>OAM: sdk.data.query_cell_guards(), EMERGENCY and incident-zone cells
-    MRO->>ES: GET /energy-saving-rapp/instances/{id}/cells, SLEEP / PRE_SLEEP and last wake per cell
+    MRO->>ES: GET /rapps/{energy-saving id}/operator/instances/{energy-saving id}/cells, SLEEP / PRE_SLEEP and last wake per cell
     MRO->>AIMGF: POST /models/{id}/inference-jobs, runtime must be ACTIVE
     MRO->>MRO: MobilityModel.infer per relation, dominant cause, futureRate, recommendation
     MRO->>AIMGF: POST /inference-jobs/{id}/resolve (inferenceOutputs), AIMLInferenceReport

@@ -305,3 +305,24 @@ a.btn { display: inline-block; text-decoration: none; text-align: center; box-si
 /* PR-SEC-7: recovery codes, shown once after the one-time code is confirmed */
 .recovery-codes { list-style: none; margin: 0; padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
 .recovery-codes code { font-size: 14px; letter-spacing: 0.04em; }
+
+/* ---------------------------------------------------------------- rApp directory, pinned rApps, declared pages (PR-GUI-8) */
+.pins { list-style: none; margin: 0 0 4px; padding: 0 0 0 14px; }
+.nav.sub { display: block; font-size: 13px; padding: 5px 10px; margin-bottom: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.filters { margin-bottom: 12px; align-items: center; }
+.filters input[type=search] { min-width: 300px; }
+.row.wrap { flex-wrap: wrap; }
+.pager { margin-top: 10px; align-items: center; }
+.section-title { margin: 28px 0 12px; font-size: 16px; }
+.chart { margin: 0; }
+.chart svg { width: 100%; max-width: 640px; height: auto; display: block; }
+.chart-grid { stroke: var(--border); stroke-width: 1; }
+.chart-axis { fill: var(--muted); font-size: 11px; }
+.chart-line { stroke-width: 1.8; }
+.chart-s0 { --series: var(--accent); } .chart-s1 { --series: var(--ok); } .chart-s2 { --series: var(--warn); } .chart-s3 { --series: var(--bad); }
+.chart-s4 { --series: var(--info); } .chart-s5 { --series: var(--sev-major); } .chart-s6 { --series: var(--sev-minor); } .chart-s7 { --series: var(--muted); }
+.chart-line { stroke: var(--series); }
+.chart-dot, .chart-bar { fill: var(--series); }
+.chart-key { margin-right: 12px; white-space: nowrap; }
+.chart-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--series); margin-right: 4px; vertical-align: middle; }
+.table-wrap:focus-visible, .json:focus-visible, .drawer-body:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

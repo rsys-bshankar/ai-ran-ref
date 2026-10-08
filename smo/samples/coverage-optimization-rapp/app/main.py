@@ -422,11 +422,18 @@ def deploy(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 # ---------------------------------------------------------------- the closed loop
 
+def _peer(instance_id, resource: str) -> str:
+    """The route, through the gateway, of a list another rApp publishes for its instance (coordination): `/rapps/{instanceId}/operator/...` reaches the
+    operator API that instance registered at rApp Management (GUI-8.3). A peer that has not registered one answers 404, which is read as "publishes nothing"."""
+    return f"/rapps/{instance_id}/operator/instances/{instance_id}/{resource}"
+
+
+
 def _es_cells(inst: CoverageInstance) -> dict[str, dict]:
     """The EnergySaving rApp's published cell states (coordination, D10.3-4c)."""
     if not inst.energy_saving_instance_id:
         return {}
-    resp = _r1.get(f"/energy-saving-rapp/instances/{inst.energy_saving_instance_id}/cells")
+    resp = _r1.get(_peer(inst.energy_saving_instance_id, "cells"))
     return {c["cellId"]: c for c in resp.json().get("items", [])} if resp.status_code == 200 else {}
 
 
@@ -434,7 +441,7 @@ def _mro_observing(inst: CoverageInstance) -> dict[str, list[str]]:
     """{cell: [relations the Mobility rApp is observing that touch it]}."""
     if not inst.mobility_instance_id:
         return {}
-    resp = _r1.get(f"/mobility-optimization-rapp/instances/{inst.mobility_instance_id}/relations")
+    resp = _r1.get(_peer(inst.mobility_instance_id, "relations"))
     out: dict[str, list[str]] = {}
     for r in resp.json().get("items", []) if resp.status_code == 200 else []:
         if r.get("state") == "OBSERVING":

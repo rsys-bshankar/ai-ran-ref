@@ -1468,7 +1468,7 @@ Then run one step at a time and look at what each prints:
 | Demo 08 — live inference | `… demo.py 08` | cell 101 at PRB 2 % for an hour → `LOCK`; cell 103 blocked `EMERGENCY_CELL` |
 | Demo 09 — DME action | `… demo.py 09` | the action record, its source (`sa-smos:o1-cm-intent-handler`, intent/expectation ids) and the correlation chain execution → dispatch → intent → action |
 | Demo 10 — O1 update | `… demo.py 10` | `NRCellDU=101` read back over NETCONF get-config: `administrativeState: LOCKED`, verification `VERIFIED` |
-| Demo 11 — dashboard | `… demo.py 11` | per cell: state, PRB, predicted PRB, decision, outcome. In the GUI: **Energy Saving** |
+| Demo 11 — dashboard | `… demo.py 11` | per cell: state, PRB, predicted PRB, decision, outcome. In the GUI: **rApps** → the instance (the demo passes `operatorApiBase` when it creates the instance, so its declared page has data) |
 
 `python3 /srv/scratch/energy-saving-rapp/demo.py all` runs every step. Things to
 try afterwards:

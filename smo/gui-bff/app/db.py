@@ -159,6 +159,20 @@ class OidcLogin(Base):
     expires_at: Mapped[float] = mapped_column(Float, nullable=False, index=True)   # unix seconds
 
 
+class RappPin(Base):
+    """A rApp instance a user pinned to the sidebar (PR-GUI-8, GUI-8.5): at most `MAX_PINS` per user, kept here and not in the browser, so the sidebar is the same
+    on every device. A new table, made by `create_all` (nothing to add to `_add_missing_columns`). `instance_id` is a bare reference: the instance lives in rApp
+    Management, and a pin of one that no longer exists is dropped the next time the pins are read."""
+    __tablename__ = "gui_rapp_pin"
+
+    username: Mapped[str] = mapped_column(String, primary_key=True)
+    instance_id: Mapped[str] = mapped_column(String, primary_key=True)
+    pinned_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+MAX_PINS = 5
+
+
 class Database:
     def __init__(self, url: str):
         kwargs: dict = {"future": True}
@@ -419,4 +433,41 @@ class Database:
                                                 .values(api_invoker_id=api_invoker_id, onboarding_secret=secret)))
             s.commit()
             return done.rowcount == 1
+
+    # ------------------------------------------------------------ pinned rApps (PR-GUI-8, GUI-8.5)
+
+    def pins(self, username: str) -> list[str]:
+        """The instance ids the user pinned, oldest first."""
+        with self.session() as s:
+            return list(s.scalars(select(RappPin.instance_id).where(RappPin.username == username).order_by(RappPin.pinned_at, RappPin.instance_id)))
+
+    def add_pin(self, username: str, instance_id: str) -> str:
+        """`added`, `exists` (pinning again is fine) or `full` (the user already has `MAX_PINS`). Of two pins at once that would pass the limit, the one
+        that finds itself over it takes its row back."""
+        with self.session() as s:
+            if s.get(RappPin, (username, instance_id)) is not None:
+                return "exists"
+            if cast(int, s.scalar(select(func.count()).select_from(RappPin).where(RappPin.username == username))) >= MAX_PINS:
+                return "full"
+            s.add(RappPin(username=username, instance_id=instance_id))
+            try:
+                s.commit()
+            except IntegrityError:           # the same pin from another request a moment earlier
+                s.rollback()
+                return "exists"
+            if cast(int, s.scalar(select(func.count()).select_from(RappPin).where(RappPin.username == username))) > MAX_PINS:
+                s.execute(delete(RappPin).where(RappPin.username == username, RappPin.instance_id == instance_id))
+                s.commit()
+                return "full"
+            return "added"
+
+    def remove_pin(self, username: str, instance_id: str) -> None:
+        with self.session() as s:
+            s.execute(delete(RappPin).where(RappPin.username == username, RappPin.instance_id == instance_id))
+            s.commit()
+
+    def remove_all_pins(self, username: str) -> None:
+        with self.session() as s:
+            s.execute(delete(RappPin).where(RappPin.username == username))
+            s.commit()
 

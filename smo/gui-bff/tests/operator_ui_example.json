@@ -1,0 +1,218 @@
+{
+ "panels": [
+  {
+   "id": "instance",
+   "items": [
+    {
+     "label": "Managed element",
+     "path": "managedElementRef"
+    },
+    {
+     "format": "badge",
+     "label": "Autonomy mode",
+     "path": "autonomyMode"
+    },
+    {
+     "label": "Actuator",
+     "path": "actuator"
+    },
+    {
+     "format": "id",
+     "label": "Model",
+     "path": "modelId"
+    },
+    {
+     "format": "number",
+     "label": "Model version",
+     "path": "modelVersion"
+    }
+   ],
+   "kind": "keyValues",
+   "source": {
+    "path": "/instances/{instanceId}",
+    "refreshSeconds": 30
+   },
+   "title": "Instance"
+  },
+  {
+   "actions": [
+    {
+     "id": "evaluate",
+     "inputs": [],
+     "label": "Evaluate now",
+     "method": "POST",
+     "path": "/instances/{instanceId}/evaluate",
+     "success": "Closed-loop pass complete",
+     "tone": "primary"
+    },
+    {
+     "id": "reconcile",
+     "inputs": [],
+     "label": "Reconcile approvals",
+     "method": "POST",
+     "path": "/instances/{instanceId}/reconcile",
+     "success": "ASSIST dispatches reconciled"
+    }
+   ],
+   "id": "controls",
+   "kind": "actions",
+   "title": "Closed loop"
+  },
+  {
+   "columns": [
+    {
+     "label": "Cell",
+     "path": "cellId"
+    },
+    {
+     "format": "badge",
+     "label": "State",
+     "path": "state"
+    },
+    {
+     "label": "Override",
+     "path": "overrideBy"
+    },
+    {
+     "label": "O1",
+     "path": "o1Value"
+    },
+    {
+     "format": "sparkline",
+     "label": "PRB trend",
+     "path": "prbTrend",
+     "y": "v"
+    },
+    {
+     "format": "percent",
+     "label": "Predicted PRB",
+     "path": "latestDecision.prediction.model.futurePrb"
+    },
+    {
+     "format": "badge",
+     "label": "Decision",
+     "path": "latestDecision.decision"
+    },
+    {
+     "label": "Reason",
+     "path": "latestDecision.reason"
+    },
+    {
+     "format": "badge",
+     "label": "Outcome",
+     "path": "latestDecision.outcome"
+    }
+   ],
+   "empty": "No managed cells.",
+   "id": "cells",
+   "kind": "table",
+   "rowActions": [
+    {
+     "body": {
+      "operator": "{user}",
+      "reason": "manual override"
+     },
+     "confirm": "Unlock this cell now and suppress AI recommendations for it?",
+     "id": "unlock-cell",
+     "inputs": [],
+     "label": "Override: unlock",
+     "method": "POST",
+     "path": "/instances/{instanceId}/cells/{row.cellId}/override",
+     "success": "Cell unlocked by operator",
+     "tone": "danger",
+     "when": {
+      "exists": false,
+      "path": "overrideBy"
+     }
+    },
+    {
+     "id": "clear-override",
+     "inputs": [],
+     "label": "Clear override",
+     "method": "DELETE",
+     "path": "/instances/{instanceId}/cells/{row.cellId}/override",
+     "success": "Override cleared",
+     "when": {
+      "exists": true,
+      "path": "overrideBy"
+     }
+    }
+   ],
+   "rowDetail": {
+    "blocks": [
+     {
+      "kind": "chart",
+      "points": "prbTrend",
+      "title": "PRB utilisation (%)",
+      "type": "line",
+      "x": "t",
+      "y": "v"
+     },
+     {
+      "empty": "No decision yet.",
+      "kind": "json",
+      "path": "latestDecision",
+      "title": "Latest execution (audit trail)"
+     },
+     {
+      "columns": [
+       {
+        "format": "datetime",
+        "label": "Observed",
+        "path": "observedAt"
+       },
+       {
+        "format": "percent",
+        "label": "PRB",
+        "path": "prb"
+       },
+       {
+        "format": "badge",
+        "label": "Decision",
+        "path": "decision"
+       },
+       {
+        "label": "Reason",
+        "path": "reason"
+       },
+       {
+        "format": "badge",
+        "label": "Outcome",
+        "path": "outcome"
+       },
+       {
+        "format": "id",
+        "label": "Execution",
+        "path": "executionId"
+       }
+      ],
+      "empty": "No decisions.",
+      "kind": "table",
+      "rows": "items",
+      "source": {
+       "path": "/instances/{instanceId}/decisions",
+       "query": {
+        "cell_id": "{row.cellId}",
+        "limit": 20
+       }
+      },
+      "title": "History"
+     }
+    ],
+    "title": "Cell {row.cellId}"
+   },
+   "rowKey": "cellId",
+   "rows": "cells",
+   "source": {
+    "path": "/instances/{instanceId}/dashboard",
+    "query": {
+     "points": 48
+    },
+    "refreshSeconds": 15
+   },
+   "title": "Cells"
+  }
+ ],
+ "readOnly": false,
+ "version": 1
+}

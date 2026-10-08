@@ -427,11 +427,18 @@ def deploy(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 # ---------------------------------------------------------------- the closed loop
 
+def _peer(instance_id, resource: str) -> str:
+    """The route, through the gateway, of a list another rApp publishes for its instance (coordination): `/rapps/{instanceId}/operator/...` reaches the
+    operator API that instance registered at rApp Management (GUI-8.3). A peer that has not registered one answers 404, which is read as "publishes nothing"."""
+    return f"/rapps/{instance_id}/operator/instances/{instance_id}/{resource}"
+
+
+
 def _es_cells(inst: MobilityInstance) -> dict[str, dict]:
     """The EnergySaving rApp's published cell states (coordination, D10.2-4c)."""
     if not inst.energy_saving_instance_id:
         return {}
-    resp = _r1.get(f"/energy-saving-rapp/instances/{inst.energy_saving_instance_id}/cells")
+    resp = _r1.get(_peer(inst.energy_saving_instance_id, "cells"))
     return {c["cellId"]: c for c in resp.json().get("items", [])} if resp.status_code == 200 else {}
 
 
@@ -440,7 +447,7 @@ def _mlb_observing(inst: MobilityInstance) -> set[str]:
     observation (the shared-CIO arbitration, Wave 10.4 D10.4-1)."""
     if not inst.traffic_steering_instance_id:
         return set()
-    resp = _r1.get(f"/traffic-steering-rapp/instances/{inst.traffic_steering_instance_id}/relations")
+    resp = _r1.get(_peer(inst.traffic_steering_instance_id, "relations"))
     return {r["relation"] for r in resp.json().get("items", []) if r.get("state") == "OBSERVING"} \
         if resp.status_code == 200 else set()
 

@@ -22,10 +22,6 @@ R1_PREFIX_TO_SERVICE = {
     "/nfo": "nfo", "/focom": "focom",
     "/aimgf": "aimgf", "/mlmr": "mlmr", "/mllf": "mllf", "/ran-analytics": "ran-analytics", "/mdaf": "mdaf",
     "/intent-service": "intent-service", "/so-smos": "so-smos", "/sa-smos": "sa-smos",
-    "/energy-saving-rapp": "energy-saving-rapp",
-    "/mobility-optimization-rapp": "mobility-optimization-rapp",
-    "/coverage-optimization-rapp": "coverage-optimization-rapp",
-    "/traffic-steering-rapp": "traffic-steering-rapp",
 }
 
 
@@ -42,6 +38,8 @@ class ServiceMesh:
         if host == "r1-termination":
             segments = path.lstrip("/").split("/", 1)
             prefix = "/" + segments[0]
+            if prefix == "/rapps":
+                return self._operator_api(segments[1] if len(segments) > 1 else "")
             service = R1_PREFIX_TO_SERVICE.get(prefix)
             if service is None:
                 raise LookupError(f"no route for {prefix} in the mesh's R1 routing table")
@@ -55,6 +53,20 @@ class ServiceMesh:
             return self.clients[host], path
 
         raise LookupError(f"mesh has no route for host {host!r} ({url})")
+
+    def _operator_api(self, rest: str) -> tuple["TestClient", str]:
+        """The gateway's dynamic prefix `/rapps/{instanceId}/operator/<route>`: the base the instance registered at rApp Management (GUI-8.3) names the
+        service, as the real gateway resolves it; an instance with none registered is a LookupError (the gateway answers 404)."""
+        instance, _, tail = rest.partition("/")
+        marker, _, route = tail.partition("/")
+        if marker != "operator":
+            raise LookupError(f"no route for /rapps/{rest} in the mesh")
+        registered = self.clients["rapp-mgmt"].get(f"/instances/{instance}/operator-api")
+        base = registered.json().get("operatorApiBase") if registered.status_code == 200 else None
+        host = urlparse(base or "").hostname
+        if host not in self.clients:
+            raise LookupError(f"the instance {instance} has no operator API registered in the mesh")
+        return self.clients[host], "/" + route
 
     def dispatch(self, verb: str, url: str, *, json=None, params=None, headers=None, content=None, timeout=None, **kwargs):
         client, rest_path = self.resolve(url)
