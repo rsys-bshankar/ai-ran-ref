@@ -6,7 +6,8 @@ forwards allowed calls to R1 Termination with the BFF's own SME-issued
 OAuth2 token (smo_client.py). The browser never calls R1 or any module port
 directly: that would need CORS on every module and bypass the role checks.
 
-Routes (all under /api, which nginx forwards here unchanged):
+Routes (all under /api, which nginx forwards here unchanged, except /.well-known/jwks.json, which nginx forwards as one exact path):
+  GET  /.well-known/jwks.json   the public keys that verify session tokens (empty under HS256); no session needed          (PR-SEC-5)
   GET  /api/auth/config         what the sign-in page may offer: local login, OIDC and the provider's name (no session needed)
   POST /api/login               username/password -> httpOnly session cookie; for an account with a one-time code, a challenge instead (PR-SEC-7)
   POST /api/login/totp          the challenge and a one-time code (or a recovery code) -> the session cookie
@@ -54,6 +55,7 @@ from .db import AuditEntry, Database, GuiUser, LoginFailure
 from .oidc import LOGIN_TTL_SECONDS, MAX_PENDING_LOGINS, OidcClient, OidcConfig, OidcError
 from .rbac import MODULES, RULES, Role, Rule, User, decide
 from .security import decode_jwt, hash_password, issue_jwt, verify_password
+from .signing import build_signer
 from .smo_client import R1Gateway, SmoAuthError
 
 log = logging.getLogger("smo-gui-bff")
@@ -230,6 +232,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
     if cfg.admin_mfa_required and not cfg.totp_key:
         raise ValueError("GUI_ADMIN_MFA_REQUIRED=true needs GUI_TOTP_KEY or GUI_TOTP_KEY_FILE: without a key no admin could enrol")
 
+    signer = build_signer(cfg)           # PR-SEC-5: HS256 with GUI_JWT_SECRET (default) or RS256 / ES256 with a key file; a bad combination or key stops the start
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         if app.state.db is None:
@@ -268,8 +272,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     def issue_session(user: GuiUser) -> tuple[str, str]:
         csrf = secrets.token_urlsafe(24)
-        token = issue_jwt({"sub": user.username, "ver": user.token_version, "csrf": csrf, "jti": secrets.token_urlsafe(16)},
-                          cfg.jwt_secret, cfg.session_ttl_seconds)
+        token = signer.issue({"sub": user.username, "ver": user.token_version, "csrf": csrf, "jti": secrets.token_urlsafe(16)}, cfg.session_ttl_seconds)
         return token, csrf
 
     def set_session_cookies(response: Response, token: str, csrf: str) -> None:
@@ -299,7 +302,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         auth = request.headers.get("authorization", "")
         via_cookie = not auth.lower().startswith("bearer ")
         token = request.cookies.get(SESSION_COOKIE) if via_cookie else auth[7:].strip()
-        claims = decode_jwt(token or "", cfg.jwt_secret)
+        claims = signer.decode(token or "")
         if claims is None:
             raise _problem_exception(401, "UNAUTHENTICATED", "not authenticated")
         with app.state.db.session() as s:
@@ -334,6 +337,12 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
     class TotpLoginRequest(BaseModel):
         challenge: str
         code: str = Field(min_length=1, max_length=64)
+
+    @app.get("/.well-known/jwks.json", responses={200: {"description": "The public keys that verify session tokens (RFC 7517), `{\"keys\": []}` under HS256; cacheable for five minutes", "content": {"application/json": {"schema": {"type": "object"}}}}})
+    def jwks():
+        """PR-SEC-5.3. Unauthenticated by design: it is the public half of the signing keys (the current one first, then the previous rotations that still verify), nothing else.
+        Under HS256 (the default) the set is empty: a shared secret has no public half and is never published. Answers 200 with `application/json` and nothing else."""
+        return JSONResponse(signer.jwks(), headers={"Cache-Control": "public, max-age=300"})
 
     @app.get("/api/auth/config")
     def auth_config():
@@ -512,7 +521,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
     def logout(request: Request, response: Response):
         auth = request.headers.get("authorization", "")
         token = auth[7:].strip() if auth.lower().startswith("bearer ") else request.cookies.get(SESSION_COOKIE, "")
-        claims = decode_jwt(token, cfg.jwt_secret)
+        claims = signer.decode(token)
         response.delete_cookie(SESSION_COOKIE, path="/api", secure=cfg.cookie_secure, samesite="strict")
         response.delete_cookie(CSRF_COOKIE, path="/", secure=cfg.cookie_secure, samesite="strict")
         if claims:

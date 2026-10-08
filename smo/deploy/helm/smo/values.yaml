@@ -79,6 +79,10 @@ gui:
   # PR-SEC-7: the key that encrypts the one-time-code secrets of local accounts, from a Secret of your own ({name: my-totp-key, key: totp-key}); the chart passes it
   # as GUI_TOTP_KEY. With it set, accounts can enrol a one-time code. GUI_LOGIN_MODE (both|oidc|local) and GUI_ADMIN_MFA_REQUIRED go in `env`.
   totpKeySecretRef: {}
+  # PR-SEC-5: the private key (PEM) that signs the session token under GUI_JWT_ALGORITHM RS256 or ES256, from a Secret of your own ({name: gui-jwt-key, key: private-key.pem}).
+  # The chart mounts the whole Secret read-only at /run/gui-jwt and sets GUI_JWT_PRIVATE_KEY_FILE to the named key; put the public keys of earlier rotations in the same Secret
+  # (public-previous-1.pem, ...) and name them in `env` as GUI_JWT_PREVIOUS_KEY_FILES: /run/gui-jwt/public-previous-1.pem. GUI_JWT_ALGORITHM goes in `env`.
+  jwtKeySecretRef: {}
 
 # Where each module keeps files (Onboarding's packages, the GUI backend's database). With persistence off they are emptyDirs and are lost
 # when the pod goes.
@@ -236,7 +240,7 @@ moduleDefaults:
 
 # The modules. `image` is the image name after the prefix (smo-<image>); the services are named by the key.
 modules:
-  r1-termination: { image: r1-termination, databaseRole: r1-termination, enrollment: false, scratch: /srv/scratch, env: { R1_KILL_SWITCH_SCHEMA: ran_nf_oam, R1_RATE_STORE: memory }, resources: { requests: { cpu: 50m, memory: 192Mi }, limits: { memory: 512Mi } } }   # CPU-bound at about one core per 39 requests/s: values-sized.yaml asks for 500m, scale by replicas (docs/SIZING.md)
+  r1-termination: { image: r1-termination, databaseRole: r1-termination, enrollment: false, scratch: /srv/scratch, env: { R1_KILL_SWITCH_SCHEMA: ran_nf_oam, R1_RATE_STORE: memory, R1_INTROSPECTION_CACHE_SECONDS: "0", R1_INTROSPECTION_CACHE_MAX_ENTRIES: "10000" }, resources: { requests: { cpu: 50m, memory: 192Mi }, limits: { memory: 512Mi } } }   # CPU-bound at about one core per 39 requests/s: values-sized.yaml asks for 500m, scale by replicas (docs/SIZING.md)
   sme: { image: sme, databaseRole: sme, resources: { requests: { cpu: 50m, memory: 480Mi }, limits: { memory: 768Mi } } }   # the largest module: 361 MiB at its peak (docs/SIZING.md); values-sized.yaml asks for 250m
   dme: { image: dme, databaseRole: dme }
   onboarding: { image: onboarding, databaseRole: onboarding, persistence: { mountPath: /srv/packages, size: 5Gi } }

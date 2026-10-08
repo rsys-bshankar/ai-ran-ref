@@ -14,6 +14,7 @@ stack without an extra infra dependency.
 import hmac
 import logging
 import os
+import time
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -25,7 +26,7 @@ from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
 from smo_shared.logconfig import install_logging
-from smo_shared.metrics import install_metrics, record_role_refusal
+from smo_shared.metrics import install_metrics, record_introspection_cache, record_role_refusal
 from smo_shared.bodylimit import MIB, BodySizeLimit, settings_from_env
 from smo_shared.correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from smo_shared import tracing
@@ -41,6 +42,7 @@ from smo_shared.timeouts import introspect_timeout, upstream_timeout
 from smo_shared.webhook import forward_to_destination
 
 from . import operator_api
+from .introspection_cache import DEFAULT_MAX_ENTRIES, NEGATIVE_SECONDS, IntrospectionCache
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +81,26 @@ async def _take_budget(caller: str) -> int | None:
     if _limiter.blocking:
         return await run_in_threadpool(_limiter.take, caller)
     return _limiter.take(caller)
+
+
+# Introspection cache (PR-SEC-5.4): R1_INTROSPECTION_CACHE_SECONDS (read on every call; default 0 = off, every request asks SME as before) is how long an answer of SME is
+# reused, R1_INTROSPECTION_CACHE_MAX_ENTRIES (read once at start, default 10000) bounds it. See introspection_cache.py for the promises and the revocation bound.
+def _cache_seconds() -> float:
+    try:
+        return max(0.0, float(os.environ.get("R1_INTROSPECTION_CACHE_SECONDS", "0")))
+    except ValueError:
+        log.warning("R1_INTROSPECTION_CACHE_SECONDS=%r is not a number: the introspection cache stays off", os.environ.get("R1_INTROSPECTION_CACHE_SECONDS"))
+        return 0.0
+
+
+def _cache_max_entries() -> int:
+    try:
+        return int(os.environ.get("R1_INTROSPECTION_CACHE_MAX_ENTRIES", str(DEFAULT_MAX_ENTRIES)))
+    except ValueError:
+        return DEFAULT_MAX_ENTRIES
+
+
+_introspection_cache = IntrospectionCache(_cache_max_entries())
 
 
 # R1 Termination's own probes, declared ahead of the catch-all proxy route so they are answered here,
@@ -206,6 +228,7 @@ async def proxy(full_path: str, request: Request):
     not a behavior change.
     """
     response = await _proxy(full_path, request)
+    _drop_revoked_tokens(request.method, full_path, response.status_code)
     audited = getattr(request.state, "audit", None)          # set once the caller is known: an unauthenticated or rate-limited call is not recorded
     if audited is not None and request.method in roles.CHANGES and audit_enabled():
         invoker, role, refused, on_behalf_of = audited
@@ -214,6 +237,19 @@ async def proxy(full_path: str, request: Request):
                               correlation_id=get_correlation_id(), detail={"onBehalfOf": on_behalf_of} if on_behalf_of else None)
         response.background = task
     return response
+
+
+def _drop_revoked_tokens(method: str, full_path: str, status: int) -> None:
+    """PR-SEC-5.4: SME removed the tokens of an invoker (offboarding it, or a purge that was not a dry run) through this gateway: forget the cached answers for them now,
+    so this replica stops honouring them on the next request instead of after the TTL. Other replicas, and a revocation made without this gateway, wait for the TTL."""
+    if not 200 <= status < 300:
+        return
+    parts = [p for p in full_path.split("/") if p]
+    if len(parts) == 3 and parts[0] == "sme" and parts[1] == "invoker-registrations":
+        if method == "DELETE":
+            _introspection_cache.evict_invoker(parts[2])
+        elif method == "POST" and parts[2] == "purge-stale":
+            _introspection_cache.clear()                 # it offboarded invokers whose names we are not told (a dry run offboarded none, and clearing is harmless)
 
 
 def _path_problem(rest: str) -> bool:
@@ -439,6 +475,14 @@ async def _introspect_token(request: Request) -> tuple[str, str] | None:
     token = auth[len("bearer "):].strip()
     if not token:
         return None
+    ttl = _cache_seconds()
+    generation = _introspection_cache.generation
+    if ttl > 0:
+        found, cached = _introspection_cache.get(token)
+        if found:
+            record_introspection_cache("hit")
+            return cached
+        record_introspection_cache("miss")
     async with httpx.AsyncClient(timeout=introspect_timeout(), **mtls.client_kwargs(ROUTES["/sme"])) as client:
         try:
             resp = await client.request("POST", f"{ROUTES['/sme']}/oauth2/introspect", json={"token": token})
@@ -447,12 +491,20 @@ async def _introspect_token(request: Request) -> tuple[str, str] | None:
     if resp.status_code >= 500:
         raise IntrospectionUnavailable
     if resp.status_code != 200 or resp.json().get("active") is not True:
+        if ttl > 0:
+            _introspection_cache.put(token, None, min(ttl, NEGATIVE_SECONDS), generation)
         return None
     body = resp.json()
     # PR-SEC-14: the role SME records for the invoker. An SME that does not say (the release before this one) is read by the scope, which is
     # what its own clients ask for: smo-internal / smo-gui is an SMO module, anything else an rApp.
     role = body.get("role") or (roles.ROLE_INTERNAL if body.get("scope") in roles.INTERNAL_SCOPES else roles.ROLE_RAPP)
-    return str(body.get("client_id") or ""), role
+    answer = (str(body.get("client_id") or ""), role)
+    if ttl > 0:
+        # never past the token's own end of life (SME's `exp`, when it says)
+        exp = body.get("exp")
+        life = ttl if not isinstance(exp, int) or isinstance(exp, bool) else min(ttl, exp - time.time())
+        _introspection_cache.put(token, answer, life, generation)
+    return answer
 
 
 async def _authorized(request: Request) -> bool:

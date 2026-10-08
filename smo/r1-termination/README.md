@@ -86,7 +86,7 @@ Failure behaviour: a backend that does not answer within `R1_UPSTREAM_TIMEOUT_SE
 
 ### 2.2 Data model
 
-None: stateless. No table, no cache; every request is introspected afresh.
+None: no table. By default no cache either: every request is introspected afresh. With `R1_INTROSPECTION_CACHE_SECONDS` above 0 (PR-SEC-5.4) a bounded in-process cache of SME's answers (section "Introspection cache" below) is kept per replica; it is lost at restart and never shared.
 
 ### 2.3 State machines
 
@@ -138,7 +138,7 @@ A rApp's own operator API is not a row of this table: `/rapps/{instanceId}/opera
 | `POST {SME_URL}/oauth2/introspect` with `{"token": ...}` | Every proxied request, before forwarding | Transport error, non-200, or `active != true`: request refused `401`. Fails closed. |
 | `{method} {backend}/{rest}` | After a successful token check | No handling: transport errors are not caught (see 1.5). |
 
-Request-time order: route lookup (404) → bearer header present and non-empty (401) → introspection (401) → forward. Authentication only establishes that the token is active; the gateway does not read `client_id` from the introspection answer and does not pass an identity downstream.
+Request-time order: route lookup (404) → bearer header present and non-empty (401) → introspection (401; 503 when SME cannot answer; from the cache when `R1_INTROSPECTION_CACHE_SECONDS` is on) → forward. Authentication only establishes that the token is active; the gateway does not read `client_id` from the introspection answer and does not pass an identity downstream.
 
 ### 2.6 Configuration
 
@@ -160,6 +160,8 @@ Request-time order: route lookup (404) → bearer header present and non-empty (
 | `R1_OPERATOR_API_CACHE_SECONDS` | `5` | How long the gateway keeps the operator API base a rApp instance registered (GUI-8.3): the delay between a registration, a change or the end of the instance and the gateway acting on it. `0` asks rApp Management on every call |
 | `R1_AUDIT` | `on` | `off` records nothing in the audit chain (PR-SEC-11). On, the gateway needs `SMO_DATABASE_URL` like a module does; a write that fails is logged and counted (`smo_audit_writes_total{outcome="failed"}`) and never fails the call |
 | `R1_INTROSPECT_TIMEOUT_SECONDS` | `5` | How long it waits for SME's token introspection (a timeout fails closed: 401) |
+| `R1_INTROSPECTION_CACHE_SECONDS` | `0` (off) | PR-SEC-5.4: seconds an answer of SME about a token is reused instead of asking again. Read on every call. A bad or negative value leaves it off. See "Introspection cache" |
+| `R1_INTROSPECTION_CACHE_MAX_ENTRIES` | `10000` | PR-SEC-5.4: most answers held (read once at start); the oldest goes first |
 
 `SME_URL` is also the target of introspection and of the URIs in `/bootstrap`.
 
@@ -183,6 +185,7 @@ Every other status and body is the backend's, passed through.
 
 ### 2.8 Limits and open items
 
+- The introspection cache (PR-SEC-5.4) is per replica and off by default; its effect on SME load under real traffic has not been measured (the load test of SEC-5.4 is open), and a revocation through one replica is seen by the others only after the TTL.
 - Opaque-token introspection instead of signed JWTs. SME checks a token's scope when it issues it (HISTORY.md OI-2-oauth2-scope), but the gateway does not enforce it.
 - Authentication only: no per-invoker or per-API authorization at the gateway. Routes map to modules, not to published APIs, so there is nothing here to match a scope against.
 - Rate limit and body cap are in place (`PR-SEC-8.1`, `8.2`, `8.5`); no retry or circuit breaking. By default the buckets are per process, so with N gateway replicas a caller has N times the rate; `R1_RATE_STORE=postgres` makes it one budget (the shared limiter below, which fails open). Unauthenticated requests are not limited here yet (`SEC-8.3`), and one rate applies to every route (`SEC-8.4`).
@@ -203,6 +206,7 @@ cd smo/r1-termination && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | Test file | Covers | Count |
 |---|---|---|
 | `tests/test_bootstrap_key_and_shared_limiter.py` | The bootstrap key (open by default; 401 without or with a wrong key, nothing revealed in the refusal; constant-time compare; from the environment or a file, never both; the declared optional header and 401) and the shared limiter at the gateway (default store is in-process; `postgres` builds the shared limiter, a bad value stops the service; 429 and the bucket row; a second replica over the same database sees the spent budget; a database error does not refuse and is logged; unauthenticated requests spend nothing) | 11 |
+| `tests/test_introspection_cache.py` | PR-SEC-5.4 with a fake SME that counts introspections: off by default (every request asks SME, nothing counted); on, ten requests with two tokens cost two SME calls and the hit/miss counters say 8 and 2; a token revoked through the gateway (`DELETE /sme/invoker-registrations/{id}`) is refused on the very next request and another invoker's entry is kept; a purge clears all; a revocation that did not go through the gateway is honoured until the TTL and not after (checked at 29.9 s and 30.1 s of 30); SME unreachable is still 503, from the first miss after the TTL, and is not served from a stale entry; an SME 5xx is never stored; a wrong token is remembered for 5 s at most (or a shorter TTL); a positive answer never outlives the token's `exp`; only the SHA-256 of the token is held; the size bound; the generation guard against a revocation racing a lookup; a bad setting stays off. | 25 |
 | `tests/test_main.py` | Bootstrap content and its no-auth rule; route table covers every module; unknown prefix 404; proxy to the right backend; 401 for missing/non-bearer/inactive token; fail-closed when SME is unreachable; method, body and query forwarding; `Host` stripped, other headers kept; correlation id generated or kept; `traceparent` / `tracestate` forwarded when valid, dropped when not; upstream error status passthrough; bare-prefix path; `/dme-push` and `/dme-pull` routing; local `/health` | 20 |
 | `tests/test_operator_api.py` | GUI-8.3, the `/rapps/{instanceId}/operator/...` prefix: the base, route and query reach the rApp; the caller's `Authorization`, cookie and any `X-R1-Role` it sent do not, the gateway's identity headers do; a base path prefix; not registered, unknown and terminated are one 404; paths that are not the shape, and `..`, `//`, an encoded slash; the cache (once, and `0` asks every time) and a changed registration after it; rApp Management down (503 without the exception text, the last answer used when it is under a minute old); an unreachable (502) and a slow (504) rApp with no text of the exception or the address in the answer; a registered base that fails the address check is never called; an rApp may read but never change; an rApp may register its own instance's operator API; a change through the prefix is in the audit chain | 30 |
 | `tests/test_mtls_routes.py` | PR-SEC-2: off, every backend address is plain `http://`; `SMO_MTLS=on`: every backend and the advertised token endpoint are `https://`, an operator-set `http://` address is upgraded and an `https://` one is left alone (each case imports the gateway in a fresh interpreter) | 3 |
@@ -219,6 +223,33 @@ cd smo/r1-termination && PYTHONPATH=.:../shared python -m pytest tests/ -q
 - Call flows: [01 onboarding to deployment](../docs/call-flows/01-rapp-onboarding-to-deployment.md) (bootstrap), [14 correlation id](../docs/call-flows/14-correlation-id-propagation.md), [18 SME security lifecycle](../docs/call-flows/18-sme-trusted-invokers-lifecycle.md) (token and introspection)
 - OpenAPI: [`../docs/openapi/r1-termination.json`](../docs/openapi/r1-termination.json)
 - Related READMEs: [SME](../sme/README.md) (issues and introspects tokens), [DME](../dme/README.md)
+
+## Introspection cache (PR-SEC-5.4)
+
+Off by default (`R1_INTROSPECTION_CACHE_SECONDS=0`): the gateway then asks SME on every request, exactly as before, and the code below is never reached. The default is off because a cache trades the instant effect of a revocation for fewer SME calls, and that trade is the owner's to make; it is not an upgrade surprise.
+
+With `R1_INTROSPECTION_CACHE_SECONDS=N` (N seconds, fractions allowed) the gateway keeps SME's answer about a token for N seconds, so a burst of calls with one token costs SME one lookup. `app/introspection_cache.py`:
+
+- **Key**: the SHA-256 of the token. The raw token is never held, so a memory dump of the gateway holds no usable credential from the cache (the request in flight still has its token, as before).
+- **Positive answers** (active, with the invoker id and role) live for N seconds, and never past the token's own `exp` that SME reports (a token with 10 s left is held for 10 s whatever N is). **Negative answers** (SME said the token is not active) live for `min(N, 5)` seconds: long enough to take a flood of wrong tokens off SME, too short to matter for anything else. **Failures are never stored**: a transport error or a 5xx from SME raises `IntrospectionUnavailable`, which is the 503 with `Retry-After: 5` as before.
+- **Bounded**: `R1_INTROSPECTION_CACHE_MAX_ENTRIES` (10000); when full, expired entries go first, then the oldest.
+- **Metric**: `smo_introspection_cache_total{result="hit"|"miss"}` (nothing is counted while it is off). SME calls saved = hits.
+
+**Revocation, with the exact bound.** The only way a token stops being valid before its `exp` is that SME removes it: offboarding an invoker (`DELETE /invoker-registrations/{id}`) or the stale-invoker purge (SME has no per-token revocation, `sme/README.md`).
+
+| The revocation was made | A token with a cached positive answer is honoured |
+|---|---|
+| through this gateway replica (`DELETE /sme/invoker-registrations/{id}` answered 2xx; or `POST /sme/invoker-registrations/purge-stale` answered 2xx, which clears every entry) | not after the response: the entries of that invoker are evicted in the same process, the next request asks SME and gets `active: false`. A lookup that was already in flight when the revocation evicted is not stored (a generation number), so it cannot put the old answer back. |
+| through another replica of the gateway, or at SME by any other means (an operator calling SME directly, the purge job) | for at most N seconds after the revocation (an entry made a moment before it is dropped N seconds after it was made). With several gateway replicas the bound is N, not zero: the replicas do not tell each other. |
+| (any case) a token that expired | never past `exp`. |
+
+N is therefore the staleness you accept: choose it below the time you can tolerate a revoked rApp still being served (30 is a reasonable first value; the tokens last an hour). The same N applies to the role SME records for an invoker: a change of it is seen within N seconds.
+
+**SME unreachable.** A cached answer inside its N seconds is served without asking SME, so a short outage of SME does not interrupt callers whose token was checked in the last N seconds (a gain); the first request after the entry expires asks SME and, if it cannot answer, gets 503 `AUTH_SERVICE_UNAVAILABLE`. A stale entry is never served to ride out an outage, and an unknown token cannot be judged without SME (503).
+
+**Not measured.** Whether the cache lowers SME's CPU or the gateway's latency under load has not been measured: `scripts/load_run.py` was not run against this change (it needs the compose stack). The unit test proves fewer SME calls with a fake SME; the load test of SEC-5.4 stays open (`OPEN_ITEMS.md`).
+
+*Not taken.* A shared cache between replicas (Redis or the `rate_bucket` database table) which would make revocation immediate everywhere at the price of a round trip on every request, which is what the cache is meant to avoid; a revocation broadcast between replicas (`LISTEN/NOTIFY`); a default above 0; caching SME's answer for different tokens of one invoker together; negative answers cached for the full N.
 
 ## Why `/bootstrap` has no token, and what it reveals (PR-SEC-9.1)
 

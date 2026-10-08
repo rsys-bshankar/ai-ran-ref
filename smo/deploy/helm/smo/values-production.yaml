@@ -38,3 +38,11 @@ gui:
 #     GUI_ADMIN_MFA_REQUIRED: "true"
 #     GUI_LOGIN_MODE: oidc          # only with the OIDC settings in gui.env; "both" (the default) keeps the password form
 # gui-bff/README.md, "Multi-factor sign-in".
+
+# A key pair for the session token instead of the shared GUI_JWT_SECRET (PR-SEC-5; gui-bff/README.md, "Signing keys"):
+#   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out private-key.pem
+#   kubectl -n smo create secret generic gui-jwt-key --from-file=private-key.pem
+# gui:
+#   jwtKeySecretRef: { name: gui-jwt-key, key: private-key.pem }
+#   env:
+#     GUI_JWT_ALGORITHM: ES256

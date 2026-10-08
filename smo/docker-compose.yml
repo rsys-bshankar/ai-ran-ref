@@ -183,6 +183,10 @@ services:
       # PR-SEC-9.3: set, GET /bootstrap needs the header X-Bootstrap-Key with this value; unset (default), /bootstrap stays open.
       # Clients (the SDK, the sample rApps, the modules) send it when SMO_BOOTSTRAP_KEY is set. A file form, R1_BOOTSTRAP_KEY_FILE, also works.
       R1_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}
+      # PR-SEC-5.4: seconds the gateway reuses SME's answer about a token (0 = off: every request asks SME, as before). A token revoked at SME is honoured for at most
+      # this long (at once on the replica the revocation went through); r1-termination/README.md "Introspection cache".
+      R1_INTROSPECTION_CACHE_SECONDS: ${R1_INTROSPECTION_CACHE_SECONDS:-0}
+      R1_INTROSPECTION_CACHE_MAX_ENTRIES: ${R1_INTROSPECTION_CACHE_MAX_ENTRIES:-10000}
       SME_URL: http://sme:8000
       DME_URL: http://dme:8000
       ONBOARDING_URL: http://onboarding:8000
@@ -603,6 +607,12 @@ services:
       # admin password is generated into GUI_INITIAL_PASSWORD_FILE (0600, never
       # logged): docker compose exec gui-bff cat /data/initial-admin-password
       GUI_JWT_SECRET: ${GUI_JWT_SECRET:-}
+      # PR-SEC-5: HS256 (default) signs the session token with GUI_JWT_SECRET. RS256 or ES256 signs with the PEM private key in GUI_JWT_PRIVATE_KEY_FILE (a file mounted by an
+      # override, like GUI_TOTP_KEY_FILE) and publishes the public keys at /.well-known/jwks.json; GUI_JWT_PREVIOUS_KEY_FILES (comma separated) are the keys of earlier rotations.
+      # Changing the algorithm ends every session. gui-bff/README.md "Signing keys".
+      GUI_JWT_ALGORITHM: ${GUI_JWT_ALGORITHM:-HS256}
+      GUI_JWT_PRIVATE_KEY_FILE: ${GUI_JWT_PRIVATE_KEY_FILE:-}
+      GUI_JWT_PREVIOUS_KEY_FILES: ${GUI_JWT_PREVIOUS_KEY_FILES:-}
       GUI_ADMIN_PASSWORD: ${GUI_ADMIN_PASSWORD:-}
       GUI_OPERATOR_PASSWORD: ${GUI_OPERATOR_PASSWORD:-}
       GUI_VIEWER_PASSWORD: ${GUI_VIEWER_PASSWORD:-}

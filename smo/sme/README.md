@@ -219,7 +219,7 @@ Matching rule for the last case: the subscriber id is compared with `allowedCons
 - Tokens are opaque, with no IdP. SME checks a scope when it issues the token, and introspection reports it, but no resource server enforces it per call: R1 Termination checks only that the token is active.
 - No `category` discovery filter: no published service carries a category.
 - Discovery does not verify that `api_invoker_id` is an onboarded invoker or the caller's own identity.
-- Expired tokens are not purged; a single token cannot be revoked (offboarding the invoker revokes all of its tokens).
+- Expired tokens are not purged; a single token cannot be revoked (offboarding the invoker revokes all of its tokens). R1 Termination can cache introspection answers (`R1_INTROSPECTION_CACHE_SECONDS`, off by default): an offboarded invoker's token is then honoured at a gateway replica for at most that many seconds after the offboarding (not at all after it, at the replica the `DELETE` went through), `r1-termination/README.md`.
 - The key-update and offboarding routes do not prove the caller is the invoker; like every other route they sit behind R1 Termination's token check, and the GUI allows them to admins only.
 - `gates_discovery_visibility` is always true; `module_scope` is stored only.
 - No retry for event delivery.

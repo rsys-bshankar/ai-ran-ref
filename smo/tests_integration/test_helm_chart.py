@@ -401,3 +401,38 @@ def test_the_observability_configuration_files_parse_and_compose_mounts_them():
     assert all((SMO_ROOT / m).is_file() for m in mounted), mounted
     for name in ("tempo", "loki", "fluent-bit", "grafana"):
         assert COMPOSE["services"][name]["profiles"], f"{name} must stay behind a profile"
+
+
+# ---------------------------------------------------------------- PR-SEC-5: the key of the GUI session token, and the gateway's introspection cache
+
+def test_the_chart_has_a_key_secret_reference_for_the_gui_and_documents_it():
+    assert VALUES["gui"]["jwtKeySecretRef"] == {}                                    # off by default
+    template = (CHART / "templates" / "modules.yaml").read_text()
+    assert "name: GUI_JWT_PRIVATE_KEY_FILE" in template and 'default "private-key.pem"' in template
+    assert "mountPath: /run/gui-jwt" in template and "name: gui-jwt" in template
+    assert "jwtKeySecretRef" in (CHART / "README.md").read_text()
+
+
+def test_the_gateways_introspection_cache_is_off_in_the_chart_and_in_compose_by_default():
+    chart_env = _modules()["r1-termination"]["env"]
+    compose_env = COMPOSE["services"]["r1-termination"]["environment"]
+    assert chart_env["R1_INTROSPECTION_CACHE_SECONDS"] == "0" and compose_env["R1_INTROSPECTION_CACHE_SECONDS"] == "${R1_INTROSPECTION_CACHE_SECONDS:-0}"
+    assert chart_env["R1_INTROSPECTION_CACHE_MAX_ENTRIES"] == "10000" and compose_env["R1_INTROSPECTION_CACHE_MAX_ENTRIES"] == "${R1_INTROSPECTION_CACHE_MAX_ENTRIES:-10000}"
+
+
+def test_compose_passes_the_gui_signing_settings_with_the_old_behaviour_as_the_default():
+    env = COMPOSE["services"]["gui-bff"]["environment"]
+    assert env["GUI_JWT_ALGORITHM"] == "${GUI_JWT_ALGORITHM:-HS256}"
+    assert env["GUI_JWT_PRIVATE_KEY_FILE"] == "${GUI_JWT_PRIVATE_KEY_FILE:-}" and env["GUI_JWT_PREVIOUS_KEY_FILES"] == "${GUI_JWT_PREVIOUS_KEY_FILES:-}"
+
+
+@helm
+def test_the_gui_key_secret_is_mounted_and_named_only_when_set():
+    off = _deployment(_render(), "gui-bff")["spec"]["template"]["spec"]
+    assert "GUI_JWT_PRIVATE_KEY_FILE" not in {e["name"] for e in off["containers"][0]["env"]}
+    assert "gui-jwt" not in {v["name"] for v in off["volumes"]}
+    on = _deployment(_render("--set", "gui.jwtKeySecretRef.name=gui-jwt-key", "--set", "gui.env.GUI_JWT_ALGORITHM=ES256"), "gui-bff")["spec"]["template"]["spec"]
+    env = {e["name"]: e.get("value") for e in on["containers"][0]["env"]}
+    assert env["GUI_JWT_PRIVATE_KEY_FILE"] == "/run/gui-jwt/private-key.pem" and env["GUI_JWT_ALGORITHM"] == "ES256"
+    assert {"name": "gui-jwt", "mountPath": "/run/gui-jwt", "readOnly": True} in on["containers"][0]["volumeMounts"]
+    assert next(v for v in on["volumes"] if v["name"] == "gui-jwt")["secret"]["secretName"] == "gui-jwt-key"
