@@ -346,14 +346,13 @@ who can ask, are in `r1-termination/README.md` and `HISTORY.md` PR-SEC-9) and se
 
 #### PR-SEC-5 — Signing keys and token caching
 
-SME access tokens are opaque and introspected (RFC 7662); the signed tokens are the GUI session JWTs (HS256 today).
+SEC-5.1 to 5.3 are done, and SEC-5.4 is built but not measured (`HISTORY.md`, PR-SEC-5). What remains:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-5.1 | BFF option for RS256/ES256 with a key file | Login works with each algorithm | – |
-| SEC-5.2 | `kid` header and a key set (current and previous) for rotation | Token signed with the old key still verifies | SEC-5.1 |
-| SEC-5.3 | `/.well-known/jwks.json` on the BFF | Route test | SEC-5.1 |
-| SEC-5.4 ★ | Short TTL cache of introspection results at R1 Termination, dropped on revocation | Load test shows fewer SME calls; revoked token rejected within the TTL | – |
+| SEC-5.4 ★ (load test) | Run `scripts/load_run.py` against the compose stack with `R1_INTROSPECTION_CACHE_SECONDS=30` and without, and compare the introspections SME answers (`smo_http_requests_total{route="/oauth2/introspect"}` at SME) and the gateway's latency; record both in `docs/PERFORMANCE.md`. Then decide whether a small default above 0 is worth the revocation window. | Load test shows fewer SME calls (the unit test with a fake SME already does); the owner decides the default | The compose stack (Docker) |
+| SEC-5.5 | Choose and apply the default of `R1_INTROSPECTION_CACHE_SECONDS` (0 today) and, if gateway replicas must see a revocation at once, a revocation broadcast between them | The owner's decision, recorded | SEC-5.4 load test |
+| SEC-5.6 | A browser sign-in and a render of the chart with `gui.jwtKeySecretRef` set, on a real cluster or in CI with `helm` | Sign-in works under ES256 on a cluster; the pod has the key at `/run/gui-jwt` | A cluster |
 
 #### PR-SEC-6 — OIDC login for the GUI
 

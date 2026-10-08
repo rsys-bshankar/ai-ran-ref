@@ -57,6 +57,35 @@ def _totp_key() -> str:
     return value
 
 
+def _read_key_file(name: str, path: str) -> str:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()
+    except OSError as exc:
+        raise ValueError(f"{name}={path} cannot be read: {exc.strerror or type(exc).__name__}") from exc
+
+
+def _jwt_algorithm() -> str:
+    """PR-SEC-5: the session token's algorithm, HS256 (the shared `GUI_JWT_SECRET`, the default) or RS256 / ES256 (a key pair). Anything else stops the start."""
+    algorithm = os.environ.get("GUI_JWT_ALGORITHM", "").strip().upper() or "HS256"
+    if algorithm not in ("HS256", "RS256", "ES256"):
+        raise ValueError(f"GUI_JWT_ALGORITHM={algorithm!r} is not one of HS256, RS256, ES256")
+    return algorithm
+
+
+def _jwt_private_key() -> str:
+    """The PEM private key that signs session tokens under RS256 / ES256: the file named by `GUI_JWT_PRIVATE_KEY_FILE` (a mounted secret; no inline form, a PEM in an
+    environment variable is what the file convention exists to avoid). Empty when unset; an unreadable file stops the start."""
+    path = os.environ.get("GUI_JWT_PRIVATE_KEY_FILE", "").strip()
+    return _read_key_file("GUI_JWT_PRIVATE_KEY_FILE", path) if path else ""
+
+
+def _jwt_previous_keys() -> list[tuple[str, str]]:
+    """(label, PEM) of each file in `GUI_JWT_PREVIOUS_KEY_FILES` (comma separated; a public key is enough): the keys of earlier rotations, which still verify."""
+    raw = os.environ.get("GUI_JWT_PREVIOUS_KEY_FILES", "")
+    return [(f"GUI_JWT_PREVIOUS_KEY_FILES entry {path}", _read_key_file("GUI_JWT_PREVIOUS_KEY_FILES", path)) for path in (p.strip() for p in raw.split(",")) if path]
+
+
 def _login_mode() -> str:
     mode = os.environ.get("GUI_LOGIN_MODE", "").strip().lower() or "both"
     if mode not in ("both", "oidc", "local"):
@@ -77,6 +106,11 @@ class Settings:
     sme_url: str | None = field(default_factory=lambda: _internal_url(os.environ.get("SME_URL") or "").rstrip("/") or None)
     database_url: str = field(default_factory=lambda: os.environ.get("GUI_DATABASE_URL", "sqlite:///./gui-bff.db"))
     jwt_secret: str = field(default_factory=lambda: os.environ.get("GUI_JWT_SECRET", ""))
+    # ---- PR-SEC-5: the session token's signing key. HS256 (default) signs with jwt_secret as always; RS256 / ES256 sign with the private key and
+    # publish the public keys at /.well-known/jwks.json. app/signing.py checks the combination when the app is built.
+    jwt_algorithm: str = field(default_factory=_jwt_algorithm)
+    jwt_private_key: str = field(default_factory=_jwt_private_key)
+    jwt_previous_keys: list[tuple[str, str]] = field(default_factory=_jwt_previous_keys)
     session_ttl_seconds: int = field(default_factory=lambda: int(os.environ.get("GUI_SESSION_TTL_SECONDS", str(8 * 3600))))
     # Secure cookies are the default. Browsers already treat http://localhost as
     # a secure context, so this only needs turning off for plain-http access by

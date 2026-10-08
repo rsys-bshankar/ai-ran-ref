@@ -30,6 +30,10 @@ host**: the destination is whatever a caller registered, so a host label would l
 `2xx`/`3xx`/`4xx`/`5xx`, `timeout`, `error` (could not connect or any other transport failure) or `blocked` (the SSRF guard refused the
 destination, nothing was sent). R1Client counts each attempt, so the one retry after a 401 shows as two calls.
 
+R1 Termination's introspection cache (PR-SEC-5.4, off unless `R1_INTROSPECTION_CACHE_SECONDS` is above 0):
+
+  smo_introspection_cache_total{result}                   `hit` (answered from the cache) or `miss` (SME was asked); the SME calls saved are the hits
+
 Business series (PR-OBS-4), all low-cardinality (a label is a state, a status, a module or a refusal class, never an id, a path or a host):
 
   smo_refusals_total{module,reason}                       every 4xx answer, by module and a fixed class (`unauthorized`, `forbidden`, `not_found`,
@@ -130,6 +134,13 @@ AUDIT_WRITES = Counter("smo_audit_writes_total", "Rows the gateway tried to add 
 
 def record_audit_write(outcome: str) -> None:
     AUDIT_WRITES.labels(outcome).inc()
+
+
+INTROSPECTION_CACHE = Counter("smo_introspection_cache_total", "Token checks at R1 Termination while its introspection cache is on (PR-SEC-5.4), by result: hit (answered from the cache) or miss (SME was asked).", ["result"])
+
+
+def record_introspection_cache(result: str) -> None:
+    INTROSPECTION_CACHE.labels(result).inc()
 
 
 OUTBOUND_CALLS = Counter("smo_outbound_calls_total", "Outbound calls, by client (r1 or webhook), target, method and outcome.",

@@ -156,6 +156,12 @@ spec:
               valueFrom: { secretKeyRef: { name: {{ .name | quote }}, key: {{ .key | default "totp-key" | quote }} } }
             {{- end }}
             {{- end }}
+            {{- with $.Values.gui.jwtKeySecretRef }}
+            {{- if .name }}
+            # PR-SEC-5: the session token's private key, a file of a Secret of your own mounted at /run/gui-jwt
+            - { name: GUI_JWT_PRIVATE_KEY_FILE, value: {{ printf "/run/gui-jwt/%s" (.key | default "private-key.pem") | quote }} }
+            {{- end }}
+            {{- end }}
             {{- end }}
           {{- if eq $m.kind "service" }}
           {{- if $m.preStopSeconds }}
@@ -235,6 +241,9 @@ spec:
             {{- if and (eq $name "rapp-mgmt") (eq $.Values.rappCredentials.delivery "kubernetes") }}
             - { name: k8s-access, mountPath: /var/run/smo-k8s, readOnly: true }
             {{- end }}
+            {{- if and (eq $name "gui-bff") $.Values.gui.jwtKeySecretRef.name }}
+            - { name: gui-jwt, mountPath: /run/gui-jwt, readOnly: true }
+            {{- end }}
             {{- if $m.persistence }}
             - { name: data, mountPath: {{ $m.persistence.mountPath }} }
             {{- end }}
@@ -281,6 +290,12 @@ spec:
             sources:
               - serviceAccountToken: { path: token, expirationSeconds: 3600 }
               - configMap: { name: kube-root-ca.crt, items: [{ key: ca.crt, path: ca.crt }] }
+        {{- end }}
+        {{- if and (eq $name "gui-bff") $.Values.gui.jwtKeySecretRef.name }}
+        - name: gui-jwt
+          secret:
+            secretName: {{ $.Values.gui.jwtKeySecretRef.name | quote }}
+            defaultMode: 0440              # readable by the pod's group (fsGroup), not by the world
         {{- end }}
         {{- if $m.persistence }}
         - name: data
