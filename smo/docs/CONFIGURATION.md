@@ -203,15 +203,12 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | Variable | Default | Secret | Read in | What it does |
 |---|---|---|---|---|
 | `AIMGF_URL` | `http://aimgf:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/aimgf/...` to. Change it only when AIMgF is not reachable as `http://aimgf:8000` (another service name, an external host). |
-| `COVERAGE_OPTIMIZATION_RAPP_URL` | `http://coverage-optimization-rapp:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/coverage-optimization-rapp/...` to (the Coverage Optimization sample rApp). |
 | `DME_URL` | `http://dme:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/dme`, `/dme-push` and `/dme-pull` to (Data Management and Exposure). |
-| `ENERGY_SAVING_RAPP_URL` | `http://energy-saving-rapp:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/energy-saving-rapp/...` to (the Energy Saving sample rApp). |
 | `FOCOM_URL` | `http://focom:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/focom/...` to (O-Cloud inventory and O2ims). |
 | `INTENT_SERVICE_URL` | `http://intent-service:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/intent-service/...` to. |
 | `MDAF_URL` | `http://mdaf:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/mdaf/...` to (analytics catalogue and reports). |
 | `MLLF_URL` | `http://mllf:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/mllf/...` to. |
 | `MLMR_URL` | `http://mlmr:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/mlmr/...` to (the model registry). |
-| `MOBILITY_OPTIMIZATION_RAPP_URL` | `http://mobility-optimization-rapp:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/mobility-optimization-rapp/...` to. |
 | `NFO_URL` | `http://nfo:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/nfo/...` to (network function orchestration, O2dms). |
 | `ONBOARDING_URL` | `http://onboarding:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/onboarding/...` to (rApp package store). |
 | `R1_BOOTSTRAP_KEY` | *not shown* | yes | `docker-compose.yml`, `r1-termination/app/main.py` | Shared key that `GET /bootstrap` requires in the `X-Bootstrap-Key` header. Unset (the default): `/bootstrap` is open. Set the same value as `SMO_BOOTSTRAP_KEY` on every service that calls the gateway. Give the value or the `_FILE` form, not both. |
@@ -227,7 +224,6 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | `RAPP_MGMT_URL` | `http://rapp-mgmt:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/rapp-mgmt/...` to (rApp lifecycle). |
 | `SA_SMOS_URL` | `http://sa-smos:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/sa-smos/...` to (service assurance). |
 | `SO_SMOS_URL` | `http://so-smos:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/so-smos/...` to (service orchestration). |
-| `TRAFFIC_STEERING_RAPP_URL` | `http://traffic-steering-rapp:8000` |  | `r1-termination/app/main.py` | Base URL R1 Termination forwards `/traffic-steering-rapp/...` to. |
 
 ### `ran-nf-oam`
 

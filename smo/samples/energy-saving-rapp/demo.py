@@ -116,6 +116,7 @@ def demo_01(state: dict) -> None:
         package = {"packageId": existing[0]["packageId"]}
         status = call("get", "onboarding", f"/packages/{package['packageId']}/onboarding-status")
     instance = call("post", "rapp-mgmt", "/instances", json={
+        "operatorApiBase": _url("energy-saving-rapp", ""),      # where the gateway's /rapps/<instance>/operator/... reaches this rApp: its page in the GUI needs it
         "packageId": package["packageId"], "autonomyMode": "AUTONOMOUS",
         "config": {"managedElementRef": ME, "cells": CELLS, "actuator": "ADMINISTRATIVE_STATE"},
         "regionScope": {"objectInstance": ME, "cells": CELLS}})

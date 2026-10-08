@@ -404,8 +404,8 @@ def test_the_guards_block_a_change_and_the_audit_trail_says_why(client, platform
     platform.guards = [{"cellId": "202", "cellClass": "EMERGENCY"}]
     platform.config["NRCellRelation=201-202"] = {"isHOAllowed": "false"}
     platform.config["NRCellDU=202"] = {"administrativeState": "LOCKED"}
-    r1.paths["/energy-saving-rapp/instances/es-1/cells"] = (200, {"items": [{"cellId": "202", "state": "SLEEP"}]})
-    r1.paths["/traffic-steering-rapp/instances/ts-1/relations"] = (200, {"items": [{"relation": REL, "state": "OBSERVING"}]})
+    r1.paths["/rapps/es-1/operator/instances/es-1/cells"] = (200, {"items": [{"cellId": "202", "state": "SLEEP"}]})
+    r1.paths["/rapps/ts-1/operator/instances/ts-1/relations"] = (200, {"items": [{"relation": REL, "state": "OBSERVING"}]})
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
     assert d["decision"] == "NO_CHANGE"
     for guard in ("HO_NOT_ALLOWED", "PROTECTED_CELL", "TARGET_ASLEEP", "MLB_OBSERVING"):

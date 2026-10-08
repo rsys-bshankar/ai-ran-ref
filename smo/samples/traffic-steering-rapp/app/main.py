@@ -459,6 +459,13 @@ def deploy(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 # ---------------------------------------------------------------- the closed loop
 
+def _peer(instance_id, resource: str) -> str:
+    """The route, through the gateway, of a list another rApp publishes for its instance (coordination): `/rapps/{instanceId}/operator/...` reaches the
+    operator API that instance registered at rApp Management (GUI-8.3). A peer that has not registered one answers 404, which is read as "publishes nothing"."""
+    return f"/rapps/{instance_id}/operator/instances/{instance_id}/{resource}"
+
+
+
 def _items(path: str | None) -> list[dict]:
     if not path:
         return []
@@ -469,12 +476,12 @@ def _items(path: str | None) -> list[dict]:
 def _coordination(inst: TrafficInstance) -> dict:
     """What the other rApps publish (D10.4-4c), read over R1."""
     es = {c["cellId"]: c for c in _items(inst.energy_saving_instance_id
-                                         and f"/energy-saving-rapp/instances/{inst.energy_saving_instance_id}/cells")}
+                                         and _peer(inst.energy_saving_instance_id, "cells"))}
     mro = {r["relation"] for r in _items(inst.mobility_instance_id
-                                         and f"/mobility-optimization-rapp/instances/{inst.mobility_instance_id}/relations")
+                                         and _peer(inst.mobility_instance_id, "relations"))
            if r.get("state") == "OBSERVING"}
     cco = {c["cellId"] for c in _items(inst.coverage_instance_id
-                                       and f"/coverage-optimization-rapp/instances/{inst.coverage_instance_id}/cells")
+                                       and _peer(inst.coverage_instance_id, "cells"))
            if c.get("state") == "OBSERVING"}
     return {"es": es, "mroObserving": mro, "ccoObserving": cco}
 

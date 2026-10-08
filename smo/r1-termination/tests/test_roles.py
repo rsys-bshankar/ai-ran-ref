@@ -147,7 +147,7 @@ def test_a_module_that_names_nobody_forwards_nothing(gateway):
 
 @pytest.mark.parametrize("method, path", [
     ("POST", "/onboarding/packages"), ("DELETE", "/onboarding/packages/p"), ("POST", "/rapp-mgmt/instances"), ("POST", "/rapp-mgmt/instances/i/terminate"),
-    ("POST", "/nfo/deployments"), ("POST", "/focom/provisioning-requests"), ("POST", "/so-smos/anything"), ("POST", "/energy-saving-rapp/instances/i/start"),
+    ("POST", "/nfo/deployments"), ("POST", "/focom/provisioning-requests"), ("POST", "/so-smos/anything"), ("POST", "/rapps/00000000-0000-0000-0000-000000000000/operator/instances/i/start"),
     ("PUT", "/sme/invoker-registrations/x"), ("DELETE", "/sme/invoker-registrations/x"), ("POST", "/sme/invoker-registrations/purge-stale"),
     ("PUT", "/sme/trusted-invokers/x"), ("POST", "/aimgf/ml-training-functions"), ("POST", "/aimgf/execution-timeouts/sweep"),
     ("POST", "/aimgf/models/m/runtime/terminate"), ("POST", "/mlmr/storages"), ("POST", "/mdaf/mda-functions"), ("PUT", "/ran-nf-oam/rapp-limits/x"),

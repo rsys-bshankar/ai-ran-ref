@@ -49,8 +49,6 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/ran-nf-oam", ("GET",), r"^/safeguard-refusals$"),
         ("/ran-nf-oam", ("POST",), r"^/safeguard-refusals/purge$"),
         ("/ran-nf-oam", ("PUT", "DELETE"), r"^/kpi-schedules/[^/]+$"),
-        # GUI-8.3: the operator's view of a rApp, reached through the gateway's dynamic prefix, is for the operator's GUI, not for another rApp
-        ("/rapps", ("GET", "POST", "PUT", "PATCH", "DELETE"), r"^/.*$"),
     ))
 
 

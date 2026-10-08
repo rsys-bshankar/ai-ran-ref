@@ -161,6 +161,7 @@ function CreateInstance({ pkg, onClose }: { pkg: Package; onClose: () => void })
   const [config, setConfig] = useState("{}");
   const [autonomyMode, setAutonomyMode] = useState("SHADOW");
   const [regionScope, setRegionScope] = useState("{}");
+  const [operatorApiBase, setOperatorApiBase] = useState("");
   const action = useSmoAction();
   const parsed = parseJsonObject(config);
   const parsedScope = parseJsonObject(regionScope);
@@ -170,6 +171,7 @@ function CreateInstance({ pkg, onClose }: { pkg: Package; onClose: () => void })
     action.mutate({ method: "POST", path: "/rapp-mgmt/instances", json: {
       packageId: pkg.packageId, config: parsed.value, autonomyMode,
       regionScope: autonomyMode === "AUTONOMOUS" ? parsedScope.value : null,
+      ...(operatorApiBase.trim() ? { operatorApiBase: operatorApiBase.trim() } : {}),
     }, success: "Instance created (DEPLOYING)" }, { onSuccess: onClose });
   };
   return (
@@ -191,6 +193,9 @@ function CreateInstance({ pkg, onClose }: { pkg: Package; onClose: () => void })
             <textarea rows={3} value={regionScope} onChange={(e) => setRegionScope(e.target.value)} spellCheck={false} />
           </Field>
         )}
+        <Field label="Operator API base URL (optional)" hint="Where the rApp serves the routes its operator page declares, for example http://my-rapp:8000. A rApp that runs with this instance's own credentials can register it itself; the page of a rApp without one shows only the overview.">
+          <input value={operatorApiBase} onChange={(e) => setOperatorApiBase(e.target.value)} placeholder="http://my-rapp:8000" pattern="https?://.+" />
+        </Field>
         <div className="row gap end"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!parsed.ok || !parsedScope.ok || action.isPending}>Deploy</button></div>
       </form>
     </Modal>

@@ -143,6 +143,7 @@ def demo_01(state: dict) -> None:
     region = sorted({f"{c}-{t}" for c, n in gen.NEIGHBOURS.items() for t in n} |
                     {f"{c}-{gen.LAYERS[t]}" for c, n in gen.NEIGHBOURS.items() for t in n if gen.LAYERS[t] != gen.LAYERS[c]})
     instance = call("post", "rapp-mgmt", "/instances", json={
+        "operatorApiBase": _url("traffic-steering-rapp", ""),      # where the gateway's /rapps/<instance>/operator/... reaches this rApp: its page in the GUI needs it
         "packageId": package["packageId"], "autonomyMode": "AUTONOMOUS",
         "config": {"managedElementRef": ME, "cells": [{"cellId": c, "layer": layer} for c, layer in gen.LAYERS.items()]},
         "regionScope": {"objectInstance": ME, "cells": region}})

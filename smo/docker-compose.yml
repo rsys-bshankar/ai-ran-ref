@@ -198,10 +198,6 @@ services:
       INTENT_SERVICE_URL: http://intent-service:8000
       SO_SMOS_URL: http://so-smos:8000
       SA_SMOS_URL: http://sa-smos:8000
-      ENERGY_SAVING_RAPP_URL: http://energy-saving-rapp:8000
-      MOBILITY_OPTIMIZATION_RAPP_URL: http://mobility-optimization-rapp:8000
-      COVERAGE_OPTIMIZATION_RAPP_URL: http://coverage-optimization-rapp:8000
-      TRAFFIC_STEERING_RAPP_URL: http://traffic-steering-rapp:8000
 
   sme:
     build: { context: ., args: { <<: *build_info, MODULE: sme, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }

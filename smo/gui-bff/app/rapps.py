@@ -13,7 +13,6 @@ change operator, an undeclared route is refused whatever the role, a `readOnly` 
 short time in this process (they are immutable per package id, and an upgrade is a new package id), so a page does not cost three upstream calls per refresh.
 """
 
-import asyncio
 import json
 import logging
 import time
@@ -33,6 +32,7 @@ log = logging.getLogger("smo-gui-bff")
 
 MAX_PAGES = 20                  # of 500, when reading all instances or packages: 10 000 of either is far past what a directory is for
 PACKAGE_INDEX_SECONDS = 30.0
+PACKAGE_INDEX_REFRESH_SECONDS = 2.0
 DECLARATION_SECONDS = 60.0
 MAX_CACHED_DECLARATIONS = 500
 _NEVER_FORWARD_RESPONSE = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "trailers", "transfer-encoding",
@@ -93,9 +93,13 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
                 break
         return items
 
-    async def packages(force: bool = False) -> dict[str, dict]:
-        """packageId -> what the directory shows (never the declaration itself: it can be 64 KiB)."""
-        if not force and time.monotonic() - package_index["at"] < PACKAGE_INDEX_SECONDS:
+    async def packages(force: bool = False, wanted: set[str] | None = None) -> dict[str, dict]:
+        """packageId -> what the directory shows (never the declaration itself: it can be 64 KiB). The index is kept for PACKAGE_INDEX_SECONDS, except that a
+        package someone asks for (`wanted`) that it does not hold has just been onboarded: it is read again (at most every PACKAGE_INDEX_REFRESH_SECONDS), so a rApp
+        onboarded at run time shows with its name at once."""
+        age = time.monotonic() - package_index["at"]
+        missing = bool(wanted) and not wanted <= package_index["by_id"].keys() and age >= PACKAGE_INDEX_REFRESH_SECONDS
+        if not force and not missing and age < PACKAGE_INDEX_SECONDS:
             return package_index["by_id"]
         by_id = {}
         for p in await read_all("/onboarding/packages"):
@@ -155,7 +159,8 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
                         pinned: bool | None = Query(None, description="Only the pinned (true) or the not pinned (false)."),
                         limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0), session=Depends(current_session)):
         try:
-            instances, index = await asyncio.gather(read_all("/rapp-mgmt/instances"), packages())
+            instances = await read_all("/rapp-mgmt/instances")
+            index = await packages(wanted={str(i.get("packageId")) for i in instances})
         except UpstreamFailure as failure:
             return failure.response
         mine = set(app.state.db.pins(session.user.username))
@@ -188,9 +193,7 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
             if inst is None:
                 return no_such_rapp()
             package_id = str(inst.get("packageId"))
-            index = await packages()
-            if package_id not in index:
-                index = await packages(force=True)
+            index = await packages(wanted={package_id})
             kind, found = await declaration(package_id)
         except UpstreamFailure as failure:
             return failure.response
@@ -268,7 +271,8 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
         names: dict[str, dict] = {}
         if ids:
             try:
-                instances, index = await asyncio.gather(read_all("/rapp-mgmt/instances"), packages())
+                instances = await read_all("/rapp-mgmt/instances")
+                index = await packages(wanted={str(i.get("packageId")) for i in instances})
             except UpstreamFailure:
                 instances = None
             if instances is not None:

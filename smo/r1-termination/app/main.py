@@ -109,16 +109,8 @@ ROUTES = {
     "/intent-service": os.environ.get("INTENT_SERVICE_URL", "http://intent-service:8000"),
     "/so-smos": os.environ.get("SO_SMOS_URL", "http://so-smos:8000"),
     "/sa-smos": os.environ.get("SA_SMOS_URL", "http://sa-smos:8000"),
-    # Wave 10.1: the EnergySaving reference rApp's own northbound API (its
-    # operator dashboard, override and loop controls) — reached by the GUI
-    # through the same gateway as the SMO modules.
-    "/energy-saving-rapp": os.environ.get("ENERGY_SAVING_RAPP_URL", "http://energy-saving-rapp:8000"),
-    # Wave 10.2: the Mobility Optimization reference rApp
-    "/mobility-optimization-rapp": os.environ.get("MOBILITY_OPTIMIZATION_RAPP_URL", "http://mobility-optimization-rapp:8000"),
-    # Wave 10.3: the Coverage Optimization reference rApp
-    "/coverage-optimization-rapp": os.environ.get("COVERAGE_OPTIMIZATION_RAPP_URL", "http://coverage-optimization-rapp:8000"),
-    # Wave 10.4: the Traffic Steering reference rApp
-    "/traffic-steering-rapp": os.environ.get("TRAFFIC_STEERING_RAPP_URL", "http://traffic-steering-rapp:8000"),
+    # The sample rApps' own operator APIs are no longer routes of this table: a rApp instance registers the base URL of its operator API at rApp Management
+    # and `/rapps/{instanceId}/operator/...` (operator_api.py, handled in `_proxy`) is resolved to it, so a rApp onboarded at run time is reachable without a change here.
 }
 # PR-SEC-2: with SMO_MTLS=on every backend is reached over https (an http:// address, default or set, becomes https://)
 ROUTES.update({prefix: mtls.http_url(url) for prefix, url in ROUTES.items()})

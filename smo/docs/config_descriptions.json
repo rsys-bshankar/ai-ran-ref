@@ -7,9 +7,7 @@
   "AWS_ACCESS_KEY_ID": "Access key of the S3-compatible bucket for the `backup` profile's `db-backup` service (`docs/DISASTER_RECOVERY.md`). Empty: the AWS CLI looks for a role or profile instead. Used by no module.",
   "AWS_DEFAULT_REGION": "Region the AWS CLI signs `db-backup` requests for (default `us-east-1`; MinIO accepts any).",
   "AWS_SECRET_ACCESS_KEY": "Secret key that goes with `AWS_ACCESS_KEY_ID`, for `db-backup` only. In an environment variable it is visible to anyone who can inspect the container; on AWS prefer an instance or pod role.",
-  "COVERAGE_OPTIMIZATION_RAPP_URL": "Base URL R1 Termination forwards `/coverage-optimization-rapp/...` to (the Coverage Optimization sample rApp).",
   "DME_URL": "Base URL R1 Termination forwards `/dme`, `/dme-push` and `/dme-pull` to (Data Management and Exposure).",
-  "ENERGY_SAVING_RAPP_URL": "Base URL R1 Termination forwards `/energy-saving-rapp/...` to (the Energy Saving sample rApp).",
   "FOCOM_AUTO_REGISTER_RESOURCE_TYPES": "`true`, `1` or `yes`: FOCOM registers the O2ims resource types of an O-Cloud with the SMO registration service when it is created. Off by default; turning it on adds one call per O-Cloud.",
   "FOCOM_IMS_ENDPOINT": "Path FOCOM advertises as the O2ims `infrastructureManagementServicesEndPoint` in an O-Cloud's registration. Change it when FOCOM is published under another path.",
   "FOCOM_SMO_REGISTRATION_SERVICE": "URL FOCOM advertises as the O2ims `smoRegistrationService` (where an O-Cloud registers with the SMO). Set it to the address the O-Cloud can reach R1 Termination at.",
@@ -61,7 +59,6 @@
   "MDAF_URL": "Base URL R1 Termination forwards `/mdaf/...` to (analytics catalogue and reports).",
   "MLLF_URL": "Base URL R1 Termination forwards `/mllf/...` to.",
   "MLMR_URL": "Base URL R1 Termination forwards `/mlmr/...` to (the model registry).",
-  "MOBILITY_OPTIMIZATION_RAPP_URL": "Base URL R1 Termination forwards `/mobility-optimization-rapp/...` to.",
   "MOCK_O1_OAM_URL": "Origin of RAN NF OAM (for example `http://ran-nf-oam:8000`) that the mock O1 adaptor's emit routes (`/emit/alarm`, `/emit/pm-report`, `/emit/pm-file`, `/emit/heartbeat`, `/emit/software-phase`) send to. Unset: an emit route answers 409 unless the request names a `target`. Plain HTTP: not usable towards a RAN NF OAM that requires mutual TLS. Only for tests and demos with the mock.",
   "MOCK_O1_SUPPORTED_SERVICES": "Comma-separated O1 services the mock adaptor reports as supported in its capability answer, and the services it emits (FM: alarms, PM: reports, FILE: files, SWM: software phases, HEARTBEAT: heartbeats; an emit route for a service not listed answers 409). Only for tests and demos with the mock.",
   "MOCK_O1_VENDOR_MODES": "Comma-separated vendor modes (`O1_NETCONF`, `O1_RESTCONF`) the mock adaptor reports. Only for tests and demos with the mock.",
@@ -193,6 +190,5 @@
   "SMO_WORKER_HEARTBEAT_FILE": "File a worker touches on every tick (default `/tmp/worker-heartbeat`); the container health check reports unhealthy when it is a minute old. Change it only with the health check.",
   "SMO_WORKER_METRICS_PORT": "Port on which a module's worker process serves its own /metrics (task runs and last success per task). Unset by default: the worker serves no metrics port.",
   "SMO_WORKER_TICK_SECONDS": "Seconds between a worker's checks for due tasks (default 5). A task's own interval cannot be shorter than this.",
-  "SO_SMOS_URL": "Base URL R1 Termination forwards `/so-smos/...` to (service orchestration).",
-  "TRAFFIC_STEERING_RAPP_URL": "Base URL R1 Termination forwards `/traffic-steering-rapp/...` to."
+  "SO_SMOS_URL": "Base URL R1 Termination forwards `/so-smos/...` to (service orchestration)."
 }

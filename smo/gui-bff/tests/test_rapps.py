@@ -165,6 +165,22 @@ def test_pages_beyond_the_first_are_read(app, smo):
     assert login(app, "viewer").get("/api/rapps").json()["total"] == 3 and calls == [0, 500, 1000]
 
 
+def test_a_rapp_onboarded_after_the_index_was_read_shows_with_its_name_at_once(app, smo, monkeypatch):
+    from app import rapps
+    c = login(app, "viewer")
+    assert c.get("/api/rapps").json()["total"] == 4                                    # the package index is now cached
+    new_package = {"packageId": str(uuid.uuid4()), "name": "Fresh", "version": "9.0.0", "vendor": "Gamma", "applicationType": "rApp", "state": "AVAILABLE",
+                   "aiCapabilities": {"operatorUi": EXAMPLE}}
+    smo.packages.append(new_package)
+    smo.instances.append({"instanceId": str(uuid.uuid4()), "packageId": new_package["packageId"], "state": "RUNNING", "autonomyMode": "SHADOW", "operatorApiBase": "http://x:8000"})
+    named = lambda: sorted(r["name"] for r in c.get("/api/rapps").json()["items"] if r["version"] == "9.0.0" or r["name"] is None)   # noqa: E731
+    assert named() == [None]                                                          # inside the refresh window the cached index is used, so no name yet
+    monkeypatch.setattr(rapps, "PACKAGE_INDEX_REFRESH_SECONDS", 0.0)
+    assert named() == ["Fresh"]                                                       # a package the index does not hold is read again
+    hit = c.get("/api/rapps", params={"search": "fresh"}).json()
+    assert hit["total"] == 1 and hit["items"][0]["hasPage"] is True and hit["items"][0]["vendor"] == "Gamma"
+
+
 # ------------------------------------------------------------------ one rApp
 
 def test_one_rapp_carries_its_declaration_and_what_the_user_may_do(app):

@@ -324,3 +324,4 @@ a.btn { display: inline-block; text-decoration: none; text-align: center; box-si
 .chart-dot, .chart-bar { fill: var(--series); }
 .chart-key { margin-right: 12px; white-space: nowrap; }
 .chart-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--series); margin-right: 4px; vertical-align: middle; }
+.table-wrap:focus-visible, .json:focus-visible, .drawer-body:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

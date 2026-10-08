@@ -195,12 +195,15 @@ def test_a_registered_base_that_fails_the_guard_is_never_called(world, base):
     assert world["rapp_calls"] == []
 
 
-def test_a_rapp_caller_cannot_use_the_prefix_at_all(world):
+def test_a_rapp_may_read_another_rapps_operator_api_but_never_change_it(world):
+    """Reads are open to every valid token, as for every module (the sample rApps coordinate this way: a cell list another rApp publishes); a change by an
+    rApp is refused by the same allow-list as everywhere (the prefix is not a module an rApp may change)."""
     world["sme_says"] = {"active": True, "client_id": "inv-1", "role": "rapp"}
-    for method in ("GET", "POST", "DELETE"):
+    assert client.get(f"/rapps/{INSTANCE}/operator/instances/{INSTANCE}/cells", headers=AUTH).status_code == 200
+    for method in ("POST", "PUT", "PATCH", "DELETE"):
         resp = client.request(method, f"/rapps/{INSTANCE}/operator/x", headers=AUTH)
         assert resp.status_code == 403 and resp.json()["title"] == "ROLE_NOT_PERMITTED", method
-    assert world["lookups"] == 0 and world["rapp_calls"] == []
+    assert [c[0] for c in world["rapp_calls"]] == ["GET"]
 
 
 def test_a_rapp_may_register_the_operator_api_of_its_own_instance_through_rapp_management(world):

@@ -62,6 +62,7 @@ def onboard(mesh):
 
 def create_instance(mesh, package_id, mode, me=ME, relations=RELATIONS, **config):
     created = ok(mesh["rapp-mgmt"].post("/instances", json={
+        "operatorApiBase": "http://mobility-optimization-rapp:8000",     # where the gateway's /rapps/{instanceId}/operator/... reaches this rApp (GUI-8.3)
         "packageId": package_id, "autonomyMode": mode,
         "config": {"managedElementRef": me, "relations": relations, **config},
         "regionScope": {"objectInstance": me, "cells": [r["relation"] for r in relations]}}))

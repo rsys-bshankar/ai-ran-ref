@@ -89,7 +89,7 @@ function Overview({ instanceId }: { instanceId: string }) {
           { header: "Reported", render: (f) => formatTime(f.reportedAt) },
         ]} />
       </Card>
-      <Card title="Version history">{inst.data ? <VersionHistory id={instanceId} state={inst.data.state} /> : <p className="muted">…</p>}</Card>
+      <Card>{inst.data ? <VersionHistory id={instanceId} state={inst.data.state} /> : <p className="muted">Version history…</p>}</Card>
     </>
   );
 }

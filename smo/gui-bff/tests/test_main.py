@@ -334,10 +334,13 @@ def test_assist_rejection_is_attributed_to_the_gui_user(app, smo):
     assert login(app, "viewer").post("/api/smo/intent-service/autonomy-dispatches/d-1/reject", json={}).status_code == 403
 
 
-def test_energy_saving_override_is_attributed_to_the_gui_user(app, smo):
-    login(app, "operator").post("/api/smo/energy-saving-rapp/instances/i-1/cells/101/override",
-                                json={"operator": "someone-else", "reason": "site visit"})
-    assert json.loads(smo.proxied[0].content) == {"operator": "smo-gui:operator", "reason": "site visit"}
+def test_a_rapps_own_api_is_no_longer_a_module_of_the_proxy(app, smo):
+    """PR-GUI-8: the four sample rApps' static rules are gone; their routes are reached through /api/rapps/<instance>/operator/..., allowed by the declaration."""
+    for who in ("viewer", "operator", "admin"):
+        c = login(app, who)
+        assert c.get("/api/smo/energy-saving-rapp/instances/i-1/dashboard").status_code == 403
+        assert c.post("/api/smo/energy-saving-rapp/instances/i-1/cells/101/override", json={"operator": "x"}).status_code == 403
+    assert smo.proxied == []
 
 
 def test_role_change_applies_on_the_next_request(app, db):
@@ -447,7 +450,7 @@ def test_modules_status_probes_every_module_via_r1(app, smo):
     smo.down_modules.add("nfo")
     body = login(app, "viewer").get("/api/modules/status").json()
     by_module = {m["module"]: m for m in body["modules"]}
-    assert list(by_module) == STATUS_MODULES and len(STATUS_MODULES) == 20  # incl. the Wave 10.1–10.4 reference rApps
+    assert list(by_module) == STATUS_MODULES and len(STATUS_MODULES) == 16  # R1 and the 15 SMO modules; the sample rApps are not probed (their pages are reached by instance, PR-GUI-8)
     assert by_module["nfo"]["healthy"] is False and by_module["nfo"]["error"] == "unreachable"
     assert all(m["healthy"] for name, m in by_module.items() if name != "nfo")
     assert all(isinstance(m["latencyMs"], float) for m in body["modules"])

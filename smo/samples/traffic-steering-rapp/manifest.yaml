@@ -51,3 +51,149 @@ runtimeProfiles:
     cpu: 1
     memory: 2Gi
     gpu: 0
+
+# The page the operator console draws for this rApp (PR-GUI-8, docs/adr/0004-operator-ui-declaration.md): the routes below are this rApp's own API,
+# read and changed only through the GUI backend, which allows exactly these routes. The page needs no code in the console.
+operatorUi:
+  version: 1
+  panels:
+  - id: instance
+    title: Instance
+    kind: keyValues
+    items:
+    - label: Managed element
+      path: managedElementRef
+    - label: Autonomy mode
+      path: autonomyMode
+      format: badge
+    - label: Baseline priority
+      path: baselinePriority
+      format: number
+    - label: Baseline CIO
+      path: baselineCio
+      format: number
+      unit: dB
+    - label: Model
+      path: modelId
+      format: id
+    - label: Model version
+      path: modelVersion
+      format: number
+    - label: Artifact version
+      path: artifactVersion
+      format: number
+    - label: EnergySaving instance
+      path: energySavingInstanceId
+      format: id
+    - label: Mobility instance
+      path: mobilityInstanceId
+      format: id
+    - label: Coverage instance
+      path: coverageInstanceId
+      format: id
+    source:
+      path: /instances/{instanceId}
+      refreshSeconds: 30
+  - id: controls
+    title: Closed loop
+    kind: actions
+    actions:
+    - id: evaluate
+      label: Evaluate now
+      method: POST
+      path: /instances/{instanceId}/evaluate
+      success: Closed-loop pass complete
+      tone: primary
+    - id: reconcile
+      label: Reconcile approvals
+      method: POST
+      path: /instances/{instanceId}/reconcile
+      success: ASSIST dispatches reconciled
+  - id: cells
+    title: Cells
+    kind: table
+    rows: cells
+    rowKey: cellId
+    columns:
+    - path: cellId
+      label: Cell
+    - path: layer
+      label: Layer
+    - path: state
+      label: State
+      format: badge
+    - path: scoreTrend
+      label: Congestion
+      format: sparkline
+      y: v
+    - path: latestDecision.prediction.model.score
+      label: Score
+      format: number
+    - path: latestDecision.prediction.model.forecast
+      label: Forecast
+      format: number
+    - path: latestDecision.prediction.model.band
+      label: Band
+      format: badge
+    - path: steering
+      label: Steering in force
+    - path: latestDecision.decision
+      label: Decision
+      format: badge
+    - path: latestDecision.reason
+      label: Reason
+    - path: latestDecision.outcome
+      label: Outcome
+      format: badge
+    empty: No managed cells.
+    rowDetail:
+      title: Cell {row.cellId} ({row.layer})
+      blocks:
+      - kind: chart
+        title: Congestion score
+        type: line
+        points: scoreTrend
+        x: t
+        y: v
+      - kind: json
+        title: Latest execution (audit trail)
+        path: latestDecision
+        empty: No decision yet.
+      - kind: table
+        title: History
+        columns:
+        - path: observedAt
+          label: Observed
+          format: datetime
+        - path: score
+          label: Score
+          format: number
+        - path: managedRef
+          label: Changed
+        - path: fromValue
+          label: From
+        - path: toValue
+          label: To
+        - path: decision
+          label: Decision
+          format: badge
+        - path: reason
+          label: Reason
+        - path: outcome
+          label: Outcome
+          format: badge
+        - path: executionId
+          label: Execution
+          format: id
+        rows: items
+        empty: No decisions.
+        source:
+          path: /instances/{instanceId}/decisions
+          query:
+            cell_id: '{row.cellId}'
+            limit: 20
+    source:
+      path: /instances/{instanceId}/dashboard
+      query:
+        points: 48
+      refreshSeconds: 15
