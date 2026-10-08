@@ -115,3 +115,49 @@ def delete_webhook(destination: str | None, timeout: float = 5.0) -> httpx.Respo
     post_webhook.
     """
     return _send("delete", destination, timeout=timeout)
+
+
+def normalise_base_url(value: str | None) -> str | None:
+    """A base URL a workload or an operator registers for calls the platform makes later (a rApp instance's `operatorApiBase`, PR-GUI-8): the origin
+    plus an optional path prefix, `http` or `https`, no credentials, query or fragment, at most 300 characters, passing `is_safe_webhook_destination`.
+    Returns it without a trailing slash, or None when it is not acceptable. The same guard runs again before every call (`forward_to_destination`)."""
+    if not value or len(value) > 300 or value != value.strip() or any(ord(c) < 33 or ord(c) == 127 for c in value):
+        return None
+    try:
+        parts = urlsplit(value)
+        port = parts.port
+    except ValueError:
+        return None
+    if parts.username is not None or parts.password is not None or parts.query or parts.fragment or "?" in value or "#" in value:
+        return None
+    if port == 0 or ".." in parts.path or "%" in parts.path or "//" in parts.path or "\\" in value:
+        return None
+    if not is_safe_webhook_destination(value):
+        return None
+    return value.rstrip("/")
+
+
+async def forward_to_destination(method: str, destination: str | None, *, headers: dict, params, content: bytes | None,
+                                 timeout: float) -> httpx.Response | None:
+    """One forwarded call (any method, with headers, query and body) to a caller-registered base URL, for the gateway's operator-API prefix (PR-GUI-8).
+
+    Not a notification, so not a row of docs/NOTIFICATIONS.md's inventory, but the same guard: a destination that fails `is_safe_webhook_destination` is
+    not called (None: the caller answers 502 without saying why) and an https destination inside the deployment gets the client certificate
+    (`mtls.webhook_kwargs`). A timeout raises `httpx.TimeoutException` and another transport failure `httpx.HTTPError`, which the caller maps to a fixed
+    504 / 502 body: neither the exception text nor the destination is ever put in a response.
+    """
+    if not is_safe_webhook_destination(destination):
+        metrics.record_outbound("webhook", "operator-api", method.lower(), "blocked")
+        return None
+    started = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=timeout, **mtls.webhook_kwargs(destination)) as client:
+            resp = await client.request(method, str(destination), headers=headers, params=params, content=content)
+    except httpx.TimeoutException:
+        metrics.record_outbound("webhook", "operator-api", method.lower(), "timeout", time.perf_counter() - started)
+        raise
+    except httpx.HTTPError:
+        metrics.record_outbound("webhook", "operator-api", method.lower(), "error", time.perf_counter() - started)
+        raise
+    metrics.record_outbound("webhook", "operator-api", method.lower(), metrics.outcome_of(resp.status_code), time.perf_counter() - started)
+    return resp

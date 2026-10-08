@@ -49,6 +49,8 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/ran-nf-oam", ("GET",), r"^/safeguard-refusals$"),
         ("/ran-nf-oam", ("POST",), r"^/safeguard-refusals/purge$"),
         ("/ran-nf-oam", ("PUT", "DELETE"), r"^/kpi-schedules/[^/]+$"),
+        # GUI-8.3: the operator's view of a rApp, reached through the gateway's dynamic prefix, is for the operator's GUI, not for another rApp
+        ("/rapps", ("GET", "POST", "PUT", "PATCH", "DELETE"), r"^/.*$"),
     ))
 
 
@@ -94,6 +96,8 @@ RAPP_MAY_CHANGE: dict[str, tuple[tuple[frozenset[str], re.Pattern], ...] | None]
             (("PATCH",), r"^/models/[^/]+/phase-info$"),
         ),
         "/mllf": ((("POST",), r"^/models/[^/]+/deploy$"),),
+        # GUI-8.3: a rApp registers (or withdraws) the operator API of its own instance; rApp Management checks that the instance is the caller's
+        "/rapp-mgmt": ((("PUT", "DELETE"), r"^/instances/[^/]+/operator-api$"),),
         "/mdaf": (
             (("POST",), r"^/(subscriptions|mda-requests|mda-reports|reports)$"),
             (("DELETE",), r"^/(subscriptions|mda-requests)/[^/]+$"),

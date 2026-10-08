@@ -38,6 +38,9 @@ from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.ratelimit import SharedTokenBuckets, TokenBuckets, store_from_environment
 from smo_shared.secretfile import read_secret
 from smo_shared.timeouts import introspect_timeout, upstream_timeout
+from smo_shared.webhook import forward_to_destination
+
+from . import operator_api
 
 log = logging.getLogger(__name__)
 
@@ -238,8 +241,9 @@ async def _proxy(full_path: str, request: Request):
     if segments[1:] == ["metrics"]:
         # Every module's /metrics is for the scraper on the container network (PR-OBS-2.3), not for token holders.
         return JSONResponse(status_code=404, content={"title": "NO_ROUTE", "status": 404})
+    dynamic = prefix == "/" + operator_api.PREFIX            # GUI-8.3: /rapps/{instanceId}/operator/..., the target comes from rApp Management
     backend = ROUTES.get(prefix)
-    if backend is None:
+    if backend is None and not dynamic:
         return JSONResponse(status_code=404, content={"title": "NO_ROUTE", "status": 404})
 
     try:
@@ -308,6 +312,8 @@ async def _proxy(full_path: str, request: Request):
     # docker-compose network boundary); with SMO_MTLS=on the hop to the backend is mutual TLS (PR-SEC-2) — everything past _authorized above
     # is just forwarding the already-authenticated request.
     body = await request.body()
+    if dynamic:
+        return await _forward_operator_api(request, rest_of_path, body, invoker_id, role)
     # Every other header forwards verbatim; X-Correlation-ID is
     # explicitly overridden with this request's own real one (the
     # caller's, or one apply_correlation_id's middleware just generated
@@ -352,6 +358,58 @@ async def _proxy(full_path: str, request: Request):
         return JSONResponse(status_code=502, content={
             "title": "UPSTREAM_UNAVAILABLE", "status": 502, "detail": f"{prefix} could not be reached"})
     return Response(content=upstream.content, status_code=upstream.status_code, headers=dict(upstream.headers))
+
+
+# What the gateway lets through to a rApp's operator API. The base is a URL a workload registered, so nothing of the caller's credentials goes there: not the
+# Authorization header (the BFF's SMO token would reach whoever registered the address), not cookies. What the rApp gets is the content type, the correlation
+# and trace ids and the identity the gateway vouches for (the same headers every module gets).
+_OPERATOR_API_FORWARD = frozenset({"content-type", "accept", "accept-language", "user-agent"})
+_OPERATOR_API_DROP_RESPONSE = frozenset({"connection", "keep-alive", "transfer-encoding", "content-length", "content-encoding", "set-cookie", "server", "date",
+                                         "proxy-authenticate", "te", "trailer", "upgrade"})
+
+
+def _problem(status: int, title: str, detail: str) -> JSONResponse:
+    return JSONResponse(status_code=status, content={"title": title, "status": status, "detail": detail})
+
+
+async def _forward_operator_api(request: Request, rest_of_path: str, body: bytes, invoker_id: str | None, role: str):
+    """GUI-8.3: `/rapps/{instanceId}/operator/<route>` -> `<operatorApiBase of that instance>/<route>`. The caller was authenticated and the role policy,
+    the kill switch and the rate limit were applied by `_proxy`. Every failure is a fixed title: no exception text, no address of the rApp."""
+    target = operator_api.split(rest_of_path)
+    if target is None:
+        return _problem(404, "NO_ROUTE", "the path is /rapps/{instanceId}/operator/<route>")
+    instance_id, route = target
+    try:
+        base = await operator_api.resolve(instance_id, ROUTES["/rapp-mgmt"])
+    except operator_api.Unresolvable:
+        return JSONResponse(status_code=503, headers={"Retry-After": "5"}, content={
+            "title": "OPERATOR_API_UNRESOLVED", "status": 503, "detail": "the operator API of this rApp could not be looked up now; retry shortly"})
+    if base is None:
+        return _problem(404, "OPERATOR_API_NOT_REGISTERED", "this rApp instance has not registered an operator API (or is terminated)")
+    headers = {k: v for k, v in request.headers.items() if k.lower() in _OPERATOR_API_FORWARD}
+    headers[roles.ROLE_HEADER] = role
+    headers[CORRELATION_ID_HEADER] = get_correlation_id()
+    if invoker_id:
+        headers[INVOKER_ID_HEADER] = invoker_id
+    on_behalf_of = request.headers.get(ON_BEHALF_OF_HEADER)
+    if on_behalf_of and role == roles.ROLE_INTERNAL:
+        headers[ON_BEHALF_OF_HEADER] = on_behalf_of
+    try:
+        with tracing.span(f"{request.method} /rapps/operator", "client", {"http.request.method": request.method, "smo.target": "/rapps",
+                                                                         "smo.correlation_id": get_correlation_id() or ""}) as client_span:
+            headers.update(tracing.inject_headers())
+            upstream = await forward_to_destination(request.method, base + route, headers=headers, params=request.query_params,
+                                                    content=body, timeout=upstream_timeout())
+            if upstream is not None:
+                tracing.mark_status(client_span, upstream.status_code)
+    except httpx.TimeoutException:
+        return _problem(504, "UPSTREAM_TIMEOUT", "the rApp's operator API did not answer in time")
+    except httpx.HTTPError:
+        return _problem(502, "UPSTREAM_UNAVAILABLE", "the rApp's operator API could not be reached")
+    if upstream is None:                                       # the registered address failed the SSRF guard again (it changed, or the guard did)
+        return _problem(502, "UPSTREAM_UNAVAILABLE", "the rApp's operator API could not be reached")
+    out = {k: v for k, v in upstream.headers.items() if k.lower() not in _OPERATOR_API_DROP_RESPONSE}
+    return Response(content=upstream.content, status_code=upstream.status_code, headers=out)
 
 
 async def _introspect(request: Request) -> str | None:

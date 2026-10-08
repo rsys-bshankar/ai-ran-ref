@@ -20,6 +20,9 @@ Routes (all under /api, which nginx forwards here unchanged):
   GET  /api/permissions         the RBAC table, so the SPA gates on the same rules
   GET  /api/modules/status      every module's health, readiness and build version via R1, probed in parallel
   *    /api/smo/{module}/...    RBAC-checked proxy to R1 Termination
+  GET  /api/rapps[/{instance}]  the rApp directory, and one rApp with the operator page its package declares (rapps.py)
+  *    /api/rapps/{instance}/operator/...  a call to the rApp's operator API, only for the routes that declaration lists; changes audited
+  GET|PUT|DELETE /api/me/pins   the rApps the user pinned to the sidebar (at most 5)
   /api/admin/users[...]         user + role CRUD, break-glass flag, revoke a user's sessions, reset a user's one-time code (admin)
   GET  /api/admin/audit         the append-only audit log (admin)
 """
@@ -46,7 +49,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from .config import Settings, settings as default_settings
-from . import totp
+from . import rapps, totp
 from .db import AuditEntry, Database, GuiUser, LoginFailure
 from .oidc import LOGIN_TTL_SECONDS, MAX_PENDING_LOGINS, OidcClient, OidcConfig, OidcError
 from .rbac import MODULES, RULES, Role, Rule, User, decide
@@ -847,6 +850,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         out_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in _NEVER_FORWARD_RESPONSE}
         return Response(content=upstream.content, status_code=upstream.status_code, headers=out_headers)
 
+    # ------------------------------------------------------------ rApp directory, declared pages, pins (PR-GUI-8)
+
+    rapps.install(app, current_session=current_session, audit=audit, problem=_problem)
+
     # ------------------------------------------------------------ admin
 
     class CreateUserRequest(BaseModel):
@@ -942,6 +949,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             s.delete(user)
             s.commit()
         app.state.db.reset_totp(username)       # the one-time-code secret, recovery codes and open challenges go with the account (docs/PRIVACY.md)
+        app.state.db.remove_all_pins(username)  # so do the rApps the user pinned to the sidebar
         audit("USER_DELETED", session.user, detail=username)
         return Response(status_code=204)
 

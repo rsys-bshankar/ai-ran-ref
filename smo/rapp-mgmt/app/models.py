@@ -58,6 +58,10 @@ class RAppInstance(Versioned, Base):
     # the UPGRADE version it undoes; resolve_upgrade's commit marks that
     # version rolled back. None for an ordinary upgrade's replacement.
     rollback_of_version_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    # PR-GUI-8 (GUI-8.3, docs/adr/0004-operator-ui-declaration.md 4): the base URL (http or https, passing smo_shared.webhook.is_safe_webhook_destination)
+    # where this instance's operator API is reached. Registered by the instance itself (its own authenticated call) or set by an operator; R1 Termination
+    # resolves /rapps/{instanceId}/operator/... to it. None: nothing registered, the instance has no declared operator page working.
+    operator_api_base: Mapped[str | None] = mapped_column(String)
 
 
 class RAppInstanceVersion(Base):
