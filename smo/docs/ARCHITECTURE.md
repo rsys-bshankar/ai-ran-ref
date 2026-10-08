@@ -201,6 +201,16 @@ module's HLD, LLD and unit-test document.
 **rApp packaging** (the CSAR layout, `manifest.yaml`, `capabilities.yaml`, and
 what Onboarding validates) is documented in [RAPP_PACKAGING.md](RAPP_PACKAGING.md).
 
+**The operator surface of a rApp** (`PR-GUI-8`, [adr/0004-operator-ui-declaration.md](adr/0004-operator-ui-declaration.md)). The GUI has one
+rApps entry and a directory of every rApp; what a rApp's page shows is not coded in the GUI but declared by the rApp's package
+(`operatorUi` in `manifest.yaml`: ordered panels of table, key-values, KPI, chart and action kinds, each bound to a GET route of the rApp's
+operator API) and drawn by a generic renderer, so onboarding a rApp makes its page appear without a GUI build. Onboarding validates the
+declaration (`smo_shared/operator_ui.py`) and stores it in `aiCapabilities.operatorUi`. The rApp instance registers an `operatorApiBase`; the
+GUI backend reaches the declared routes through the R1 gateway, and its permission to call one is derived from the declaration: exactly the
+panels' sources and the actions' routes, reads for a viewer, changes for an operator, every change audited, anything else refused. A rApp does
+not ship JavaScript or an iframe. Today only the format, the check and the SDK helper exist (stage 1); the GUI backend proxy, the pages and the
+migration of the four samples are the open steps `GUI-8.3` to `8.7`.
+
 ## R1 API conventions
 
 Every R1-facing service applies the same conventions, implemented once in
@@ -312,7 +322,8 @@ reviewed (waves 10.1–10.4) is in [HISTORY.md](../HISTORY.md).
 | Document | Content |
 |---|---|
 | Module READMEs (`<module>/README.md`) | HLD, LLD and unit tests of each module |
-| [RAPP_PACKAGING.md](RAPP_PACKAGING.md) | rApp CSAR layout, manifest and capabilities, per-sample parameter tables |
+| [RAPP_PACKAGING.md](RAPP_PACKAGING.md) | rApp CSAR layout, manifest and capabilities (including `operatorUi`, the page a rApp declares), per-sample parameter tables |
+| [adr/](adr/) | Architecture decision records, `0004`: the operator page a rApp declares |
 | [STANDARDS.md](STANDARDS.md) | Frozen decisions, standards compliance matrices, runtime realization |
 | [HISTORY.md](../HISTORY.md) | How the platform got here: decisions, audits, exit reviews (the code cites its IDs) |
 | [call-flows/](call-flows/) | Sequence diagrams 01–27 (02 and 17: AI/ML lifecycle; 09: intents; 12: DME eligibility; 14: correlation id; 21: vendor onboarding; 22–25: reference rApps; 26: model governance and end of life; 27: TS 28.105 provisioning resources) |

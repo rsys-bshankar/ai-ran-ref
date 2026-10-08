@@ -1265,14 +1265,11 @@ Why: the sidebar is a fixed list and each of the four sample rApps has a hand-wr
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| GUI-8.1 | ADR: the declaration format (`operatorUi` in the manifest: version, panels of kind table, key-values, KPIs, chart and actions, each bound to a route the rApp declares), the limits (size, panel count), and how the rApp's operator API is reached | ADR merged | – |
-| GUI-8.2 | Manifest schema and Onboarding validation; `docs/RAPP_PACKAGING.md` | A bad declaration (undeclared route, too large, unknown kind) is rejected at onboarding | GUI-8.1 |
-| GUI-8.3 | GUI backend: the directory (`GET /api/rapps`, with search, state, owner), the declaration of one instance, and a proxy for the declared routes whose permission comes from the declaration (read: viewer, change: operator; an undeclared route is refused; every change audited) | Route and RBAC tests | GUI-8.2 |
-| GUI-8.4 | GUI: the directory page (search, filter, state) and the detail page `/rapps/<instance>`: the generic overview (lifecycle, faults, history, KPIs, safeguards) and the declared panels | Component tests | GUI-8.3 |
+| GUI-8.3 | GUI backend (decided in `docs/adr/0004-operator-ui-declaration.md`, 4 and 7: the instance registers an `operatorApiBase` in rApp Management, the gateway resolves a dynamic prefix to it, and the permission is `route_allowed` of `smo_shared.operator_ui` on the declaration stored with the package): the directory (`GET /api/rapps`, with search, state, owner), the declaration of one instance, and a proxy for the declared routes whose permission comes from the declaration (read: viewer, change: operator; an undeclared route is refused; every change audited) | Route and RBAC tests | – |
+| GUI-8.4 | GUI (the format and its limits are in the ADR; the renderer draws unknown kinds as "unsupported panel"): the directory page (search, filter, state) and the detail page `/rapps/<instance>`: the generic overview (lifecycle, faults, history, KPIs, safeguards) and the declared panels | Component tests | GUI-8.3 |
 | GUI-8.5 | Per-user pins in the sidebar (at most 5; stored in the GUI backend, not the browser) | Test | GUI-8.4 |
-| GUI-8.6 | The four sample rApps declare their pages; their coded pages, static sidebar entries and static permission rules go | Same views from the declaration; browser check | GUI-8.4 |
+| GUI-8.6 | The four sample rApps declare their pages with `smo_sdk.operator_ui` (the helper exists; `gui/README.md` describes the renderer and the declared pages in the GUI steps) (what the declaration cannot express is listed in the ADR: row drawers need `rowDetail`, which the owner accepts or declines here); their coded pages, static sidebar entries and static permission rules go | Same views from the declaration; browser check | GUI-8.4 |
 | GUI-8.7 | Browser check: onboard a rApp at run time and see its page, with no GUI rebuild; a viewer cannot press a change button | `smo-gui-e2e` | GUI-8.6 |
-| GUI-8.8 | SDK helper to write the declaration; `gui/README.md` | Sample uses it | GUI-8.2 |
 
 ### 5.14 Standards and compliance (`PR-STD`)
 
