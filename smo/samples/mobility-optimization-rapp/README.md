@@ -11,7 +11,7 @@ A Non-RT RIC rApp that classifies handover failures per neighbour relation and t
 | O1 targets | `NRCellRelation.cellIndividualOffset` (actuator); `DMROFunction` (`maximumDeviationHoTriggerLow`, `maximumDeviationHoTriggerHigh`, `minimumTimeBetweenHoTriggerChange`, `dmroControl`) |
 | Datasets | `HO_PERFORMANCE` (training, validation, inference); `HO_PERFORMANCE_SIM` (Digital Twin, emulation) |
 | Autonomy modes | SHADOW, ASSIST, AUTONOMOUS |
-| R1 route | `/mobility-optimization-rapp/...` (R1 Termination proxies to this service) |
+| Operator API | served on `:8000` as `/instances/...`; the instance's base URL is registered at rApp Management (`operatorApiBase` when the instance is created) and R1 Termination reaches it at `/rapps/<instance>/operator/...`. The page the GUI draws for it is declared in `manifest.yaml` (`operatorUi`) |
 | Call flow | [23 Mobility Optimization closed loop](../../docs/call-flows/23-mobility-optimization-closed-loop.md) |
 | Demo runbook | [DEMO_RUNBOOK.md section 25](../../DEMO_RUNBOOK.md) (Demo 00-11) |
 | Unit tests | 46 passed (`tests/test_engine.py`, `tests/test_model.py`, `tests/test_routes.py`; 98 % of `app/`) |
@@ -47,7 +47,7 @@ Decision logic is in `app/engine.py` (pure functions) and `app/model/MobilityMod
 - **DMRO bounds.** Written at deploy and read back (`VERIFIED` or `VERIFY_FAILED`). Defaults: `dmroControl` true, deviation -6 / +6, `minimumTimeBetweenHoTriggerChange` 60. The instance config key `dmroBounds` overrides them.
 - **Validation.** Held-out ACT / HOLD / HEALTHY band score of at least 0.8 and RMSE of at most 1.5 points.
 - **Emulation.** Correct CIO direction on at least 90 % of faulty windows and no action on a healthy relation.
-- **Peers.** Optional `energySavingInstanceId` and `trafficSteeringInstanceId` in the instance config make it read those rApps' published cell and relation states over R1. Without them, the corresponding guards stay open.
+- **Peers.** Optional `energySavingInstanceId` and `trafficSteeringInstanceId` in the instance config make it read those rApps' published cell and relation states over R1 (`/rapps/<instance>/operator/...`, the operator API that peer instance registered). Without them, the corresponding guards stay open.
 
 ## Files
 
@@ -62,6 +62,7 @@ Decision logic is in `app/engine.py` (pure functions) and `app/model/MobilityMod
 | `app/models.py` | Instance, relation and decision tables |
 | `demo.py` | Demo 00-11 script |
 | `tests/` | Engine, model and route unit tests (routes through the TestClient on SQLite, the SDK replaced by a platform double) |
+| `tests/test_operator_page.py` | The `operatorUi` of `manifest.yaml` is valid, names only routes this rApp serves with query parameters they take, and reads only fields its own answers carry (4 tests) |
 | `manifest.yaml`, `capabilities.yaml`, `Definitions/asd.yaml`, `TOSCA-Metadata/` | CSAR package content |
 
 ## Package
@@ -115,6 +116,6 @@ Ids persist between steps in `$DEMO_STATE` (default `/tmp/mobility-optimization-
 - Only `NRCellRelation.cellIndividualOffset` is tuned, with the same value in all six entries. A live CIO whose entries differ is treated as unknown and the stored value is used.
 - Thresholds (5 %, 2 %, 50 attempts, 60 and 30 minutes, 6 dB) are fixed in code, not configurable per relation.
 - The model is a persistence-anchored linear regression with a rule-based classifier; it has no learned failure classification.
-- Coordination with EnergySaving and Traffic Steering is by polling their R1 routes; an unreachable peer is treated as "no information", not as a block.
+- Coordination with EnergySaving and Traffic Steering is by polling their operator APIs through R1 (`/rapps/<instance>/operator/...`); an unreachable peer is treated as "no information", not as a block.
 - `supportedVendorModes` lists `O1_NETCONF` and `O1_RESTCONF`; RAN NF OAM dispatches over whichever the managed element is provisioned for.
 - Open items for the platform are in [OPEN_ITEMS.md](../../OPEN_ITEMS.md); none is specific to this rApp.

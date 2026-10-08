@@ -14,7 +14,9 @@ the platform sit an operator GUI with a backend-for-frontend, an AI Runtime
 SDK, and four reference rApps (Energy Saving, Mobility Optimization,
 Coverage Optimization, Traffic Steering). Each rApp runs a closed loop from
 O1 PM data through the governed TS 28.105 model lifecycle to verified O1 CM
-writes.
+writes. The GUI has one rApps entry: a searchable directory of every rApp and, for each,
+a page its own package declares (`operatorUi` in `manifest.yaml`) that a generic renderer
+draws, so a rApp onboarded at run time has its page with no GUI build.
 
 ## Stack and modules
 
@@ -73,19 +75,19 @@ rApps are not platform modules: they consume the platform through R1 and the AI
 Runtime SDK, and each is packaged as a CSAR. How the packages are structured and
 what each parameter means is in [`docs/RAPP_PACKAGING.md`](docs/RAPP_PACKAGING.md).
 
-| rApp | Directory | Use case | R1 route | Call flow |
+| rApp | Directory | Use case | Operator page in the GUI | Call flow |
 |---|---|---|---|---|
-| [Energy Saving](samples/energy-saving-rapp/README.md) | `samples/energy-saving-rapp/` | Cell sleep/wake | `/energy-saving-rapp` | [01](docs/call-flows/01-rapp-onboarding-to-deployment.md), [22](docs/call-flows/22-energy-saving-closed-loop.md) |
-| [Mobility Optimization](samples/mobility-optimization-rapp/README.md) | `samples/mobility-optimization-rapp/` | Per-relation CIO | `/mobility-optimization-rapp` | [23](docs/call-flows/23-mobility-optimization-closed-loop.md) |
-| [Coverage Optimization](samples/coverage-optimization-rapp/README.md) | `samples/coverage-optimization-rapp/` | Joint tilt / power | `/coverage-optimization-rapp` | [24](docs/call-flows/24-coverage-optimization-closed-loop.md) |
-| [Traffic Steering](samples/traffic-steering-rapp/README.md) | `samples/traffic-steering-rapp/` | Idle priority + connected CIO | `/traffic-steering-rapp` | [25](docs/call-flows/25-traffic-steering-closed-loop.md) |
+| [Energy Saving](samples/energy-saving-rapp/README.md) | `samples/energy-saving-rapp/` | Cell sleep/wake | declared in `manifest.yaml` (`operatorUi`), at `/rapps/<instance>` | [01](docs/call-flows/01-rapp-onboarding-to-deployment.md), [22](docs/call-flows/22-energy-saving-closed-loop.md) |
+| [Mobility Optimization](samples/mobility-optimization-rapp/README.md) | `samples/mobility-optimization-rapp/` | Per-relation CIO | declared in `manifest.yaml` (`operatorUi`), at `/rapps/<instance>` | [23](docs/call-flows/23-mobility-optimization-closed-loop.md) |
+| [Coverage Optimization](samples/coverage-optimization-rapp/README.md) | `samples/coverage-optimization-rapp/` | Joint tilt / power | declared in `manifest.yaml` (`operatorUi`), at `/rapps/<instance>` | [24](docs/call-flows/24-coverage-optimization-closed-loop.md) |
+| [Traffic Steering](samples/traffic-steering-rapp/README.md) | `samples/traffic-steering-rapp/` | Idle priority + connected CIO | declared in `manifest.yaml` (`operatorUi`), at `/rapps/<instance>` | [25](docs/call-flows/25-traffic-steering-closed-loop.md) |
 
 R1 Termination's routing table is `ROUTES` in `r1-termination/app/main.py`.
 It strips the prefix before forwarding, so `/sme/capif-events/...` reaches SME's
 `/capif-events/...`. Tokens are obtained from SME's own address, which
 `/bootstrap` returns (`tokenEndPoint`); the gateway itself answers 401 to an
 unauthenticated `/sme/oauth2/token`. `/bootstrap` has no token (an rApp needs it to find SME) and reveals only SME's address and two API paths; `R1_BOOTSTRAP_KEY` optionally gates it behind a shared `X-Bootstrap-Key` (`r1-termination/README.md`). The per-caller rate limit is per replica unless `R1_RATE_STORE=postgres` shares one budget. Cross-module calls go through `smo_shared.r1_client.R1Client`,
-which obtains its own SME token the same way an rApp does.
+which obtains its own SME token the same way an rApp does. A rApp's own operator API is not in that table: `/rapps/{instanceId}/operator/...` is resolved per instance to the base URL the instance registered at rApp Management (`r1-termination/README.md`), and the GUI backend calls only the routes the rApp's package declares.
 
 ## Quickstart
 
@@ -237,8 +239,8 @@ smo/
   conformance/o1/           O1 adaptor conformance kit: `python -m conformance.o1 --adaptor URL [--oam-url URL]`, CM checks and, with RAN NF OAM, FM, PM, SW and heartbeat checks (conformance/README.md)
   sdk/smo_sdk/              AI Runtime SDK: data, analytics, models, lifecycle, intent, platform clients; operator_ui (writes a rApp's declared operator page)
   sdk/examples/             the smallest package that declares an operator page
-  gui/                      React + TypeScript operator console (nginx)
-  gui-bff/                  GUI backend-for-frontend: auth, RBAC (app/rbac.py), audit, R1 proxy
+  gui/                      React + TypeScript operator console (nginx): the rApp directory and the generic renderer of declared pages
+  gui-bff/                  GUI backend-for-frontend: auth, RBAC (app/rbac.py), audit, R1 proxy, the rApp directory, declared-route proxy and pins (app/rapps.py)
   samples/
     build_csar.py           builds samples/<name>.csar from samples/<name>/
     <name>-rapp/README.md   each sample's README: what it does, design, package, API, tests

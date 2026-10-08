@@ -78,7 +78,8 @@ Failure behaviour: a backend that does not answer within `R1_UPSTREAM_TIMEOUT_SE
 
 | File | Responsibility |
 |---|---|
-| `app/main.py` | The whole module: `ROUTES`, the probes, `/bootstrap`, the catch-all `proxy`, `_authorized` (introspection call). |
+| `app/main.py` | `ROUTES`, the probes, `/bootstrap`, the catch-all `proxy`, `_authorized` (introspection call) and `_forward_operator_api`, the forward of the `/rapps/{instanceId}/operator/...` prefix. |
+| `app/operator_api.py` | The dynamic prefix (GUI-8.3): `split` (the shape of the path), `resolve` (the instance's registered `operatorApiBase` from rApp Management, cached for `R1_OPERATOR_API_CACHE_SECONDS`, an answer under a minute old kept when rApp Management cannot answer), `Unresolvable`. |
 | `../shared/smo_shared/openapi_security.py` | `apply_r1_gateway_security(app, public_paths={"/health", "/live", "/ready", "/version", "/bootstrap"})`: adds the `r1BearerAuth` scheme to the OpenAPI document and marks those paths as unauthenticated. |
 | `../shared/smo_shared/invoker.py` | `INVOKER_ID_HEADER`, `ON_BEHALF_OF_HEADER` and `invoker_id(request)`: the caller id a backend reads (MLMR's `storeDiscReqs`, and the per-rApp safeguards at RAN NF OAM, which apply to the rApp an SMO module is acting for). R1 Termination forwards `X-R1-On-Behalf-Of` only from an `internal` caller and drops an rApp's own value. |
 | `../shared/smo_shared/correlation.py` | `apply_correlation_id(app)`: middleware assigning `X-Correlation-ID` when absent; `get_correlation_id()`. |
@@ -99,6 +100,7 @@ None: stateless.
 | GET | `/health` | Liveness of the gateway itself; no auth; an alias of `/live`. A backend's own probes are reached as `/<module>/health`, `/<module>/ready` and is token-gated like any call (the GUI BFF's `GET /modules/status` probes both). | none |
 | GET | `/bootstrap` | `{apiEndpoints: [...]}` with exactly two entries, `service-apis` (discovery) and `published-apis` (registration), each with `tokenEndPoint.uri` and `apiEndPoint.uri`; no token (optionally the shared `X-Bootstrap-Key` header, `R1_BOOTSTRAP_KEY`, PR-SEC-9.3), URI-stable. The URIs name SME on the compose network, or, with `R1_PUBLIC_BASE_URL` set (an origin, never taken from request headers), `<base>/sme/...` with the token endpoint at `<base>/sme/oauth2/token` (PR-SEC-1.6). | 401 `UNAUTHORIZED` only when `R1_BOOTSTRAP_KEY` is set and the header is missing or wrong |
 | GET, POST, PUT, PATCH, DELETE | `/{prefix}/{rest}` | Authenticate, strip `/{prefix}`, forward method, headers, query string and body to `ROUTES[prefix]/{rest}`; return the upstream status, headers and body. | `404 NO_ROUTE` unknown prefix; `401 UNAUTHORIZED` token check failed |
+| GET, POST, PUT, PATCH, DELETE | `/rapps/{instanceId}/operator/{route}` | The operator API of a rApp instance (GUI-8.3, "The operator API prefix" below): authenticate and apply the role policy and the kill switch as for any prefix, resolve the base URL the instance registered at rApp Management, and forward method, query, body and the identity headers to `<base>/<route>`. The caller's `Authorization` and cookies are not forwarded. | `404 NO_ROUTE` the path is not that shape; `404 OPERATOR_API_NOT_REGISTERED`; `503 OPERATOR_API_UNRESOLVED`; `502`, `504` as for any backend |
 
 Notes:
 
@@ -126,12 +128,8 @@ Route table (`ROUTES`, prefix → env var → default):
 | `/intent-service` | `INTENT_SERVICE_URL` | `http://intent-service:8000` |
 | `/so-smos` | `SO_SMOS_URL` | `http://so-smos:8000` |
 | `/sa-smos` | `SA_SMOS_URL` | `http://sa-smos:8000` |
-| `/energy-saving-rapp` | `ENERGY_SAVING_RAPP_URL` | `http://energy-saving-rapp:8000` |
-| `/mobility-optimization-rapp` | `MOBILITY_OPTIMIZATION_RAPP_URL` | `http://mobility-optimization-rapp:8000` |
-| `/coverage-optimization-rapp` | `COVERAGE_OPTIMIZATION_RAPP_URL` | `http://coverage-optimization-rapp:8000` |
-| `/traffic-steering-rapp` | `TRAFFIC_STEERING_RAPP_URL` | `http://traffic-steering-rapp:8000` |
 
-The reference rApps are routed so the GUI reaches their operator APIs through the same gateway as the SMO modules.
+A rApp's own operator API is not a row of this table: `/rapps/{instanceId}/operator/...` is resolved per instance ("The operator API prefix" below). The four static routes of the sample rApps and their `*_RAPP_URL` variables were removed with `PR-GUI-8`.
 
 ### 2.5 Interactions
 
@@ -159,6 +157,7 @@ Request-time order: route lookup (404) → bearer header present and non-empty (
 | `SMO_ROLE_ENFORCEMENT` | `enforce` | `enforce`: an rApp is refused on the internal-only routes; `audit`: the same decision is counted (`smo_role_refusals_total`) and logged, then allowed (a rolling upgrade from a release with no enrollment). Anything else is `enforce` |
 | `R1_KILL_SWITCH` | `on` | `off`: the gateway does not refuse changes by a stopped rApp (RAN NF OAM still refuses its config jobs). On, it reads the `rapp_kill` table; see "The kill switch" below |
 | `R1_KILL_CACHE_SECONDS` | `3` | How long the gateway keeps what it read about one rApp: the delay between throwing the switch and the gateway acting on it |
+| `R1_OPERATOR_API_CACHE_SECONDS` | `5` | How long the gateway keeps the operator API base a rApp instance registered (GUI-8.3): the delay between a registration, a change or the end of the instance and the gateway acting on it. `0` asks rApp Management on every call |
 | `R1_AUDIT` | `on` | `off` records nothing in the audit chain (PR-SEC-11). On, the gateway needs `SMO_DATABASE_URL` like a module does; a write that fails is logged and counted (`smo_audit_writes_total{outcome="failed"}`) and never fails the call |
 | `R1_INTROSPECT_TIMEOUT_SECONDS` | `5` | How long it waits for SME's token introspection (a timeout fails closed: 401) |
 
@@ -170,7 +169,9 @@ The gateway answers with `JSONResponse` bodies of the form `{"title": ..., "stat
 
 | `title` | Status | When |
 |---|---|---|
-| `NO_ROUTE` | 404 | First path segment is not in `ROUTES` |
+| `NO_ROUTE` | 404 | First path segment is not in `ROUTES` and not `rapps`, or a `/rapps` path is not `/rapps/<instance id>/operator/<route>` (the route only letters, digits and `._~-` between slashes) |
+| `OPERATOR_API_NOT_REGISTERED` | 404 | The instance has registered no operator API, is unknown, or is terminated (the answer of rApp Management, 404 or a null base, or a base that no longer passes the address check) |
+| `OPERATOR_API_UNRESOLVED` | 503 | rApp Management did not answer and no answer under a minute old is held; `Retry-After: 5`. Nothing is forwarded |
 | `UNAUTHORIZED` | 401 | No `Authorization` header, not `Bearer`, empty token, SME unreachable, or token not active; on `GET /bootstrap`, a missing or wrong `X-Bootstrap-Key` when `R1_BOOTSTRAP_KEY` is set |
 | `PAYLOAD_TOO_LARGE` | 413 | The request body is larger than the cap for that path (`Content-Length`, or counted while streaming); the backend is not called |
 | `RATE_LIMITED` | 429 | The caller has used its request budget (per replica, or across replicas with `R1_RATE_STORE=postgres`); `Retry-After` is the whole seconds to wait. Counted after authentication, so a refused unauthenticated request spends nobody's budget |
@@ -203,6 +204,7 @@ cd smo/r1-termination && PYTHONPATH=.:../shared python -m pytest tests/ -q
 |---|---|---|
 | `tests/test_bootstrap_key_and_shared_limiter.py` | The bootstrap key (open by default; 401 without or with a wrong key, nothing revealed in the refusal; constant-time compare; from the environment or a file, never both; the declared optional header and 401) and the shared limiter at the gateway (default store is in-process; `postgres` builds the shared limiter, a bad value stops the service; 429 and the bucket row; a second replica over the same database sees the spent budget; a database error does not refuse and is logged; unauthenticated requests spend nothing) | 11 |
 | `tests/test_main.py` | Bootstrap content and its no-auth rule; route table covers every module; unknown prefix 404; proxy to the right backend; 401 for missing/non-bearer/inactive token; fail-closed when SME is unreachable; method, body and query forwarding; `Host` stripped, other headers kept; correlation id generated or kept; `traceparent` / `tracestate` forwarded when valid, dropped when not; upstream error status passthrough; bare-prefix path; `/dme-push` and `/dme-pull` routing; local `/health` | 20 |
+| `tests/test_operator_api.py` | GUI-8.3, the `/rapps/{instanceId}/operator/...` prefix: the base, route and query reach the rApp; the caller's `Authorization`, cookie and any `X-R1-Role` it sent do not, the gateway's identity headers do; a base path prefix; not registered, unknown and terminated are one 404; paths that are not the shape, and `..`, `//`, an encoded slash; the cache (once, and `0` asks every time) and a changed registration after it; rApp Management down (503 without the exception text, the last answer used when it is under a minute old); an unreachable (502) and a slow (504) rApp with no text of the exception or the address in the answer; a registered base that fails the address check is never called; an rApp may read but never change; an rApp may register its own instance's operator API; a change through the prefix is in the audit chain | 30 |
 | `tests/test_mtls_routes.py` | PR-SEC-2: off, every backend address is plain `http://`; `SMO_MTLS=on`: every backend and the advertised token endpoint are `https://`, an operator-set `http://` address is upgraded and an `https://` one is left alone (each case imports the gateway in a fresh interpreter) | 3 |
 
 ### 3.3 What is not covered here
@@ -243,6 +245,18 @@ For a caller with the `rapp` role the gateway applies two lists from `shared/smo
 ## Audit (PR-SEC-11)
 
 After it answers, the gateway adds one row to the audit hash chain (`smo_shared/audit.py`) for every authenticated POST, PUT, PATCH and DELETE, including the ones it refuses for the caller's role. Reads, calls with no good token and calls held by the rate limiter are not recorded (an attacker without a token must not be able to write to the database), and the body and query are never recorded. `python -m smo_shared.audit verify` and `export` run in any image of the stack: `docker compose exec r1-termination python -m smo_shared.audit verify`.
+
+## The operator API prefix (GUI-8.3)
+
+A rApp instance has an operator API: the routes its package declares in `operatorUi` (`docs/adr/0004-operator-ui-declaration.md`). The instance's `operatorApiBase` is registered at rApp Management (`PUT /instances/{id}/operator-api`, or `operatorApiBase` when it is created), and the gateway reaches it at `/rapps/{instanceId}/operator/<route>` with no entry in `ROUTES` and no restart, so a rApp onboarded at run time is reachable at once. The caller is introspected, rate limited and held to the role policy and the kill switch like any call; then:
+
+- **Resolution.** `GET /instances/{id}/operator-api` of rApp Management, as an internal caller, once per `R1_OPERATOR_API_CACHE_SECONDS` per instance. Unknown, terminated, unregistered and a stored value that fails the address check are one `404 OPERATOR_API_NOT_REGISTERED`; an answer the gateway cannot get is `503 OPERATOR_API_UNRESOLVED` unless the last one is under a minute old.
+- **The base is a URL a workload supplied**, so it is the SSRF shape `smo_shared/webhook.py` exists for: rApp Management checks it when it is stored (`normalise_base_url`: http or https, no credentials, query or fragment, not a loopback, link-local or metadata address) and the gateway again before every call (`forward_to_destination`, which does not call a destination that fails the check). A hostname that resolves to a blocked address is the residual risk that module's docstring records.
+- **What is forwarded.** The method, the query, the body, the content, accept and language headers, the correlation and trace ids and the identity the gateway vouches for (`X-R1-Role`, `X-R1-Invoker-Id`, and `X-R1-On-Behalf-Of` from an internal caller). Not the `Authorization` header and not cookies: the BFF's SMO token must not reach an address a workload chose. The rApp's `Set-Cookie` and hop-by-hop headers are dropped from the answer.
+- **Failures say nothing about the destination.** A timeout is `504 UPSTREAM_TIMEOUT`, any other transport error and a refused address `502 UPSTREAM_UNAVAILABLE`, each with a fixed `detail`: never the exception text and never the rApp's address.
+- **Who may call.** Reads are open to every valid token (the sample rApps read one another's published cells and relations through it); a change by an rApp is refused by the allow-list as for any module; the operator's GUI backend is an internal caller and may do both, but it forwards only the routes the declaration lists (`gui-bff/README.md`). Changes are in the audit chain with the full path as the target.
+
+`forward_to_destination` is not a notification (nothing is stored or retried), so it is not a row of `docs/NOTIFICATIONS.md`; that file says why.
 
 ## The kill switch (AI-10.4)
 

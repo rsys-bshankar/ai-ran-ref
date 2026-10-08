@@ -40,9 +40,9 @@ sequenceDiagram
     else planning
         TS->>OAM: GET /managed-entities/{me}/config, CIO, isHOAllowed, isMLBAllowed per relation, priority per layer, NRCellDU / CES state
         TS->>OAM: sdk.data.query_cell_guards() and GET /alarms
-        TS->>ES: GET /energy-saving-rapp/instances/{id}/cells, SLEEP / PRE_SLEEP and last wake
-        TS->>MRO: GET /mobility-optimization-rapp/instances/{id}/relations, relations OBSERVING (shared CIO)
-        TS->>CCO: GET /coverage-optimization-rapp/instances/{id}/cells, cells in a change set
+        TS->>ES: GET /rapps/{energy-saving id}/operator/instances/{energy-saving id}/cells, SLEEP / PRE_SLEEP and last wake
+        TS->>MRO: GET /rapps/{mobility-optimization id}/operator/instances/{mobility-optimization id}/relations, relations OBSERVING (shared CIO)
+        TS->>CCO: GET /rapps/{coverage-optimization id}/operator/instances/{coverage-optimization id}/cells, cells in a change set
         TS->>TS: engine guards, target exclusions, knob choice (idle first towards another layer), bounds, anti-oscillation
         TS->>AIMGF: POST /models/{id}/inference-jobs, runtime must be ACTIVE
         TS->>TS: SteeringModel.plan, pairwise, least-loaded target, no target above 55 after the transfer
@@ -72,7 +72,7 @@ sequenceDiagram
             TS->>DME: POST /dme/actions (previous value, own actionId), rollback, read back, re-sent once
         end
     end
-    MRO->>TS: GET /traffic-steering-rapp/instances/{id}/relations, the Mobility rApp holds a relation under observation here
+    MRO->>TS: GET /rapps/{traffic-steering id}/operator/instances/{traffic-steering id}/relations, the Mobility rApp holds a relation under observation here
 ```
 
 **Key decisions this flow depends on:**

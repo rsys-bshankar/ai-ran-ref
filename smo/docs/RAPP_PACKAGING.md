@@ -68,7 +68,7 @@ absent from the result; none is enforced as mandatory.
 
 The AI rApps declare no deployment items because they are not deployed from a
 Helm chart: their services run as `docker-compose.yml` services and are reached
-through R1 Termination (`/energy-saving-rapp` and so on). The CSAR is what
+through the instance's operator API base (`operatorApiBase`, registered at rApp Management and reached through R1 Termination's `/rapps/{instanceId}/operator/...`). The CSAR is what
 Onboarding validates and what carries the manifest, not what starts the
 process. Package uniqueness is the SHA-256 of the whole CSAR, not the ASD ids.
 
@@ -84,7 +84,7 @@ and tools, and nothing branches on it.
 
 | Parameter | Description | Used by | ES | MO | CO | TS |
 |---|---|---|---|---|---|---|
-| `operatorUi` | The operator page the rApp declares (§3.1). Under `rappManifest` or at the top level | **Validated** by Onboarding and stored in `aiCapabilities.operatorUi`; drawn by the GUI's generic renderer and used by the GUI backend to permit the rApp's routes (from `PR-GUI-8` stage 2) | absent | absent | absent | absent |
+| `operatorUi` | The operator page the rApp declares (§3.1). Under `rappManifest` or at the top level | **Validated** by Onboarding and stored in `aiCapabilities.operatorUi`; drawn by the GUI's generic renderer; the GUI backend calls exactly the routes it lists on the instance's `operatorApiBase` | declared (the ADR's worked example, verbatim) | declared | declared | declared |
 | `rappManifest.manifestVersion` | Version of the manifest format | Stored in `aiCapabilities.manifestVersion` | `"1.0"` | `"1.0"` | `"1.0"` | `"1.0"` |
 | `rappManifest.aiRuntimeSdkVersion` | `sdk/` contract version the rApp was built against | Stored in `aiCapabilities.aiRuntimeSdkVersion` | `"1.0"` | `"1.0"` | `"1.0"` | `"1.0"` |
 | `executionModes` | Which of `TRAINING`, `VALIDATION`, `EMULATION`, `INFERENCE` the package supports | Stored; every `runtimeProfiles` key must be one of them | all four | all four | all four | all four |
@@ -157,6 +157,10 @@ operatorUi:
 | Version | `1`; another value is refused |
 
 Onboarding refuses a bad declaration with the place and the rule (`operatorUi.panels[2].columns[1].path: must not contain '..'`);
+
+**Where the page's routes are served.** The routes are relative to the rApp's *operator API base*, which the instance registers at rApp Management: `operatorApiBase` in `POST /rapp-mgmt/instances` (an operator's choice, also in the GUI's Deploy dialog) or `PUT /rapp-mgmt/instances/<id>/operator-api` from the instance itself (a workload running with the instance's own credentials) or an operator. It must be an `http` or `https` URL without credentials, query or fragment and not a loopback, link-local or metadata address (checked when stored and before every call). The package carries no address: where the rApp runs is a fact of the deployment. A rApp with no registered base still has its page's `kpi` tiles and the platform overview, and the page says its operator API is not registered. The four sample rApps run in compose as one container each, under their own identity, so the demo scripts pass `operatorApiBase` when they create the instance.
+
+**The samples.** Each sample's `manifest.yaml` declares its page at the end (an instance block, the Evaluate and Reconcile buttons, and the cells or relations table with a drawer); Energy Saving's is the ADR's example verbatim, and `samples/<name>/tests/test_operator_page.py` checks that every declared route, query parameter and field exists in the rApp's own answers. What a declared page cannot show is at the end of the ADR.
 see §6.
 
 Why a package leaves a parameter out:

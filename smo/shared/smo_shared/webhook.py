@@ -121,16 +121,16 @@ def normalise_base_url(value: str | None) -> str | None:
     """A base URL a workload or an operator registers for calls the platform makes later (a rApp instance's `operatorApiBase`, PR-GUI-8): the origin
     plus an optional path prefix, `http` or `https`, no credentials, query or fragment, at most 300 characters, passing `is_safe_webhook_destination`.
     Returns it without a trailing slash, or None when it is not acceptable. The same guard runs again before every call (`forward_to_destination`)."""
-    if not value or len(value) > 300 or value != value.strip() or any(ord(c) < 33 or ord(c) == 127 for c in value):
+    if not value or len(value) > 300 or value != value.strip():
+        return None
+    if any(ord(c) < 33 or ord(c) == 127 for c in value) or any(c in value for c in "?#\\%"):
         return None
     try:
         parts = urlsplit(value)
         port = parts.port
     except ValueError:
         return None
-    if parts.username is not None or parts.password is not None or parts.query or parts.fragment or "?" in value or "#" in value:
-        return None
-    if port == 0 or ".." in parts.path or "%" in parts.path or "//" in parts.path or "\\" in value:
+    if parts.username is not None or parts.password is not None or port == 0 or ".." in parts.path or "//" in parts.path:
         return None
     if not is_safe_webhook_destination(value):
         return None

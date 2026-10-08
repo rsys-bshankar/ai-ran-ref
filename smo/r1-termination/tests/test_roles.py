@@ -152,6 +152,9 @@ def test_a_module_that_names_nobody_forwards_nothing(gateway):
     ("PUT", "/sme/trusted-invokers/x"), ("POST", "/aimgf/ml-training-functions"), ("POST", "/aimgf/execution-timeouts/sweep"),
     ("POST", "/aimgf/models/m/runtime/terminate"), ("POST", "/mlmr/storages"), ("POST", "/mdaf/mda-functions"), ("PUT", "/ran-nf-oam/rapp-limits/x"),
     ("POST", "/ran-nf-oam/config-jobs/j/abort"), ("PUT", "/ran-nf-oam/kpi-schedules/s"), ("POST", "/ran-nf-oam/managed-elements"),
+    # GUI-8.3: an rApp registers (and forgets) the operator API of an instance, with those two methods and that one path
+    ("POST", "/rapp-mgmt/instances/i/operator-api"), ("PATCH", "/rapp-mgmt/instances/i/operator-api"), ("PUT", "/rapp-mgmt/instances/i/operator-api/x"),
+    ("PUT", "/rapp-mgmt/instances/i/j/operator-api"), ("DELETE", "/rapp-mgmt/instances/operator-api"),
 ])
 def test_an_rapp_may_not_change_what_it_does_not_use(gateway, method, path):
     resp = client.request(method, path, headers=AUTH)
@@ -162,7 +165,7 @@ def test_an_rapp_may_not_change_what_it_does_not_use(gateway, method, path):
 @pytest.mark.parametrize("method, path", [
     ("POST", "/ran-nf-oam/config-jobs"), ("POST", "/dme/actions"), ("PUT", "/dme/data-jobs/j"), ("POST", "/aimgf/models/m/advance"),
     ("POST", "/aimgf/ml-training-requests"), ("PATCH", "/intent-service/intents/i/admin-state"), ("POST", "/sme/oauth2/token"),
-    ("POST", "/mlmr/models/m/artifact"), ("DELETE", "/mdaf/subscriptions/s"),
+    ("POST", "/mlmr/models/m/artifact"), ("DELETE", "/mdaf/subscriptions/s"), ("PUT", "/rapp-mgmt/instances/i/operator-api"), ("DELETE", "/rapp-mgmt/instances/i/operator-api"),
 ])
 def test_an_rapp_may_change_what_it_uses(gateway, method, path):
     assert client.request(method, path, headers=AUTH).status_code == 200

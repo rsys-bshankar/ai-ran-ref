@@ -1,7 +1,8 @@
 # SMO Operator GUI
 
 A React + TypeScript single-page console for operating the SMO modules and
-the four reference rApps, plus its backend-for-frontend (`../gui-bff`).
+every rApp, plus its backend-for-frontend (`../gui-bff`). It has **one rApps entry**: a
+directory of all rApps, and for each a page its package declares and a generic renderer draws.
 
 ```
 Browser ──► gui (nginx :3000) ──/api──► gui-bff ──Bearer (SME-issued)──► R1 Termination ──► modules
@@ -66,7 +67,7 @@ Tests:
 
 ```bash
 cd smo/gui-bff && PYTHONPATH=. python -m pytest tests -q     # auth, CSRF, RBAC, proxy, health, admin/audit
-cd smo/gui && npm test && npm run typecheck && npm run build   # Vitest: role gating, API helpers, domain logic, the sign-in, one-time-code and enrolment pages
+cd smo/gui && npm test && npm run typecheck && npm run build   # Vitest: role gating, API helpers, domain logic, the sign-in, one-time-code and enrolment pages, the renderer of a declared page, the rApp directory
 ```
 
 `src/auth/permissions.fixture.json` is a snapshot of the BFF's permission
@@ -142,7 +143,7 @@ the admin state of exactly the intents it created).
 | **Intents** | `/intent-service/intents` (+ `admin-state`), `/intent-reports`, `/intent-handling-functions` · `/intent-service/autonomy-dispatches` (+ `resolve`, `reject`) |
 | **Change management** (Infrastructure → O1 endpoints & jobs, the job drawer; KPIs → KPI definitions) | `/ran-nf-oam/config-jobs/{id}` (+ `rollback`, `continue`, `halt`, `abort`), `/ran-nf-oam/kpi-definitions`, `/ran-nf-oam/kpi-schedules`: a staged job's waves, wave actions and rollback with a preview (operator), a job's KPI guard, KPI definitions and schedules (admin) |
 | **Safeguards** | `/rapp-mgmt/instances/{id}/safeguards`, `/rapp-mgmt/instances/{id}/kill`, `/ran-nf-oam/rapp-limits/{invokerId}`, `/ran-nf-oam/rapp-kill`, `/ran-nf-oam/safeguard-refusals`, `/ran-nf-oam/safeguard-subscriptions`: stop and resume an rApp (operator stops, admin resumes), its limits (admin), the refusal log, and who is told about refusals (admin) |
-| **Energy Saving**, **Mobility**, **Coverage**, **Traffic Steering** | `/energy-saving-rapp/instances`, `/mobility-optimization-rapp/instances`, `/coverage-optimization-rapp/instances`, `/traffic-steering-rapp/instances` (+ `{id}/dashboard`, `evaluate`, `reconcile`, per-cell or per-relation views); see `../DEMO_RUNBOOK.md` §24–§27 |
+| **rApps** (the directory and `/rapps/<instance>`, `PR-GUI-8`) | BFF `GET /api/rapps` (search, `state`, `owner`, `hasPage`, `pinned`), `GET /api/rapps/{instance}`, `/api/rapps/{instance}/operator/...` (only the routes the rApp's package declares), `/api/me/pins`; platform overview of the page: `/rapp-mgmt/instances/{id}` (+ `performance`, `faults`, `safeguards`, `versions`, and the lifecycle buttons); see "The rApp directory and the declared pages" below |
 | **Infrastructure** | `/nfo/deployments` (+ `heal`, `scale`, `resources`, `operations`, `DELETE`), `/nfo/descriptors` · `/focom/resource-pools` (+ `resources`), `resource-types`, `deployment-managers`, `topology`, `resources/provision`, `inventory/subscriptions` · `/ran-nf-oam/o1-adaptor-endpoints` (+ `discover`, `heartbeat`), `config-jobs` (several MEs per job), `software-management-jobs` (+ `advance`) · `/so-smos/orders` (+ `cancel`) |
 | **Data & Exposure** (call flows 01, 08) | `/dme/dme-types`, `production-capabilities`, `data-jobs`, `offers` (+ `notify`), `type-subscriptions` · `/sme/provider-registrations`, `published-apis/v1/{apf}/service-apis`, `invoker-registrations`, `trusted-invokers`, `service-apis/v1/allServiceAPIs`, `capif-events/v1/{subscriber}/subscriptions` |
 | **Admin** | BFF `/api/admin/users`, `/api/admin/audit` |
@@ -150,6 +151,26 @@ the admin state of exactly the intents it created).
 Polling: alarms every 5 s, module health every 10 s, lists every 15 s
 (TanStack Query). Any lifecycle action refetches every SMO read, since one
 call often changes another module's state.
+
+## The rApp directory and the declared pages
+
+The sidebar has one **rApps** entry and, under it, the rApps the signed-in user **pinned** (at most five, kept by the BFF in `gui_rapp_pin`, so they follow the user to any browser). **rApps** opens the *Directory* tab: every rApp instance with its name, version, owner (the package's vendor), state, autonomy mode and whether it declares a page; search (after a 250 ms pause) by name, owner, version or id; filters for state, owner, "declares a page" and "pinned only"; paging by 25; a star pins or unpins. *Packages* and *Instances* are the other two tabs (onboarding, deploying, upgrading), unchanged; the Deploy dialog has an optional *Operator API base URL*.
+
+A row opens `/rapps/<instance>`. It shows, first, **the page the rApp's package declares** and, under *Platform overview*, what every rApp has: lifecycle (with its buttons), the KPIs it reported, safeguards, faults and version history. The declaration is `operatorUi` in the package's `manifest.yaml` (`../docs/adr/0004-operator-ui-declaration.md` has the format and its limits; `../docs/RAPP_PACKAGING.md` an example; `smo_sdk.operator_ui` writes one). The renderer is `src/components/OperatorUi.tsx` over `src/lib/operatorUi.ts` (pure, tested in `operatorUi.test.ts`), so **a rApp onboarded at run time shows its page with no GUI build** and nothing a rApp ships runs in the browser (no JavaScript, no iframe).
+
+| Declared | Drawn as |
+|---|---|
+| `table` | A table: `rows` (the list in the answer), `rowKey`, columns with a format (`text`, `number`, `percent` (the number is already in percent), `datetime`, `badge`, `id`, `boolean`, `list`, `sparkline`), `empty` text; a click on a row opens its `rowDetail` drawer; `rowActions` are buttons per row, shown only when their `when` holds for that row |
+| `keyValues` | Labelled values of one object |
+| `kpis` | Number tiles: `path` reads the panel's source, `kpi` the latest performance report of the instance (a page of only `kpi` tiles needs no operator API) |
+| `chart` | A line or bar chart (SVG) of `points`, `x` and `y`, one series per `seriesBy` value (at most eight; the rest are counted, not drawn), with a legend |
+| `actions` | Buttons. `inputs` open a dialog (checked before sending), `confirm` asks first, the declared `success` text is the toast, `tone` styles the button |
+| `rowDetail` | A drawer with a title (`{row.<field>}` filled from the clicked row) and up to six blocks: `json` (the row or a field of it, with an `empty` text), `keyValues`, `table` and `chart` (from a list field of the row, or fetched for the open row when the drawer opens) |
+
+- **Reads** go to `/api/rapps/<instance>/operator/<route>` and are repeated every `refreshSeconds` of the source (5 to 3600; none: when the page opens and by the panel's refresh button). **Changes** are sent with the declared action's id, and the BFF fills `"{user}"` and refuses anything the declaration does not list (`../gui-bff/README.md` 2.4); a **viewer sees no change button**, only a sentence saying why. A page whose rApp registered no operator API says so and does not request its panels.
+- **Unknown things never break the page.** A panel kind this build does not know is a card saying *unsupported panel*; an unknown column shape or a chart of an unknown type likewise; an unknown block kind is *unsupported block*; an unknown format is text; a panel that throws is *could not be drawn* and the others are drawn. A missing field is a dash.
+- **Everything on the page is text.** A title of `<script>` or a value of `<img onerror>` is drawn as those characters; a badge's colour comes from the GUI's table of state words, never from the value; field paths follow only names the object itself has.
+- What a declared page cannot show (composed text such as `source → target`, a map's entries, threshold colours, a second drawer level) is listed at the end of the ADR; a rApp that needs one adds a field to its answer.
 
 ## Out of scope (Phase 1)
 
@@ -311,22 +332,15 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [Autonomy: AWAITING_SCOPE](docs/screenshots/lcm/policy-autonomy-awaiting-scope.png) | An ASSIST instance waits for an operator to scope it, or reject it |
 | [Autonomy: resolved](docs/screenshots/lcm/policy-autonomy-resolved.png) | Scope supplied; an intent was created and the dispatch is DISPATCHED |
 
-#### Energy Saving, Mobility, Coverage, Traffic Steering (reference rApps)
+#### rApp directory and declared pages (`/rapps`, `/rapps/<instance>`)
 
 | Screen | What it shows |
 |---|---|
-| [Energy Saving](docs/screenshots/pages/energy-saving.png) | Per-cell PRB trend, prediction, safety guards, decision and verification |
-| [Mobility](docs/screenshots/pages/mobility.png) | Neighbour relations with handover KPIs and CIO decisions |
-| [Coverage](docs/screenshots/pages/coverage.png) | Per-cell tilt and power with excess shares, and the latest joint plan |
-| [Traffic Steering](docs/screenshots/pages/traffic-steering.png) | Per-cell congestion, forecast, steering in force and safety |
-| [Energy Saving: cell detail](docs/screenshots/lcm/energy-saving-drilldown-drawer.png) | The decision chain for one cell |
-| [Energy Saving: after Evaluate now](docs/screenshots/lcm/energy-saving-after-evaluate.png) | One closed-loop pass completed |
-| [Mobility: relation detail](docs/screenshots/lcm/mobility-drilldown-drawer.png) | The decision chain for one neighbour relation |
-| [Mobility: after Evaluate now](docs/screenshots/lcm/mobility-after-evaluate.png) | One closed-loop pass completed |
-| [Coverage: cell detail](docs/screenshots/lcm/coverage-drilldown-drawer.png) | The decision chain for one cell |
-| [Coverage: after Evaluate now](docs/screenshots/lcm/coverage-after-evaluate.png) | One closed-loop pass completed |
-| [Traffic Steering: cell detail](docs/screenshots/lcm/traffic-steering-drilldown-drawer.png) | The decision chain for one cell |
-| [Traffic Steering: after Evaluate now](docs/screenshots/lcm/traffic-steering-after-evaluate.png) | One closed-loop pass completed |
+| [rApp directory](docs/screenshots/pages/rapp-directory.png) | Search, filters, state, whether a page is declared, the pin star |
+| [Energy Saving page, as an operator](docs/screenshots/pages/rapp-page-energy-saving.png) | The page declared in the package: instance, buttons, cells with sparklines and a row action, then the platform overview |
+| [Mobility page, as a viewer](docs/screenshots/pages/rapp-page-mobility-viewer.png) | The same renderer on another package; no change button, and a sentence saying why |
+| [Mobility: relation drawer](docs/screenshots/pages/rapp-drawer-mobility.png) | The drawer of a row: trend chart, the latest execution as JSON, the history fetched for that row |
+| [Pinned rApp in the sidebar](docs/screenshots/pages/rapp-sidebar-pinned.png) | A pinned rApp under the one rApps entry |
 
 #### Infrastructure (NFO, FOCOM, RAN NF OAM, SO SMOS)
 

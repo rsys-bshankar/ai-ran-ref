@@ -7,10 +7,10 @@
 | Standards basis | O-RAN rApp lifecycle management (O-RAN-SC rApp Manager) + internal autonomy mode / region scope |
 | R1 route / port | `/rapp-mgmt` via R1 Termination (container `:8000`) |
 | Depends on (over R1) | Onboarding (`onboarding-status`, `usage/start`, `usage/stop`); NFO (`POST /nfo/deployments`, `DELETE /nfo/deployments/{id}`); SME (provider and service-API registration and deregistration); DME (`DELETE /dme/production-capabilities`) |
-| Called by | Operators and GUI BFF; the rApp container itself (`bootstrap-complete`, `config`, `performance`, `fault`); Intent Service (reads an instance's `autonomyMode` and `regionScope`); SA SMOS (`rollback`, `versions`); the reference rApps (read their own instance) |
+| Called by | Operators and GUI BFF; the rApp container itself (`bootstrap-complete`, `config`, `performance`, `fault`, and `operator-api` for its own instance); R1 Termination (`GET operator-api`, to resolve `/rapps/{instanceId}/operator/...`); Intent Service (reads an instance's `autonomyMode` and `regionScope`); SA SMOS (`rollback`, `versions`); the reference rApps (read their own instance) |
 | Database tables | `rapp_instance` (versioned), `rapp_instance_version`, `rapp_fault_report`, `rapp_performance_report` |
 | Idempotency | `POST /instances` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
-| Unit tests | 123 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 147 passed (`tests/`, SQLite, standalone) |
 | Status | Done. No open item in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) names this module; limits in 2.8 |
 | Time-driven behaviour | On request, never on a timer: an overdue upgrade is rolled back the next time either row is touched |
 
@@ -60,6 +60,7 @@ Cross-module references (`package_id`, `package_usage_registration_id`, `workloa
 | The upgrade / rollback choreography and `RAppInstanceVersion` history | Workload placement and the deployment record → NFO |
 | `autonomyMode`, `regionScope`, `configuration` of an instance | Enacting an outcome per autonomy mode (`AutonomyDispatch`) → Intent Service |
 | Instance fault and performance reports (record only) | Service registry and tokens → SME; data producer registry → DME |
+| Where an instance's operator API is (`operator_api_base`) | What the page declares (Onboarding stores the declaration), and what the GUI may call on it (the GUI backend); the forward itself (R1 Termination) |
 | Instance identity (`oauth_client_id`) and its revocation | Deciding to roll back after an assurance breach → SA SMOS (calls `rollback`) |
 
 ### 1.5 Design decisions
@@ -74,6 +75,7 @@ Cross-module references (`package_id`, `package_usage_registration_id`, `workloa
 | `upgradeTimeoutSeconds` is enforced lazily: when either row is read, listed, or an `upgrade/resolve` arrives, an overdue upgrade is rolled back first. | No scheduler exists in this build. |
 | Rollback is an upgrade back to the newest version not already rolled back, restoring that version's package, configuration, autonomy mode and region scope. Repeated rollbacks walk further back instead of flip-flopping. A superseded instance id resolves to the instance that replaced it last. | SA SMOS holds the id it registered before an upgrade. |
 | `SHADOW` is the default autonomy mode. | The safest mode: nothing is ever enforced. |
+| `operatorApiBase` is optional and registered by the instance (a caller with the rApp role may set it only for the instance whose `oauthClientId` is its invoker id: 403 `NOT_THIS_INSTANCE`) or by an operator; a terminated instance refuses and reports none. | The base is a URL a workload supplied and the platform calls later, so it is checked as every such destination is (`is_safe_webhook_destination`, plus no credentials, query, fragment, `..`, `%` or `//`) and the gateway checks it again; a workload that cannot speak for the instance (the sample rApps in compose serve many instances under one identity) is given the address by the operator. |
 | `autonomyMode` and `regionScope` are fixed at create (and inherited by upgrades); there is no route to change them. | A per-instance property chosen at onboarding, not per inference call. |
 | A critical fault fires `CRASH`; a non-critical fault is only recorded. | Only a critical fault takes an instance out of `RUNNING`. |
 | No authorization beyond R1's token check; the GUI BFF limits create, config, upgrade, rollback, recover and bootstrap-complete to operators, terminate, delete, performance and fault to admins. | The rApp itself calls some of these through R1. |
@@ -121,6 +123,7 @@ Every mode notifies the operator, best effort.
 | `region_scope` (JSON, null) | opaque scope for `AUTONOMOUS` |
 | `last_teardown` (JSON, null) | `{instanceId, reason, nfoTerminate, usageStop, at}` of the latest teardown this row performed or inherited |
 | `rollback_of_version_id` (null) | set on a replacement created by a rollback: the upgrade version it undoes |
+| `operator_api_base` (null) | PR-GUI-8 (revision `0030`): the base URL, http or https, at which the instance serves the operator API its package declares; set at create by an operator or by `PUT .../operator-api`; `null`: none registered, so the instance's declared page cannot read anything. Checked by `smo_shared.webhook.normalise_base_url` when stored and again by the gateway before each call |
 
 **`rapp_instance_version`**: one row per committed upgrade or rollback. Instance ids are bare (the retired row is deleted, the history outlives it).
 
@@ -165,9 +168,12 @@ Upgrade choreography (`upgrade.py`):
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/instances` (202) | `{packageId, config={}, autonomyMode="SHADOW", regionScope?}` → `{instanceId, oauthClientId}` | 404 `PACKAGE_NOT_FOUND`; 409 `MODEL_NOT_CERTIFIED` (package not `AVAILABLE` / `PRIMED`, or no descriptor); 422 (invalid `autonomyMode`) |
-| GET | `/instances?state=` | Paged `{instanceId, packageId, state, autonomyMode}`; applies the lazy timeout to every `UPGRADING` instance first | |
-| GET | `/instances/{id}` | Detail: `workloadRef, configuration, pendingUpgradeInstanceId, smeServiceIds, autonomyMode, regionScope, lastTeardown` | 404 `RAPP_INSTANCE_NOT_FOUND` (also for a replacement already rolled back) |
+| POST | `/instances` (202) | `{packageId, config={}, autonomyMode="SHADOW", regionScope?, operatorApiBase?}` → `{instanceId, oauthClientId}` | 404 `PACKAGE_NOT_FOUND`; 409 `MODEL_NOT_CERTIFIED` (package not `AVAILABLE` / `PRIMED`, or no descriptor); 422 (invalid `autonomyMode`) |
+| GET | `/instances?state=` | Paged `{instanceId, packageId, state, autonomyMode, operatorApiBase}`; applies the lazy timeout to every `UPGRADING` instance first | |
+| GET | `/instances/{id}` | Detail: `workloadRef, configuration, pendingUpgradeInstanceId, smeServiceIds, autonomyMode, regionScope, lastTeardown, operatorApiBase` | 404 `RAPP_INSTANCE_NOT_FOUND` (also for a replacement already rolled back) |
+| PUT | `/instances/{id}/operator-api` | `{operatorApiBase}` → `{instanceId, operatorApiBase}` (trailing slash dropped): register where this instance's operator API is reached (`PR-GUI-8`). From an operator or from the instance itself (an rApp-role caller whose `X-R1-Invoker-Id` is the instance's `oauthClientId`) | 403 `NOT_THIS_INSTANCE`; 404; 409 once `UNDEPLOYED`; 422 `OPERATOR_API_BASE_INVALID` |
+| DELETE | `/instances/{id}/operator-api` (204) | Forget it; idempotent; same callers | 403 `NOT_THIS_INSTANCE`; 404 |
+| GET | `/instances/{id}/operator-api` | `{instanceId, state, operatorApiBase}`, null for a terminated instance: what R1 Termination reads to resolve `/rapps/{instanceId}/operator/...` | 404 |
 | POST | `/instances/{id}/bootstrap-complete` | `DEPLOYING → RUNNING`; registers SME declarations | 409 |
 | POST | `/instances/{id}/recover` | `FAULTED → DEPLOYING` | 409 |
 | GET | `/instances/{id}/safeguards` | what holds this instance in check at RAN NF OAM, in one read, for the GUI: `{instanceId, invokerId, killed, kill?, limits?}` (limits include `configJobsLastHour`); a terminated instance has `invokerId` null; 503 when RAN NF OAM cannot answer, never reported as "not stopped" | 404; 503 |
@@ -215,6 +221,8 @@ rApp Management reads one environment variable of its own: `RAPP_CREDENTIAL_DELI
 | `MODEL_NOT_CERTIFIED` | 409 | Package not `AVAILABLE` / `PRIMED`, or its status read failed, or it has no descriptor (name borrowed from AIMgF) |
 | `LIFECYCLE_ILLEGAL_TRANSITION` | 409 | See 2.3 |
 | `RAPP_INSTANCE_NOT_UNDEPLOYED` | 409 | Delete while not `UNDEPLOYED` |
+| `OPERATOR_API_BASE_INVALID` | 422 | `operatorApiBase` is not an http or https URL without credentials, query or fragment, or is a loopback, link-local or metadata address (at create, or `PUT .../operator-api`) |
+| `NOT_THIS_INSTANCE` | 403 | A caller with the rApp role tried to register or forget the operator API of an instance that is not its own |
 | `RAPP_UPGRADE_TIMED_OUT` | 409 | Commit after the deadline; the upgrade was rolled back |
 | `ROLLBACK_HISTORY_UNAVAILABLE` | 409 | No upgrade left to roll back |
 | FastAPI request validation | 422 | Invalid `autonomyMode`, malformed body |
@@ -242,6 +250,7 @@ cd smo/rapp-mgmt && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | Test file | Covers | Count |
 |---|---|---|
 | `tests/test_main.py` | Create: usage registration, autonomy defaults and `AUTONOMOUS` scope, package states accepted / refused, invalid mode, workload ref from NFO's 202, unknown package | 11 |
+| `tests/test_operator_api.py` | GUI-8.3: no base at first and the base in the list and the detail; an operator gives it at create (stored without the trailing slash) and a refused one creates nothing; 17 forbidden or malformed values (loopback, metadata address, `localhost`, other schemes, credentials, query, fragment, `..`, `//`, `%`, too long, port 0) are 422; register, replace and clear (idempotent); 404 on every route for an unknown instance; a rApp registers only for itself (another instance, no invoker id: 403) and an internal caller for any; a terminated instance reports none and refuses a registration (409) | 24 |
 | | Terminate and teardown: usage stop, NFO terminate recorded, DME and SME deregistration (also on crash), unreachable DME tolerated, row kept in `UNDEPLOYED`, retire from `FAULTED` / `DEPLOYING` | 11 |
 | | SME declarations at bootstrap-complete (CAPIF shape and this build's own shape) | 2 |
 | | Recover route | 1 |

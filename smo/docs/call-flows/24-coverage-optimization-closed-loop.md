@@ -34,8 +34,8 @@ sequenceDiagram
     else no change set open
         CCO->>OAM: GET /managed-entities/{me}/config, live digitalTilt and configuredMaxTxPower per cell, NRCellDU / CES state
         CCO->>OAM: sdk.data.query_cell_guards() and GET /alarms, protected cells and critical alarms
-        CCO->>ES: GET /energy-saving-rapp/instances/{id}/cells, SLEEP / PRE_SLEEP and last wake
-        CCO->>MRO: GET /mobility-optimization-rapp/instances/{id}/relations, relations OBSERVING
+        CCO->>ES: GET /rapps/{energy-saving id}/operator/instances/{energy-saving id}/cells, SLEEP / PRE_SLEEP and last wake
+        CCO->>MRO: GET /rapps/{mobility-optimization id}/operator/instances/{mobility-optimization id}/relations, relations OBSERVING
         CCO->>CCO: engine guards and bounds, the moves each cell may make
         CCO->>AIMGF: POST /models/{id}/inference-jobs, runtime must be ACTIVE
         CCO->>CCO: CoverageModel.optimise, joint search over the cluster, at most 2 cells, one step each
