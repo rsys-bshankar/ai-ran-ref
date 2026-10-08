@@ -24,6 +24,7 @@ import { Mobility } from "./pages/Mobility";
 import { Coverage } from "./pages/Coverage";
 import { TrafficSteering } from "./pages/TrafficSteering";
 import { Rapps } from "./pages/Rapps";
+import { RappDetail } from "./pages/RappDetail";
 import { Safeguards } from "./pages/Safeguards";
 import { Security } from "./pages/Security";
 import "./styles.css";
@@ -62,6 +63,7 @@ createRoot(document.getElementById("root")!).render(
                 <Route index element={<Dashboard />} />
                 <Route path="flows" element={<Flows />} />
                 <Route path="rapps" element={<Rapps />} />
+                <Route path="rapps/:instanceId" element={<RappDetail />} />
                 <Route path="safeguards" element={<Safeguards />} />
                 <Route path="aiml" element={<Aiml />} />
                 <Route path="alarms" element={<Alarms />} />

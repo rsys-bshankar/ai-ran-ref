@@ -8,17 +8,18 @@ import {
   ActionButton, Can, Card, DataTable, Drawer, ErrorBox, Field, Id, Json, KeyValue, Modal, PageHeader, SeverityChip,
   StateBadge, Tabs, useHashTab,
 } from "../components/ui";
+import { RappDirectory } from "./RappDirectory";
 import { formatTime, metricSeries, numericMetricKeys, packageActions, parseJsonObject } from "../lib/domain";
 
-const TABS = ["packages", "instances"] as const;
+const TABS = ["directory", "packages", "instances"] as const;
 
 export function Rapps() {
-  const [tab, setTab] = useHashTab(TABS, "packages");
+  const [tab, setTab] = useHashTab(TABS, "directory");
   return (
     <>
-      <PageHeader title="rApps" subtitle={<>Onboarding → rApp Management → NFO, per <code>docs/call-flows/01-rapp-onboarding-to-deployment.md</code></>} />
-      <Tabs tabs={[{ id: "packages", label: "Packages" }, { id: "instances", label: "Instances" }]} value={tab} onChange={setTab} />
-      {tab === "packages" ? <Packages /> : <Instances />}
+      <PageHeader title="rApps" subtitle={<>Every rApp and the page its package declares; Packages and Instances administer them (Onboarding → rApp Management → NFO, per <code>docs/call-flows/01-rapp-onboarding-to-deployment.md</code>)</>} />
+      <Tabs tabs={[{ id: "directory", label: "Directory" }, { id: "packages", label: "Packages" }, { id: "instances", label: "Instances" }]} value={tab} onChange={setTab} />
+      {tab === "directory" ? <RappDirectory /> : tab === "packages" ? <Packages /> : <Instances />}
     </>
   );
 }
@@ -229,7 +230,7 @@ function Instances() {
   );
 }
 
-function InstanceActions({ inst, withUpgrade }: { inst: InstanceSummary; withUpgrade?: () => void }) {
+export function InstanceActions({ inst, withUpgrade }: { inst: InstanceSummary; withUpgrade?: () => void }) {
   const base = `/rapp-mgmt/instances/${inst.instanceId}`;
   return (
     <div className="row gap end">
@@ -258,6 +259,7 @@ function InstanceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
       <ErrorBox error={inst.error} />
       {inst.data && <>
         <div className="row between"><StateBadge state={inst.data.state} /><InstanceActions inst={inst.data} withUpgrade={() => setUpgrading(true)} /></div>
+        <p><Link className="btn small" to={`/rapps/${id}`}>Open this rApp's page →</Link></p>
         <KeyValue items={[
           ["Instance ID", <code>{inst.data.instanceId}</code>], ["Package", <code>{inst.data.packageId}</code>],
           ["NFO deployment (workloadRef)", inst.data.workloadRef && <code>{inst.data.workloadRef}</code>],
@@ -291,7 +293,7 @@ function InstanceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
 // OI-1-sa-rollback: committed upgrades and rollbacks, newest first. Rollback
 // is an upgrade back to the newest version not already rolled back — resolve
 // it like any upgrade once the replacement bootstraps.
-function VersionHistory({ id, state }: { id: string; state: string }) {
+export function VersionHistory({ id, state }: { id: string; state: string }) {
   const base = `/rapp-mgmt/instances/${id}`;
   const history = useSmo<InstanceVersions>(`${base}/versions`);
   const target = history.data?.rollbackTarget;

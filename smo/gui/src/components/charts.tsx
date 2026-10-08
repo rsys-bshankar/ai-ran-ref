@@ -24,7 +24,7 @@ export function Sparkline({ points, width = 220, height = 48, floor, label }: {
         {points.map((p, i) => (
           <circle key={i} cx={x(i)} cy={y(p.v)} r={i === points.length - 1 ? 3 : 1.5}
             className={floor !== undefined && p.v < floor ? "spark-dot bad" : "spark-dot"}>
-            <title>{`${p.v} @ ${new Date(p.t).toLocaleString()}`}</title>
+            <title>{`${p.v} @ ${Number.isNaN(Date.parse(p.t)) ? p.t : new Date(p.t).toLocaleString()}`}</title>
           </circle>
         ))}
       </svg>
