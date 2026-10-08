@@ -311,6 +311,7 @@ services:
       SAFEGUARD_REFUSAL_RETENTION_DAYS: ${SAFEGUARD_REFUSAL_RETENTION_DAYS:-0}
       SMO_RETENTION_ALARMS_DAYS: ${SMO_RETENTION_ALARMS_DAYS:-0}
       SMO_RETENTION_PM_FILES_DAYS: ${SMO_RETENTION_PM_FILES_DAYS:-0}
+      SMO_RETENTION_WARN_ROWS: ${SMO_RETENTION_WARN_ROWS:-1000000}     # warn (and smo_retention_off_rows) when a table with retention off is larger; 0 = never
 
   mock-o1-adaptor:
     build: { context: ., args: { <<: *build_info, MODULE: mock-o1-adaptor, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
@@ -533,6 +534,7 @@ services:
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}
       SMO_DATABASE_PASSWORD_FILE: /run/secrets/db_password_mdaf
       SMO_RETENTION_MDAF_REPORTS_DAYS: ${SMO_RETENTION_MDAF_REPORTS_DAYS:-0}
+      SMO_RETENTION_WARN_ROWS: ${SMO_RETENTION_WARN_ROWS:-1000000}
 
   intent-service:
     build: { context: ., args: { <<: *build_info, MODULE: intent-service, WITH_TRACING: "${SMO_WITH_TRACING:-0}" } }
@@ -624,6 +626,10 @@ services:
       GUI_OIDC_POST_LOGOUT_REDIRECT_URI: ${GUI_OIDC_POST_LOGOUT_REDIRECT_URI:-}
       GUI_OIDC_ALLOW_HTTP: ${GUI_OIDC_ALLOW_HTTP:-false}
       GUI_LOCAL_LOGIN_ENABLED: ${GUI_LOCAL_LOGIN_ENABLED:-true}
+      # Audit-log retention (PR-DB-3.6): the BFF has no worker; run `docker compose exec gui-bff python -m app.retention` (cron on the host). 0 keeps all.
+      GUI_AUDIT_RETENTION_DAYS: ${GUI_AUDIT_RETENTION_DAYS:-0}
+      GUI_AUDIT_EXPORT_DIR: ${GUI_AUDIT_EXPORT_DIR:-}
+      SMO_RETENTION_WARN_ROWS: ${SMO_RETENTION_WARN_ROWS:-1000000}
     volumes:
       - gui_bff_data:/data   # GUI users, audit log, the BFF's SME invoker credential
 

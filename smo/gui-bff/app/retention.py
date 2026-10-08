@@ -1,22 +1,30 @@
 """Retention of the BFF's audit log (PR-DB-3.6): `python -m app.retention` deletes the rows of `gui_audit_log` older than
-`GUI_AUDIT_RETENTION_DAYS` (default 0: keep them all). Run it from cron or a Kubernetes CronJob (the BFF has no worker: it is not on `smo_shared`).
+`GUI_AUDIT_RETENTION_DAYS` (default 0: keep them all). Run it from cron or `kubectl exec deploy/gui-bff -- python -m app.retention` (no CronJob: the SQLite volume belongs to one pod; the BFF has no worker: it is not on `smo_shared`).
 
 With `GUI_AUDIT_EXPORT_DIR` set, the rows to be deleted are first written there as JSON lines (`gui-audit-<utc date>-<last id>.jsonl`, the
-same fields as the table) and only the rows written are deleted, so a failed export deletes nothing. Rows are removed by a bulk statement, not
+same fields as the table) and only the rows written are deleted, so a failed export deletes nothing.
+
+With retention off (`GUI_AUDIT_RETENTION_DAYS` 0) the command still counts the rows and logs a WARNING when there are more than `SMO_RETENTION_WARN_ROWS`
+(default 1000000; 0 never warns), the same rule as `smo_shared.retention.report_retention_off`, written out here because the BFF does not install
+`smo_shared`. There is no gauge: the command exits, and a short-lived process has nothing to scrape. Rows are removed by a bulk statement, not
 through the ORM, because the ORM refuses any change to the log (`_audit_log_is_append_only`): this module is the one deliberate exception.
 """
 
 import datetime
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from .db import AuditEntry, Database
 
 BATCH = 1000
+DEFAULT_WARN_ROWS = 1_000_000
+
+log = logging.getLogger(__name__)
 
 
 def _row(entry: AuditEntry) -> dict:
@@ -44,17 +52,42 @@ def purge_audit(db: Database, older_than_days: int, export_dir: Path | None = No
             total += len(rows)
 
 
+def warn_rows() -> int:
+    try:
+        return max(0, int(os.environ.get("SMO_RETENTION_WARN_ROWS", "1000000") or DEFAULT_WARN_ROWS))
+    except ValueError:
+        return DEFAULT_WARN_ROWS
+
+
+def warn_if_large(db: Database) -> int | None:
+    """With retention off: count the audit rows and log a WARNING above `SMO_RETENTION_WARN_ROWS`; returns the count (None if it could not be read)."""
+    try:
+        with db.session() as session:
+            rows = int(session.execute(select(func.count()).select_from(AuditEntry)).scalar() or 0)
+    except Exception:                                       # noqa: BLE001 (a count must not fail the command)
+        log.debug("audit row count failed", exc_info=True)
+        return None
+    limit = warn_rows()
+    if limit > 0 and rows > limit:
+        log.warning("retention is off for gui_audit_log and the table has %d rows (more than SMO_RETENTION_WARN_ROWS=%d): set GUI_AUDIT_RETENTION_DAYS "
+                    "(docs/RETENTION.md) or raise the limit", rows, limit)
+        print(f"WARNING: gui_audit_log has {rows} rows and its retention is off (docs/RETENTION.md)", file=sys.stderr)
+    return rows
+
+
 def main() -> int:
     from .config import Settings
     try:
         days = int(os.environ.get("GUI_AUDIT_RETENTION_DAYS", "0") or 0)
     except ValueError:
         days = 0
+    database = Database(Settings().database_url)
     if days <= 0:
         print("GUI_AUDIT_RETENTION_DAYS is not set: nothing to purge")
+        warn_if_large(database)
         return 0
     export = os.environ.get("GUI_AUDIT_EXPORT_DIR", "").strip()
-    deleted = purge_audit(Database(Settings().database_url), days, Path(export) if export else None)
+    deleted = purge_audit(database, days, Path(export) if export else None)
     print(f"deleted {deleted} audit row(s) older than {days} day(s)")
     return 0
 

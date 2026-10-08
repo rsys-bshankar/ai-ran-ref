@@ -57,3 +57,27 @@ def test_a_failed_export_deletes_nothing(db, tmp_path):
 def test_more_rows_than_a_batch_all_go(db, monkeypatch):
     monkeypatch.setattr("app.retention.BATCH", 2)
     assert purge_audit(db, 90, now=NOW) == 3
+
+
+def test_a_large_audit_log_with_retention_off_is_warned_about(db, monkeypatch, caplog):
+    from app.retention import warn_if_large
+    monkeypatch.setenv("SMO_RETENTION_WARN_ROWS", "4")
+    with caplog.at_level("WARNING", logger="app.retention"):
+        assert warn_if_large(db) == 5
+    assert "gui_audit_log" in caplog.text
+    caplog.clear()
+    monkeypatch.setenv("SMO_RETENTION_WARN_ROWS", "0")
+    with caplog.at_level("WARNING", logger="app.retention"):
+        assert warn_if_large(db) == 5
+    assert not caplog.records
+
+
+def test_main_with_retention_off_deletes_nothing_and_still_counts(db, monkeypatch, capsys, tmp_path):
+    from app import retention
+    monkeypatch.delenv("GUI_AUDIT_RETENTION_DAYS", raising=False)
+    monkeypatch.setenv("SMO_RETENTION_WARN_ROWS", "1")
+    monkeypatch.setenv("GUI_DATABASE_URL", f"sqlite:///{tmp_path / 'gui.db'}")
+    monkeypatch.setattr(retention, "Database", lambda _url: db)
+    assert retention.main() == 0
+    assert "WARNING" in capsys.readouterr().err
+    assert len(actions(db)) == 5

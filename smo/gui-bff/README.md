@@ -215,7 +215,8 @@ All read in `app/config.py` at import time.
 | `GUI_OPERATOR_PASSWORD`, `GUI_VIEWER_PASSWORD` | unset: user not created | Seeds `operator` / `viewer` |
 | `GUI_HEALTH_TIMEOUT_SECONDS` | `3` | Per-module health probe |
 | `GUI_UPSTREAM_TIMEOUT_SECONDS` | `30` | Proxied call |
-| `GUI_AUDIT_RETENTION_DAYS` | `0` | Read by `python -m app.retention` (run it from cron or a CronJob): audit rows older than this many days are deleted; `0` keeps them (`../docs/RETENTION.md`) |
+| `GUI_AUDIT_RETENTION_DAYS` | `0` | Read by `python -m app.retention` (run it from cron, or `kubectl exec` on Kubernetes): audit rows older than this many days are deleted; `0` keeps them (`../docs/RETENTION.md`) |
+| `SMO_RETENTION_WARN_ROWS` | `1000000` | With `GUI_AUDIT_RETENTION_DAYS` at `0`, `python -m app.retention` counts the audit rows and logs a WARNING above this many (`0` never warns) |
 | `GUI_AUDIT_EXPORT_DIR` | unset | `python -m app.retention` first writes the rows it will delete there as JSON lines and deletes only those written |
 
 Constants in code: `MIN_PASSWORD_LENGTH` 8, `MAX_LOGIN_FAILURES` 5, `LOCKOUT_SECONDS` 300, cookie names `smo_session` / `smo_csrf`, header `X-CSRF-Token`.

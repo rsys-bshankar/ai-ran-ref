@@ -35,7 +35,7 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 | Southbound | SB-9.3 to 9.5 and SB-9.8: the RAN O1 stub emits (alarms, PM reports and files, software-update phases, heartbeats) and the conformance kit checks what RAN NF OAM receives | The stub was configuration-only in 0.5.0 |
 | GUI | New `PR-GUI-8`: one rApps entry in the sidebar with a searchable directory, a detail page per rApp, pages declared by the rApp package and drawn by a generic renderer, per-user pins; the four sample rApps move to it and their hand-written pages go | Replaces "one coded page and one sidebar entry per rApp", which does not scale to 100 rApps and gives a rApp onboarded at run time no page |
 | Security | `PR-SEC-7` MFA: a setting that makes OIDC the only login (the provider's MFA applies), and native one-time-code login for local accounts, mandatory for the admin role, as the break-glass login; SEC-5 signing keys and JWKS; SEC-4.7 external secrets example | Decided: both MFA layers. With OIDC the provider does the second factor, so SEC-7.1 to 7.3 serve the local accounts only |
-| Retention | `DB-3.10`: the proposed periods of `docs/RETENTION.md` ship in a production sample values file and in `.env.example`; the code defaults stay at `0` (keep), so an upgrade deletes nothing; a startup warning and a metric when a table with retention off has grown large | Decided: do not default to deleting |
+| Retention | `DB-3.10` (built, see `HISTORY.md` PR-DB-3): the proposed periods of `docs/RETENTION.md` ship in a production sample values file and in `.env.example`; the code defaults stay at `0` (keep), so an upgrade deletes nothing; a startup warning and a metric when a table with retention off has grown large | Decided: do not default to deleting |
 | Operability | The SLO targets of `docs/SLOS.md` are accepted as the reference targets (decided October 2026) for a deployment with two or more replicas and a highly available Postgres; the one-pod lab profile is not held to them during an upgrade | Per-route targets and per-deployment tuning stay open |
 | Standards | STD-3 plugfest plan | If time allows |
 
@@ -217,7 +217,6 @@ RAN NF OAM still retries southbound writes with `time.sleep` inside the request 
 |---|---|---|---|
 | DB-3.8 | Time partitioning for the PM table | Old partition drops in one statement | OPS-1.4 |
 | DB-3.9 | Also: remove `DEAD` outbox rows after a period; prune the platform audit chain behind a signed checkpoint; expire `gui_login_failure` rows | Test deletes only eligible rows; `verify` passes after a prune | DB-3.2 |
-| DB-3.10 | The periods of `docs/RETENTION.md` in a production sample values file (`deploy/helm/smo/ci/` or `values-production.yaml`) and in `.env.example`; code defaults stay `0`. A startup warning and a metric (`smo_retention_off_rows`) when a table whose retention is off has more than a configured number of rows (0.6.0) | Sample renders; warning and metric test | DB-3.7 |
 
 #### PR-DB-4 — Indexes and pagination
 

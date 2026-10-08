@@ -238,9 +238,9 @@ modules:
   dme: { image: dme, databaseRole: dme }
   onboarding: { image: onboarding, databaseRole: onboarding, persistence: { mountPath: /srv/packages, size: 5Gi } }
   rapp-mgmt: { image: rapp-mgmt, databaseRole: rapp-mgmt, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
-  ran-nf-oam: { image: ran-nf-oam, databaseRole: ran-nf-oam, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
+  ran-nf-oam: { image: ran-nf-oam, databaseRole: ran-nf-oam, env: { R1_GATEWAY_URL: "http://r1-termination:8000", SAFEGUARD_REFUSAL_RETENTION_DAYS: "0" } }
   # the same image as a worker: the periodic work of RAN NF OAM (PR-MSG-4). Run more than one if you like.
-  ran-nf-oam-worker: { image: ran-nf-oam, databaseRole: ran-nf-oam, kind: worker, env: { R1_GATEWAY_URL: "http://r1-termination:8000", SMO_RETENTION_ALARMS_DAYS: "0", SMO_RETENTION_PM_FILES_DAYS: "0" } }   # retention: days to keep, 0 = forever (docs/RETENTION.md)
+  ran-nf-oam-worker: { image: ran-nf-oam, databaseRole: ran-nf-oam, kind: worker, env: { R1_GATEWAY_URL: "http://r1-termination:8000", SAFEGUARD_REFUSAL_RETENTION_DAYS: "0", SMO_RETENTION_ALARMS_DAYS: "0", SMO_RETENTION_PM_FILES_DAYS: "0" } }   # retention: days to keep, 0 = forever; the periods proposed for production are in values-production.yaml (docs/RETENTION.md)
   mock-o1-adaptor: { image: mock-o1-adaptor, database: false, enrollment: false, mtls: "off" }
   nfo: { image: nfo, databaseRole: nfo, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   focom: { image: focom, databaseRole: focom }

@@ -332,6 +332,7 @@ The complete list, with defaults and descriptions, is `../docs/CONFIGURATION.md`
 | `RAN_NF_OAM_KPI_GUARD_GRACE_MINUTES` | `60` | How long after its observation window a KPI guard keeps trying when the data is too thin, before the answer is final |
 | `SAFEGUARD_REFUSAL_RETENTION_DAYS` | `0` | Default age for `POST /safeguard-refusals/purge`, and the age the worker purges at daily; `0` keeps refusal records for ever |
 | `SMO_RETENTION_ALARMS_DAYS` | `0` | The worker deletes alarms **cleared** more than this many days ago, hourly (`purge-cleared-alarms`); a raised alarm is never deleted; `0` keeps them for ever (`../docs/RETENTION.md`) |
+| `SMO_RETENTION_WARN_ROWS` | `1000000` | A purge task whose retention is `0` estimates its table's rows, exports `smo_retention_off_rows{table}` and logs one WARNING a day above this many (`0` never warns) |
 | `SMO_RETENTION_PM_FILES_DAYS` | `0` | The worker deletes PM files ready more than this many days ago, hourly (`purge-pm-files`); the content is the row, there is no file on disk; `0` keeps them. KPIs read PM files: keep at least the longest look-back |
 | `SMO_WORKER_TICK_SECONDS`, `SMO_WORKER_FAILURE_BACKOFF_SECONDS` | `5`, `30` | The worker (`ran-nf-oam-worker`): how often it looks for due tasks, and how long it leaves a failed task alone |
 | `RAN_NF_OAM_CM_SNAPSHOT_RETENTION_DAYS` | `0` | Default age for `POST /config-history/purge`, in days; `0` keeps snapshots for ever (nothing deletes on its own) |

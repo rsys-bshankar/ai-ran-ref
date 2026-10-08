@@ -52,3 +52,7 @@ How the profile's values were chosen: a memory **request** is the peak times 1.2
 ## Measuring again
 
 Run the workflow by hand (Actions, `SMO load run`, "Run workflow") with `duration`, `concurrency` and `elements` of your choice; the job log and summary print the load table and the sizing table (`scripts/sizing_report.py`, with `--mem-headroom` and `--request-headroom` to change the rule above). Set the chart's `resources` from the table, and record the run in `docs/PERFORMANCE.md`.
+
+## Disk and retention
+
+The tables that grow without bound are listed in [`RETENTION.md`](RETENTION.md) with the periods proposed for production (`deploy/helm/smo/values-production.yaml`, `.env.example`); with the default `0` nothing is removed and the database only grows. Size the Postgres volume for the retention you choose, and watch `smo_retention_off_rows{table}`: the worker warns once a day when a table whose retention is off passes `SMO_RETENTION_WARN_ROWS` (default 1000000).
