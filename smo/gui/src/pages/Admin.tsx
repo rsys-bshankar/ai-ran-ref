@@ -9,6 +9,7 @@ import { ROLES, type Role } from "../auth/rbac";
 import { useToast } from "../components/Toast";
 import { Card, DataTable, Field, Modal, PageHeader, StateBadge, Tabs, useHashTab } from "../components/ui";
 import { formatTime } from "../lib/domain";
+import { mfaLabel } from "../lib/mfa";
 
 const TABS = ["users", "audit"] as const;
 
@@ -61,16 +62,23 @@ function Users() {
           </select>
         ) },
         { header: "Status", render: (u) => <StateBadge state={u.active ? "ACTIVE" : "DISABLED"} /> },
+        { header: "One-time code", render: (u) => mfaLabel(u) },
+        { header: "Break-glass", render: (u) => (
+          <input type="checkbox" checked={Boolean(u.breakGlass)} disabled={u.username.startsWith("oidc:")} aria-label={`Break-glass for ${u.username}`}
+                 onChange={(e) => patch(u.username, { breakGlass: e.target.checked }, `${u.username} ${e.target.checked ? "is now" : "is no longer"} a break-glass account`)} />
+        ) },
         { header: "Created", render: (u) => formatTime(u.createdAt) },
         { header: "", className: "actions", render: (u) => (
           <div className="row gap end">
             <button className="btn" onClick={() => setResetting(u.username)}>Reset password</button>
+            <button className="btn" onClick={() => window.confirm(`End every session of ${u.username}?`) && m.mutate({ path: `/admin/users/${u.username}/revoke-sessions`, opts: { method: "POST" }, success: `Sessions of ${u.username} ended` })}>Revoke sessions</button>
+            {u.totpEnrolled && <button className="btn" onClick={() => window.confirm(`Remove the one-time code and recovery codes of ${u.username}? They sign in with the password alone until they enrol a new one.`) && m.mutate({ path: `/admin/users/${u.username}/reset-totp`, opts: { method: "POST" }, success: `One-time code of ${u.username} removed` })}>Reset one-time code</button>}
             <button className="btn" onClick={() => patch(u.username, { active: !u.active }, `${u.username} ${u.active ? "deactivated" : "activated"}`)}>{u.active ? "Deactivate" : "Activate"}</button>
             {u.username !== me?.username && <button className="btn danger" onClick={() => window.confirm(`Delete user ${u.username}?`) && m.mutate({ path: `/admin/users/${u.username}`, opts: { method: "DELETE" }, success: `${u.username} deleted` })}>Delete</button>}
           </div>
         ) },
       ]} />
-      <p className="muted small">Role changes apply on the user's next request; password resets and deactivation end their existing sessions.</p>
+      <p className="muted small">Role changes apply on the user's next request; password resets, deactivation and &quot;Revoke sessions&quot; end their existing sessions. A break-glass account can sign in with its password and one-time code even when the console accepts only the identity provider; it needs a one-time code to sign in at all.</p>
       {creating && <CreateUser onClose={() => setCreating(false)} />}
       {resetting && <ResetPassword username={resetting} onClose={() => setResetting(null)} />}
     </Card>
@@ -124,14 +132,14 @@ function Audit() {
       <input placeholder="User" value={username} onChange={(e) => setUsername(e.target.value)} aria-label="Filter by user" />
       <select value={action} onChange={(e) => setAction(e.target.value)} aria-label="Filter by action">
         <option value="">All actions</option>
-        {["PROXY", "DENIED", "LOGIN", "LOGIN_FAILED", "LOGIN_LOCKED", "LOGOUT", "TOKEN", "PASSWORD_CHANGED", "USER_CREATED", "USER_UPDATED", "USER_DELETED"].map((a) => <option key={a}>{a}</option>)}
+        {["PROXY", "DENIED", "LOGIN", "LOGIN_FAILED", "LOGIN_LOCKED", "LOGIN_REFUSED", "MFA_CHALLENGE", "BREAK_GLASS_LOGIN", "RECOVERY_CODE_USED", "LOGOUT", "TOKEN", "PASSWORD_CHANGED", "TOTP_ENROL_STARTED", "TOTP_ENROLLED", "TOTP_RESET", "RECOVERY_CODES_REGENERATED", "USER_CREATED", "USER_UPDATED", "USER_DELETED", "USER_SESSIONS_REVOKED"].map((a) => <option key={a}>{a}</option>)}
       </select>
     </>}>
       <p className="muted small">Append-only. Every mutating call the BFF proxies (allowed or denied) plus sign-ins and user administration.</p>
       <DataTable rows={entries.data} loading={entries.isLoading} error={entries.error} rowKey={(e) => String(e.id)} empty="No entries." columns={[
         { header: "When", render: (e) => formatTime(e.at) },
         { header: "User", render: (e) => <>{e.username ?? "—"}{e.role && <span className="muted small"> ({e.role})</span>}</> },
-        { header: "Outcome", render: (e) => <StateBadge state={e.action === "DENIED" || e.action.startsWith("LOGIN_") ? "REJECTED" : e.action === "PROXY" && (e.statusCode ?? 0) >= 400 ? "FAILED" : "COMPLETED"} /> },
+        { header: "Outcome", render: (e) => <StateBadge state={e.action === "DENIED" || ["LOGIN_FAILED", "LOGIN_LOCKED", "LOGIN_REFUSED"].includes(e.action) ? "REJECTED" : e.action === "PROXY" && (e.statusCode ?? 0) >= 400 ? "FAILED" : "COMPLETED"} /> },
         { header: "Event", render: (e) => <code className="small">{e.action}</code> },
         { header: "Call", render: (e) => e.method ? <code className="small">{e.method} {e.path}</code> : <span className="muted">—</span> },
         { header: "Status", render: (e) => e.statusCode ?? "—" },
