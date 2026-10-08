@@ -20,6 +20,7 @@ on:
       - "smo/scripts/db_volume_check.py"
       - "smo/scripts/load_seed.py"
       - "smo/scripts/upgrade_at_volume.py"
+      - "smo/scripts/downgrade_with_data.py"
 
 permissions:
   contents: read
@@ -86,6 +87,13 @@ jobs:
           python scripts/load_seed.py --elements "$ELEMENTS" --host localhost --database smo_up --password-file "$RUNNER_TEMP/pw"
           { echo; echo "### Upgrade over the data, from $tag ($from), ${ELEMENTS} elements"; echo; } >> "$GITHUB_STEP_SUMMARY"
           python scripts/upgrade_at_volume.py --url "$url" --from-revision "$from" --budget-seconds 300 --out "$RUNNER_TEMP/upgrade.md" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: The whole chain down and up again over the data (V-13)
+        working-directory: smo
+        run: |
+          # the database of the step above is at head and holds the volume: every revision is undone in turn (the baseline cannot be), then applied again, and no table may hold fewer rows
+          { echo; echo "### The whole chain down and up again over the data, ${ELEMENTS} elements"; echo; } >> "$GITHUB_STEP_SUMMARY"
+          python scripts/downgrade_with_data.py --url postgresql+psycopg://smo:smo@localhost:5432/smo_up --out "$RUNNER_TEMP/downgrade.md" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Restore drill (timed), counts compared
         run: |
