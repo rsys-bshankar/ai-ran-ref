@@ -7,6 +7,7 @@ FAILED terminal state, and the cascade-delete guard (statemachine.py).
 
 import hashlib
 import json
+import logging
 import uuid
 import zipfile
 from io import BytesIO
@@ -58,12 +59,15 @@ from smo_shared.r1_client import R1Client
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
+from smo_shared.operator_ui import OperatorUiInvalid, validate_operator_ui
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.webhook import is_safe_webhook_destination
 from smo_shared.versioning import install_concurrency_handler
 
 from .models import ApplicationPackage, Artifact, PackageUsageRegistration
 from .statemachine import ONBOARDING_FSM, PackageEvent, PackageState
+
+log = logging.getLogger(__name__)
 
 app = FastAPI(title="Software Package Onboarding SMOS")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
@@ -111,6 +115,7 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
     # uncommitted work).
     db.commit()
 
+    failure_reason: str | None = None
     try:
         entry_definitions, artifacts, integrity_hash, identity = _validate_package(body.location)
         # AsdDescriptorValidator's own duplicate-descriptor-id detection,
@@ -143,12 +148,17 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
             db.add(Artifact(package_id=pkg.package_id, path=path, access_url=access_url))
         pkg.nf_deployment_descriptor_id = _create_nf_deployment_descriptor(pkg, entry_definitions)
         new_state = ONBOARDING_FSM.fire(PackageState.ONBOARDING, PackageEvent.VALIDATE_OK, db=db, package=pkg)
-    except ONBOARD_VALIDATION_FAILURES:
+    except ONBOARD_VALIDATION_FAILURES as exc:
         new_state = ONBOARDING_FSM.fire(PackageState.ONBOARDING, PackageEvent.VALIDATE_FAILED, db=db, package=pkg)
+        failure_reason = str(exc) if isinstance(exc, PackageValidationFailed) else type(exc).__name__
+        log.warning("package %s failed validation: %s", pkg.package_id, failure_reason)
 
     pkg.state = new_state
     db.commit()
-    return {"packageId": str(pkg.package_id), "trackingId": str(pkg.package_id)}
+    accepted = {"packageId": str(pkg.package_id), "trackingId": str(pkg.package_id)}
+    if failure_reason is not None:
+        accepted["failureReason"] = failure_reason     # GUI-8.2: the precise message of a refused package (a declaration's place and rule); not stored
+    return accepted
 
 
 def _create_nf_deployment_descriptor(pkg: ApplicationPackage, entry_definitions: str) -> uuid.UUID:
@@ -246,6 +256,13 @@ def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
         limits = rapp_manifest.get("limits", manifest.get("limits"))
         if limits is not None:
             result["limits"] = _validate_limits(limits)
+        # GUI-8.2: the operator page the rApp declares (docs/adr/0004-operator-ui-declaration.md). Optional; absent -> the key is absent.
+        operator_ui = rapp_manifest.get("operatorUi", manifest.get("operatorUi"))
+        if operator_ui is not None:
+            try:
+                result["operatorUi"] = validate_operator_ui(operator_ui)
+            except OperatorUiInvalid as exc:
+                raise PackageValidationFailed(str(exc)) from exc
     if "capabilities.yaml" in names:
         parsed = yaml.safe_load(z.read("capabilities.yaml")) or {}
         if not isinstance(parsed, dict):

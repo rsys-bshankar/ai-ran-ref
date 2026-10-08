@@ -7,8 +7,10 @@ Run with: pytest smo/onboarding/tests -q
 import uuid
 import zipfile
 from io import BytesIO
+from pathlib import Path
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 from sqlalchemy import Column, Table, Uuid, create_engine
 from sqlalchemy.orm import sessionmaker
@@ -940,3 +942,115 @@ def test_an_application_type_the_column_does_not_accept_is_a_422_not_a_500(clien
     """Found by the authenticated DAST scan (V-7d): `application_type` has a CHECK, and the request took any string."""
     response = client.post("/packages", json={"location": "http://example.invalid/x.csar", "applicationType": "string"})
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------- GUI-8.2: operatorUi in the manifest (docs/adr/0004-operator-ui-declaration.md)
+
+_EXAMPLE = Path(__file__).resolve().parents[2] / "docs" / "schemas" / "operator-ui.energy-saving.example.yaml"
+
+
+def _onboard_raw(client, monkeypatch, manifest_yaml):
+    """Returns (the POST /packages answer, the package as listed)."""
+    _mock_fetch(monkeypatch, _real_package_bytes(manifest_yaml=manifest_yaml))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+    answer = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()
+    return answer, next(p for p in client.get("/packages").json()["items"] if p["packageId"] == answer["packageId"])
+
+
+def _manifest_with(operator_ui, *, under_rapp_manifest=False) -> str:
+    if under_rapp_manifest:
+        return yaml.safe_dump({"rappManifest": {"manifestVersion": "1.0", "operatorUi": operator_ui}})
+    return yaml.safe_dump({"rappManifest": {"manifestVersion": "1.0"}, "operatorUi": operator_ui})
+
+
+def _example() -> dict:
+    return yaml.safe_load(_EXAMPLE.read_text())["operatorUi"]
+
+
+def test_the_adr_worked_example_onboards_and_is_stored_in_ai_capabilities(client, monkeypatch):
+    answer, pkg = _onboard_raw(client, monkeypatch, _EXAMPLE.read_text())
+    assert pkg["state"] == "AVAILABLE" and "failureReason" not in answer
+    stored = pkg["aiCapabilities"]["operatorUi"]
+    assert [p["id"] for p in stored["panels"]] == ["instance", "controls", "cells"] and stored["readOnly"] is False
+    # the GUI backend reads it from the route rapp-mgmt already uses
+    status = client.get(f"/packages/{answer['packageId']}/onboarding-status").json()
+    assert status["aiCapabilities"]["operatorUi"] == stored
+
+
+def test_operator_ui_is_accepted_under_rapp_manifest_too(client, monkeypatch):
+    _, pkg = _onboard_raw(client, monkeypatch, _manifest_with(_example(), under_rapp_manifest=True))
+    assert pkg["state"] == "AVAILABLE" and "operatorUi" in pkg["aiCapabilities"]
+
+
+def test_a_package_without_operator_ui_is_unchanged(client, monkeypatch):
+    answer, pkg = _onboard_raw(client, monkeypatch, "rappManifest:\n  manifestVersion: \"1.0\"\n")
+    assert pkg["state"] == "AVAILABLE" and "operatorUi" not in pkg["aiCapabilities"] and "failureReason" not in answer
+
+
+def test_extension_keys_are_dropped_from_the_stored_declaration(client, monkeypatch):
+    d = _example()
+    d["x-vendor"] = {"a": 1}
+    _, pkg = _onboard_raw(client, monkeypatch, _manifest_with(d))
+    assert pkg["state"] == "AVAILABLE" and "x-vendor" not in pkg["aiCapabilities"]["operatorUi"]
+
+
+def _mutate(fn):
+    d = _example()
+    fn(d)
+    return d
+
+
+@pytest.mark.parametrize("declaration, message", [
+    (_mutate(lambda d: d["panels"][0].update(kind="map")), "operatorUi.panels[0].kind: 'map' is not a panel kind"),
+    (_mutate(lambda d: d["panels"][0]["source"].update(method="POST")), "operatorUi.panels[0].source.method: a panel source must be a GET"),
+    (_mutate(lambda d: d["panels"][1]["actions"][0].update(method="GET")), "operatorUi.panels[1].actions[0].method: an action must change something"),
+    (_mutate(lambda d: d["panels"][1]["actions"][0].update(path="/instances/{instanceId}/../admin")), "must not contain '..'"),
+    (_mutate(lambda d: d["panels"][0]["source"].update(path="/a/%2e%2e/b")), "operatorUi.panels[0].source.path"),
+    (_mutate(lambda d: d["panels"][2]["columns"][0].update(path="a..b")), "operatorUi.panels[2].columns[0].path: must not contain '..'"),
+    (_mutate(lambda d: d["panels"].extend({**d["panels"][1], "id": f"extra-{i}"} for i in range(20))), "operatorUi.panels: must have 1 to 20 entries"),
+    (_mutate(lambda d: d["panels"][2].update(id="instance")), "'instance' is used by an earlier panel"),
+    (_mutate(lambda d: d["panels"][1]["actions"][1].update(id="evaluate")), "'evaluate' is used twice"),
+    (_mutate(lambda d: d["panels"][2]["rowDetail"]["blocks"][0].update(kind="map")), "operatorUi.panels[2].rowDetail.blocks[0].kind: 'map' is not a rowDetail block kind"),
+    (_mutate(lambda d: d["panels"][2]["rowDetail"]["blocks"].extend([d["panels"][2]["rowDetail"]["blocks"][1]] * 4)), "rowDetail.blocks: must have 1 to 6 entries"),
+    (_mutate(lambda d: d["panels"][2]["rowDetail"]["blocks"][2]["source"].update(method="DELETE")), "rowDetail.blocks[2].source.method: a panel source must be a GET"),
+    (_mutate(lambda d: d["panels"][2]["rowDetail"]["blocks"][2]["source"].update(path="/instances/{instanceId}/../x")), "must not contain '..'"),
+    (_mutate(lambda d: d["panels"][2]["rowDetail"]["blocks"][2]["source"]["query"].update(cell_id="{row.nope}")), "{row.nope} names a field"),
+    (_mutate(lambda d: d["panels"][2]["rowDetail"]["blocks"][1].update(rowDetail={"blocks": []})), "cannot be nested inside a rowDetail"),
+    (_mutate(lambda d: d.update(version=2)), "operatorUi.version: 2 is not supported"),
+    (_mutate(lambda d: d.update(colour="red")), "unknown key 'colour'"),
+    (_mutate(lambda d: d["panels"][0].update(title="x" * 100_000)), "over the limit of 65536"),
+    (_mutate(lambda d: d.update(readOnly=True)), "operatorUi is readOnly"),
+    ("not a mapping", "operatorUi: must be a mapping"),
+])
+def test_a_bad_declaration_is_refused_with_the_place_and_the_rule(client, monkeypatch, declaration, message):
+    answer, pkg = _onboard_raw(client, monkeypatch, _manifest_with(declaration))
+    assert pkg["state"] == "FAILED"
+    assert message in answer["failureReason"]
+    assert pkg["aiCapabilities"] is None and pkg["nfDeploymentDescriptorId"] is None
+
+
+def test_a_refusal_is_logged_with_the_reason(client, monkeypatch, caplog):
+    import logging
+    with caplog.at_level(logging.WARNING, logger="app.main"):
+        _onboard_raw(client, monkeypatch, _manifest_with(_mutate(lambda d: d["panels"][0].update(kind="map"))))
+    assert any("failed validation" in r.getMessage() and "not a panel kind" in r.getMessage() for r in caplog.records)
+
+
+def test_other_failures_report_their_kind_not_internals(client, monkeypatch):
+    class FakeHttpResponse:
+        content = b"not a real zip file"
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr("app.main.httpx.get", lambda location, timeout=None: FakeHttpResponse())
+    answer = client.post("/packages", json={"location": "http://example/pkg.csar"}).json()
+    assert answer["failureReason"] == "BadZipFile"
+
+
+def test_the_row_detail_is_stored_and_its_per_row_source_is_a_declared_read(client, monkeypatch):
+    from smo_shared.operator_ui import declared_routes
+    _, pkg = _onboard_raw(client, monkeypatch, _EXAMPLE.read_text())
+    stored = pkg["aiCapabilities"]["operatorUi"]
+    assert [b["kind"] for b in stored["panels"][2]["rowDetail"]["blocks"]] == ["chart", "json", "table"]
+    assert ("GET", "/instances/{instanceId}/decisions") in declared_routes(stored)

@@ -13,7 +13,7 @@ are the four directories under [`../samples/`](../samples/):
 
 Onboarding is [`../onboarding/README.md`](../onboarding/README.md); the code is
 `onboarding/app/main.py` (`_validate_package`, `_parse_ai_capabilities`,
-`_validate_runtime_profiles`, `_parse_sme_declarations`).
+`_validate_runtime_profiles`, `_parse_sme_declarations`; the `operatorUi` check is `shared/smo_shared/operator_ui.py`).
 
 ## 1. Package layout
 
@@ -39,7 +39,7 @@ committed `.csar` is stale). Tests, caches and `__pycache__` are left out.
 |---|---|---|
 | `TOSCA-Metadata/TOSCA.meta` | Onboarding | Missing file or no `Entry-Definitions:` line fails validation (`ONBOARDING` → `FAILED`). |
 | `Definitions/asd.yaml` | Onboarding (line scan) | Must exist. Eight flat properties become the package identity (§2). Onboarding then creates an NFO `NFDeploymentDescriptor` that references it. |
-| `manifest.yaml`, `capabilities.yaml` | Onboarding (YAML parse) | Stored as the package's `aiCapabilities` JSON and returned by `GET /onboarding/packages/{id}` and `…/onboarding-status` (§3, §4). |
+| `manifest.yaml`, `capabilities.yaml` | Onboarding (YAML parse) | Stored as the package's `aiCapabilities` JSON (the manifest's `operatorUi` page declaration included, §3.1) and returned by `GET /onboarding/packages` and `…/onboarding-status` (§3, §4). |
 | `Artifacts/…` | Onboarding | Every file under `Artifacts/` is recorded as a package artifact. |
 | `Files/Sme/…` | Onboarding → rApp Management | Providers and service APIs are stored raw at onboarding and registered with SME per instance at `bootstrap-complete`. |
 | `Files/Dme/…` | The rApp itself | Declarations the rApp may post to DME when it starts (no reference rApp ships any). Onboarding does not read them. |
@@ -84,6 +84,7 @@ and tools, and nothing branches on it.
 
 | Parameter | Description | Used by | ES | MO | CO | TS |
 |---|---|---|---|---|---|---|
+| `operatorUi` | The operator page the rApp declares (§3.1). Under `rappManifest` or at the top level | **Validated** by Onboarding and stored in `aiCapabilities.operatorUi`; drawn by the GUI's generic renderer and used by the GUI backend to permit the rApp's routes (from `PR-GUI-8` stage 2) | absent | absent | absent | absent |
 | `rappManifest.manifestVersion` | Version of the manifest format | Stored in `aiCapabilities.manifestVersion` | `"1.0"` | `"1.0"` | `"1.0"` | `"1.0"` |
 | `rappManifest.aiRuntimeSdkVersion` | `sdk/` contract version the rApp was built against | Stored in `aiCapabilities.aiRuntimeSdkVersion` | `"1.0"` | `"1.0"` | `"1.0"` | `"1.0"` |
 | `executionModes` | Which of `TRAINING`, `VALIDATION`, `EMULATION`, `INFERENCE` the package supports | Stored; every `runtimeProfiles` key must be one of them | all four | all four | all four | all four |
@@ -105,6 +106,58 @@ package failure (`FAILED`):
 - when `executionModes` is declared, every profile mode must appear in it;
 - `cpu` and `gpu` must be non-negative numbers (booleans are refused);
 - `memory` is kept as a string, unchecked.
+
+### 3.1 `operatorUi`: the page a rApp declares
+
+Optional. A rApp that declares nothing still has the generic page (lifecycle, faults, history, KPIs). The decision record is
+[`adr/0004-operator-ui-declaration.md`](adr/0004-operator-ui-declaration.md) (read it for the meaning of every field);
+the JSON Schema is [`schemas/operator-ui-1.schema.json`](schemas/operator-ui-1.schema.json), and a complete page, the Energy Saving
+one, is [`schemas/operator-ui.energy-saving.example.yaml`](schemas/operator-ui.energy-saving.example.yaml). The smallest example is
+`sdk/examples/hello_operator_ui.py`, and `smo_sdk.operator_ui` writes and checks a declaration (`sdk/README.md`).
+
+```yaml
+operatorUi:
+  version: 1
+  panels:
+    - id: cells
+      title: Cells
+      kind: table
+      source:
+        path: "/instances/{instanceId}/cells"     # quote a route that has {…}: a bare { starts a YAML mapping
+        refreshSeconds: 15
+      rows: items
+      rowKey: cellId
+      columns:
+        - {path: cellId, label: Cell}
+        - {path: state, label: State, format: badge}
+      rowDetail:                       # the drawer a click on a row opens: up to 6 blocks
+        title: "Cell {row.cellId}"
+        blocks:
+          - {kind: json, title: Latest execution, path: latestDecision, empty: No decision yet.}
+      rowActions:
+        - id: unlock
+          label: Unlock
+          method: POST
+          path: "/instances/{instanceId}/cells/{row.cellId}/unlock"
+          confirm: Unlock this cell?
+          success: Cell unlocked
+          body: {operator: "{user}"}
+```
+
+| Rule | Value |
+|---|---|
+| Panel kinds | `table`, `keyValues`, `kpis`, `chart`, `actions`; anything else is refused |
+| Source | a GET route relative to the rApp's operator API base; `{instanceId}` is the open instance; in a row action also `{row.<field>}` |
+| Row drawer | `rowDetail` of a table: a `title` and 1 to 6 blocks of kind `json`, `keyValues`, `table` or `chart`; a `table` or `chart` block reads a list field of the row or a per-row GET `source` whose route and query may use `{row.<field>}` (the table's `rowKey` or a column); no nesting. The per-row sources are declared routes (reads) |
+| Field paths | dotted names, at most one `[]`; no `..`, `$`, index, wildcard or filter |
+| Permission | the routes the GUI backend may call for the rApp are exactly the panels' `source` routes, the `rowDetail` per-row sources and the action routes; reads need viewer, changes operator; `readOnly: true` allows no change |
+| Text | always drawn as text, never HTML or markdown |
+| Limits | 64 KiB as JSON, 4 000 values, 20 panels, 20 columns, 30 key-value items, 12 tiles, 5 row actions, 6 row-detail blocks, 10 actions per panel, 8 inputs per action, route 200 and field path 100 characters, `refreshSeconds` 5 to 3600 |
+| Extensions | keys starting `x-` are ignored (and not stored); any other unknown key is refused |
+| Version | `1`; another value is refused |
+
+Onboarding refuses a bad declaration with the place and the rule (`operatorUi.panels[2].columns[1].path: must not contain '..'`);
+see §6.
 
 Why a package leaves a parameter out:
 
@@ -188,7 +241,7 @@ Descriptive-only keys, present in all four rApps. Onboarding ignores all of them
 ## 6. What fails onboarding
 
 All of these end in `ApplicationPackage.state = FAILED` rather than an HTTP
-error from the create call:
+error from the create call (the answer to `POST /packages` carries the reason as `failureReason`; it is not stored):
 
 | Cause | Source |
 |---|---|
@@ -196,6 +249,7 @@ error from the create call:
 | Not a zip, or `TOSCA-Metadata/TOSCA.meta` or the entry definitions file is missing, or no `Entry-Definitions:` line | `_validate_package` |
 | Invalid YAML in `manifest.yaml` or `capabilities.yaml` | `_parse_ai_capabilities` |
 | Invalid `runtimeProfiles` (§3) | `_validate_runtime_profiles` |
+| Invalid `operatorUi` (§3.1): unknown kind, key or version, a `source` that is not a GET, a route with `..`, a limit exceeded, a duplicate id | `smo_shared.operator_ui.validate_operator_ui`, called by `_parse_ai_capabilities`. The message is in `failureReason` of the `202` answer and in the log |
 | Malformed JSON under `Files/Sme/` | `_parse_sme_declarations` (`JSONDecodeError`) |
 | Location unreachable (HTTP error fetching the CSAR) | `_validate_package` |
 | NFO refuses the descriptor | `_create_nf_deployment_descriptor` |
@@ -210,6 +264,6 @@ verification against a trust anchor (see [`../../SECURITY.md`](../../SECURITY.md
    `application_name`, `application_version`, `provider`.
 3. In `manifest.yaml` list only the modes you implement, and keep every
    `runtimeProfiles` key inside `executionModes`.
-4. In `capabilities.yaml` declare exactly the SDK namespaces your code calls.
+4. In `capabilities.yaml` declare exactly the SDK namespaces your code calls. To give the rApp its own operator page, add `operatorUi` to the manifest (§3.1; `smo_sdk.operator_ui` builds and checks it).
 5. Rebuild with `python3 samples/build_csar.py <name>` and run
    `PYTHONPATH=shared python -m pytest tests_integration/ -q`.
