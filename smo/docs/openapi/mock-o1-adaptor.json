@@ -1,6 +1,351 @@
 {
   "components": {
     "schemas": {
+      "EmitAlarm": {
+        "properties": {
+          "alarmType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alarmtype"
+          },
+          "correlationGroup": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlationgroup"
+          },
+          "managedElementRef": {
+            "title": "Managedelementref",
+            "type": "string"
+          },
+          "managedFunctionRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Managedfunctionref"
+          },
+          "probableCause": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probablecause"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "sourceAlarmId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcealarmid"
+          },
+          "specificProblem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specificproblem"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          }
+        },
+        "required": [
+          "managedElementRef",
+          "severity"
+        ],
+        "title": "EmitAlarm",
+        "type": "object"
+      },
+      "EmitHeartbeat": {
+        "properties": {
+          "endpointId": {
+            "title": "Endpointid",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          }
+        },
+        "required": [
+          "endpointId"
+        ],
+        "title": "EmitHeartbeat",
+        "type": "object"
+      },
+      "EmitMeasurement": {
+        "properties": {
+          "cellId": {
+            "title": "Cellid",
+            "type": "string"
+          },
+          "relation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relation"
+          },
+          "timestamp": {
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "values": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Values"
+          }
+        },
+        "required": [
+          "cellId",
+          "timestamp"
+        ],
+        "title": "EmitMeasurement",
+        "type": "object"
+      },
+      "EmitPmFile": {
+        "properties": {
+          "counterType": {
+            "title": "Countertype",
+            "type": "string"
+          },
+          "fileCompression": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filecompression"
+          },
+          "fileDataType": {
+            "default": "Performance",
+            "title": "Filedatatype",
+            "type": "string"
+          },
+          "fileExpirationTime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fileexpirationtime"
+          },
+          "fileFormat": {
+            "default": "json",
+            "title": "Fileformat",
+            "type": "string"
+          },
+          "jobId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jobid"
+          },
+          "managedElementRef": {
+            "title": "Managedelementref",
+            "type": "string"
+          },
+          "measurements": {
+            "items": {
+              "$ref": "#/components/schemas/EmitMeasurement"
+            },
+            "title": "Measurements",
+            "type": "array"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          }
+        },
+        "required": [
+          "managedElementRef",
+          "counterType",
+          "measurements"
+        ],
+        "title": "EmitPmFile",
+        "type": "object"
+      },
+      "EmitPmReport": {
+        "properties": {
+          "counterType": {
+            "title": "Countertype",
+            "type": "string"
+          },
+          "managedElementRef": {
+            "title": "Managedelementref",
+            "type": "string"
+          },
+          "measurements": {
+            "items": {
+              "$ref": "#/components/schemas/EmitMeasurement"
+            },
+            "title": "Measurements",
+            "type": "array"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          }
+        },
+        "required": [
+          "managedElementRef",
+          "counterType",
+          "measurements"
+        ],
+        "title": "EmitPmReport",
+        "type": "object"
+      },
+      "EmitResult": {
+        "properties": {
+          "emitted": {
+            "title": "Emitted",
+            "type": "boolean"
+          },
+          "response": {
+            "title": "Response"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "emitted",
+          "status",
+          "target"
+        ],
+        "title": "EmitResult",
+        "type": "object"
+      },
+      "EmitSoftwarePhase": {
+        "properties": {
+          "jobId": {
+            "title": "Jobid",
+            "type": "string"
+          },
+          "succeeded": {
+            "default": true,
+            "title": "Succeeded",
+            "type": "boolean"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "title": "EmitSoftwarePhase",
+        "type": "object"
+      },
       "FaultBody": {
         "properties": {
           "count": {
@@ -65,6 +410,34 @@
           "detail"
         ],
         "title": "MockError",
+        "type": "object"
+      },
+      "Problem": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "default": "about:blank",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "status",
+          "detail"
+        ],
+        "title": "Problem",
         "type": "object"
       },
       "ReadinessReport": {
@@ -251,6 +624,301 @@
           }
         },
         "summary": "Query Last Applied"
+      }
+    },
+    "/emit/alarm": {
+      "post": {
+        "description": "FM: raise an alarm at RAN NF OAM (`POST /alarms/ingest`; its fields are query parameters there). `sourceAlarmId` defaults to a new UUID.",
+        "operationId": "emit_alarm_emit_alarm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmitAlarm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmitResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "no RAN NF OAM target configured, or this adaptor does not declare the service"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "unusable target, or a body of the wrong shape"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "RAN NF OAM could not be reached"
+          }
+        },
+        "summary": "Emit Alarm"
+      }
+    },
+    "/emit/heartbeat": {
+      "post": {
+        "description": "HEARTBEAT: tell RAN NF OAM this adaptor's endpoint is alive (`POST /o1-adaptor-endpoints/{id}/heartbeat`).",
+        "operationId": "emit_heartbeat_emit_heartbeat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmitHeartbeat"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmitResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "no RAN NF OAM target configured, or this adaptor does not declare the service"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "unusable target, or a body of the wrong shape"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "RAN NF OAM could not be reached"
+          }
+        },
+        "summary": "Emit Heartbeat"
+      }
+    },
+    "/emit/pm-file": {
+      "post": {
+        "description": "FILE: report a finished performance file (`POST /pm-files`); RAN NF OAM keeps it and lists it at `GET /files`.",
+        "operationId": "emit_pm_file_emit_pm_file_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmitPmFile"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmitResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "no RAN NF OAM target configured, or this adaptor does not declare the service"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "unusable target, or a body of the wrong shape"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "RAN NF OAM could not be reached"
+          }
+        },
+        "summary": "Emit Pm File"
+      }
+    },
+    "/emit/pm-report": {
+      "post": {
+        "description": "PM: report measurements (`POST /pm-reports`); RAN NF OAM needs a PM subscription on the element and counter.",
+        "operationId": "emit_pm_report_emit_pm_report_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmitPmReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmitResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "no RAN NF OAM target configured, or this adaptor does not declare the service"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "unusable target, or a body of the wrong shape"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "RAN NF OAM could not be reached"
+          }
+        },
+        "summary": "Emit Pm Report"
+      }
+    },
+    "/emit/software-phase": {
+      "post": {
+        "description": "SWM: report the result of the job's current phase (`POST /software-management-jobs/{id}/advance`); RAN NF OAM moves DOWNLOAD, INSTALL, ACTIVATE on.",
+        "operationId": "emit_software_phase_emit_software_phase_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmitSoftwarePhase"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmitResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "no RAN NF OAM target configured, or this adaptor does not declare the service"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "unusable target, or a body of the wrong shape"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "RAN NF OAM could not be reached"
+          }
+        },
+        "summary": "Emit Software Phase"
       }
     },
     "/faults": {

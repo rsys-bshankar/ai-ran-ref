@@ -19,15 +19,19 @@ something real to call, not a full protocol implementation".
 """
 
 import os
-from urllib.parse import unquote
+import uuid
+from typing import Any
+from urllib.parse import quote, unquote
 from xml.sax.saxutils import escape, quoteattr
 
 import defusedxml.ElementTree as ET
 from defusedxml.common import DefusedXmlException
+import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from smo_shared.webhook import is_safe_webhook_destination
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
 from smo_shared.health import install_health
@@ -38,6 +42,8 @@ install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
 install_health(app)  # /live, /ready and /health for the compose healthcheck (PR-ST-7)
 
 NETCONF_BASE_NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
+
+DEFAULT_SERVICES = "PROV,FM,PM,FILE,STREAM,SWM,SUBSCRIPTION,HEARTBEAT"
 
 _applied_changes: dict[str, dict] = {}  # managed-object ref -> last applied attribute_changes, for real test assertions
 
@@ -319,8 +325,7 @@ def declare_capabilities():
     """
     return {
         "vendorName": os.environ.get("MOCK_O1_VENDOR_NAME", "mock-vendor"),
-        "supportedServices": os.environ.get("MOCK_O1_SUPPORTED_SERVICES",
-                                            "PROV,FM,PM,FILE,STREAM,SWM,SUBSCRIPTION,HEARTBEAT").split(","),
+        "supportedServices": _declared_services(),
         "supportedVendorModes": os.environ.get("MOCK_O1_VENDOR_MODES", "O1_NETCONF,O1_RESTCONF").split(","),
     }
 
@@ -369,6 +374,155 @@ def query_object(managed_object_ref: str, function_ref: str | None = None):
     """Test-only introspection of one managed function's running config."""
     return {"managedObjectRef": managed_object_ref, "functionRef": function_ref,
             "attributes": _current(managed_object_ref, function_ref)}
+
+
+# ---------------------------------------------------------------- the emitting side (PR-SB-9b, SB-9.8)
+#
+# Everything above answers RAN NF OAM (configuration, discovery). A real adaptor also *emits* towards RAN NF OAM: alarms, PM reports and files,
+# software-management phase results, heartbeats. These routes make this stub do that on request, so it is a source of FM, PM, SWM and heartbeat
+# for development and the target of the conformance kit's emit checks (conformance/o1: FM-*, PM-*, SW-*, HB-*). Each trigger POSTs the matching
+# RAN NF OAM route (the query/body shapes of ran-nf-oam/app/main.py) and returns what came back. The target is MOCK_O1_OAM_URL, or the request's
+# own `target`. Calls go over plain HTTP: with SMO_MTLS=on RAN NF OAM wants a client certificate this stub does not present (a known limit).
+
+EMIT_TIMEOUT_SECONDS = 5.0
+# the trigger -> the MnS service that must be in /capabilities' supportedServices for the stub to emit it
+EMIT_SERVICES = {"alarm": "FM", "pm-report": "PM", "pm-file": "FILE", "heartbeat": "HEARTBEAT", "software-phase": "SWM"}
+
+
+class Problem(BaseModel):
+    type: str = "about:blank"
+    title: str
+    status: int
+    detail: str
+
+
+class EmitResult(BaseModel):
+    emitted: bool         # RAN NF OAM accepted it (a 2xx)
+    status: int           # the HTTP status RAN NF OAM answered
+    response: Any = None  # its body (JSON, else the first 500 characters of the text)
+    target: str           # the RAN NF OAM origin it was sent to
+
+
+class EmitTarget(BaseModel):
+    target: str | None = None  # RAN NF OAM origin for this call, instead of MOCK_O1_OAM_URL (http/https, not a loopback or link-local literal)
+
+
+class EmitAlarm(EmitTarget):
+    managedElementRef: str
+    severity: str  # a PerceivedSeverity: CRITICAL, MAJOR, MINOR, WARNING, INDETERMINATE or CLEARED, any case
+    sourceAlarmId: str | None = None  # default: a new UUID, so every call raises a new alarm
+    probableCause: str | None = None
+    specificProblem: str | None = None
+    managedFunctionRef: str | None = None
+    alarmType: str | None = None
+    correlationGroup: str | None = None
+
+
+class EmitMeasurement(BaseModel):
+    cellId: str
+    timestamp: str  # ISO 8601
+    value: float | None = None
+    values: dict[str, float] | None = None
+    relation: str | None = None
+
+
+class EmitPmReport(EmitTarget):
+    managedElementRef: str
+    counterType: str
+    measurements: list[EmitMeasurement]
+
+
+class EmitPmFile(EmitPmReport):
+    fileDataType: str = "Performance"
+    fileFormat: str = "json"
+    fileCompression: str | None = None
+    jobId: str | None = None
+    fileExpirationTime: str | None = None
+
+
+class EmitHeartbeat(EmitTarget):
+    endpointId: str
+
+
+class EmitSoftwarePhase(EmitTarget):
+    jobId: str
+    succeeded: bool = True
+
+
+def _problem(status: int, title: str, detail: str) -> JSONResponse:
+    return JSONResponse(status_code=status, content={"type": "about:blank", "title": title, "status": status, "detail": detail},
+                        media_type="application/problem+json")
+
+
+def _declared_services() -> list[str]:
+    return [s.strip() for s in os.environ.get("MOCK_O1_SUPPORTED_SERVICES", DEFAULT_SERVICES).split(",") if s.strip()]
+
+
+def _emit(kind: str, path: str, target: str | None, *, params: dict | None = None, body: dict | None = None) -> JSONResponse:
+    """POST `path` on RAN NF OAM. 409 if this adaptor does not declare the service or no target is configured, 422 for an unusable `target`,
+    502 if RAN NF OAM cannot be reached; any answer from it (a refusal included) is relayed, `emitted` saying whether it was a 2xx."""
+    service = EMIT_SERVICES[kind]
+    if service not in _declared_services():
+        return _problem(409, "service not declared", f"this adaptor does not declare {service} in supportedServices (MOCK_O1_SUPPORTED_SERVICES), so it does not emit {kind}")
+    if target:
+        if not is_safe_webhook_destination(target):
+            return _problem(422, "unusable target", "target must be an http(s) origin that is not a loopback, link-local or unspecified address")
+        origin = target
+    else:
+        origin = os.environ.get("MOCK_O1_OAM_URL", "")
+    origin = origin.strip().rstrip("/")
+    if not origin:
+        return _problem(409, "no target configured", "no RAN NF OAM to emit to: set MOCK_O1_OAM_URL, or name a `target` in the request")
+    try:
+        resp = httpx.post(origin + path, params=params, json=body, timeout=EMIT_TIMEOUT_SECONDS)
+    except httpx.HTTPError as exc:
+        return _problem(502, "RAN NF OAM unreachable", f"POST {origin}{path} failed: {type(exc).__name__}: {exc}")
+    try:
+        answer: Any = resp.json()
+    except ValueError:
+        answer = resp.text[:500]
+    return JSONResponse(content={"emitted": 200 <= resp.status_code < 300, "status": resp.status_code, "response": answer, "target": origin})
+
+
+EMIT_RESPONSES: dict[int | str, dict[str, Any]] = {
+    409: {"model": Problem, "description": "no RAN NF OAM target configured, or this adaptor does not declare the service"},
+    422: {"model": Problem, "description": "unusable target, or a body of the wrong shape"},
+    502: {"model": Problem, "description": "RAN NF OAM could not be reached"},
+}
+
+
+@app.post("/emit/alarm", response_model=EmitResult, responses=EMIT_RESPONSES)
+def emit_alarm(body: EmitAlarm):
+    """FM: raise an alarm at RAN NF OAM (`POST /alarms/ingest`; its fields are query parameters there). `sourceAlarmId` defaults to a new UUID."""
+    params = {"source_alarm_id": body.sourceAlarmId or str(uuid.uuid4()), "managed_element_ref": body.managedElementRef, "severity": body.severity,
+              "probable_cause": body.probableCause, "specific_problem": body.specificProblem, "managed_function_ref": body.managedFunctionRef,
+              "alarm_type": body.alarmType, "correlation_group": body.correlationGroup}
+    return _emit("alarm", "/alarms/ingest", body.target, params={k: v for k, v in params.items() if v is not None})
+
+
+@app.post("/emit/pm-report", response_model=EmitResult, responses=EMIT_RESPONSES)
+def emit_pm_report(body: EmitPmReport):
+    """PM: report measurements (`POST /pm-reports`); RAN NF OAM needs a PM subscription on the element and counter."""
+    return _emit("pm-report", "/pm-reports", body.target, body=body.model_dump(exclude={"target"}, exclude_none=True))
+
+
+@app.post("/emit/pm-file", response_model=EmitResult, responses=EMIT_RESPONSES)
+def emit_pm_file(body: EmitPmFile):
+    """FILE: report a finished performance file (`POST /pm-files`); RAN NF OAM keeps it and lists it at `GET /files`."""
+    return _emit("pm-file", "/pm-files", body.target, body=body.model_dump(exclude={"target"}, exclude_none=True))
+
+
+@app.post("/emit/heartbeat", response_model=EmitResult, responses=EMIT_RESPONSES)
+def emit_heartbeat(body: EmitHeartbeat):
+    """HEARTBEAT: tell RAN NF OAM this adaptor's endpoint is alive (`POST /o1-adaptor-endpoints/{id}/heartbeat`)."""
+    return _emit("heartbeat", f"/o1-adaptor-endpoints/{quote(body.endpointId, safe='')}/heartbeat", body.target)
+
+
+@app.post("/emit/software-phase", response_model=EmitResult, responses=EMIT_RESPONSES)
+def emit_software_phase(body: EmitSoftwarePhase):
+    """SWM: report the result of the job's current phase (`POST /software-management-jobs/{id}/advance`); RAN NF OAM moves DOWNLOAD, INSTALL, ACTIVATE on."""
+    return _emit("software-phase", f"/software-management-jobs/{quote(body.jobId, safe='')}/advance", body.target,
+                 params={"succeeded": "true" if body.succeeded else "false"})
 
 
 def _data_reply(message_id: str, ref: str, function_ref: str | None, attributes: dict) -> Response:
