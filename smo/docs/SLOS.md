@@ -1,6 +1,6 @@
 # Service level objectives
 
-Status: **every target below is proposed** (`PR-OBS-5`). They are starting points chosen from what the code can measure today, not commitments made to anyone; they become real when an operator accepts them for a deployment, after a few weeks of its own traffic (`docs/PERFORMANCE.md` has the lab numbers). The alert rules that implement them are in `deploy/helm/smo/files/smo-alerts.rules.yaml`, each with a page in [runbooks/](runbooks/README.md).
+Status: **the targets below are accepted as the reference targets (decided October 2026)** for a deployment with two or more replicas of every module that can have them and a highly available Postgres (`docs/SIZING.md`, `docs/DISASTER_RECOVERY.md`). They are targets, not commitments made to anyone: an operator tunes them for a deployment after a few weeks of its own traffic (`docs/PERFORMANCE.md` has the lab numbers). **The one-pod lab profile (`postgres.enabled=true`, one replica each) is not held to them during an upgrade**: the bundled database and the modules that hold a volume (Onboarding, the GUI backend) restart with a gap by design. The alert rules that implement them are in `deploy/helm/smo/files/smo-alerts.rules.yaml`, each with a page in [runbooks/](runbooks/README.md).
 
 ## What is measured, and where
 
@@ -15,9 +15,9 @@ The SLIs use only series the modules already export (`smo_shared/metrics.py`, se
 
 Probes and `/metrics` are not counted in the HTTP series. Each module's counters are per process, so an SLI summed over replicas (`sum(rate(...))`) is the right aggregate; the outbox gauges are the same on every replica of a module, so they are aggregated with `max`.
 
-## Targets (proposed)
+## Targets (accepted as reference targets)
 
-| SLO | Target (proposed) | Window | Error budget | Alerts |
+| SLO | Target | Window | Error budget | Alerts |
 |---|---|---|---|---|
 | `gateway-availability` | 99.9% of requests not 5xx | 30 days | 0.1% of requests (about 43 minutes of total outage) | `SmoGatewayAvailabilityBurnFast`, `SmoGatewayAvailabilityBurnSlow` |
 | `gateway-latency` | 99% of requests in 1 s or less | 30 days | 1% of requests | `SmoGatewayLatencyBurnFast`, `SmoGatewayLatencyBurnSlow` |
