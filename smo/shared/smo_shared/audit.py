@@ -120,7 +120,7 @@ def verify(db: Session) -> dict | None:
     first = db.execute(select(AuditHead).where(AuditHead.head_id == 1)).scalar_one_or_none()
     first_seq, first_hash = (first.last_seq, first.last_hash) if first else (0, GENESIS)
     expected_seq, previous = 1, GENESIS
-    at_first = GENESIS if first_seq == 0 else None
+    at = {0: GENESIS}                                                    # the hash of the row the first head named
     for entry in db.execute(select(AuditEntry).order_by(AuditEntry.seq).execution_options(**_STREAM)).scalars():
         if entry.seq != expected_seq:
             return {"seq": expected_seq, "reason": f"row {expected_seq} is missing (next row is {entry.seq})"}
@@ -130,12 +130,12 @@ def verify(db: Session) -> dict | None:
             return {"seq": entry.seq, "reason": "the row was changed: its hash does not match its content"}
         expected_seq, previous = entry.seq + 1, entry.hash
         if entry.seq == first_seq:
-            at_first = entry.hash
+            at[first_seq] = entry.hash
     last_seq = expected_seq - 1
     head = db.execute(select(AuditHead).where(AuditHead.head_id == 1)).scalar_one_or_none()
     if head is None:
         return None if last_seq == 0 else {"seq": last_seq, "reason": "the head row is missing"}
-    if not first_seq <= last_seq <= head.last_seq or at_first != first_hash or (last_seq == head.last_seq and head.last_hash != previous):
+    if not first_seq <= last_seq <= head.last_seq or at.get(first_seq) != first_hash or (last_seq == head.last_seq and head.last_hash != previous):
         return {"seq": last_seq, "reason": f"the head says the chain ends at row {head.last_seq}; it ends at {last_seq} (rows removed from the end?)"}
     return None
 

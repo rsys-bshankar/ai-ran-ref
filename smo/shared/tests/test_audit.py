@@ -87,6 +87,53 @@ def test_a_row_added_while_the_chain_is_read_is_not_a_break(db):
     del db.execute
 
 
+def _before_the_second_head_read(db, action):
+    """Runs `action` once, just before verify reads the head the second time (after the rows)."""
+    real, state = db.execute, {"rows": False}
+
+    def execute(statement, *a, **kw):
+        if "audit_head" not in str(statement):
+            state["rows"] = True
+        elif state["rows"]:
+            state["rows"] = False
+            action()
+        return real(statement, *a, **kw)
+
+    db.execute = execute
+
+
+def test_a_first_head_that_names_a_row_with_another_hash_is_found_even_when_the_head_moves_on(db):
+    _fill(db, 3)
+    db.execute(update(audit.AuditHead).where(audit.AuditHead.head_id == 1).values(last_seq=2, last_hash="f" * 64))
+    db.commit()
+    _before_the_second_head_read(db, lambda: (db.execute(update(audit.AuditHead).where(audit.AuditHead.head_id == 1).values(last_seq=4)), db.commit()))
+    assert audit.verify(db)["seq"] == 3
+
+
+def test_an_empty_chain_with_a_head_at_zero_is_intact(db):
+    _fill(db, 2)
+    db.execute(delete(audit.AuditEntry))
+    db.execute(update(audit.AuditHead).where(audit.AuditHead.head_id == 1).values(last_seq=0, last_hash=audit.GENESIS))
+    db.commit()
+    assert audit.verify(db) is None
+
+
+def test_a_head_that_appears_while_the_rows_are_read_is_not_a_break(db):
+    _fill(db, 3)
+    head = db.get(audit.AuditHead, 1)
+    seq, last_hash = head.last_seq, head.last_hash
+    db.execute(delete(audit.AuditHead))
+    db.commit()
+    db.expunge_all()
+
+    def add():
+        db.add(audit.AuditHead(head_id=1, last_seq=seq, last_hash=last_hash))
+        db.commit()
+
+    _before_the_second_head_read(db, add)
+    assert audit.verify(db) is None
+
+
 def test_rows_past_the_head_are_found(db):
     _fill(db)
     db.execute(update(audit.AuditHead).where(audit.AuditHead.head_id == 1).values(last_seq=3, last_hash=db.get(audit.AuditEntry, 3).hash))
