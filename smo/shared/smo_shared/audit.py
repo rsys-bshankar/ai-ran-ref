@@ -111,8 +111,16 @@ def record(db: Session, *, actor: str, action: str, target: str, result: str, ro
 
 
 def verify(db: Session) -> dict | None:
-    """None when the chain is intact; else the first problem: {"seq": the row it was found at, "reason": ...}."""
+    """None when the chain is intact; else the first problem: {"seq": the row it was found at, "reason": ...}.
+
+    Safe beside writers: the head is read before the rows and again after them, and the rows may end anywhere between the two
+    (a row and the head move together, so a writer that commits while the rows are read leaves the chain ahead of the first read
+    and behind the second). Rows missing from the end, or rows past the head, still break it.
+    """
+    first = db.execute(select(AuditHead).where(AuditHead.head_id == 1)).scalar_one_or_none()
+    first_seq, first_hash = (first.last_seq, first.last_hash) if first else (0, GENESIS)
     expected_seq, previous = 1, GENESIS
+    at_first = GENESIS if first_seq == 0 else None
     for entry in db.execute(select(AuditEntry).order_by(AuditEntry.seq).execution_options(**_STREAM)).scalars():
         if entry.seq != expected_seq:
             return {"seq": expected_seq, "reason": f"row {expected_seq} is missing (next row is {entry.seq})"}
@@ -121,11 +129,13 @@ def verify(db: Session) -> dict | None:
         if compute_hash(entry) != entry.hash:
             return {"seq": entry.seq, "reason": "the row was changed: its hash does not match its content"}
         expected_seq, previous = entry.seq + 1, entry.hash
-    head = db.execute(select(AuditHead).where(AuditHead.head_id == 1)).scalar_one_or_none()
+        if entry.seq == first_seq:
+            at_first = entry.hash
     last_seq = expected_seq - 1
+    head = db.execute(select(AuditHead).where(AuditHead.head_id == 1)).scalar_one_or_none()
     if head is None:
         return None if last_seq == 0 else {"seq": last_seq, "reason": "the head row is missing"}
-    if head.last_seq != last_seq or head.last_hash != previous:
+    if not first_seq <= last_seq <= head.last_seq or at_first != first_hash or (last_seq == head.last_seq and head.last_hash != previous):
         return {"seq": last_seq, "reason": f"the head says the chain ends at row {head.last_seq}; it ends at {last_seq} (rows removed from the end?)"}
     return None
 
