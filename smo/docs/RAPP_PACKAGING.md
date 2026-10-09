@@ -296,7 +296,7 @@ The code is `onboarding/app/package_validation.py` (the part that needs no datab
 3. In `manifest.yaml` list only the modes you implement, and keep every
    `runtimeProfiles` key inside `executionModes`.
 4. In `capabilities.yaml` declare exactly the SDK namespaces your code calls. To give the rApp its own operator page, add `operatorUi` to the manifest (§3.1; `smo_sdk.operator_ui` builds and checks it).
-5. If the rApp will run scoped, handle `403 SCOPE_DENIED` and filtered lists (§3.2); nothing in the package declares the scope.
+5. If the rApp will run scoped, handle `403 SCOPE_DENIED` and filtered lists (§3.3); nothing in the package declares the scope.
 6. Rebuild with `python3 samples/build_csar.py <name>` and run
    `PYTHONPATH=shared python -m pytest tests_integration/ -q`.
 6. Check the package the way Onboarding will, without a stack: `python -m conformance.rapp package my-rapp.csar` (§9). Sign it for an operator who requires signatures: §8.
