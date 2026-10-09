@@ -9,12 +9,12 @@
       "tests_without_docstring": 0
     },
     "aimgf": {
-      "files_without_description": 1,
-      "functions_without_description": 163,
-      "items_requiring_description": 244,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 258,
       "source_files": 10,
       "tests": 186,
-      "tests_without_docstring": 135
+      "tests_without_docstring": 0
     },
     "backup": {
       "files_without_description": 0,
