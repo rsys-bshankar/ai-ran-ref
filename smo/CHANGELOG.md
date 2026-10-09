@@ -5,6 +5,9 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Changed
+- **The Go SDK and its example image move to Go 1.27** (`go.mod`, the CI job through `go-version-file`, and the example's builder image pinned by digest move together). Go 1.24 no longer receives security fixes. The module still has no dependencies, and the SDK needs Go 1.22 or later at run time as before.
+
 ## [0.7.0] - 2026-10-09
 
 The platform learns who an rApp may act on, and what it has to ask first. A signed and checked rApp package, a person's approval before an rApp's change is written (with a record of why, hashed into the audit chain), and a region and tenant an rApp is held to; rApps can now be written in Go and Java; a new element can be set up from a template and software can be rolled out in waves with a health gate; RAN NF OAM takes VES events; and Postgres can be reached over verified TLS. Everything is opt-in: nothing changes on upgrade until you set it. A few things are stand-ins and are named under *Known limitations*.
