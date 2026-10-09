@@ -60,6 +60,10 @@ class Item:
     head: str | None
 
 
+# The documentation baseline (scripts/check_code_docs.py --write-baseline) is data, not code: a documentation change lowers its counts in the same change.
+BASELINE_SUFFIX = "scripts/code_docs_baseline.json"
+
+
 @dataclass
 class Result:
     """The verdict on one file: status is "pass", "fail" or "unverified", `message` says why."""
@@ -474,6 +478,9 @@ def main(argv: list[str] | None = None) -> int:
     for it in sorted(items, key=lambda i: i.path):
         r = results[it.path]
         ext = Path(it.path).suffix or Path(it.path).name
+        if r.status == "unverified" and it.path.endswith(BASELINE_SUFFIX):
+            print(f"SKIP  {it.path}  (exempt: the documentation baseline, which a documentation change lowers)")
+            continue
         if r.status == "unverified" and ext in allowed:
             print(f"SKIP  {it.path}  (not verified; `{ext}` is allowed unverified)")
             continue
