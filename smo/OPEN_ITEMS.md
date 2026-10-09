@@ -1147,15 +1147,18 @@ Current state, checked: AIMgF training, validation, emulation and inference jobs
 | RAPP-3.2 | Runtime checks: register, heartbeat, R1 usage, terminate | Pass on a sample rApp | RAPP-3.1 |
 | RAPP-3.3 | Report file | Generated | RAPP-3.2 |
 
-#### PR-RAPP-4 — Java or Go SDK
+#### PR-RAPP-4 — Java and Go SDK
+
+RAPP-4.1 is decided: both languages. The Java SDK is done (RAPP-4.2 to 4.5, `sdk-java/`; `HISTORY.md`, PR-RAPP-4 Java). The Go SDK (`sdk-go/`) remains:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| RAPP-4.1 | Pick the language | Decision | – |
-| RAPP-4.2 | Generate models and clients from `docs/openapi/` | Builds | RAPP-4.1 |
-| RAPP-4.3 | Token acquisition and refresh | Test against the stack | RAPP-4.2 |
-| RAPP-4.4 | One example rApp using it | Runs | RAPP-4.3 |
-| RAPP-4.5 | CI build | Job green | RAPP-4.2 |
+| RAPP-4.2 (Go) | Generate or write models and clients from `docs/openapi/` | Builds | – |
+| RAPP-4.3 (Go) | Token acquisition and refresh | Test against the stack | RAPP-4.2 |
+| RAPP-4.4 (Go) | One example rApp using it | Runs | RAPP-4.3 |
+| RAPP-4.5 (Go) | CI build | Job green | RAPP-4.2 |
+
+Open for the Java SDK, not a step: a run of the example against the compose stack (CI builds, unit-tests and image-builds it, it does not start the stack), mTLS configured from the environment, and the other Python namespaces (analytics, lifecycle, intent).
 
 #### PR-RAPP-5 — Developer portal
 

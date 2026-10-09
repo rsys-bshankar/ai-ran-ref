@@ -4,6 +4,8 @@ Onboarding's `_validate_package` fetches over HTTP and opens.
 
     python3 smo/samples/build_csar.py                      # every sample
     python3 smo/samples/build_csar.py energy-saving-rapp   # one sample
+    python3 smo/samples/build_csar.py --source-dir <dir> --name <name>   # any package directory -> ./<name>.csar
+                                                           # (the Java example: sdk-java/README.md)
 
 Test suites, caches, the sample's own service tests and its README.md are left out, and
 every entry carries a fixed timestamp, so a rebuild of unchanged sources is
@@ -27,8 +29,9 @@ EXCLUDED_FILES = {"README.md"}  # sample documentation, not package content
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 
 
-def build_bytes(name: str) -> bytes:
-    source = SAMPLES_DIR / name
+def build_bytes(name: str, source: Path | None = None) -> bytes:
+    """The CSAR of `samples/<name>/`, or of the directory `source` when given."""
+    source = source or SAMPLES_DIR / name
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for path in sorted(source.rglob("*")):
@@ -47,8 +50,22 @@ def build(name: str) -> Path:
     return output
 
 
+def build_dir(source: Path, name: str) -> Path:
+    """A package directory outside `samples/` (the Java SDK's example): `./<name>.csar`, built the same way."""
+    output = Path.cwd() / f"{name}.csar"
+    output.write_bytes(build_bytes(name, source.resolve()))
+    print(f"wrote {output}")
+    return output
+
+
 def main() -> None:
-    for name in sys.argv[1:] or SAMPLES:
+    args = sys.argv[1:]
+    if "--source-dir" in args:
+        if "--name" not in args or args.index("--source-dir") + 1 >= len(args) or args.index("--name") + 1 >= len(args):
+            sys.exit("usage: build_csar.py --source-dir <dir> --name <name>")
+        build_dir(Path(args[args.index("--source-dir") + 1]), args[args.index("--name") + 1])
+        return
+    for name in args or SAMPLES:
         build(name)
 
 

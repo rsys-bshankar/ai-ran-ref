@@ -15,6 +15,9 @@ Onboarding is [`../onboarding/README.md`](../onboarding/README.md); the code is
 `onboarding/app/main.py` (`_validate_package`, `_parse_ai_capabilities`,
 `_validate_runtime_profiles`, `_parse_sme_declarations`; the `operatorUi` check is `shared/smo_shared/operator_ui.py`).
 
+A rApp need not be Python. The Java SDK's example rApp ([`../sdk-java/examples/hello-rapp/`](../sdk-java/README.md)) has a package of the same layout (§1) and
+runs as its own container; §5 says what a non-Python rApp needs.
+
 ## 1. Package layout
 
 An rApp package is a CSAR (a zip). `python3 samples/build_csar.py <name>`
@@ -271,3 +274,19 @@ verification against a trust anchor (see [`../../SECURITY.md`](../../SECURITY.md
 4. In `capabilities.yaml` declare exactly the SDK namespaces your code calls. To give the rApp its own operator page, add `operatorUi` to the manifest (§3.1; `smo_sdk.operator_ui` builds and checks it).
 5. Rebuild with `python3 samples/build_csar.py <name>` and run
    `PYTHONPATH=shared python -m pytest tests_integration/ -q`.
+
+## 5. A rApp that is not Python (the Java example)
+
+The CSAR does not start the process (§2), so the language of the workload is outside the package; what the platform needs from any rApp is the same.
+
+| Needed | Python sample rApps | Java example (`sdk-java/examples/hello-rapp/`) |
+|---|---|---|
+| The package | `samples/<name>/`, `python3 samples/build_csar.py <name>` | `package/`, `python3 samples/build_csar.py --source-dir sdk-java/examples/hello-rapp/package --name hello-java-rapp` writes `./hello-java-rapp.csar` (same fixed timestamps, so a rebuild is byte-identical; the CSAR is not committed) |
+| The runtime image | one `Dockerfile` for all services, `MODULE=samples/<name>` | `examples/hello-rapp/Dockerfile`: multi-stage, Temurin 21 JDK builds with the Maven wrapper, Temurin 21 JRE (digest-pinned) runs `java -jar hello-rapp.jar` as uid 10001 |
+| The service in compose | an entry in `docker-compose.yml` (and the chart) | `examples/hello-rapp/docker-compose.java-rapp.yml`, an override file: `docker compose -f docker-compose.yml -f sdk-java/examples/hello-rapp/docker-compose.java-rapp.yml up -d --build hello-java-rapp`; hardening as the stack's (`cap_drop: ALL`, read-only root, `no-new-privileges`) |
+| Identity | `SMO_IDENTITY_KIND=rapp`; enrols on first use | the same variables; or the pair `POST /rapp-mgmt/instances/{id}/credentials` issues, as `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` |
+| Where it is reached | operator API base registered at rApp Management | `PUT /rapp-mgmt/instances/{id}/operator-api` made by the rApp at start; `HELLO_OPERATOR_API_BASE` is the address the gateway reaches the container at |
+| Health | `/live`, `/ready` | the same two routes, on the JDK's built-in HTTP server |
+
+The manifest of the Java package has `executionModes: [INFERENCE]` and a small `runtimeProfiles.INFERENCE` (the example trains nothing); its `operatorUi` is the
+three-panel page `sdk-java/README.md` describes, and `sdk/tests/test_java_example_package.py` checks it with the code Onboarding runs. The example is not in the Helm chart.

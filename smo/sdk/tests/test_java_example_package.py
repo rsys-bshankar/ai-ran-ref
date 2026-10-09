@@ -1,0 +1,55 @@
+"""The Java SDK's example rApp package (`sdk-java/examples/hello-rapp/package/`) builds into a CSAR that passes the checks Onboarding makes.
+
+The Java side (`sdk-java/`) has its own tests; this one holds the half that needs the platform's Python code: the package is built with
+`samples/build_csar.py --source-dir` and its `operatorUi` goes through `smo_sdk.operator_ui` (the code Onboarding runs).
+"""
+
+import importlib.util
+import io
+import zipfile
+from pathlib import Path
+
+import yaml
+
+from smo_sdk import operator_ui as ui
+
+SMO = Path(__file__).resolve().parents[2]
+PACKAGE = SMO / "sdk-java" / "examples" / "hello-rapp" / "package"
+
+
+def _builder():
+    spec = importlib.util.spec_from_file_location("build_csar", SMO / "samples" / "build_csar.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _csar() -> bytes:
+    return _builder().build_bytes("hello-java-rapp", PACKAGE)
+
+
+def test_the_package_has_the_files_onboarding_reads_and_rebuilds_byte_identically():
+    with zipfile.ZipFile(io.BytesIO(_csar())) as z:
+        assert sorted(z.namelist()) == ["Definitions/asd.yaml", "TOSCA-Metadata/TOSCA.meta", "manifest.yaml"]
+        assert "Entry-Definitions: Definitions/asd.yaml" in z.read("TOSCA-Metadata/TOSCA.meta").decode()
+        asd = z.read("Definitions/asd.yaml").decode()
+    for key in ("application_name: HelloJava_rApp", "application_version: \"1.0.0\"", "provider:", "descriptor_id:", "descriptor_invariant_id:", "schema_version"):
+        assert key in asd
+    assert _csar() == _csar()
+
+
+def test_the_manifest_declares_valid_modes_profiles_and_an_operator_page_the_java_rapp_serves():
+    with zipfile.ZipFile(io.BytesIO(_csar())) as z:
+        manifest = yaml.safe_load(z.read("manifest.yaml"))
+    assert manifest["rappManifest"]["manifestVersion"] == "1.0"
+    assert set(manifest["runtimeProfiles"]) <= set(manifest["executionModes"])
+    declared = ui.validate(manifest["operatorUi"])
+    # exactly the routes io.smo.example.OperatorServer serves under the operator API base
+    assert set(ui.declared_routes(declared)) == {("GET", "/instances/{instanceId}/status"), ("GET", "/instances/{instanceId}/runs"),
+                                                 ("POST", "/instances/{instanceId}/run")}
+
+
+def test_the_samples_own_build_is_unchanged_by_the_source_dir_option():
+    builder = _builder()
+    assert builder.build_bytes("energy-saving-rapp") == (SMO / "samples" / "energy-saving-rapp.csar").read_bytes()

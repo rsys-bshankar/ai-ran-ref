@@ -26,8 +26,14 @@ updates:
     groups:
       python: { patterns: ["*"] }
 
+  - package-ecosystem: maven
+    directory: /smo/sdk-java
+    schedule: { interval: weekly }
+    groups:
+      java-sdk: { patterns: ["*"] }
+
   - package-ecosystem: docker
-    directories: [/smo, /smo/gui]
+    directories: [/smo, /smo/gui, /smo/sdk-java/examples/hello-rapp]
     schedule: { interval: weekly }
 
   # image: lines in docker-compose.yml are a separate ecosystem
