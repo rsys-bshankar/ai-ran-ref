@@ -1894,7 +1894,7 @@ def _close_refused(db: Session, approval_id: uuid.UUID, body: ApprovalDecisionRe
     row = _approval_or_404(db, approval_id, lock=True)
     if row.status != "PENDING":
         return
-    detail = exc.detail if isinstance(exc.detail, dict) else {}
+    detail: dict[str, Any] = exc.detail if isinstance(exc.detail, dict) else {}
     row.status, row.refusal_code = "REFUSED", str(detail.get("title") or "REFUSED")
     row.decided_by, row.decided_at, row.decision_reason = body.decidedBy, datetime.datetime.now(datetime.UTC), body.reason
     _record_decision(db, row.invoker_id, WriteConfigRequest.model_validate(row.request), "REFUSED", approval=row)
@@ -1992,7 +1992,7 @@ def _integrity(db: Session, rec: RAppDecisionRecord) -> dict:
 
 
 def _decision_view(rec: RAppDecisionRecord, integrity: dict | None = None) -> dict:
-    view = {"decisionId": str(rec.decision_id), "occurredAt": _stamp(rec.occurred_at), "invokerId": rec.invoker_id, "requestedBy": rec.requested_by,
+    view: dict[str, Any] = {"decisionId": str(rec.decision_id), "occurredAt": _stamp(rec.occurred_at), "invokerId": rec.invoker_id, "requestedBy": rec.requested_by,
             "disposition": rec.disposition, "jobId": str(rec.job_id) if rec.job_id else None, "approvalId": str(rec.approval_id) if rec.approval_id else None,
             "actionId": rec.action_id, "inputsRef": rec.inputs_ref, "modelVersion": rec.model_version, "rationale": rec.rationale,
             "approvedBy": rec.decided_by if rec.disposition == "APPROVED" else None, "decidedBy": rec.decided_by, "decidedAt": _stamp(rec.decided_at),
