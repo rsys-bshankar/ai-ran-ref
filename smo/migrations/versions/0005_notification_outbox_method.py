@@ -15,6 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add `notification_outbox.method` (NOT NULL, default 'POST', checked against 'POST' and 'DELETE'); existing rows take the default."""
     op.execute("""
         ALTER TABLE notification_outbox
           ADD COLUMN method TEXT NOT NULL DEFAULT 'POST' CHECK (method IN ('POST', 'DELETE'))
@@ -22,4 +23,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop the column `method` (and with it the check)."""
     op.execute("ALTER TABLE notification_outbox DROP COLUMN method")

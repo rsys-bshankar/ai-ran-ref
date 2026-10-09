@@ -1,12 +1,9 @@
-"""Shared plumbing every sdk.* client uses.
+"""The plumbing every namespace client shares: `SdkError`, `ensure_ok`, the retry-on-conflict wrapper and `BaseClient`.
 
-Golden rule 6 (docs/ARCHITECTURE.md): the AI Runtime
-SDK is a thin client over the same R1 Termination path every other
-cross-module call in this build already uses — not a second one. Each
-client class below wraps `smo_shared.r1_client.R1Client`, one typed
-method per real platform-service route, so an rApp author calls
-`sdk.models.register_model(...)` instead of hand-building an HTTP
-request against `/mlmr/models`.
+Golden rule 6 (`docs/ARCHITECTURE.md`): the SDK is a thin client over the same R1 Termination path as every other cross-module call. Each client class wraps `R1Client` with one typed
+method per platform route; this file is the one place where a response becomes either a return value or an `SdkError`, and where a write that lost a race is repeated. A transport
+error (`httpx.HTTPError`) is not caught anywhere: only an HTTP answer becomes `SdkError`. Change `ensure_ok` or `_RetryOnConflict` with care, because every method of all six clients
+goes through them; `tests/test_retry_on_conflict.py` and the per-client tests pin their behaviour.
 """
 
 import uuid
@@ -16,11 +13,10 @@ from smo_shared.r1_client import R1Client
 
 
 class SdkError(Exception):
-    """A platform service answered (no transport-level exception) with an
-    error status. Same shape as so-smos/app/dispatch.py's own
-    DownstreamError — an rApp author gets a clean exception with the
-    real status code and body, not a silent success or a bare requests
-    exception.
+    """A platform service answered with an error status (4xx or 5xx).
+
+    Carries the real `status_code` and the parsed `body` (the JSON, or the text when the body is not JSON), so an rApp author gets a clean exception instead of a silent success or a bare
+    transport exception. Same shape as `so-smos/app/dispatch.py`'s `DownstreamError`.
     """
 
     def __init__(self, status_code: int, body):
@@ -30,7 +26,11 @@ class SdkError(Exception):
 
 
 def ensure_ok(resp) -> Any:
-    """The response's JSON body (None for a 204): the shape is the route's, which each wrapper's own return annotation states."""
+    """The body of a successful response, or `SdkError` for a status of 400 or more.
+
+    Returns None for a 204 or an empty body. A JSON object whose `items` is a list is unwrapped to that list, so every `list_*`, `query_*` and `discover_*` method keeps returning a plain list;
+    `total`, `limit` and `offset` of the page are discarded (the caller cannot see that a list was cut at the route's default limit). Any other JSON body is returned as it is.
+    """
     if resp.status_code >= 400:
         try:
             body = resp.json()
@@ -40,13 +40,12 @@ def ensure_ok(resp) -> Any:
     if resp.status_code == 204 or not resp.content:
         return None
     body = resp.json()
-    # Wave 3: every list-returning route now answers {items, total, limit,
-    # offset} (real limit/offset pagination) instead of a bare array. No
-    # route in this build otherwise shapes a response as {"items": [...]},
-    # so unwrapping it here — once, at this one shared response boundary
-    # every sdk.* method already goes through — keeps every existing
-    # list_*/query_*/discover_* method's own `-> list[dict]` return type
-    # exactly as it was.
+    # Every list-returning route answers {items, total, limit, offset} (limit/offset
+    # pagination). No other route shapes a response as {"items": [...]}, so
+    # unwrapping it here, once, at the one response boundary every sdk.* method goes
+    # through, keeps each list_*/query_*/discover_* method's `-> list[dict]` return
+    # type. The price: total, limit and offset are dropped, so a caller cannot see
+    # that a list was cut at the route's default limit.
     if isinstance(body, dict) and isinstance(body.get("items"), list):
         return body["items"]
     return body
@@ -78,9 +77,15 @@ class _RetryOnConflict:
     _MUTATING = ("post", "put", "patch", "delete")
 
     def __init__(self, r1):
+        """Wrap `r1`, the R1 client whose verbs (get, post, put, patch, delete) the namespace clients call."""
         self._r1 = r1
 
     def __getattr__(self, name):
+        """The R1 client's attribute `name`; for a mutating verb, a function that sends the call and repeats it once on a 409 CONCURRENT_MODIFICATION.
+
+        A POST without `files` gets an `Idempotency-Key` header (a caller's own key is kept) that the repeat reuses; PUT, PATCH and DELETE carry none. A call with `files` is neither keyed nor
+        repeated, because the uploaded stream is consumed by the first attempt. Reads and every other attribute are passed through untouched.
+        """
         attr = getattr(self._r1, name)
         if name not in self._MUTATING:
             return attr
@@ -92,6 +97,7 @@ class _RetryOnConflict:
                 headers.setdefault("Idempotency-Key", uuid.uuid4().hex)
                 kwargs["headers"] = headers
             resp = attr(path, *args, **kwargs)
+            # Repeated once, not in a loop: a second conflict is returned to the caller as it is (PR-ST-2).
             if kwargs.get("files") is None and _is_concurrent_modification(resp):
                 resp = attr(path, *args, **kwargs)
             return resp
@@ -100,5 +106,6 @@ class _RetryOnConflict:
 
 
 class BaseClient:
+    """Base of the six namespace clients: holds `self._r1`, the given `R1Client` (or a new one) wrapped so that a write that lost a race is repeated once (`_RetryOnConflict`)."""
     def __init__(self, r1: R1Client | None = None):
         self._r1 = _RetryOnConflict(r1 or R1Client())

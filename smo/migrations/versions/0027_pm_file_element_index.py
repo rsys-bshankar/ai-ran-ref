@@ -21,10 +21,12 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add the index `ix_pm_file_managed_element_ref` on `ran_nf_oam.pm_file` and `created_at` (default now()) on `nfo.lcm_operation`; both statements tolerate a rerun."""
     op.execute("CREATE INDEX IF NOT EXISTS ix_pm_file_managed_element_ref ON ran_nf_oam.pm_file (managed_element_ref)")
     op.execute("ALTER TABLE nfo.lcm_operation ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()")
 
 
 def downgrade() -> None:
+    """Drop the column and the index if they exist."""
     op.execute("ALTER TABLE nfo.lcm_operation DROP COLUMN IF EXISTS created_at")
     op.execute("DROP INDEX IF EXISTS ran_nf_oam.ix_pm_file_managed_element_ref")

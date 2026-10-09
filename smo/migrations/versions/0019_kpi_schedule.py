@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Create `kpi_schedule`: the timer that publishes a KPI to DME, with its last run and status."""
     op.execute("""
         CREATE TABLE kpi_schedule (
             schedule_id         VARCHAR PRIMARY KEY,
@@ -33,4 +34,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop `kpi_schedule`."""
     op.execute("DROP TABLE kpi_schedule")

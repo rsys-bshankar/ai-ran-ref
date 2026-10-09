@@ -15,8 +15,10 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add the nullable `write_config_sub_change.rejection_detail`."""
     op.execute("ALTER TABLE write_config_sub_change ADD COLUMN rejection_detail TEXT")
 
 
 def downgrade() -> None:
+    """Drop the column `rejection_detail`."""
     op.execute("ALTER TABLE write_config_sub_change DROP COLUMN rejection_detail")

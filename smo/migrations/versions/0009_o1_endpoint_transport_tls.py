@@ -17,10 +17,13 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Replace the transport check of `o1_adaptor_endpoint` with one that also allows 'tls', under a new constraint name."""
+    # The old check carries the name Postgres gave the inline CHECK of 0003; the new one is added under a different name so that the schema before and after differs, which the round-trip test compares.
     op.execute("ALTER TABLE o1_adaptor_endpoint DROP CONSTRAINT o1_adaptor_endpoint_transport_check")
     op.execute("ALTER TABLE o1_adaptor_endpoint ADD CONSTRAINT o1_adaptor_endpoint_transport_known CHECK (transport IN ('http-mock', 'ssh', 'tls'))")
 
 
 def downgrade() -> None:
+    """Put the narrower check ('http-mock', 'ssh') back under its old name; fails while any endpoint row still says 'tls' (deliberately: see the module docstring)."""
     op.execute("ALTER TABLE o1_adaptor_endpoint DROP CONSTRAINT o1_adaptor_endpoint_transport_known")
     op.execute("ALTER TABLE o1_adaptor_endpoint ADD CONSTRAINT o1_adaptor_endpoint_transport_check CHECK (transport IN ('http-mock', 'ssh'))")

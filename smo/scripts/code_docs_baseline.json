@@ -26,8 +26,8 @@
     },
     "conformance": {
       "files_without_description": 0,
-      "functions_without_description": 83,
-      "items_requiring_description": 99,
+      "functions_without_description": 0,
+      "items_requiring_description": 103,
       "source_files": 11,
       "tests": 0,
       "tests_without_docstring": 0
@@ -106,8 +106,8 @@
     },
     "migrations": {
       "files_without_description": 0,
-      "functions_without_description": 46,
-      "items_requiring_description": 46,
+      "functions_without_description": 0,
+      "items_requiring_description": 48,
       "source_files": 35,
       "tests": 0,
       "tests_without_docstring": 0
@@ -257,12 +257,12 @@
       "tests_without_docstring": 0
     },
     "sdk": {
-      "files_without_description": 6,
-      "functions_without_description": 30,
-      "items_requiring_description": 67,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 65,
       "source_files": 23,
       "tests": 139,
-      "tests_without_docstring": 133
+      "tests_without_docstring": 0
     },
     "sdk-go": {
       "files_without_description": 14,

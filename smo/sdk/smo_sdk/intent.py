@@ -1,10 +1,8 @@
-"""sdk.intent — a thin client over Intent Service (`intent-service/`),
-TS 28.312 Intent NRM.
+"""sdk.intent: a thin client over Intent Service (`intent-service/`), the TS 28.312 Intent NRM.
 
-Wave 6: Intent Service validates strictly against TS 28.312, so this
-client speaks the spec's own names (intentExpectations, intentPriority,
-intentReportControl, intentHandlingCapabilityList, intentReference, ...).
-`energy_saving_expectation` builds the W6-03 energy-saving template.
+Intent Service validates strictly against TS 28.312, so this client uses the spec's names (intentExpectations, intentPriority, intentReportControl, intentHandlingCapabilityList,
+intentReference, ...). `energy_saving_expectation` builds the energy-saving template of HISTORY.md W6-03 (the one piece of logic here); `request_autonomy_dispatch` hands an inference outcome to the
+platform, where the instance's autonomy mode decides what happens (HISTORY.md W10-03). Part of the SDK (`sdk/README.md`); no validation of its own.
 """
 
 import uuid
@@ -14,16 +12,16 @@ from ._common import BaseClient, ensure_ok
 
 
 class IntentClient(BaseClient):
+    """The `sdk.intent` namespace: intents, intent reports, intent handling function registration and autonomy dispatches at Intent Service."""
     def create_intent(self, intent_expectations: list[dict], rmih_id: str, user_label: str,
                       intent_report_control: list[dict] | None = None, intent_priority: int = 1, rmio_id: str = "",
                       intent_mgmt_purpose: str = "FULFILMENT_WITHOUT_NEGOTIATION",
                       intent_handling_scope: str | None = None, **spec_attributes) -> dict:
-        """A strict TS 28.312 Intent addressed to one registered handling
-        function (`rmih_id`, consumer-side selection). `intent_report_control`
-        defaults to a 60 s observation period with no recipient; any other
-        spec attribute (intentContexts, guaranteePeriods, ...) can be passed
-        by its spec name. 404 unknown RMIH; 422 RMIH_CAPABILITY_MISMATCH or a
-        spec validation error."""
+        """Create a strict TS 28.312 Intent addressed to one registered handling function `rmih_id` (consumer-side selection).
+
+        `intent_report_control` defaults to a 60 s observation period with no recipient; any other spec attribute (intentContexts, guaranteePeriods, ...) can be passed by its spec name in `spec_attributes`,
+        and overrides the defaults of the body. Raises `SdkError` 404 for an unknown RMIH, 422 for RMIH_CAPABILITY_MISMATCH or a spec validation error.
+        """
         body = {"userLabel": user_label, "intentExpectations": intent_expectations, "intentPriority": intent_priority,
                 "intentReportControl": intent_report_control or [{"observationPeriod": 60}], "rmioId": rmio_id,
                 "rmihId": rmih_id, "intentMgmtPurpose": intent_mgmt_purpose, **spec_attributes}
@@ -46,8 +44,7 @@ class IntentClient(BaseClient):
         ensure_ok(self._r1.delete(f"/intent-service/intents/{intent_id}"))
 
     def publish_intent_report(self, intent_id: uuid.UUID | str, **reports) -> dict:
-        """TS 28.312 IntentReport: pass any report kind by its spec name,
-        e.g. intentFulfilmentReport={...}, intentConflictReports=[...]."""
+        """TS 28.312 IntentReport: pass any report kind by its spec name, for example `intentFulfilmentReport={...}` or `intentConflictReports=[...]`; `intentReference` is set from `intent_id`."""
         return ensure_ok(self._r1.post("/intent-service/intent-reports", json={"intentReference": str(intent_id), **reports}))
 
     def list_intent_reports(self, intent_id: uuid.UUID | str | None = None) -> list[dict]:
@@ -56,6 +53,7 @@ class IntentClient(BaseClient):
     def register_intent_handling_function(self, rmih_id: str, sme_service_id: str, intent_handling_capability_list: list[dict],
                                            notification_destination: str, intent_handling_scope: list[str] | None = None,
                                            supported_negotiation_functionalities: list[str] | None = None) -> dict:
+        """Register an intent handling function (RMIH); `sme_service_id` names its SME service (`POST /intent-service/intent-handling-functions`); the scope and the negotiation functionalities are sent only when given."""
         body = {"rmihId": rmih_id, "smeServiceId": sme_service_id,
                 "intentHandlingCapabilityList": intent_handling_capability_list,
                 "notificationDestination": notification_destination}
@@ -76,9 +74,7 @@ class IntentClient(BaseClient):
     def request_autonomy_dispatch(self, instance_id: uuid.UUID | str, expectations: list[dict], rmih_id: str,
                                   model_id: uuid.UUID | str | None = None, notification_destination: str | None = None,
                                   user_label: str | None = None, priority: int = 1) -> dict:
-        """An inference outcome handed to the platform: the instance's own
-        autonomy mode decides (AUTONOMOUS → Intent now, ASSIST → awaits the
-        operator, SHADOW → never enacted)."""
+        """An inference outcome handed to the platform: the instance's own autonomy mode decides what happens (AUTONOMOUS creates the Intent now, ASSIST awaits the operator, SHADOW is never enacted)."""
         return ensure_ok(self._r1.post("/intent-service/autonomy-dispatches", json={
             "instanceId": str(instance_id), "expectations": expectations, "rmihId": rmih_id,
             "modelId": str(model_id) if model_id else None, "notificationDestination": notification_destination,
@@ -90,7 +86,7 @@ class IntentClient(BaseClient):
 
 
 def _full_time(value: str) -> str:
-    """An RFC 3339 full-time for a clock time: "05:00" -> "05:00:00Z" (UTC), "05:00:00+02:00" kept."""
+    """An RFC 3339 full-time for a clock time: "05:00" becomes "05:00:00Z" (UTC), "05:00:00" gets "Z", and a value that already has an offset is kept."""
     if len(value) == 5:
         return f"{value}:00Z"
     return f"{value}Z" if len(value) == 8 else value
@@ -99,12 +95,12 @@ def _full_time(value: str) -> str:
 def energy_saving_expectation(object_instance: str, cells: list[dict] | None = None, max_energy_consumption: int | None = None,
                               daily_window: tuple[str, str] | None = ("00:00", "05:00"),
                               expectation_id: str = "energy-saving") -> dict:
-    """W6-03 — the energy-saving template ("reduce energy in scope X during
-    00:00-05:00") as a TS 28.312 RadioNetworkExpectation: a RAN_SUBNETWORK
-    object (optionally narrowed to `cells`, CellContext), the
-    RANEnergyConsumption target (IS_LESS_THAN, the family's only allowed
-    condition) and, by default, a daily schedulingTime guarantee period (a TS 28.623
-    SchedulingTime: `timeIntervals` of RFC 3339 full-times, so every day)."""
+    """The energy-saving template ("reduce energy in scope X during 00:00-05:00", HISTORY.md W6-03) as a TS 28.312 RadioNetworkExpectation.
+
+    A RAN_SUBNETWORK object (`object_instance`, optionally narrowed to `cells` as a Cell context), the RANEnergyConsumption target (IS_LESS_THAN, the only condition the family allows) and, by default,
+    a daily schedulingTime guarantee period (a TS 28.623 SchedulingTime: `timeIntervals` of RFC 3339 full-times, so every day); pass `daily_window=None` for none. With no
+    `max_energy_consumption` the target value is 0.
+    """
     obj: dict[str, Any] = {"objectType": "RAN_SUBNETWORK", "objectInstance": object_instance}
     if cells:
         obj["objectContexts"] = [{"contextAttribute": "Cell", "contextCondition": "IS_ALL_OF", "contextValueRange": cells}]

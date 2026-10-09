@@ -126,14 +126,17 @@ SCHEMAS = {
 
 
 def upgrade() -> None:
+    """For each module in `SCHEMAS`, create its schema, move its tables into it and leave an updatable view of the same name in `public`."""
     for schema, tables in SCHEMAS.items():
         op.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
         for table in tables:
             op.execute(f"ALTER TABLE public.{table} SET SCHEMA {schema}")
+            # The compatibility view: one table and no join, so it is updatable and the previous release's unqualified reads and writes keep working. Dropped by 0029.
             op.execute(f"CREATE VIEW public.{table} AS SELECT * FROM {schema}.{table}")
 
 
 def downgrade() -> None:
+    """For each module, drop the views, move the tables back to `public` and drop the schema."""
     for schema, tables in SCHEMAS.items():
         for table in tables:
             op.execute(f"DROP VIEW IF EXISTS public.{table}")

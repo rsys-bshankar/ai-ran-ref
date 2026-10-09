@@ -20,6 +20,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Create `rate_bucket`, the shared rate limiter's one-row-per-caller token bucket (if it does not exist)."""
     op.execute("""
         CREATE TABLE IF NOT EXISTS rate_bucket (
             caller TEXT PRIMARY KEY,
@@ -31,4 +32,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop `rate_bucket` if it exists."""
     op.execute("DROP TABLE IF EXISTS rate_bucket")
