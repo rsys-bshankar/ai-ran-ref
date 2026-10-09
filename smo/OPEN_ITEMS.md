@@ -51,7 +51,7 @@ Theme: rApps that could be handed to another party. Core (1 to 3) first, then th
 | 2 | Approval and decision audit | `AI-11` approval queue for rApp actions (timeout, notification, autonomy-mode hook) with the GUI inbox; `AI-13` decision record per rApp config job (inputs, model version, rationale, job id), query route and GUI detail; `AI-12` shadow mode if time allows | Answers "who let the rApp do that, and why". **Built** (`HISTORY.md` PR-AI-11, PR-AI-13): the approval queue, the timeout, the hook for an `ASSIST` instance, the notice, the GUI inbox (`GUI-7.2`) and the decision record. **Not started:** `AI-12` shadow mode |
 | 3 | Tenant and region authorization | `SEC-10`: `region` and `tenant` on managed elements, a scope claim on the caller, enforced first on `POST /config-jobs` (the pilot, `SEC-10.1` to `10.4`), then config reads, alarms, PM, DME and MLMR reads | The main security gap left before 1.0.0. Scoping axes: both region and tenant. **Built** (`HISTORY.md` PR-SEC-10): `SEC-10.1` to `10.6`, the pilot, config reads, alarms and PM, with both axes. **Open:** `SEC-10.7` (DME and MLMR have nothing to match on, see below), `10.8` (OPA), and the rest of RAN NF OAM's reads (`10.9`) |
 | 4 | rApp SDK in two more languages | `RAPP-4` (Java and Go, decided): a Java SDK and a Go SDK built from `docs/openapi/` (the Java one: hand-written clients held to the specs by a contract test, `HISTORY.md` PR-RAPP-4 Java) with token acquisition and refresh, one example rApp in each, and a CI build for each | Python SDK stays. Each example runs against the stack |
-| 5 | Life-cycle flows (stretch) | `MGT-14` zero-touch onboarding (templates, discovery triggers a template, status FSM); `MGT-15` software campaigns (waves with a health gate, rollback, report) | The wave machinery is `MGT-5`, done |
+| 5 | Life-cycle flows (stretch) | `MGT-14` zero-touch onboarding (templates, discovery triggers a template, status FSM); `MGT-15` software campaigns (waves with a health gate, rollback, report) | The wave machinery is `MGT-5`, done. **Built** (`HISTORY.md` PR-MGT-14, PR-MGT-15): the API, the migration (`0033`) and the tests; opt in, nothing changes for an existing user. **Open:** the GUI pages (`MGT-14.6`, `MGT-15.5`), notifications (`MGT-14.7`, `MGT-15.6`), a job timeout and rollback in reverse wave order (`MGT-15.7`), and a real software-management exchange with the element (`MGT-15.8`) |
 | 6 | Spec and stub realism (stretch) | `MGT-2` MSAC beyond writes; `SB-7` VES event receiver; `SB-10` first vendor profile on the O1 stub | |
 | 7 | Carry-overs from 0.6.0 | `GUI-8.7` compose browser check; `SEC-5.4` load test and the cache default (`SEC-5.5`); `SEC-2.4` Postgres `verify-full` | Closed here rather than carried into 1.0.0 |
 
@@ -893,24 +893,27 @@ Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`); an unknown alarm is a 
 
 #### Network lifecycle
 
-#### PR-MGT-14 — Zero-touch onboarding
+#### PR-MGT-14 — Zero-touch onboarding (built: `HISTORY.md` PR-MGT-14; follow-ups open)
+
+MGT-14.1 to 14.5 are built. What is left:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-14.1 | Onboarding template store (initial config per element type) | Route tests | – |
-| MGT-14.2 | Discovery (exists) triggers template selection | Test | MGT-14.1 |
-| MGT-14.3 | Apply the template as a config job | Config applied | MGT-14.2 |
-| MGT-14.4 | Software baseline check | Mismatch flagged | MGT-14.2 |
-| MGT-14.5 | Onboarding status FSM | Transition tests | MGT-14.3 |
+| MGT-14.6 | GUI: the template list and editor (admin), the onboarding table with its status, the baseline flag, select and apply (operator) | Vitest and a page in the Infrastructure area | – |
+| MGT-14.7 | Tell someone when an onboarding fails or the software baseline does not match, as a notification (an alarm is raised today); an entry in `docs/NOTIFICATIONS.md` | Notification inventory test | – |
+| MGT-14.8 | Template placeholders beyond the element itself (a site name, an address plan), and scope (region, tenant) on a template | Test | – |
 
-#### PR-MGT-15 — Software campaigns
+#### PR-MGT-15 — Software campaigns (built: `HISTORY.md` PR-MGT-15; follow-ups open)
+
+MGT-15.1 to 15.4 are built. What is left:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-15.1 | Campaign object over many software-management jobs | Migration | – |
-| MGT-15.2 | Waves with a health gate | Gate failure halts | MGT-15.1 (the wave machinery is `MGT-5`, done) |
-| MGT-15.3 | Campaign rollback | Test | MGT-15.1 |
-| MGT-15.4 | Campaign report | Route test | MGT-15.1 |
+| MGT-15.5 | GUI: start a campaign (selector, wave size, gate), the campaign list, the report, continue / halt / abort / rollback | Vitest and a page | – |
+| MGT-15.6 | Tell someone when a campaign halts or a rollback fails, as a notification; an entry in `docs/NOTIFICATIONS.md` | Notification inventory test | – |
+| MGT-15.7 | A timeout for a software job that never reports (a wave waits for every job today), and a rollback in reverse wave order instead of all revert jobs at once | Test | – |
+| MGT-15.8 | The software management job becomes a real exchange with the element (download, install and activate a named version, report each phase); today `POST /software-management-jobs/{id}/advance` is the report, so a campaign orders and gates the jobs but does not tell an element what to install | Mock adaptor receives the version | `SB-10` or the SWM part of the O1 stub |
+| MGT-15.9 | Gate on KPIs (after `MGT-11`) beside the failed-job and alarm gates | Test | `MGT-11` |
 
 #### PR-MGT-16 — Intent and rApp conflict handling
 
