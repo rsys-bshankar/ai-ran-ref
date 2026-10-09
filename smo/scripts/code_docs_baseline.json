@@ -289,12 +289,12 @@
       "tests_without_docstring": 497
     },
     "sme": {
-      "files_without_description": 2,
-      "functions_without_description": 29,
-      "items_requiring_description": 68,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 76,
       "source_files": 7,
       "tests": 116,
-      "tests_without_docstring": 92
+      "tests_without_docstring": 0
     },
     "so-smos": {
       "files_without_description": 0,
