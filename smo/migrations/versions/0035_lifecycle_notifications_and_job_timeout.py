@@ -10,13 +10,13 @@ Expand only: a new table the previous release never reads, a nullable column it 
 not name, so a campaign it creates keeps the behaviour it had. No row exists until an operator subscribes, and every existing campaign has no timeout and rolls back
 as before. The table of a module with a database role needs no grant of its own: the role's default privileges on its schema cover it (`scripts/db_roles.py`).
 
-Revision ID: 0034
-Revises: 0033
+Revision ID: 0035
+Revises: 0034
 """
 from alembic import op
 
-revision = "0034"
-down_revision = "0033"
+revision = "0035"
+down_revision = "0034"
 branch_labels = None
 depends_on = None
 

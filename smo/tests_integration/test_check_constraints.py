@@ -105,7 +105,7 @@ def test_every_state_of_a_state_machine_is_allowed_by_the_check_on_its_column(da
 
 @needs_postgres
 def test_the_options_of_a_campaign_are_the_values_the_check_on_its_column_allows(database):  # noqa: F811
-    """Not a state machine, but a choice the API takes as a `Literal` and the table checks (revision 0034, `rollback_order`; 0033, `on_gate_failure`): the two lists are one."""
+    """Not a state machine, but a choice the API takes as a `Literal` and the table checks (revision 0035, `rollback_order`; 0033, `on_gate_failure`): the two lists are one."""
     url, *_ = database
     engine = create_engine(url, isolation_level="AUTOCOMMIT")
     with engine.connect() as connection:

@@ -15,7 +15,7 @@ Entries are written for an operator: what changed in behaviour, configuration or
 - **The GUI's dialogs and drawers carry an accessible name** (`aria-labelledby` on the heading); nothing else about them changes.
 
 ### Upgrading from 0.7.0
-- **Schema**: Alembic head is `0034` (expand only: the table `lifecycle_subscription`, and on `software_campaign` the nullable `job_timeout_seconds` and `rollback_order` with default `all` and a CHECK; the previous release's code ignores the first two and its campaigns get `all`, which is what they do). No configuration, chart or image change beyond the images.
+- **Schema**: Alembic head is `0035` (expand only: the table `lifecycle_subscription`, and on `software_campaign` the nullable `job_timeout_seconds` and `rollback_order` with default `all` and a CHECK; the previous release's code ignores the first two and its campaigns get `all`, which is what they do). No configuration, chart or image change beyond the images.
 
 ## [0.7.0] - 2026-10-09
 
