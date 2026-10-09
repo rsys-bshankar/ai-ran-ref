@@ -644,6 +644,89 @@ jobs:
         working-directory: smo
         run: docker compose down -v
 
+  # PR-SEC-2.4: Postgres over TLS (docker-compose.pgtls.yml). Postgres serves TLS only (a plain connection is rejected by pg_hba), every service connects with
+  # sslmode=verify-full against the development CA (scripts/mtls_certs.py), and a client with another CA or another host name is refused (scripts/pg_tls_check.py).
+  compose-pgtls:
+    name: Postgres over TLS, clients verify the certificate (verify-full)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.pgtls.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: docker-compose.pgtls.yml is structurally valid
+        working-directory: smo
+        run: docker compose config --quiet
+
+      - name: Create the secret files, .env and the certificates
+        working-directory: smo
+        run: |
+          scripts/init_secrets.sh
+          cp .env.example .env
+          pip install -q cryptography
+          python3 scripts/mtls_certs.py init
+          # a second, unrelated PKI: its CA must be refused by every client
+          python3 scripts/mtls_certs.py init --dir "$RUNNER_TEMP/other-pki"
+
+      - name: docker compose up --build, Postgres over TLS
+        working-directory: smo
+        env:
+          GUI_COOKIE_SECURE: "false"
+        run: |
+          docker compose up -d --build
+          for i in $(seq 1 60); do
+            [ "$(docker compose ps -a migrate --format json | jq -rs '.[0] | "\(.State) \(.ExitCode)"')" = "exited 0" ] && break
+            sleep 3
+          done
+          [ "$(docker compose ps -a migrate --format json | jq -rs '.[0] | "\(.State) \(.ExitCode)"')" = "exited 0" ] || { echo "::error::migrate did not finish over TLS"; exit 1; }
+          for i in $(seq 1 60); do
+            unhealthy=$(docker compose ps --format json | jq -rs '[.[] | select(.Health != "" and .Health != "healthy") | .Service] | join(" ")')
+            [ -z "$unhealthy" ] && break
+            sleep 5
+          done
+          [ -z "$unhealthy" ] || { echo "::error::not healthy: $unhealthy"; exit 1; }
+
+      - name: Every session is encrypted, and Postgres says what it serves
+        working-directory: smo
+        run: |
+          docker compose exec -T postgres psql -U smo -d smo -Atc "show ssl; show hba_file;"
+          docker compose exec -T postgres psql -U smo -d smo -Atc "select count(*) filter (where s.ssl), count(*) filter (where not s.ssl) from pg_stat_ssl s join pg_stat_activity a using (pid) where a.datname = 'smo' and a.pid <> pg_backend_pid()" | tee ssl-count.txt
+          # services are connected over TLS (more than zero), and none over a plain session
+          read ssl plain < <(tr '|' ' ' < ssl-count.txt)
+          [ "$ssl" -gt 0 ] && [ "$plain" -eq 0 ] || { echo "::error::sessions over TLS: $ssl, plain: $plain"; exit 1; }
+
+      - name: The right CA connects; another CA, another host name and a plain connection are refused
+        working-directory: smo
+        run: |
+          docker run --rm --network smo_default --user "$(id -u):$(id -g)" \
+            -v "$PWD":/smo -w /smo -v "$PWD/secrets/db_password":/run/secrets/db_password:ro \
+            -e PIP_DISABLE_PIP_VERSION_CHECK=1 -e HOME=/tmp -e PYTHONDONTWRITEBYTECODE=1 \
+            python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 \
+            sh -c 'pip install --quiet --user --require-hashes -r requirements/runtime.txt && python scripts/pg_tls_check.py --host postgres --ca certs/mtls/postgres/ca.crt --password-file /run/secrets/db_password --expect-plain-refused'
+
+      - name: A service given the wrong CA does not connect
+        working-directory: smo
+        run: |
+          # the migrate service's own image and command, with the CA of the unrelated PKI in place of the right one
+          if docker compose run --rm --no-deps -e PGSSLROOTCERT=/run/other-pgtls-ca.crt -v "$RUNNER_TEMP/other-pki/postgres/ca.crt:/run/other-pgtls-ca.crt:ro" migrate python /srv/scripts/migrate.py --current > wrong-ca.log 2>&1; then
+            cat wrong-ca.log; echo "::error::a service connected with the wrong CA"; exit 1
+          fi
+          cat wrong-ca.log
+          grep -qi "certificate verify failed" wrong-ca.log || { echo "::error::it failed, but not on the certificate"; exit 1; }
+
+      - name: Dump logs on failure
+        if: failure()
+        working-directory: smo
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --tail=100 postgres migrate sme r1-termination
+
+      - name: Tear down
+        if: always()
+        working-directory: smo
+        run: docker compose down -v
+
   # PR-SB-1.3/1.4: a real NETCONF-over-SSH server (Netopeer2, profile `netconf-lab`) answers the SSH session wrapper of RAN NF OAM.
   netconf-lab:
     name: NETCONF lab (netopeer2)

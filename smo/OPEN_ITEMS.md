@@ -23,7 +23,7 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 | Area | In 0.5.0 | Moved to 0.6.0 or later |
 |---|---|---|
 | API | `?total=false` on every list route (opt out of the page `COUNT(*)`; default unchanged) | – |
-| Security | SEC-9 `/bootstrap` exposure; SEC-8.5 shared rate limiter; SEC-7 MFA and logout revocation (done: `HISTORY.md` PR-SEC-7); SEC-2 mTLS between services (done except SEC-2.4, Postgres `verify-full`: `HISTORY.md` PR-SEC-2); SEC-3 mesh option (decided: not taken, mTLS instead); SEC-6 OIDC login for the GUI (done: `HISTORY.md`; SEC-6.8 LDAP stays open and optional) | SEC-5 signing keys and JWKS, SEC-4.7 external secrets example (both 0.6.0) |
+| Security | SEC-9 `/bootstrap` exposure; SEC-8.5 shared rate limiter; SEC-7 MFA and logout revocation (done: `HISTORY.md` PR-SEC-7); SEC-2 mTLS between services and Postgres `verify-full` (done: `HISTORY.md` PR-SEC-2, PR-SEC-2.4); SEC-3 mesh option (decided: not taken, mTLS instead); SEC-6 OIDC login for the GUI (done: `HISTORY.md`; SEC-6.8 LDAP stays open and optional) | SEC-5 signing keys and JWKS, SEC-4.7 external secrets example (both 0.6.0) |
 | Operability | OBS-3 traces (Tempo), OBS-4 business metrics, OBS-5 alerts and SLOs, OBS-6 log shipping, OBS-7 runbooks (OBS-4, 5 and 7 are done in part: what remains is under 5.5), OBS-8 `/version`, OPS-6 GitOps example, OPS-7 configuration reference, OPS-9 sizing | – |
 | Disaster recovery | HA-6: RPO 15 minutes, RTO 1 hour, off-site backup shipping, one timed restore drill (built, `docs/DISASTER_RECOVERY.md`; the drill on a real stack is open, HA-6.3) | HA-7 geo-redundancy (after 1.0.0) |
 | Standards and documents | STD-2.1 spec release table; STD-4.1 personal-data inventory; STD-6.1 data residency statement; STD-4.3 erasure procedure for a GUI user; STD-5 control matrix (ISO 27001, NESAS/SCAS) | STD-3 plugfest plan (0.6.0 or later) |
@@ -33,7 +33,7 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 | Area | In 0.6.0 | Notes |
 |---|---|---|
 | Southbound | SB-9.3 to 9.5 and SB-9.8: the RAN O1 stub emits (alarms, PM reports and files, software-update phases, heartbeats) and the conformance kit checks what RAN NF OAM receives | The stub was configuration-only in 0.5.0 |
-| GUI | `PR-GUI-8` (built except its browser check `GUI-8.7`: `HISTORY.md` PR-GUI-8a and PR-GUI-8b): one rApps entry in the sidebar with a searchable directory, a detail page per rApp, pages declared by the rApp package and drawn by a generic renderer, per-user pins; the four sample rApps moved to it and their hand-written pages are gone | Replaces "one coded page and one sidebar entry per rApp", which does not scale to 100 rApps and gives a rApp onboarded at run time no page |
+| GUI | `PR-GUI-8` (built, with its browser check: `HISTORY.md` PR-GUI-8a, PR-GUI-8b and PR-GUI-8c): one rApps entry in the sidebar with a searchable directory, a detail page per rApp, pages declared by the rApp package and drawn by a generic renderer, per-user pins; the four sample rApps moved to it and their hand-written pages are gone | Replaces "one coded page and one sidebar entry per rApp", which does not scale to 100 rApps and gives a rApp onboarded at run time no page |
 | Security | SEC-5 signing keys and JWKS; SEC-4.7 external secrets example (`PR-SEC-7` MFA, both layers, is built: `HISTORY.md`) | The production sample values file carries `GUI_ADMIN_MFA_REQUIRED` and `GUI_LOGIN_MODE: oidc` as a commented block with the `kubectl create secret` for the key: they are not switched on in the sample, because the backend refuses to start with `GUI_ADMIN_MFA_REQUIRED=true` and no `GUI_TOTP_KEY`, and a sample cannot create your Secret |
 | Retention | `DB-3.10` (built, see `HISTORY.md` PR-DB-3): the proposed periods of `docs/RETENTION.md` ship in a production sample values file and in `.env.example`; the code defaults stay at `0` (keep), so an upgrade deletes nothing; a startup warning and a metric when a table with retention off has grown large | Decided: do not default to deleting |
 | Operability | The SLO targets of `docs/SLOS.md` are accepted as the reference targets (decided October 2026) for a deployment with two or more replicas and a highly available Postgres; the one-pod lab profile is not held to them during an upgrade | Per-route targets and per-deployment tuning stay open |
@@ -53,7 +53,7 @@ Theme: rApps that could be handed to another party. Core (1 to 3) first, then th
 | 4 | rApp SDK in two more languages | `RAPP-4` (Java and Go, decided): a Java SDK and a Go SDK generated from `docs/openapi/` with token acquisition and refresh, one example rApp in each, and a CI build for each | Python SDK stays. Each example runs against the stack |
 | 5 | Life-cycle flows (stretch) | `MGT-14` zero-touch onboarding (templates, discovery triggers a template, status FSM); `MGT-15` software campaigns (waves with a health gate, rollback, report) | The wave machinery is `MGT-5`, done |
 | 6 | Spec and stub realism (stretch) | `MGT-2` MSAC beyond writes; `SB-7` VES event receiver; `SB-10` first vendor profile on the O1 stub | |
-| 7 | Carry-overs from 0.6.0 | `GUI-8.7` compose browser check; `SEC-5.4` load test and the cache default (`SEC-5.5`); `SEC-2.4` Postgres `verify-full` | Closed here rather than carried into 1.0.0 |
+| 7 | Carry-overs from 0.6.0 | `GUI-8.7` compose browser check; `SEC-5.4` load test and the cache default (`SEC-5.5`); `SEC-2.4` Postgres `verify-full` | Closed here rather than carried into 1.0.0. **Built** (`HISTORY.md` PR-SEC-2.4, PR-SEC-5.4b, PR-GUI-8c): `SEC-2.4` (the compose overlay `docker-compose.pgtls.yml` and the chart's `postgres.tls`; proved against a real Postgres here, the containers and pods by new CI jobs), `SEC-5.4` (measured: the cache cuts SME's introspections by 99 % in the local run, the compose lane `smo-load.yml` repeats it), `GUI-8.7` (`scripts/gui_rapp_pages_e2e.py`, run here against the built GUI, the real backend and the real services; the compose job is CI's). **Open, the owner's:** `SEC-5.5`, the default of the cache (recommendation: 30 s, not applied) |
 
 Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard node loss, a network partition, PgBouncer failover, zones and the external penetration test (they need a host we control and are criteria for 1.0.0); northbound adaptors (`NB-1` to `NB-7`); the developer portal (`RAPP-5`); streaming PM (`SB-8`). Customer-driven requests: none yet.
 
@@ -340,11 +340,9 @@ who can ask, are in `r1-termination/README.md` and `HISTORY.md` PR-SEC-9) and se
 | Step | What | Done when | Needs |
 |---|---|---|---|
 
-#### PR-SEC-2 — mTLS between services (open: SEC-2.4; the rest is in `HISTORY.md` PR-SEC-2)
+#### PR-SEC-2 — mTLS between services (done: `HISTORY.md` PR-SEC-2 and PR-SEC-2.4)
 
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| SEC-2.4 | `sslmode=verify-full` for Postgres (the compose Postgres and the bundled chart one serve no TLS yet; an external one is `postgres.external.sslmode` already) | Connection fails with a wrong CA | `scripts/mtls_certs.py` for a server certificate |
+Nothing open. Left for a deployment rather than this build: Postgres TLS on a release that already runs (the chart's `postgres.tls.enabled` is for a new install, `deploy/helm/smo/README.md`), a CA for an external Postgres inside the pods (`postgres.external.sslmode: verify-full` uses the system trust store of the image), and PgBouncer's client side (the pooler serves no TLS to the services).
 
 #### PR-SEC-3 — Caller allow-list (the service-mesh option is decided: not taken, `HISTORY.md` PR-SEC-2)
 
@@ -362,12 +360,11 @@ who can ask, are in `r1-termination/README.md` and `HISTORY.md` PR-SEC-9) and se
 
 #### PR-SEC-5 — Signing keys and token caching
 
-SEC-5.1 to 5.3 are done, and SEC-5.4 is built but not measured (`HISTORY.md`, PR-SEC-5). What remains:
+SEC-5.1 to 5.4 are done (`HISTORY.md`, PR-SEC-5 and PR-SEC-5.4b). What remains:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-5.4 ★ (load test) | Run `scripts/load_run.py` against the compose stack with `R1_INTROSPECTION_CACHE_SECONDS=30` and without, and compare the introspections SME answers (`smo_http_requests_total{route="/oauth2/introspect"}` at SME) and the gateway's latency; record both in `docs/PERFORMANCE.md`. Then decide whether a small default above 0 is worth the revocation window. | Load test shows fewer SME calls (the unit test with a fake SME already does); the owner decides the default | The compose stack (Docker) |
-| SEC-5.5 | Choose and apply the default of `R1_INTROSPECTION_CACHE_SECONDS` (0 today) and, if gateway replicas must see a revocation at once, a revocation broadcast between them | The owner's decision, recorded | SEC-5.4 load test |
+| SEC-5.5 | Choose and apply the default of `R1_INTROSPECTION_CACHE_SECONDS` (0 today) and, if gateway replicas must see a revocation at once, a revocation broadcast between them. **Recommendation, not applied:** 30 seconds (measured: SME answered 98.4 introspections per 100 calls without the cache and 0.9 with it, at 8.6 and 15.5 requests a second; `docs/PERFORMANCE.md`). It stays 0 because it changes what an upgrade does to revocation (a revoked rApp is honoured for up to 30 s longer, on every replica but the one that carried the revocation) and the first measurement used one token on one machine; the owner decides, and the CI numbers (`smo-load.yml`) are the second reading | The owner's decision, recorded in `HISTORY.md` | SEC-5.4 (done) |
 | SEC-5.6 | A browser sign-in and a render of the chart with `gui.jwtKeySecretRef` set, on a real cluster or in CI with `helm` | Sign-in works under ES256 on a cluster; the pod has the key at `/run/gui-jwt` | A cluster |
 
 #### PR-SEC-6 — OIDC login for the GUI
@@ -1251,13 +1248,9 @@ Step 7.2 is built (the Approvals page lists pending rApp actions and decides the
 | GUI-7.1 | Inbox page listing pending change-window approvals | Component test | MGT-4.3 |
 | GUI-7.3 | Add model gate approvals | Component test | – |
 
-#### PR-GUI-8 — rApp directory and declared pages (0.6.0)
+#### PR-GUI-8 — rApp directory and declared pages (done: `HISTORY.md` PR-GUI-8a, PR-GUI-8b and PR-GUI-8c)
 
-Built except its browser check (`HISTORY.md` PR-GUI-8a and PR-GUI-8b: the declaration and its check, the SDK helper, `operatorApiBase`, the gateway prefix, the GUI backend, the directory, the renderer, the pins and the four sample rApps moved to declarations). What is left is the one step that needs the compose stack and a browser.
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| GUI-8.7 | Browser check in `smo-gui-e2e` (`scripts/gui_e2e.py` is the model; it needs Docker and Chromium): onboard a package that carries an `operatorUi` at run time, deploy it with an `operatorApiBase` (a stub rApp on the compose network is enough), open `/rapps/<instance>` and see its panels with no GUI rebuild; sign in as a viewer and see no change button, and see the BFF refuse a hand-made call (`UNDECLARED_ROUTE`, `FORBIDDEN`, `RAPP_READ_ONLY`) | The job passes | GUI-8.6 (done) |
+Nothing open.
 
 ### 5.14 Standards and compliance (`PR-STD`)
 

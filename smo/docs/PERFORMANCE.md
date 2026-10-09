@@ -63,6 +63,19 @@ The first drain run found a chart fault: a disruption budget on the single-repli
 
 Not measured: a hard node loss, a partition between modules and Postgres, PgBouncer failover.
 
+## The introspection cache (SEC-5.4)
+
+Without the cache the gateway asks SME about the token of every call; with `R1_INTROSPECTION_CACHE_SECONDS=N` it asks once per token per N seconds (`r1-termination/README.md`, "Introspection cache"). `scripts/load_run.py` reads `smo_http_requests_total{route="/oauth2/introspect"}` at SME and the gateway's own request count and cache counters before and after the measured part; `scripts/introspection_compare.py` sets two runs side by side. The compose lane (`.github/workflows/smo-load.yml`) runs the main load, recreates the gateway with the cache at 30 s, runs it again and posts the comparison in the job summary; its numbers belong in the table below when the lane has run (the pull request that added it is the first).
+
+First reading, **without Docker**: `scripts/load_local.py` starts a Postgres over TLS and SME, DME, Onboarding, rApp Management, RAN NF OAM and the gateway as processes on one 4-core machine that also runs the load generator (so the latencies are far above a deployment's and are not for sizing), 8 callers in flight for 45 s after a 5 s warm-up, one rApp token, every database connection `verify-full`:
+
+| Run | Introspections at SME | Calls through the gateway | Per 100 calls | Requests/s | p50 (ms) | p95 (ms) | p99 (ms) | Errors |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| cache off | 370 | 376 | 98.4 | 8.6 | 950 | 1242 | 1316 | 0 |
+| cache 30 s | 6 | 673 | 0.9 | 15.5 | 522 | 688 | 739 | 0 |
+
+A second run gave 355 for 358 calls (99.2 per 100) against 3 for 713 (0.4 per 100). What it shows is the arithmetic of the design: one introspection per call without the cache, one per token per N seconds with it. What it does not show: one token is the best case, so a fleet saves `1 - 1/(calls per token in N seconds)` of its checks and not 99 %; the second run follows the first on a warm database, so part of the latency gain is that; the machine is shared by everything. The recommendation for the default (30 s, not applied) and what it costs in revocation time are in `HISTORY.md`, PR-SEC-5.4b.
+
 ## Not yet covered
 
 - Cells, managed objects and KPI results are not seeded yet (V-8b seeds managed elements, alarms and performance files).
