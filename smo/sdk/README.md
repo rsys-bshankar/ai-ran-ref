@@ -1,6 +1,6 @@
 # AI Runtime SDK (`sdk/`)
 
-> A thin, typed Python client over the R1 interface, in six namespaces (`data`, `analytics`, `models`, `lifecycle`, `intent`, `platform`), so an rApp calls `sdk.models.register_model(...)` instead of hand-building an HTTP request.
+> A thin, typed Python client over the R1 interface, in six namespaces (`data`, `analytics`, `models`, `lifecycle`, `intent`, `platform`), so an rApp calls `sdk.models.register_model(...)` instead of hand-building an HTTP request. An rApp in Go uses the [Go SDK](../sdk-go/README.md) (`../sdk-go/`), which follows the same R1 conventions but covers fewer routes with typed helpers.
 > For a rApp written in Java there is [`../sdk-java/`](../sdk-java/README.md): the token, enrolment and retry behaviour of this SDK's `R1Client`, and the routes an rApp needs most, not all six namespaces.
 
 | | |
@@ -321,6 +321,7 @@ Each test asserts the verb, path, params and body the client sends against a scr
 - [`../docs/call-flows/26-model-governance-and-end-of-life.md`](../docs/call-flows/26-model-governance-and-end-of-life.md): `advance_model_lifecycle`
 - Call flows 02 (model train to inference), 05 (EI / DME consumption), 08 (analytics production), 09 (intent), 11-13 (DME type / record / MLMF subscription lifecycles), 17 (model runtime), 22-25 (the four closed loops built on the SDK) in [`../docs/call-flows/`](../docs/call-flows/)
 - OpenAPI of the targeted services: [`../docs/openapi/`](../docs/openapi/) (`dme.json`, `mdaf.json`, `ran-analytics.json`, `mlmr.json`, `aimgf.json`, `mllf.json`, `intent-service.json`, `sme.json`, `ran-nf-oam.json`)
+- [`../sdk-go/README.md`](../sdk-go/README.md): the Go SDK, a second implementation of the same token flow (`R1Client`'s, for an rApp), retry and error mapping
 - [`../shared/README.md`](../shared/README.md): `R1Client`, token acquisition, error and pagination helpers
 - Backend module READMEs: [`../dme/README.md`](../dme/README.md), [`../mdaf/README.md`](../mdaf/README.md), [`../mlmr/README.md`](../mlmr/README.md), [`../aimgf/README.md`](../aimgf/README.md), [`../mllf/README.md`](../mllf/README.md), [`../intent-service/README.md`](../intent-service/README.md), [`../sme/README.md`](../sme/README.md)
 - [`../docs/RAPP_PACKAGING.md`](../docs/RAPP_PACKAGING.md): `capabilities.yaml` declares which namespaces an rApp uses

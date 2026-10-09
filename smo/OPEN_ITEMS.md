@@ -177,7 +177,7 @@ and HA much later).
 | Management functions | `PR-MGT` | MGT-1 CM history/rollback · MGT-2 MSAC reach · MGT-3 dry-run · MGT-4 change windows · MGT-5 canary · MGT-6 drift · MGT-7 plan mgmt · MGT-8 alarm lifecycle · MGT-9 correlation · MGT-10 topology RCA · MGT-11 KPI engine · MGT-12 PM at scale · MGT-13 trace/QoE · MGT-14 zero-touch · MGT-15 SW campaigns · MGT-16 intent conflicts · MGT-17 SO saga · MGT-18 SLA assurance |
 | Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
 | AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
-| rApp ecosystem | `PR-RAPP` | RAPP-1 signing · RAPP-2 sandbox · RAPP-3 conformance pack · RAPP-4 Java/Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
+| rApp ecosystem | `PR-RAPP` | RAPP-1 signing · RAPP-2 sandbox · RAPP-3 conformance pack · RAPP-4 Java and Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
 | GUI | `PR-GUI` | GUI-1 live updates · GUI-2 alarm console · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n · GUI-7 approval inbox |
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
@@ -1156,16 +1156,9 @@ Built (`HISTORY.md` PR-AI-11, PR-AI-13): the record, one per config job an rApp 
 
 #### PR-RAPP-4 — Java and Go SDK
 
-RAPP-4.1 is decided: both languages. The Java SDK is done (RAPP-4.2 to 4.5, `sdk-java/`; `HISTORY.md`, PR-RAPP-4 Java). The Go SDK (`sdk-go/`) remains:
+RAPP-4.1 decided (both languages) and RAPP-4.2 to 4.5 are done for Go (`sdk-go/`) and for Java (`sdk-java/`); `HISTORY.md`, PR-RAPP-4 (Go) and PR-RAPP-4 (Java).
 
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| RAPP-4.2 (Go) | Generate or write models and clients from `docs/openapi/` | Builds | – |
-| RAPP-4.3 (Go) | Token acquisition and refresh | Test against the stack | RAPP-4.2 |
-| RAPP-4.4 (Go) | One example rApp using it | Runs | RAPP-4.3 |
-| RAPP-4.5 (Go) | CI build | Job green | RAPP-4.2 |
-
-Open for the Java SDK, not a step: a run of the example against the compose stack (CI builds, unit-tests and image-builds it, it does not start the stack), mTLS configured from the environment, and the other Python namespaces (analytics, lifecycle, intent).
+Open, not steps: a run of either example against the compose stack (CI builds, unit-tests and image-builds them, it does not start the stack), mTLS configured from the environment in the Java SDK, and the Python namespaces (analytics, lifecycle, intent) that neither SDK covers.
 
 #### PR-RAPP-5 — Developer portal
 

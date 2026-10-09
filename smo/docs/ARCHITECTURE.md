@@ -93,7 +93,7 @@ reached this shape see [HISTORY.md](../HISTORY.md).
    emulate, infer or store anything itself.
 6. **R1 owns service exposure.** Every platform service is reached through
    R1 Termination's gateway (`r1-termination/`). Nothing bypasses it; the AI
-   Runtime SDK (`sdk/smo_sdk/`, and its Java counterpart `sdk-java/`) is a thin client over that same path, not a
+   Runtime SDKs (`sdk/smo_sdk/` in Python, `sdk-go/` in Go, `sdk-java/` in Java) are thin clients over that same path, not a
    second one.
 7. **Service code is stateless.** A module keeps its state in Postgres, never
    in the process, and starts no background work, so any number of identical
@@ -189,7 +189,7 @@ interval across any number of workers. RAN NF OAM is the first user
 |---|---|
 | AI platform services | `aimgf/`, `mlmr/`, `mllf/`, `mdaf/`, `intent-service/`, `dme/` |
 | Other platform services | `sme/`, `nfo/`, `focom/`, `ran-nf-oam/`, `onboarding/`, `rapp-mgmt/`, `sa-smos/`, `so-smos/`, `ran-analytics/` |
-| Exposure | `r1-termination/` (R1 gateway), `sdk/` (AI Runtime SDK, Python), `sdk-java/` (AI Runtime SDK, Java), `gui/` + `gui-bff/` |
+| Exposure | `r1-termination/` (R1 gateway), `sdk/`, `sdk-go/` and `sdk-java/` (AI Runtime SDKs: Python, Go and Java), `gui/` + `gui-bff/` |
 | Southbound simulators | `mock-o1-adaptor/` |
 | Shared library | `shared/smo_shared/` (DB, errors, pagination, correlation, webhook, R1 client, OpenAPI security) |
 | rApps | `samples/` (four reference rApps) |

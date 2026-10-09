@@ -1,0 +1,10 @@
+# HelloGo_rApp capabilities: the SDK namespaces the rApp uses. The Go SDK has no sdk.* module names; the namespace is the
+# platform area the call belongs to (sdk-go/README.md).
+capabilities:
+  consumes:
+    - namespace: data
+      description: Reads the DME type catalogue (GET /dme/dme-types) as its heartbeat, via the Go SDK's Data().DiscoverTypes.
+  provides: []
+
+consumedServices:
+  - sdk.data

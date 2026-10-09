@@ -16,7 +16,7 @@ Onboarding is [`../onboarding/README.md`](../onboarding/README.md); the code is
 `_validate_runtime_profiles`, `_parse_sme_declarations`; the `operatorUi` check is `shared/smo_shared/operator_ui.py`).
 
 A rApp need not be Python. The Java SDK's example rApp ([`../sdk-java/examples/hello-rapp/`](../sdk-java/README.md)) has a package of the same layout (§1) and
-runs as its own container; §5 says what a non-Python rApp needs.
+runs as its own container; §7.1 and §7.2 say what a non-Python rApp needs.
 
 ## 1. Package layout
 
@@ -275,7 +275,11 @@ verification against a trust anchor (see [`../../SECURITY.md`](../../SECURITY.md
 5. Rebuild with `python3 samples/build_csar.py <name>` and run
    `PYTHONPATH=shared python -m pytest tests_integration/ -q`.
 
-## 5. A rApp that is not Python (the Java example)
+### 7.1 An rApp that is not written in Python
+
+The package is language-neutral: Onboarding reads the CSAR files in §1 and never the rApp's source, and the executable is not in the CSAR for any of the reference rApps (it runs as a service beside the stack). A rApp in Go follows §7 with two differences. The package directory holds only the package files (no `app/`), and the container is a static binary in an empty image. [`../sdk-go/examples/hello-rapp/`](../sdk-go/examples/hello-rapp/) is the worked example: `package/` (manifest with an `operatorUi` page, `capabilities.yaml`, ASD, `TOSCA.meta`), `build_csar.py` (calls `samples/build_csar.py`'s `build_bytes` on that directory, so the same fixed timestamps and exclusions apply), a `Dockerfile` and a compose override; [`../sdk-go/README.md`](../sdk-go/README.md) §4 says how to run it and package it. In `capabilities.yaml`, `namespace` names the platform area the rApp calls (`data`, `models`, `platform`, ...) whichever SDK it uses. Which routes an rApp may *change* through R1 is the role policy (`shared/smo_shared/roles.py`), the same for every language.
+
+### 7.2 A rApp written in Java (the Java SDK example)
 
 The CSAR does not start the process (§2), so the language of the workload is outside the package; what the platform needs from any rApp is the same.
 

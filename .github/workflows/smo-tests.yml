@@ -57,6 +57,38 @@ jobs:
         working-directory: smo
         run: python scripts/check_statelessness.py
 
+  # PR-RAPP-4 (Go): the Go AI Runtime SDK and its example rApp (smo/sdk-go). Standard library only, so there is no go.sum to verify and no module
+  # download; the Go version is the one go.mod names, and the same job builds the example's static binary the way its Dockerfile does.
+  sdk-go:
+    name: "Go SDK (gofmt, vet, test -race, build)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: smo/sdk-go
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: smo/sdk-go/go.mod
+          cache: false   # no dependencies: nothing to cache, and no go.sum to key a cache on
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+      - name: go vet
+        run: go vet ./...
+
+      # The tests check the client against a fake platform and every route it calls against ../docs/openapi/*.json
+      - name: go test -race
+        run: go test -race -count=1 -cover ./...
+
+      - name: go build (library and the example's static binary)
+        run: |
+          go build ./...
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/hello-rapp ./examples/hello-rapp
+
   # PR-V-4: the R1 contract against the previous release. Every docs/openapi/<module>.json at the newest smo-v* tag is compared with this commit's;
   # a removed operation, a new required parameter or property, a narrowed bound or enum, a changed type, or a lost response property fails unless
   # smo/scripts/breaking_change_waivers.json waives it with a reason (the file is emptied when a release is cut). Standard library only.

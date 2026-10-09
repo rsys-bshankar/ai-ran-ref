@@ -32,8 +32,13 @@ updates:
     groups:
       java-sdk: { patterns: ["*"] }
 
+  # Go: the SDK has no module dependencies today (standard library only); this watches for the first one
+  - package-ecosystem: gomod
+    directory: /smo/sdk-go
+    schedule: { interval: weekly }
+
   - package-ecosystem: docker
-    directories: [/smo, /smo/gui, /smo/sdk-java/examples/hello-rapp]
+    directories: [/smo, /smo/gui, /smo/sdk-go/examples/hello-rapp, /smo/sdk-java/examples/hello-rapp]
     schedule: { interval: weekly }
 
   # image: lines in docker-compose.yml are a separate ecosystem
