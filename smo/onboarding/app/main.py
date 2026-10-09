@@ -5,33 +5,40 @@ SMO Design v1.3 section 3.4, extended by Onboarding/rApp Mgmt LLD sections
 FAILED terminal state, and the cascade-delete guard (statemachine.py).
 """
 
-import hashlib
-import json
 import logging
+import os
 import uuid
-import zipfile
-from io import BytesIO
-from typing import Any, Literal
+from typing import Literal
 
 import httpx
-import yaml
+from fastapi import Depends, FastAPI
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from smo_shared import csar_signing
+from smo_shared.logconfig import install_logging
+from smo_shared.metrics import count_by, install_metrics, register_query_gauge
+from smo_shared.health import database_check, install_health, sme_token_check
+from smo_shared.db import get_session
+from smo_shared.errors import framework_error, FrameworkError, illegal_transition_error
+from smo_shared.r1_client import R1Client
+from smo_shared.statemachine import IllegalTransition
+from smo_shared.openapi_security import apply_r1_gateway_security
+from smo_shared.correlation import apply_correlation_id
+from smo_shared.pagination import PageLimit, PageOffset, paginate
+from smo_shared.webhook import is_safe_webhook_destination
+from smo_shared.versioning import install_concurrency_handler
+
+from .package_validation import (EXECUTION_MODES, LIMIT_SPECS, PARSE_FAILURES, PackageValidationFailed, _asd_identity, _parse_ai_capabilities,  # noqa: F401  (re-exported: the tests and the fuzz target import them from here)
+                                 _parse_sme_declarations, _validate_limits, _validate_runtime_profiles, validate_package_bytes)
+from .models import ApplicationPackage, Artifact, PackageUsageRegistration
+from .statemachine import ONBOARDING_FSM, PackageEvent, PackageState
+
 
 class DescriptorCreationFailed(Exception):
     """NFO's CreateDescriptor call (NFO+FOCOM LLD section 2) didn't return
     201 — treated the same as any other onboarding validation failure.
-    """
-
-
-class PackageValidationFailed(Exception):
-    """HISTORY.md §5: the reference's own ordered validator
-    chain (rapp-manager-models' csar/validator/*) catches a package
-    whose filename doesn't follow convention (NamingValidator) or that
-    duplicates one already onboarded (AsdDescriptorValidator's own
-    descriptorId-uniqueness check, adapted here to this build's own
-    identity — a content hash — since real ASD descriptor data is a
-    deliberate elision elsewhere in this build). _validate_package
-    previously only checked the zip was well-formed and had its entry
-    definitions.
     """
 
 
@@ -44,28 +51,7 @@ class PackageValidationFailed(Exception):
 # yaml.YAMLError for the Wave 1 manifest.yaml/capabilities.yaml
 # extension — a malformed one is a validation failure like any other
 # malformed package file, not an unhandled 500.
-ONBOARD_VALIDATION_FAILURES = (zipfile.BadZipFile, KeyError, FileNotFoundError, httpx.HTTPError, DescriptorCreationFailed, PackageValidationFailed, yaml.YAMLError, json.JSONDecodeError, UnicodeDecodeError)
-from fastapi import Depends, FastAPI
-from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-from smo_shared.logconfig import install_logging
-from smo_shared.metrics import count_by, install_metrics, register_query_gauge
-from smo_shared.health import database_check, install_health, sme_token_check
-from smo_shared.db import get_session
-from smo_shared.errors import framework_error, FrameworkError, illegal_transition_error
-from smo_shared.r1_client import R1Client
-from smo_shared.statemachine import IllegalTransition
-from smo_shared.openapi_security import apply_r1_gateway_security
-from smo_shared.correlation import apply_correlation_id
-from smo_shared.operator_ui import OperatorUiInvalid, validate_operator_ui
-from smo_shared.pagination import PageLimit, PageOffset, paginate
-from smo_shared.webhook import is_safe_webhook_destination
-from smo_shared.versioning import install_concurrency_handler
-
-from .models import ApplicationPackage, Artifact, PackageUsageRegistration
-from .statemachine import ONBOARDING_FSM, PackageEvent, PackageState
+ONBOARD_VALIDATION_FAILURES = (*PARSE_FAILURES, httpx.HTTPError, DescriptorCreationFailed)
 
 log = logging.getLogger(__name__)
 
@@ -143,7 +129,11 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
         pkg.schema_version = identity.get("schema_version")
         pkg.ai_capabilities = identity.get("ai_capabilities")
         pkg.sme_declarations = identity.get("sme_declarations")
-        pkg.signature_verified = True
+        # PR-RAPP-1: with no trust store configured this stays what it always was (the package validated; nothing was checked against a key); with one it is
+        # true only for a package whose signature verified, and false for an unsigned one the policy lets through
+        pkg.signature_verified = identity.get("signature_verified", True)
+        if identity.get("signed_by"):
+            log.info("package %s is signed by publisher %s", pkg.package_id, identity["signed_by"])
         for path, access_url in artifacts:
             db.add(Artifact(package_id=pkg.package_id, path=path, access_url=access_url))
         pkg.nf_deployment_descriptor_id = _create_nf_deployment_descriptor(pkg, entry_definitions)
@@ -179,185 +169,6 @@ def _create_nf_deployment_descriptor(pkg: ApplicationPackage, entry_definitions:
     return uuid.UUID(resp.json()["nfDeploymentDescriptorId"])
 
 
-_ASD_IDENTITY_FIELDS = {
-    "application_name": "name", "application_version": "version", "provider": "vendor",
-    # Real ASD schema fields (asd_types.yaml's tosca.nodes.asd node type,
-    # grounded against nonrtric-plt-rappmanager's own real sample CSARs,
-    # not a summary) — required alongside the three above, never
-    # captured before this pass. Surfaced for real spec fidelity;
-    # package identity/uniqueness stays on integrity_hash, unchanged.
-    "descriptor_id": "descriptor_id", "descriptor_invariant_id": "descriptor_invariant_id",
-    "descriptor_version": "descriptor_version", "schema_version": "schema_version",
-}
-
-
-def _asd_identity(definitions: str) -> dict[str, str]:
-    """The ASD's own applicationServiceDescriptor identity properties
-    (application_name / application_version / provider), read from the
-    entry definitions so a validated package stops showing as
-    `unresolved-until-validated 0.0.0`. A line scan rather than a YAML
-    parse: these are flat scalar properties, and this module carries no
-    YAML dependency. Missing fields are simply absent from the result.
-    """
-    found: dict[str, str] = {}
-    for line in definitions.splitlines():
-        key, sep, value = line.strip().partition(":")
-        if sep and key in _ASD_IDENTITY_FIELDS and _ASD_IDENTITY_FIELDS[key] not in found:
-            value = value.split(" #", 1)[0].strip().strip("\"'")
-            if value:
-                found[_ASD_IDENTITY_FIELDS[key]] = value
-    return found
-
-
-def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
-    """Wave 1's rApp packaging extension (docs/architecture/
-    docs/ARCHITECTURE.md): an optional AI Platform capability
-    declaration, read from two new CSAR-root files alongside the existing
-    TOSCA-Metadata/Definitions/Artifacts layout —
-
-    - `manifest.yaml`: `rappManifest.manifestVersion` /
-      `rappManifest.aiRuntimeSdkVersion` (the sdk/ contract version this
-      rApp was built against).
-    - `capabilities.yaml`: `capabilities.consumes` / `capabilities.provides`,
-      each a list of `{namespace, description}` naming which of sdk/'s six
-      client namespaces (data/analytics/models/lifecycle/intent/platform)
-      this rApp uses.
-
-    Both are optional and additive: a package built before this extension,
-    or one that simply has neither file (every package this build produced
-    before this pass), still onboards exactly as before — this returns
-    None and `ApplicationPackage.ai_capabilities` stays NULL. Unlike
-    `_asd_identity`'s flat scalar line-scan, these files carry real nested
-    structure, so this one genuinely needs a YAML parse.
-    """
-    result: dict = {}
-    names = z.namelist()
-    if "manifest.yaml" in names:
-        manifest = yaml.safe_load(z.read("manifest.yaml")) or {}
-        if not isinstance(manifest, dict):
-            raise PackageValidationFailed("manifest.yaml must be a mapping")
-        rapp_manifest = manifest.get("rappManifest") or {}
-        if not isinstance(rapp_manifest, dict):
-            raise PackageValidationFailed("manifest.yaml: rappManifest must be a mapping")
-        result["manifestVersion"] = rapp_manifest.get("manifestVersion")
-        result["aiRuntimeSdkVersion"] = rapp_manifest.get("aiRuntimeSdkVersion")
-        # Wave 7 (HISTORY.md W7-03): the AI-runtime part of
-        # the manifest — which execution modes the package supports and the
-        # compute each one needs. Accepted either under `rappManifest` or at
-        # the manifest's top level (the SMO_Wave_10 package layout).
-        for key in ("executionModes", "autonomyModes", "requiredServices", "runtimeProfiles"):
-            value = rapp_manifest.get(key, manifest.get(key))
-            if value is not None:
-                result[key] = value
-        profiles = result.get("runtimeProfiles")
-        if profiles is not None:
-            result["runtimeProfiles"] = _validate_runtime_profiles(profiles, result.get("executionModes"))
-        # AI-10.1: what this rApp may do on the network, declared by the package and enforced by the platform (`limits.configJobsPerHour`).
-        limits = rapp_manifest.get("limits", manifest.get("limits"))
-        if limits is not None:
-            result["limits"] = _validate_limits(limits)
-        # GUI-8.2: the operator page the rApp declares (docs/adr/0004-operator-ui-declaration.md). Optional; absent -> the key is absent.
-        operator_ui = rapp_manifest.get("operatorUi", manifest.get("operatorUi"))
-        if operator_ui is not None:
-            try:
-                result["operatorUi"] = validate_operator_ui(operator_ui)
-            except OperatorUiInvalid as exc:
-                raise PackageValidationFailed(str(exc)) from exc
-    if "capabilities.yaml" in names:
-        parsed = yaml.safe_load(z.read("capabilities.yaml")) or {}
-        if not isinstance(parsed, dict):
-            raise PackageValidationFailed("capabilities.yaml must be a mapping")
-        caps = parsed.get("capabilities") or {}
-        if not isinstance(caps, dict):
-            raise PackageValidationFailed("capabilities.yaml: capabilities must be a mapping")
-        result["consumes"] = caps.get("consumes") or []
-        result["provides"] = caps.get("provides") or []
-    return result or None
-
-
-EXECUTION_MODES = ("TRAINING", "VALIDATION", "EMULATION", "INFERENCE")
-
-
-def _validate_runtime_profiles(profiles, execution_modes) -> dict:
-    """W7-03: `runtimeProfiles` maps an execution mode (TRAINING /
-    VALIDATION / EMULATION / INFERENCE) to {cpu, memory, gpu}. A profile
-    for a mode the manifest doesn't declare in `executionModes` (when it
-    declares any) is a packaging error, as is an unknown mode or a
-    non-numeric cpu/gpu. Raises PackageValidationFailed -> the package fails onboarding (FAILED).
-    """
-    if not isinstance(profiles, dict):
-        raise PackageValidationFailed("runtimeProfiles must be a mapping of execution mode -> profile")
-    out = {}
-    for mode, profile in profiles.items():
-        if mode not in EXECUTION_MODES:
-            raise PackageValidationFailed(f"runtimeProfiles: unknown execution mode {mode!r}")
-        if execution_modes and mode not in execution_modes:
-            raise PackageValidationFailed(f"runtimeProfiles: {mode} is not one of the declared executionModes")
-        if not isinstance(profile, dict):
-            raise PackageValidationFailed(f"runtimeProfiles.{mode} must be a mapping")
-        clean = {}
-        for field in ("cpu", "gpu"):
-            if field in profile:
-                if not isinstance(profile[field], (int, float)) or isinstance(profile[field], bool) or profile[field] < 0:
-                    raise PackageValidationFailed(f"runtimeProfiles.{mode}.{field} must be a non-negative number")
-                clean[field] = profile[field]
-        if "memory" in profile:
-            clean["memory"] = str(profile["memory"])
-        out[mode] = clean
-    return out
-
-
-# name -> (whole numbers only?, largest value). Every limit is positive. Enforced by RAN NF OAM (AI-10.2, AI-10.3).
-LIMIT_SPECS = {"configJobsPerHour": (True, 100_000), "maxElementsPerJob": (True, 10_000), "maxChangePercent": (False, 10_000)}
-
-
-def _validate_limits(limits) -> dict:
-    """AI-10.1/10.3: `limits` maps a limit name to a positive number. An unknown name, a value that is not a number (a bool is not one), one out of
-    range, or a fraction where a whole number is needed is a packaging error (the package fails onboarding): a limit the platform cannot enforce
-    must not be silently ignored. `configJobsPerHour`: how many CM write jobs the rApp may start in any hour; `maxElementsPerJob`: how many managed
-    elements one job may touch (blast radius); `maxChangePercent`: how far, in percent of its current value, a numeric value may move in one write
-    (magnitude)."""
-    if not isinstance(limits, dict):
-        raise PackageValidationFailed("limits must be a mapping of limit name -> number")
-    out = {}
-    for name, value in limits.items():
-        if name not in LIMIT_SPECS:
-            raise PackageValidationFailed(f"limits: unknown limit {name!r} (known: {', '.join(sorted(LIMIT_SPECS))})")
-        whole, largest = LIMIT_SPECS[name]
-        number = isinstance(value, int) if whole else isinstance(value, (int, float))
-        if not number or isinstance(value, bool) or not 0 < value <= largest or value != value:
-            raise PackageValidationFailed(f"limits.{name} must be a {'whole number' if whole else 'number'} above 0 and at most {largest}")
-        out[name] = value
-    return out
-
-
-def _parse_sme_declarations(z: zipfile.ZipFile) -> dict | None:
-    """The real O-RAN SC rApp Manager's own CSAR layout
-    (`nonrtric-plt-rappmanager/sample-rapp-generator/`'s real sample
-    packages): `Files/Sme/providers/*.json` (real CAPIF
-    `APIProviderEnrolmentDetails`) and `Files/Sme/serviceapis/*.json`
-    (real CAPIF `ServiceAPIDescription`) declare which SME provider/API
-    this package registers as, once deployed. Read here at onboarding
-    time and stored raw; registered per-instance by rapp-mgmt's
-    bootstrap-complete (`SmeDeployer.deployRappInstance`'s own real
-    per-*instance*, not per-package, timing — the reference's own
-    `primeRapp` is a documented no-op for SME).
-
-    Optional and additive, like `manifest.yaml`/`capabilities.yaml`: a
-    package whose CSAR declares neither directory (every package before
-    this pass, and the ONAP-Files/Acm-only samples) onboards exactly as
-    before — this returns None, `ApplicationPackage.sme_declarations`
-    stays NULL, and bootstrap-complete simply has nothing to register.
-    Sorted names for deterministic ordering across multiple provider/
-    service-API files.
-    """
-    names = z.namelist()
-    providers = [json.loads(z.read(n)) for n in sorted(names) if n.startswith("Files/Sme/providers/") and n.endswith(".json")]
-    service_apis = [json.loads(z.read(n)) for n in sorted(names) if n.startswith("Files/Sme/serviceapis/") and n.endswith(".json")]
-    if not providers and not service_apis:
-        return None
-    return {"providers": providers, "serviceApis": service_apis}
-
 
 def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, dict]:
     """Open TOSCA-Metadata/Definitions/Artifacts, per Onboarding LLD section 1.
@@ -386,20 +197,23 @@ def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, d
     resp = httpx.get(location, timeout=30.0)
     resp.raise_for_status()
     data = resp.content
-    with zipfile.ZipFile(BytesIO(data)) as z:
-        meta = z.read("TOSCA-Metadata/TOSCA.meta").decode()
-        entry_line = next(l for l in meta.splitlines() if l.startswith("Entry-Definitions:"))
-        entry_definitions = entry_line.split(":", 1)[1].strip()
-        identity: dict[str, Any] = _asd_identity(z.read(entry_definitions).decode(errors="replace"))  # raises KeyError if missing/malformed
-        artifacts = [(n, f"{location}#{n}") for n in z.namelist() if n.startswith("Artifacts/") and not n.endswith("/")]
-        ai_capabilities = _parse_ai_capabilities(z)
-        if ai_capabilities is not None:
-            identity["ai_capabilities"] = ai_capabilities
-        sme_declarations = _parse_sme_declarations(z)
-        if sme_declarations is not None:
-            identity["sme_declarations"] = sme_declarations
-    integrity_hash = hashlib.sha256(data).hexdigest()
-    return entry_definitions, artifacts, integrity_hash, identity
+    trust, require_signed = _signing_policy()
+    return validate_package_bytes(data, location, trust=trust, require_signed=require_signed)
+
+
+def _signing_policy() -> tuple["csar_signing.TrustStore | None", bool]:
+    """PR-RAPP-1.3/1.5, read for each package so a changed ConfigMap or a rotated key is seen without a restart. `ONBOARDING_TRUST_STORE`: a file or a directory
+    of PEM public keys of the publishers whose packages are accepted (empty: no signature is checked, as before). `ONBOARDING_REQUIRE_SIGNED_PACKAGES`:
+    `true` refuses a package that is not signed by one of them (default `false`). A trust store that cannot be used fails the package with the reason, and does
+    not fall back to "trust nothing, check nothing"."""
+    location = os.environ.get("ONBOARDING_TRUST_STORE", "").strip()
+    require = os.environ.get("ONBOARDING_REQUIRE_SIGNED_PACKAGES", "false").strip().lower() in ("1", "true", "yes", "on")
+    if not location:
+        return None, require
+    try:
+        return csar_signing.load_trust_store(location), require
+    except csar_signing.TrustStoreError as exc:
+        raise PackageValidationFailed(f"the trust store cannot be used: {exc}") from exc
 
 
 def _get_package_or_404(db: Session, package_id: uuid.UUID) -> ApplicationPackage:
