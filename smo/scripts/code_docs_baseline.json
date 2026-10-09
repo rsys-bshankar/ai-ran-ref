@@ -153,12 +153,12 @@
       "tests_without_docstring": 18
     },
     "onboarding": {
-      "files_without_description": 1,
-      "functions_without_description": 22,
-      "items_requiring_description": 49,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 50,
       "source_files": 9,
       "tests": 95,
-      "tests_without_docstring": 55
+      "tests_without_docstring": 0
     },
     "pgbouncer": {
       "files_without_description": 0,
@@ -201,12 +201,12 @@
       "tests_without_docstring": 90
     },
     "sa-smos": {
-      "files_without_description": 1,
-      "functions_without_description": 12,
+      "files_without_description": 0,
+      "functions_without_description": 0,
       "items_requiring_description": 26,
       "source_files": 5,
       "tests": 29,
-      "tests_without_docstring": 19
+      "tests_without_docstring": 0
     },
     "samples": {
       "files_without_description": 0,
@@ -297,12 +297,12 @@
       "tests_without_docstring": 92
     },
     "so-smos": {
-      "files_without_description": 1,
-      "functions_without_description": 9,
-      "items_requiring_description": 16,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 19,
       "source_files": 5,
       "tests": 17,
-      "tests_without_docstring": 8
+      "tests_without_docstring": 0
     },
     "tests_integration": {
       "files_without_description": 0,

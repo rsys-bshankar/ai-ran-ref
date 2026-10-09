@@ -45,12 +45,16 @@ from smo_shared.r1_client import R1Client
 
 from .models import O1CmEnactment
 
+# The routes of the O1-CM handler; main.py includes this router.
 router = APIRouter()
+# One R1 client for the module, as everywhere in this build; calls go through R1 Termination.
 _r1 = R1Client()
 
+# The RMIH id this handler registers under at Intent Service, and the `requestedBy` attributed to the DME actions it issues.
 RMIH_ID = "sa-smos"
 REQUESTED_BY = "sa-smos:o1-cm-intent-handler"
 # Where Intent Service pushes new Intents for this handler (in-cluster).
+# mtls.http_url switches the scheme to https when mTLS is on; the URL can be overridden with SA_SMOS_O1_CM_HANDLER_URL.
 HANDLER_URL = mtls.http_url(os.environ.get("SA_SMOS_O1_CM_HANDLER_URL", "http://sa-smos:8000/o1-cm-handler/intents"))
 
 # The CM targets this handler enacts by default, with their allowed values
@@ -70,10 +74,14 @@ DEFAULT_CM_TARGETS = {
     # frequency layer (Cell-context values name NRFreqRelation=<cell>-<layer>)
     "NRFreqRelation.cellReselectionPriority": [],
 }
+# The DME action statuses that count as applied. Any other status (including HTTP_<code> when DME did not answer 200 or 202) leaves the expectation NOT_FULFILLED.
 SUCCESS_STATUSES = {"COMPLETED"}
+# Fixed namespace of the uuid5 that derives each DME action id from the intent and expectation ids. Changing it changes every action id and breaks the replay protection for intents already enacted.
 ACTION_ID_NAMESPACE = uuid.UUID("6f2b8c1e-3d4a-5b6c-8d9e-0a1b2c3d4e5f")
 
 
+# Request body of POST /o1-cm-handler/registration. Both fields are optional: `cmTargets` maps "<IOC>.<attribute>" to its allowed values (an empty list means any value) and defaults to
+# DEFAULT_CM_TARGETS; `intentHandlingScope` defaults to ["RAN"]. Unknown fields are refused (extra="forbid").
 class RegistrationBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -81,14 +89,17 @@ class RegistrationBody(BaseModel):
     intentHandlingScope: list[str] = ["RAN"]
 
 
+# What Intent Service pushes to this handler for a new Intent: only the intent id. The intent itself is read back from Intent Service.
 class IntentNotification(BaseModel):
     """What Intent Service pushes to a handling function on CreateIntent."""
     intentId: uuid.UUID
 
 
 def _cm_targets_from_registration() -> dict[str, list[str]]:
-    """The CM targets as currently registered with Intent Service (its
-    capability list is the source of truth); defaults if unregistered."""
+    """The CM targets (name -> allowed values) as currently registered with Intent Service, whose capability list is the source of truth; DEFAULT_CM_TARGETS when it is not registered or the lookup fails.
+
+    Any exception is swallowed on purpose and the defaults are used.
+    """
     try:
         resp = _r1.get("/intent-service/intent-handling-functions")
         if resp.status_code == 200:
@@ -108,6 +119,9 @@ def _cm_targets_from_registration() -> dict[str, list[str]]:
 def register_o1_cm_handler(body: RegistrationBody = RegistrationBody()):
     """Registers SA SMOS with Intent Service as the O1-CM intent handling
     function. Idempotent: an existing registration is replaced."""
+    # Maintainer notes (not published). 201 with {rmihId, cmTargets, notificationDestination}; 422 SCHEMA_VALIDATION_FAILED for a target name without a '.' or when Intent Service does not answer 201.
+    # The existing registration is deleted first and the new one posted second, not atomically: when the post is refused the old registration is already gone. `notificationDestination` is HANDLER_URL, where Intent Service pushes
+    # new intents.
     targets = body.cmTargets or DEFAULT_CM_TARGETS
     for name in targets:
         if "." not in name:
@@ -130,10 +144,15 @@ def register_o1_cm_handler(body: RegistrationBody = RegistrationBody()):
 
 @router.delete("/o1-cm-handler/registration", status_code=204)
 def deregister_o1_cm_handler():
+    # Maintainer notes (not published). Deletes the RMIH at Intent Service and answers 204 whatever Intent Service answers.
     _r1.delete(f"/intent-service/intent-handling-functions/{RMIH_ID}")
 
 
 def _cells(expectation: dict) -> list[str]:
+    """The cell identifiers of an expectation, from its `Cell` object contexts, as strings.
+
+    `contextValueRange` may be a list or a single value; a dict value is reduced to its `cellLocalId`, else `nCI`, else `id`. Contexts for other attributes and values that resolve to None are skipped.
+    """
     cells = []
     for ctx in (expectation["expectationObject"].get("objectContexts") or []):
         if ctx.get("contextAttribute") != "Cell":
@@ -148,8 +167,12 @@ def _cells(expectation: dict) -> list[str]:
 
 
 def _changes_for(expectation: dict, cm_targets: dict[str, list[str]]) -> tuple[list[dict], list[dict]]:
-    """CM attribute changes for one expectation, and the targets it can't
-    enact (with why)."""
+    """Returns (CM attribute changes, unsupported targets) for one expectation.
+
+    Each target is `<IOC>.<attribute>`. A target is unsupported, with the first reason that applies, when its name is not in `cm_targets`, its condition is not IS_EQUAL_TO, its value is not in the allowed list
+    (an empty list allows any value; RAN NF OAM's schema pre-check validates those), or the expectation has no `objectInstance` (the managed element). A supported target gives one change per cell of the
+    expectation, with `managedFunctionRef` `<IOC>=<cell>`, or a single change without a function ref when the expectation names no cell.
+    """
     element = expectation["expectationObject"].get("objectInstance")
     changes, unsupported = [], []
     for target in expectation["expectationTargets"]:
@@ -168,6 +191,7 @@ def _changes_for(expectation: dict, cm_targets: dict[str, list[str]]) -> tuple[l
             unsupported.append({"expectationId": expectation["expectationId"], "targetName": name, "reason": reason})
             continue
         ioc, attribute = name.split(".", 1)
+        # No cell context means one change for the managed element itself; None stands for that case.
         cells: list[str | None] = [*_cells(expectation)] or [None]
         for cell in cells:
             change = {"managedElementRef": element, "className": ioc, "attributeChanges": {attribute: value}}
@@ -180,6 +204,10 @@ def _changes_for(expectation: dict, cm_targets: dict[str, list[str]]) -> tuple[l
 @router.post("/o1-cm-handler/intents")
 def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
     """Intent Service's push for a new Intent addressed to this handler."""
+    # Maintainer notes (not published). Intent Service's push. Answers the enactment view; {status: SKIPPED} (nothing recorded, no report) for a DEACTIVATED intent; 404 INTENT_NOT_FOUND when Intent Service does not know
+    # the intent; 422 RMIH_CAPABILITY_MISMATCH when it is addressed to another handler.
+    # For every expectation: derive the changes, post one DME action (if there are any), then build the fulfilment result. After the loop one IntentReport is published, and the enactment is recorded with the report id (null
+    # when the publish failed). A transport exception from R1Client is not caught: the request is a 500 and no enactment is recorded.
     resp = _r1.get(f"/intent-service/intents/{body.intentId}")
     if resp.status_code != 200:
         raise framework_error(FrameworkError.INTENT_NOT_FOUND, detail=f"no such intent {body.intentId}")
@@ -189,6 +217,7 @@ def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
     if intent["intentAdminState"] != "ACTIVATED":
         return {"intentId": str(body.intentId), "status": "SKIPPED", "reason": "intent is DEACTIVATED"}
 
+    # Read from Intent Service on every push, so a registration with other targets is honoured without a restart.
     cm_targets = _cm_targets_from_registration()
     actions, unsupported, expectation_results = [], [], []
     for expectation in intent["attributes"]["intentExpectations"]:
@@ -205,16 +234,20 @@ def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
                 "sourceContext": {"intentId": str(body.intentId), "expectationId": expectation["expectationId"],
                                   "rmioId": intent["rmioId"]},
             })
+            # Only a 200 or 202 answer is read as an action body; any other status is recorded as HTTP_<code>.
             payload = action.json() if action.status_code in (200, 202) else {"status": f"HTTP_{action.status_code}"}
+            # DME answers a replayed action with status IGNORED and the first execution's status as originalStatus; that first status decides fulfilment, and `replayed` records that it was a replay.
             status = payload.get("originalStatus") if payload.get("status") == "IGNORED" else payload.get("status")
             actions.append({"expectationId": expectation["expectationId"], "actionId": payload.get("actionId"),
                             "forwardedJobId": payload.get("forwardedJobId"), "status": status,
                             "replayed": payload.get("status") == "IGNORED"})
             applied = status in SUCCESS_STATUSES
+        # An expectation is fulfilled only when its action was applied and none of its targets was unsupported. A supported target in an expectation with an unsupported one is still written (the action went out) but the expectation is reported NOT_FULFILLED.
         bad_names = {b["targetName"] for b in bad}
         ok = applied is True and not bad_names
         info = {"fulfilmentStatus": "FULFILLED"} if ok else {"fulfilmentStatus": "NOT_FULFILLED", "notFullfilledState": "DEGRADED"}
         expectation_results.append({
+            # The keys `expectaitonId` and `notFullfilledState` are misspelled on purpose: that is how TS28312_IntentNrm.yaml spells them (specs/5G_APIs), and the report keeps the spec's names.
             "expectaitonId": expectation["expectationId"], "expectationFulfilmentInfo": info,
             "targetFulfilmentResults": [
                 {"targetName": t["targetName"],
@@ -224,6 +257,7 @@ def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
                 for t in expectation["expectationTargets"]],
         })
 
+    # The intent is FULFILLED only when every expectation is.
     fulfilled = all(r["expectationFulfilmentInfo"]["fulfilmentStatus"] == "FULFILLED" for r in expectation_results)
     status = "FULFILLED" if fulfilled else "NOT_FULFILLED"
     report = {"intentReference": str(body.intentId), "intentFulfilmentReport": {
@@ -234,6 +268,7 @@ def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
         "expectationFulfilmentResult": expectation_results,
         "additionalFulfilmentInfo": json.dumps({"actions": actions}),
     }}
+    # Failing to publish the report is not an error of the push: the enactment is still recorded, with a null intent_report_id.
     published = _r1.post("/intent-service/intent-reports", json=report)
     report_id = published.json().get("reportId") if published.status_code == 201 else None
 
@@ -245,6 +280,7 @@ def enact_intent(body: IntentNotification, db: Session = Depends(get_session)):
 
 
 def _enactment_view(e: O1CmEnactment) -> dict:
+    """The JSON view of an enactment record, with ids as strings and `createdAt` in ISO 8601."""
     return {"enactmentId": str(e.enactment_id), "intentId": str(e.intent_id), "status": e.status, "actions": e.actions,
             "unsupportedTargets": e.unsupported_targets,
             "intentReportId": str(e.intent_report_id) if e.intent_report_id else None, "createdAt": e.created_at.isoformat()}
@@ -253,6 +289,7 @@ def _enactment_view(e: O1CmEnactment) -> dict:
 @router.get("/o1-cm-handler/enactments")
 def list_enactments(intent_id: uuid.UUID | None = None, limit: int = PageLimit, offset: int = PageOffset,
                     db: Session = Depends(get_session)):
+    # Maintainer notes (not published). Newest first (created_at descending); optional exact-match filter `intent_id`; paginated.
     stmt = select(O1CmEnactment)
     if intent_id:
         stmt = stmt.where(O1CmEnactment.intent_id == intent_id)
