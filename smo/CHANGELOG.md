@@ -5,6 +5,9 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Changed
+- **The scope of 0.7.0 is decided (`OPEN_ITEMS.md`).** Signed and conformant rApp packages (CSAR signing, a conformance pack, runtime limits and egress), approval of rApp actions and a decision record per config job, tenant and region authorization, rApp SDKs in Java and Go, and, as time allows, zero-touch onboarding, software campaigns, MSAC beyond writes, a VES receiver and a first vendor profile. Nothing changes in the product with this entry.
+
 ## [0.6.0] - 2026-10-08
 
 The operator's side of the platform grows up. The RAN O1 stub now emits what a real network function emits (alarms, performance reports and files, software phases, heartbeats) and the conformance kit checks that RAN NF OAM received it; the GUI has one **rApps** entry with a directory and a page per rApp that the rApp's own package declares, in place of one hand-written page per rApp, so a rApp onboarded at run time shows its page without rebuilding the GUI; sign-in gets a second factor (an OIDC-only mode, one-time codes for local accounts, mandatory for admins), the session token can be signed with a key pair, and the gateway can cache token checks. Retention periods, an External Secrets example, a plugfest plan and the SLO reference targets (`docs/SLOS.md`, accepted) are in. Nothing that deletes data or changes sign-in is on by default.
