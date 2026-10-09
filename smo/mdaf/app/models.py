@@ -1,3 +1,11 @@
+"""Database tables of MDAF: reports, subscriptions, and the TS 28.104 MDA functions, requests and deliveries.
+
+Used by `main.py`, `mda.py` and `tasks.py`; the schema is created by the Alembic revisions in `migrations/`. Report and
+subscription rows are written by two publishing paths (the legacy `POST /reports` and the spec-shaped `POST /mda-reports`),
+which is why a report has both a free-form `output` and typed `mda_outputs`. `mdaf_report.generated_at` is what the retention
+task purges on.
+"""
+
 import datetime
 import uuid
 
@@ -8,6 +16,11 @@ from smo_shared.db import Base
 
 
 class MDAFReport(Base):
+    """One published report. `output` is the free-form result (for a spec-shaped report, the flattened entries); `mda_outputs` holds the
+    typed outputs of a spec-shaped report and is None for a legacy one. `input_sources` are DME data job ids, checked at publish
+    time and not a foreign key. `report_kind` is ANALYTICS, PREDICTION or DRIFT. `mda_function_id` and `mda_request_id` are
+    cleared when that function or request is deleted. `subscriber_attribution` is not written by any code in this module.
+    """
     __tablename__ = "mdaf_report"
 
     report_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -30,6 +43,10 @@ class MDAFReport(Base):
 
 
 class MDASubscription(Base):
+    """A consumer's standing interest in one analytics type. `threshold_info` is the wire-shaped list of thresholds the subscriber
+    declared and `threshold_state` the side (ABOVE or BELOW) last seen per monitored output, which makes notification
+    edge-triggered (see `main._threshold_crossed`). Without thresholds every report of the type is notified.
+    """
     __tablename__ = "mda_subscription"
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

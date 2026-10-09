@@ -1,5 +1,8 @@
-"""Tests for MDAF's TS 28.104 MDA NRM resources (Wave 5, app/mda.py).
-Run with: pytest smo/mdaf/tests -q
+"""Tests of MDAF's TS 28.104 resources (`app/mda.py`): MDA functions, requests with their filters and thresholds, spec-shaped
+reports and their delivery per reporting method, drift forwarding and paging.
+
+Run: `cd smo/mdaf && PYTHONPATH=.:../shared python -m pytest tests/test_mda.py -q`. Uses the `client` and `db_session_factory`
+fixtures of `test_main.py` (SQLite, no Postgres) and its autouse DME stub. Webhooks are captured with `_capture_webhooks`.
 """
 
 import datetime
@@ -12,18 +15,23 @@ PM = "PREDICTIONS_PM_DATA"
 
 
 def _capture_webhooks(monkeypatch):
+    """Patches `httpx.post` (the outbox's sender) to record `(url, json)` pairs; returns the list."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None, **kw: calls.append((url, json)))
     return calls
 
 
 def _pm_report(value, cell="cell-101", **extra):
+    """A spec-shaped PREDICTIONS_PM_DATA report body with one predicted value for one cell; `extra` adds top-level fields."""
     return {"mDAOutputs": [{"mDAType": PM, "mDAOutputList": {
         "pmPredictions": [{"pmName": "RRU.PrbUsedDl", "pmPredictedValue": value}]}, "confidenceDegree": 0.9}],
         "managedEntitiesScope": [cell], **extra}
 
 
 def test_mda_function_capabilities_gate_requests(client):
+    """A request addressed to a function must ask only for MDA types the function supports (422 MDA_CAPABILITY_NOT_SUPPORTED),
+    and unknown capability names are refused.
+    """
     function = client.post("/mda-functions", json={"supportedMDACapabilities": [PM], "supportedMDADomain": "RAN"}).json()
     assert function["attributes"]["supportedMDADomain"] == "RAN"
     resp = client.post("/mda-requests", json={"mDAFunctionRef": function["id"], "reportingMethod": "STREAMING",
@@ -36,6 +44,7 @@ def test_mda_function_capabilities_gate_requests(client):
 
 
 def test_request_validation(client):
+    """A request is refused without a target for NOTIFICATION, with no outputs, with both scope kinds, or with a stop time before its start."""
     assert client.post("/mda-requests", json={"reportingMethod": "NOTIFICATION",
                                               "requestedMDAOutputs": [{"mDAType": PM}]}).status_code == 422
     assert client.post("/mda-requests", json={"reportingMethod": "STREAMING", "requestedMDAOutputs": []}).status_code == 422
@@ -46,6 +55,9 @@ def test_request_validation(client):
 
 
 def test_typed_report_outputs_are_validated_per_mda_type(client):
+    """A typed output is validated against its MDA type, a type with no typed output accepts only entry pairs, and the report
+    kind is inferred (PREDICTION or ANALYTICS).
+    """
     ok = client.post("/mda-reports", json=_pm_report(3.2))
     assert ok.status_code == 201
     attrs = ok.json()["attributes"]
@@ -63,6 +75,7 @@ def test_typed_report_outputs_are_validated_per_mda_type(client):
 
 
 def test_notification_request_receives_matching_reports_only(client, monkeypatch):
+    """A NOTIFICATION request is sent reports of its MDA type for its scope only, the delivery is recorded and the report can be listed by request."""
     calls = _capture_webhooks(monkeypatch)
     request_id = client.post("/mda-requests", json={
         "reportingMethod": "NOTIFICATION", "reportingTarget": "http://es-rapp:8080/mda",
@@ -78,6 +91,7 @@ def test_notification_request_receives_matching_reports_only(client, monkeypatch
 
 
 def test_ie_threshold_filter_is_edge_triggered(client, monkeypatch):
+    """An IE threshold filter notifies on the crossing, not on every report above it, and notifies again after the value drops beyond the hysteresis."""
     calls = _capture_webhooks(monkeypatch)
     client.post("/mda-requests", json={
         "reportingMethod": "NOTIFICATION", "reportingTarget": "http://es-rapp/mda",
@@ -90,6 +104,7 @@ def test_ie_threshold_filter_is_edge_triggered(client, monkeypatch):
 
 
 def test_filter_value_and_time_window(client, monkeypatch):
+    """A request outside its time window, or whose filter value differs, is not notified, and `active` reflects the window."""
     calls = _capture_webhooks(monkeypatch)
     past = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=2)).isoformat()
     ended = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)).isoformat()
@@ -107,6 +122,7 @@ def test_filter_value_and_time_window(client, monkeypatch):
 
 
 def test_file_reporting_method_and_download(client, monkeypatch):
+    """A FILE request is sent a file-ready notification whose location serves the report as a downloadable JSON file."""
     calls = _capture_webhooks(monkeypatch)
     client.post("/mda-requests", json={"reportingMethod": "FILE", "reportingTarget": "http://collector/files",
                                        "requestedMDAOutputs": [{"mDAType": PM}]})
@@ -120,6 +136,9 @@ def test_file_reporting_method_and_download(client, monkeypatch):
 
 
 def test_report_answering_one_request_and_legacy_report_matching(client, monkeypatch):
+    """A report that names a request goes to that request only, while a legacy `POST /reports` report is matched against all
+    open requests of its type.
+    """
     calls = _capture_webhooks(monkeypatch)
     a = client.post("/mda-requests", json={"reportingMethod": "NOTIFICATION", "reportingTarget": "http://a/mda",
                                            "requestedMDAOutputs": [{"mDAType": PM}]}).json()["id"]
@@ -137,6 +156,7 @@ def test_report_answering_one_request_and_legacy_report_matching(client, monkeyp
 
 
 def test_drift_report_is_forwarded_to_the_models_mlmf_subscriptions(client, monkeypatch):
+    """A DRIFT report naming a model is forwarded to that model's MLMF subscriptions as numeric metrics."""
     model_id = str(uuid.uuid4())
     posted = []
 
@@ -163,6 +183,7 @@ def test_drift_report_is_forwarded_to_the_models_mlmf_subscriptions(client, monk
 
 
 def test_unknown_objects_404(client):
+    """Unknown functions, requests and reports, and a report naming an unknown request, are 404 NRM_OBJECT_NOT_FOUND."""
     for path in ("mda-functions", "mda-requests", "mda-reports"):
         resp = client.get(f"/{path}/{uuid.uuid4()}")
         assert resp.status_code == 404 and resp.json()["detail"]["title"] == "NRM_OBJECT_NOT_FOUND"
@@ -170,6 +191,7 @@ def test_unknown_objects_404(client):
 
 
 def test_report_list_total_false_has_no_total_and_a_has_more_flag(client):
+    """With `total=false` the report list omits the total and says whether more pages exist."""
     for value in (1.0, 2.0, 3.0):
         client.post("/mda-reports", json=_pm_report(value))
     assert client.get("/mda-reports", params={"limit": 2}).json()["total"] == 3
@@ -179,7 +201,7 @@ def test_report_list_total_false_has_no_total_and_a_has_more_flag(client):
 
 
 def test_a_filter_time_out_that_is_not_a_date_time_is_refused_when_the_request_is_made(client, monkeypatch):
-    """A garbage timeOut used to be stored and then fail every later POST /mda-reports with a 500."""
+    """A `timeOut` that does not parse is refused when the request is created; stored, it would fail every later publish with a 500."""
     calls = _capture_webhooks(monkeypatch)
     body = {"reportingMethod": "NOTIFICATION", "reportingTarget": "http://t/mda", "requestedMDAOutputs": [
         {"mDAType": ES, "mDAOutputIEFilters": [{"mDAOutputIEName": "decision", "timeOut": "Ëâ"}]}]}
@@ -192,6 +214,7 @@ def test_a_filter_time_out_that_is_not_a_date_time_is_refused_when_the_request_i
 
 
 def test_a_filter_time_out_without_a_zone_is_read_as_utc(client, monkeypatch):
+    """A `timeOut` without a time zone is read as UTC, so a future one keeps the filter open and a past one closes it."""
     calls = _capture_webhooks(monkeypatch)
     future = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)).replace(tzinfo=None).isoformat()
     past = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)).replace(tzinfo=None).isoformat()
