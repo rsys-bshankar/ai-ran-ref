@@ -140,6 +140,15 @@ spec:
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+            {{- if eq $name "onboarding" }}
+            {{- if $.Values.rappSigning.trustStoreConfigMap }}
+            # PR-RAPP-1: the accepted publishers' public keys, the files of a ConfigMap of your own mounted at /run/rapp-trust (read for each package)
+            - { name: ONBOARDING_TRUST_STORE, value: /run/rapp-trust }
+            {{- end }}
+            {{- if $.Values.rappSigning.requireSigned }}
+            - { name: ONBOARDING_REQUIRE_SIGNED_PACKAGES, value: "true" }
+            {{- end }}
+            {{- end }}
             {{- if eq $name "gui-bff" }}
             {{- range $k, $v := $.Values.gui.env }}
             - name: {{ $k }}
@@ -250,6 +259,9 @@ spec:
             {{- if and (eq $name "gui-bff") $.Values.gui.jwtKeySecretRef.name }}
             - { name: gui-jwt, mountPath: /run/gui-jwt, readOnly: true }
             {{- end }}
+            {{- if and (eq $name "onboarding") $.Values.rappSigning.trustStoreConfigMap }}
+            - { name: rapp-trust, mountPath: /run/rapp-trust, readOnly: true }
+            {{- end }}
             {{- if $m.persistence }}
             - { name: data, mountPath: {{ $m.persistence.mountPath }} }
             {{- end }}
@@ -311,6 +323,12 @@ spec:
           secret:
             secretName: {{ $.Values.gui.jwtKeySecretRef.name | quote }}
             defaultMode: 0440              # readable by the pod's group (fsGroup), not by the world
+        {{- end }}
+        {{- if and (eq $name "onboarding") $.Values.rappSigning.trustStoreConfigMap }}
+        - name: rapp-trust
+          configMap:
+            name: {{ $.Values.rappSigning.trustStoreConfigMap | quote }}
+            defaultMode: 0444              # public keys
         {{- end }}
         {{- if $m.persistence }}
         - name: data

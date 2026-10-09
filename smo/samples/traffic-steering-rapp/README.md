@@ -136,6 +136,7 @@ Ids are kept between steps in `$DEMO_STATE` (default
 
 ## Limits
 
+- The committed `traffic-steering-rapp.csar` is **signed** with the demo publisher's key (`../README.md`); the key is public on purpose, never trust it in production. `README.md` and `tests/` are not part of the CSAR.
 - A critical alarm that names no cell (no `managedFunctionRef`) still holds
   the whole managed element; one raised on a cell holds that cell as a source
   and excludes it as a target (`TARGET_CRITICAL_ALARM`).

@@ -136,8 +136,16 @@ declined, but a way to exploit one in a surprising way is welcome.
   assertion; SMO's own modules authenticate with their onboarding secret
   (`OI-2-oauth2-scope`, `SA-SME-1-public-key` in
   [`smo/HISTORY.md`](smo/HISTORY.md)).
-- Onboarding's package signature check is an internal-consistency check, not
-  verification against a trust anchor.
+- Package signatures are optional and off by default. With
+  `ONBOARDING_TRUST_STORE` unset Onboarding checks no signature (its
+  `signatureVerified` means "validated"); with it set, a signed package must
+  verify against the operator's publisher keys (ed25519), and
+  `ONBOARDING_REQUIRE_SIGNED_PACKAGES` refuses an unsigned one. The trust
+  anchor is a list of keys in a file: no certificate chain, expiry, revocation
+  list or timestamp, and the check is at fetch time only. The sample packages
+  are signed with a demo key whose private half is committed under
+  `smo/samples/demo-signing/`: never trust it in production
+  (`smo/docs/RAPP_PACKAGING.md` section 8).
 - The O1 transports are not hardened: RAN NF OAM speaks RFC 6241-shaped
   NETCONF `edit-config` and RFC 8040 RESTCONF over plain HTTP, without TLS or
   authentication, to the adaptor, and the stack has not been run against a real

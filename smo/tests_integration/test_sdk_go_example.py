@@ -39,7 +39,8 @@ def _package() -> dict[str, bytes]:
 
 def test_the_example_package_is_a_csar_onboarding_accepts():
     files = _package()
-    assert sorted(files) == ["Definitions/asd.yaml", "TOSCA-Metadata/TOSCA.meta", "capabilities.yaml", "manifest.yaml"]
+    # the shared build helper adds the digest list and its signature (PR-RAPP-1)
+    assert sorted(files) == ["Definitions/asd.yaml", "TOSCA-Metadata/DIGESTS.sha256", "TOSCA-Metadata/DIGESTS.sha256.sig", "TOSCA-Metadata/TOSCA.meta", "capabilities.yaml", "manifest.yaml"]
     assert b"Entry-Definitions: Definitions/asd.yaml" in files["TOSCA-Metadata/TOSCA.meta"]
     asd = files["Definitions/asd.yaml"].decode()
     for key in ("application_name", "application_version", "provider", "descriptor_id", "descriptor_invariant_id", "descriptor_version", "schema_version"):
