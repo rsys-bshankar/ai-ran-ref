@@ -718,7 +718,7 @@ services:
 
   grafana:
     profiles: ["tracing", "logging"]
-    image: grafana/grafana:12.2.0
+    image: grafana/grafana:13.2.3
     restart: unless-stopped
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
