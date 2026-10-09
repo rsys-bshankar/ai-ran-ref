@@ -405,3 +405,14 @@ def test_the_single_rows_view_has_the_fields_it_documents(client):
     row = _row(client)
     assert set(row) == {"managedElementRef", "status", "templateName", "softwareVersion", "softwareBaseline", "softwareCheck", "configJobId", "detail", "createdAt", "updatedAt"}
     assert row["softwareBaseline"] == "1"
+
+
+def test_apply_uses_the_main_module_it_was_bound_to_not_a_lookup_by_name(monkeypatch):
+    """The contract tests load several services in one process, so `app.main` can name another service's module at call time; main hands its own over once."""
+    import sys
+    import types
+
+    from app import lifecycle, main as ran_main
+
+    monkeypatch.setitem(sys.modules, "app.main", types.ModuleType("app.main"))      # another service's module under the same name
+    assert lifecycle._main_module() is ran_main and hasattr(lifecycle._main_module(), "WriteConfigRequest")
