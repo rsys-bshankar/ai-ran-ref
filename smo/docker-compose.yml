@@ -694,7 +694,7 @@ services:
 
   loki:
     profiles: ["logging"]
-    image: grafana/loki:3.5.5
+    image: grafana/loki:3.7.8
     command: ["-config.file=/etc/loki/loki.yaml"]
     restart: unless-stopped
     cap_drop: [ALL]
