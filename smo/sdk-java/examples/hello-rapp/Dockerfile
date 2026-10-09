@@ -14,7 +14,7 @@ COPY examples/hello-rapp/src examples/hello-rapp/src
 # The SDK's contract test reads docs/openapi, which is outside this context: the image build skips tests (CI runs them).
 RUN mvn -B -ntp -C -q -DskipTests -pl examples/hello-rapp -am package
 
-FROM eclipse-temurin:21-jre-noble@sha256:000fd431958bc81a24abe1e8e5f0f0fd3ae365a594bd50aadb20696805f9408c
+FROM eclipse-temurin:25-jre-noble@sha256:d9a39a23634650173f1e2bbc176227af9728587ecf0f4b62d53e9355cd7a19ab
 RUN groupadd --system --gid 10001 smo \
  && useradd --system --uid 10001 --gid smo --no-create-home --shell /usr/sbin/nologin smo
 WORKDIR /srv/app
