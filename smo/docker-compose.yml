@@ -678,14 +678,13 @@ services:
 
   # Traces and logs (PR-OBS-3, PR-OBS-6; docs/OBSERVABILITY.md). Two profiles, both off by default, sharing one Grafana. The configuration files are the
   # chart's (deploy/helm/smo/files/observability/), so compose and Kubernetes run the same ones. Lab stores: Tempo and Loki keep their data in a volume
-  # on local disk and run as root with no capability, the volume being theirs.
+  # on local disk and run as the image's own user (10001), which owns the volume (as root with no capability they cannot write it: PR-OBS-3.6).
   #   SMO_WITH_TRACING=1 SMO_OTEL_ENDPOINT=http://tempo:4318 docker compose --profile tracing up -d --build
   #   docker compose --profile logging up -d
   tempo:
     profiles: ["tracing"]
     image: grafana/tempo:2.8.2
     command: ["-config.file=/etc/tempo/tempo.yaml"]
-    user: "0"
     restart: unless-stopped
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -697,7 +696,6 @@ services:
     profiles: ["logging"]
     image: grafana/loki:3.5.5
     command: ["-config.file=/etc/loki/loki.yaml"]
-    user: "0"
     restart: unless-stopped
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

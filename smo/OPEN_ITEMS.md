@@ -455,7 +455,7 @@ OpenTelemetry spans to Tempo and log shipping to Loki exist (`HISTORY.md` §10, 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | OBS-3.4 | SQLAlchemy spans (server spans and `R1Client` client spans are done), and spans for the calls that do not go through `R1Client` (the gateway's token check, webhooks) | A request shows a database span under its server span | – |
-| OBS-3.6 | A live check: the compose `tracing` profile, one runbook call, its trace found by id (the stack is configured but was not run in CI) | Trace visible for a runbook call | – |
+| OBS-3.6 | A live check: the compose `tracing` profile, one gateway call, its trace found by id. Written: `scripts/obs_smoke.py` and the CI job `obs-stack` ("Tracing and logging profiles"), not yet seen green. Close it when the job has passed on `main` | Job green on `main` | – |
 | OBS-3.7 | Decide whether the release workflow also publishes a tracing-enabled image variant (`WITH_TRACING=1`) | Decision recorded | – |
 
 #### PR-OBS-4 — Business metrics (open: the remainder below; done in `HISTORY.md` §10)
@@ -483,7 +483,7 @@ Done: packages, rApp instances and intents by state, the outbox backlog and its 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | OBS-6.3 | Elasticsearch field mapping, shipped and tried (described in `docs/OBSERVABILITY.md`) | Index created, a log line indexed | – |
-| OBS-6.4 | A live check of the `logging` profile (Fluent Bit to Loki, a query by correlation id returns the request's lines); not run in CI | Query returns a request's lines | – |
+| OBS-6.4 | A live check of the `logging` profile (Fluent Bit to Loki, a query returns the request's line). Written: the same script and job as OBS-3.6 (the query is by trace id, not correlation id), not yet seen green. Close it when the job has passed on `main` | Job green on `main` | – |
 
 #### PR-OBS-7 — Runbooks (open: the entries below; template, index and one page per alert are in `HISTORY.md` §10)
 
