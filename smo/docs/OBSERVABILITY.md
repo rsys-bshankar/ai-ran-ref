@@ -37,6 +37,10 @@ SMO_WITH_TRACING=1 SMO_OTEL_ENDPOINT=http://tempo:4318 docker compose --profile 
 
 Grafana is at http://localhost:3001 (anonymous, a lab: bound to this machine). Explore, data source Tempo, search by service or paste a trace id; from a span, "Logs for this span" opens Loki with the trace id when the `logging` profile runs too.
 
+### Checked in CI
+
+The CI job "Tracing and logging profiles" starts both profiles and runs `scripts/obs_smoke.py` (`docker compose exec -T r1-termination python3 - < scripts/obs_smoke.py` from `smo/`): one gateway request, its trace found by id in Tempo, its log line found in Loki, Grafana's provisioned data sources OK. Run it the same way against your own lab stack. The image versions in `docker-compose.yml` and in the chart's `observability.*.image` should move together, to a version that job passed.
+
 ### Kubernetes
 
 ```bash

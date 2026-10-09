@@ -17,6 +17,9 @@ are written the way they are, and, for a test, what behaviour it pins down.
 | Every test file | A description of **what is covered and how to run it**, and the fixtures it relies on |
 | Every test function | A one-line description of **the behaviour it pins down** (the name says what; the description says why it matters or what would go wrong) |
 
+"Public" means: no leading underscore, or decorated as a route, a fixture or a test. A private helper needs a description when it is longer than five lines or has a
+side effect. Nested functions, closures and test stubs need only a `#` why-comment, not a docstring.
+
 "Trivial" is the only exemption: a one-line accessor, a property that returns a field, a `__repr__`, a pass-through wrapper whose name says everything.
 When in doubt, write the description. A function that is simple enough to need none is simple enough that writing it takes ten seconds.
 
@@ -52,9 +55,9 @@ branching logic gets a short comment at the top saying what the block decides, t
 
 - File description: which module or behaviour the file covers, the main fixtures it uses (and where they come from), and how to run it
   (`PYTHONPATH=.:../shared python -m pytest tests/test_x.py -q`); say if it needs Postgres, a stub server, or a built GUI.
-- Each test function: one line that states the behaviour or rule being protected and, when it is not obvious, the failure it guards against
+- Each test function: one sentence (two lines at most) that states the behaviour or rule being protected and, when it is not obvious, the failure it guards against
   ("a revoked token must stop working on the replica that carried the revocation"). A test that exists because of a past bug names the symptom, not the
-  ticket. Table-driven tests describe the table once, above it.
+  ticket. A parametrized test describes the table once, in a `#` comment above the decorator.
 - Helpers and fixtures: say what they build and what the tests may assume about the state they leave.
 
 ## Language conventions
@@ -70,6 +73,24 @@ branching logic gets a short comment at the top saying what the block decides, t
 | Helm templates | A `{{- /* ... */ -}}` comment at the top: what the template renders and which values drive it | A comment above each conditional block that explains when it renders | same |
 | Alembic revisions | Module docstring: what the revision changes, why, the expand/contract step it is, and what the downgrade does | Docstrings on `upgrade()` and `downgrade()` that list the statements by purpose | comments on any statement that is not a plain `create_table`/`add_column` |
 
+## FastAPI routes and request models: the docstring is published
+
+FastAPI puts the docstring of a **route function** and of a **pydantic request or response model** into the OpenAPI document (`docs/openapi/*.json`), and
+`tests_integration/test_openapi_specs.py` fails when the committed specs and the live schema differ. So in a comment-only change:
+
+- do not add, remove or edit the docstring of a route function or of a request or response model;
+- put the maintainer detail (status and error codes, ordering, the transaction, what is deliberately not checked) in a `#` block directly under the route's
+  docstring (or directly after the `def` line when there is none), and for a model in a `#` block above the class;
+- write a docstring there only when the API consumer should read it, and then regenerate the specs in the same change (`scripts/generate_openapi_specs.py`).
+
+A route or model with such a `#` note counts as documented for `check_code_docs.py`.
+
+## Existing text
+
+Keep a good existing docstring. Rewrite one that is wrong, vague, or written as history ("added in this pass", "was absent before"): state what is true now, in
+the present tense, and keep the clause and `HISTORY.md` citations. When a file has no docstring and starts with imports, the file description goes before the
+first import.
+
 ## What must not happen
 
 - A comment or docstring must be **true**. A wrong description is worse than none: check it against the code, and when you change the code, change the text.
@@ -80,12 +101,59 @@ branching logic gets a short comment at the top saying what the block decides, t
 
 ## How it is checked
 
-- `scripts/verify_docs_only.py` compares two versions of the code with all comments and docstrings removed and fails if anything else differs. A documentation
-  pull request must pass it; the pull request description says so.
-- `scripts/check_code_docs.py` counts, per module, the source files without a file description and the functions that need a description and have none. A
-  baseline in `scripts/code_docs_baseline.json` records today's counts per module; the check fails if a module's counts go **up**, and a new file or a new
-  function must meet the rule from the day it is added. Lowering a module's count means lowering the number in the baseline in the same change. The target is
-  zero everywhere.
+Two scripts in `smo/scripts/`, both run by the CI job **Code documentation** (`.github/workflows/smo-tests.yml`, job `code-docs`) and both runnable locally from `smo/`.
+They need `git`, `go` (Go files) and `node` with `smo/gui/node_modules` (`cd smo/gui && npm ci`; TypeScript files).
+
+**`check_code_docs.py`: the gate.** Runs on every pull request and every push.
+
+```bash
+python scripts/check_code_docs.py              # the gate
+python scripts/check_code_docs.py --report     # a table by module: files, files without a description, items that need one, missing, tests, tests missing
+python scripts/check_code_docs.py --list sme   # every finding of one module, file:line and name
+python scripts/check_code_docs.py --write-baseline
+```
+
+It counts, per module (the first directory under `smo/`; `gui/src` and `gui` apart; one module per `samples/<name>`), three numbers: `files_without_description`,
+`functions_without_description` (classes, functions and methods that need a description under the table above and have none) and `tests_without_docstring`.
+`scripts/code_docs_baseline.json` holds today's numbers. The gate fails when
+
+1. a module's number is **higher** than the baseline, or
+2. a file or function that is **new** against the merge base with `origin/main` (`--base REF` to choose another) has no description. This holds whatever the
+   baseline says, so lowering one count cannot pay for adding an undocumented function.
+
+A number that is **lower** than the baseline passes and is reported; lower the baseline in the same change with `--write-baseline` and commit it (the integration
+test `test_gate_the_committed_baseline_is_current` fails otherwise). The target is zero everywhere.
+
+How "needs a description" is measured is the table above, with these approximations (they err towards counting, never below the truth). "Longer than five lines" stands in
+for "has a side effect". Trivial means at most five lines and one statement. Python is read with `ast`; a route function and a pydantic model are documented by a docstring or by
+the `#` note described under "FastAPI routes and request models"; a parametrized test by a `#` comment above its decorators; nested functions, lambdas and the stubs of test
+files are exempt. TypeScript is read with the Oxc parser from the GUI's toolchain (exported declarations and `it(`/`test(` calls, needing `/** */` and a comment above); Go with
+`go/ast` (exported identifiers, longer unexported ones, and `Test*` functions need a doc comment); Java with a lexer and a stack of blocks (types, public and protected methods,
+`@Test` methods need Javadoc); shell by the comment above `name() {`; Dockerfile, YAML, Helm templates and SQL by a leading comment. Data files (OpenAPI JSON, rApp package
+descriptors, `docs/`) and vendored files are not source files here.
+
+**`verify_docs_only.py`: the proof that a change is only documentation.**
+
+```bash
+python scripts/verify_docs_only.py --base <git ref> [--head <git ref>] [--allow-unverified-extension .md]
+```
+
+It lists the files that differ between `--base` and `--head` (omitted: the working tree, untracked files included) and, for each, compares the two versions with the
+comments removed: Python by `ast.dump` after dropping docstrings (so reformatting passes), TypeScript and JavaScript by the syntax tree with types and without positions,
+Go by the token stream after `go/parser` accepted the file, Java by tokens after a lexer removed comments (strings, chars and text blocks respected), shell, Dockerfile, YAML and
+Helm templates by the text without `#` and `{{- /* */ -}}` comments, SQL by tokens without `--` and `/* */`. A comment that is a tool directive (`# noqa`, `# type: ignore`,
+`# shellcheck disable=`, `//go:build`, `//go:embed`...) is compared too, so editing or moving one fails. It exits 1 with a reason per file when anything else differs,
+when a code file is added or deleted, or when a file cannot be classified ("not verified"); an extension is let through only with `--allow-unverified-extension`. The comparison
+also notes (without failing) a changed docstring on a route or request model, because that text is published in the OpenAPI document.
+
+**The pull request title convention.** A pull request that changes only comments and docstrings is titled `Docs(code): <what>`. CI then runs the proof against the merge
+base (`--allow-unverified-extension .md`: a README may change with the code it describes) and the job fails if it does not hold; the pull request description quotes the
+verifier's last line. Any other title runs the gate only. The label `docs-tooling` switches the proof off, for the one change that cannot satisfy it: a change to the verifier
+or the gate themselves. Run it before pushing: `python scripts/verify_docs_only.py --base origin/main --allow-unverified-extension .md`.
+
+Limits worth knowing: the verifier proves "the same program", not "a true description"; a reviewer still reads the text. Inside a YAML block scalar nothing is stripped, except the
+full-line comments of a workflow's `run:` script. Java and shell are read with a lexer and rules, not a full parser; a construct they misread fails the proof (a false alarm), not
+passes it.
 
 ## Order of the work
 
