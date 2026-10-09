@@ -52,6 +52,7 @@ UNSET, REQUIRED, COMPUTED = "unset", "required", "computed in code"
 
 
 class _Unknown:
+    """The type of the `UNKNOWN` marker: "a value that could not be worked out statically". Compared by identity (`is UNKNOWN`) throughout."""
     def __repr__(self) -> str:
         return "<unknown>"
 
@@ -61,6 +62,7 @@ UNKNOWN = _Unknown()
 
 @dataclass(frozen=True)
 class Read:
+    """One place that reads an environment variable: the name (a `<PART>` placeholder for a run-time part), the default as it is shown, the module and file:line, and how it was found (`via`)."""
     name: str
     default: str
     module: str
@@ -146,6 +148,7 @@ def fold(node: ast.expr | None, consts: dict) -> object:
 
 
 def show_default(value: object) -> str:
+    """How a default is written in the table: `computed in code` for UNKNOWN, `unset` for None, `true`/`false` for booleans, `"" (empty)` for the empty string, a whole float without its `.0`, else `str(value)`."""
     if value is UNKNOWN:
         return COMPUTED
     if value is None:
@@ -160,13 +163,17 @@ def show_default(value: object) -> str:
 
 
 def _base_name(node: ast.expr) -> str | None:
+    """The leftmost plain name of an expression (`a.b(c)[d]` gives `a`), or None when it starts from anything else."""
     while isinstance(node, (ast.Attribute, ast.Call, ast.Subscript)):
         node = node.func if isinstance(node, ast.Call) else node.value
     return node.id if isinstance(node, ast.Name) else None
 
 
 def name_of(node: ast.expr, bindings: dict[str, str], funcs: dict[str, ast.FunctionDef], consts: dict, depth: int = 0) -> str | None:
-    """The variable name `node` builds: constants joined, run-time parts as `<PART>`; None when it cannot be worked out."""
+    """The variable name an expression builds: constants joined, a run-time part written `<PART>`; None when it cannot be worked out.
+
+        `bindings` maps a wrapper's parameter names to the names its caller passed; `funcs` lets a call to a one-`return` helper in the same file be followed (at most three levels).
+    """
     if isinstance(node, ast.Constant):
         return node.value if isinstance(node.value, str) else None
     if isinstance(node, ast.Name):
@@ -251,6 +258,7 @@ def _uses_param(expr: ast.expr, params: list[str]) -> bool:
 
 
 def _module_consts(tree: ast.Module) -> dict:
+    """The module-level assignments whose value folds to a constant, as `{name: value}`, in source order (so a constant may use an earlier one)."""
     consts: dict = {}
     for stmt in tree.body:
         if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
@@ -265,6 +273,7 @@ def _module_consts(tree: ast.Module) -> dict:
 
 
 def _annotation(lines: list[str], line: int) -> list[str] | None:
+    """The names in a `# config-ref: A, B` comment on `line` or the line above (1-based), or None when there is none."""
     for number in (line, line - 1):
         if 1 <= number <= len(lines):
             match = ANNOTATION.search(lines[number - 1])
@@ -278,6 +287,7 @@ def _annotation(lines: list[str], line: int) -> list[str] | None:
 
 @dataclass
 class _File:
+    """One parsed source file: its path relative to `smo/`, the module it belongs to, the syntax tree, its foldable constants and its functions by name."""
     path: str
     module: str
     source: str
@@ -288,6 +298,7 @@ class _File:
 
 
 def _parse(source: str, path: str, module: str) -> _File:
+    """Parses `source` into a `_File`; raises `SyntaxError` for invalid Python. Every `FunctionDef` anywhere in the file is indexed by name (a later one of the same name wins)."""
     tree = ast.parse(source, filename=path)
     funcs = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
     return _File(path, module, source, tree, _module_consts(tree), funcs, source.splitlines())
@@ -302,6 +313,7 @@ class _Walker(ast.NodeVisitor):
         self.or_default: dict[int, ast.expr] = {}
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Keeps the stack of enclosing functions while the body is visited, so each read knows which functions surround it. Also used for `async def`."""
         self.stack.append(node)
         self.generic_visit(node)
         self.stack.pop()
@@ -309,6 +321,7 @@ class _Walker(ast.NodeVisitor):
     visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]
 
     def generic_visit(self, node: ast.AST) -> None:
+        """Records every node that reads the environment together with the functions around it, and, for `os.environ.get("X") or d`, remembers `d` as the default of that read."""
         if env_read(node) is not None:
             self.found.append((node, tuple(self.stack)))
         if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or) and len(node.values) >= 2:
@@ -319,7 +332,11 @@ class _Walker(ast.NodeVisitor):
 
 
 def _helpers(files: list[_File]) -> dict[tuple[str, str], list[_Helper]]:
-    """(path, function name) -> the wrappers it holds: one per read of a variable named by one of the function's own parameters."""
+    """The wrappers in `files`: for each (path, function name), one `_Helper` per environment read whose variable name comes from one of that function's own parameters.
+
+        The outermost enclosing function that owns the parameter is the wrapper, so a closure inside it is covered. A wrapper without its own default expression uses a
+        parameter called `default` when there is one.
+    """
     out: dict[tuple[str, str], list[_Helper]] = defaultdict(list)
     for f in files:
         walker = _Walker()
@@ -339,6 +356,7 @@ def _helpers(files: list[_File]) -> dict[tuple[str, str], list[_Helper]]:
 
 
 def _bind(helper: _Helper, call: ast.Call, f: _File) -> dict[str, str]:
+    """Maps a wrapper's parameters to the names a call passes: `name_of` of each argument, or a `<PARAM>` placeholder when the argument cannot be worked out. `self`/`cls` are skipped."""
     bindings: dict[str, str] = {}
     positional = helper.params[1:] if helper.params and helper.params[0] in ("self", "cls") else helper.params
     for param, arg in zip(positional, call.args):
@@ -374,7 +392,12 @@ def _helper_default(helper: _Helper, call: ast.Call, f: _File, owner: _File) -> 
 
 
 def extract_files(files: list[_File]) -> tuple[list[Read], list[str]]:
-    """Every read in `files`, and the places whose variable name could not be worked out."""
+    """Every environment read in `files`, as `(reads, unresolved)`; `unresolved` lists the `path:line` places whose variable name could not be worked out.
+
+        A direct read is recorded with its default; a read in a wrapper's own body is not (its call sites are, each with the arguments' name and default); a `# config-ref:`
+        comment on or above the line replaces what the walk would find there. A wrapper is also followed into another file when exactly one public function of that
+        name exists among the walked files. `read_secret` reads are recorded twice: the name, and the `<name>_FILE` form.
+    """
     helpers = _helpers(files)
     public: dict[str, list[tuple[str, list[_Helper]]]] = defaultdict(list)
     for (path, name), found in helpers.items():
@@ -453,6 +476,9 @@ def extract(source: str, path: str = "snippet.py", module: str = "snippet") -> t
 
 
 def source_files(root: Path = SMO_ROOT) -> list[tuple[Path, str]]:
+    """The `(file, module)` pairs the walk covers: `<module>/app`, `samples/*/app`, `shared/smo_shared`, `sdk/smo_sdk`, and `scripts/migrate.py` and `scripts/db_roles.py`.
+        Anything under a `tests` or `__pycache__` directory is left out.
+    """
     found: list[tuple[Path, str]] = []
 
     def walk(directory: Path, module: str) -> None:
@@ -472,6 +498,7 @@ def source_files(root: Path = SMO_ROOT) -> list[tuple[Path, str]]:
 
 
 def compose_reads(text: str, path: str = "docker-compose.yml") -> list[Read]:
+    """The `${NAME}` / `${NAME:-default}` substitutions in the compose file, as reads of the module `compose`; full-line comments are skipped."""
     reads = []
     for number, line in enumerate(text.splitlines(), 1):
         if line.lstrip().startswith("#"):
@@ -484,6 +511,7 @@ def compose_reads(text: str, path: str = "docker-compose.yml") -> list[Read]:
 
 
 def collect(root: Path = SMO_ROOT) -> tuple[list[Read], list[str]]:
+    """Parses every walked file that exists and adds the compose substitutions; returns `(reads, unresolved sites)`."""
     files = []
     for path, module in source_files(root):
         if path.exists():
@@ -500,6 +528,7 @@ def collect(root: Path = SMO_ROOT) -> tuple[list[Read], list[str]]:
 
 @dataclass
 class Variable:
+    """One row of the reference: a variable with its defaults, whether its default is hidden (a credential), the modules and files that read it, and its description (`TODO` if none)."""
     name: str
     defaults: list[str]
     masked: bool            # the table does not show its default (a credential)
@@ -512,10 +541,18 @@ class Variable:
 
 
 def load_descriptions(path: Path = DESCRIPTIONS) -> dict:
+    """The hand-written descriptions from `docs/config_descriptions.json`, or an empty dict when the file does not exist."""
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
 def build(reads: list[Read], descriptions: dict | None = None) -> list[Variable]:
+    """Groups the reads by variable name into sorted `Variable` rows.
+
+        Defaults: the distinct defaults seen in code, except that a bare read (`unset`) beside a read with a default in the same file is taken as that variable's guard and
+        not listed, and compose defaults are not listed when code has one. A variable is masked (default not shown) when its name matches `SECRET_NAME`, when it is read
+        through `read_secret`, or is a `*_FILE` form, unless its description entry says `"secret": false`. Its group is `shared` when `smo_shared` reads it, the module when
+        exactly one does, `several`, or `compose` when only the compose file mentions it.
+    """
     descriptions = load_descriptions() if descriptions is None else descriptions
     by_name: dict[str, list[Read]] = defaultdict(list)
     for read in reads:
@@ -566,14 +603,17 @@ GROUP_TITLES = {
 
 
 def _group_order(group: str) -> tuple[int, str]:
+    """Sort key of a group: `shared`, `several`, then modules alphabetically, then `compose`."""
     return ({"shared": 0, "several": 1}.get(group, 2) if group != "compose" else 3, group)
 
 
 def _cell(text: str) -> str:
+    """Makes text safe for a markdown table cell: `|` escaped, newlines turned into spaces."""
     return text.replace("|", "\\|").replace("\n", " ")
 
 
 def default_cell(variable: Variable) -> str:
+    """The Default cell: `*not shown*` for a masked variable (a default that is a credential is never written to a document), otherwise each distinct default in backticks, joined by ` / `."""
     if variable.masked:
         return "*not shown*"                                    # the default of a secret is never written to a document, whatever it is today
     if len(variable.defaults) == 1:
@@ -582,6 +622,7 @@ def default_cell(variable: Variable) -> str:
 
 
 def render_markdown(variables: list[Variable]) -> str:
+    """The generated part of `docs/CONFIGURATION.md`: one table per group, in `_group_order`, each row giving the variable, default, whether it is secret, where it is read and its description."""
     out: list[str] = []
     groups: dict[str, list[Variable]] = defaultdict(list)
     for variable in variables:
@@ -598,6 +639,7 @@ def render_markdown(variables: list[Variable]) -> str:
 
 
 def render_table(variables: list[Variable]) -> str:
+    """The plain-text table printed by default: name, defaults, secret marker, modules and the file:line of every read, with the first four columns padded to at most 48 characters."""
     rows = [("NAME", "DEFAULT", "SECRET", "MODULES", "FILE:LINE")]
     for v in variables:
         rows.append((v.name, " / ".join(v.defaults), "secret" if v.masked else "", ",".join(v.modules), " ".join(v.sites)))
@@ -606,6 +648,7 @@ def render_table(variables: list[Variable]) -> str:
 
 
 def render_json(variables: list[Variable], reads: list[Read]) -> str:
+    """The `--json` output: one object per variable with its defaults, secret flag, modules, group, description and every read site."""
     sites: dict[str, list[dict]] = defaultdict(list)
     for r in reads:
         sites[r.name].append({"module": r.module, "file": r.path, "line": r.line, "default": r.default, "via": r.via})
@@ -624,11 +667,17 @@ def documented_names(text: str) -> dict[str, str]:
 
 
 def splice(document: str, generated: str) -> str:
+    """Returns `document` with the text between the BEGIN and END markers replaced by `generated`; raises `ValueError` when a marker is missing."""
     start, end = document.index(BEGIN), document.index(END)
     return document[:start + len(BEGIN)] + "\n\n" + generated + "\n" + document[end:]
 
 
 def main(argv: list[str]) -> int:
+    """Command-line entry. By default prints the table; `--json` prints JSON; `--write` regenerates `docs/CONFIGURATION.md`; `--check` compares it with what would be generated.
+
+        Problems (an unresolved read, a variable with no description, a description for a variable no code reads, a stale document) are printed to stderr. The exit
+        status is 1 only for `--check` or `--write` with a problem: `--write` still writes the file before reporting, and the plain table or JSON never fails.
+    """
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--json", action="store_true", help="print JSON, one object per variable with every read site")
     parser.add_argument("--write", action="store_true", help="regenerate the table in docs/CONFIGURATION.md")

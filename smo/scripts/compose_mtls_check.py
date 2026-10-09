@@ -37,6 +37,7 @@ failures: list[str] = []
 
 
 def check(name: str, ok: bool, detail: object = "") -> None:
+    """Prints one `ok` / `FAIL` line and remembers a failure; the script goes on and lists every failure at the end."""
     print(f"{'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f" -- {detail}"))
     if not ok:
         failures.append(name)

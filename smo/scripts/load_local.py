@@ -36,7 +36,12 @@ GATEWAY_PORT = 8100
 
 
 class Stack:
+    """The throwaway local stack of one run: a TLS Postgres from `pg_tls_check.LocalServer`, the module processes, and the files they share in `work`.
+
+        `shutdown` must be called (the caller's `finally` does) or the Postgres and the uvicorn processes keep running. Nothing here touches the compose stack or a real database.
+    """
     def __init__(self, work: Path):
+        """Prepares the paths under `work` (secrets, the CA) and the fixed throwaway password of the database owner; starts nothing."""
         self.work = work
         self.procs: dict[str, subprocess.Popen] = {}
         self.server: pg_tls_check.LocalServer | None = None
@@ -45,6 +50,12 @@ class Stack:
         self.password = "local-load-owner-password"          # noqa: S105 (a throwaway database on this machine)
 
     def env(self, name: str | None, extra: dict | None = None) -> dict:
+        """The environment of one child process (`name` a module, or None for the migration and role scripts that run as the database owner).
+
+            Every process gets `PGSSLMODE=verify-full` with the development CA, a small connection pool, the loopback URLs of the other modules, and the gateway's audit and
+            rate limit switched off (`R1_AUDIT=off`, `R1_RATE_PER_SECOND=0`) so the measurement is not shaped by them. A module gets its own database role and password file;
+            `extra` is applied last and wins. Requires `start_database` to have run (the port of the server is read).
+        """
         assert self.server
         env = {**os.environ, "PGSSLMODE": "verify-full", "PGSSLROOTCERT": str(self.ca), "PYTHONUNBUFFERED": "1", "SMO_ENROLLMENT_SECRET_FILE": str(self.work / "enroll"),
                "SMO_DB_POOL_SIZE": "10", "R1_AUDIT": "off", "R1_RATE_PER_SECOND": "0", "R1_KILL_SWITCH_SCHEMA": "ran_nf_oam", "R1_GATEWAY_URL": f"http://127.0.0.1:{GATEWAY_PORT}",
@@ -59,6 +70,11 @@ class Stack:
         return env | (extra or {})
 
     def start_database(self) -> None:
+        """Makes the development CA, starts the TLS Postgres, creates the `smo` database, writes the enrollment and per-module password files, then runs
+            `migrate.py` and `db_roles.py` against it as the owner.
+
+            Raises `SystemExit` with the last 800 bytes of stderr when either script fails.
+        """
         import psycopg
         mtls_certs.init(self.work / "certs", 30)
         (self.work / "pg").mkdir()
@@ -77,11 +93,13 @@ class Stack:
                 raise SystemExit(f"{script} failed: {run.stderr[-800:]}")
 
     def start(self, name: str, port: int, extra: dict | None = None) -> None:
+        """Starts one module as `uvicorn app.main:app` on `port` (loopback only, from the module's directory), logging to `<work>/<name>.log`. Does not wait for it; see `wait_ready`."""
         log = (self.work / f"{name}.log").open("w")
         self.procs[name] = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port), "--no-access-log"],   # noqa: S603
                                             cwd=SMO / name, env=self.env(name, extra), stdout=log, stderr=subprocess.STDOUT)
 
     def stop(self, name: str) -> None:
+        """Stops a started module with SIGTERM, and kills it if it has not exited after 15 s. Unknown names are ignored."""
         proc = self.procs.pop(name, None)
         if proc:
             proc.send_signal(signal.SIGTERM)
@@ -91,6 +109,7 @@ class Stack:
                 proc.kill()
 
     def wait_ready(self, port: int, timeout: float = 90) -> bool:
+        """Polls `/ready` of the service on `port` every half second; True as soon as it answers 200, False after `timeout` seconds."""
         end = time.time() + timeout
         while time.time() < end:
             try:
@@ -111,6 +130,7 @@ class Stack:
         return (row[0], row[1]) if row else (0, 0)
 
     def shutdown(self) -> None:
+        """Stops every module still running, then the Postgres. Safe to call after a partial start."""
         for name in list(self.procs):
             self.stop(name)
         if self.server:
@@ -118,6 +138,13 @@ class Stack:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Runs the whole comparison and returns `introspection_compare`'s exit code (1 when the comparison found a problem).
+
+        Order: database, SME, the gateway, the other modules; then for each of the two runs (cache off, cache `--ttl`) the gateway is restarted with that
+        `R1_INTROSPECTION_CACHE_SECONDS` and `load_run.py` is run through it. A load run that exits non-zero is printed but does not stop the script. Raises `SystemExit`
+        when PostgreSQL's `initdb`/`postgres` are not installed or a service does not become ready; logs are then left in the work directory named in the message.
+        The work directory is removed at the end in every other case.
+    """
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--out", type=Path, default=Path("load-local"))
     ap.add_argument("--duration", type=float, default=45)

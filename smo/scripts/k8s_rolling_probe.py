@@ -26,6 +26,7 @@ DEADLINE = time.monotonic() + 1800  # a probe that is never stopped does not run
 
 
 def ok(client: httpx.Client, url: str) -> bool:
+    """True when a GET of `url` answers 200; a connection or timeout error is False (not raised)."""
     try:
         return client.get(url).status_code == 200
     except httpx.HTTPError:

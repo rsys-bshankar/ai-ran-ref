@@ -27,11 +27,13 @@ from smo_shared import csar_signing as cs  # noqa: E402
 
 
 def _fail(message: str, code: int = 2) -> int:
+    """Prints `error: <message>` to stderr and returns the exit code (2, a usage or file problem, unless told otherwise)."""
     print(f"error: {message}", file=sys.stderr)
     return code
 
 
 def _keygen(args: argparse.Namespace) -> int:
+    """`keygen`: writes `<out>.key.pem` (mode 0600) and `<out>.pub` and prints the key id. Refuses, writing nothing, when either file already exists."""
     private_path, public_path = Path(f"{args.out}.key.pem"), Path(f"{args.out}.pub")
     for path in (private_path, public_path):
         if path.exists():
@@ -46,6 +48,7 @@ def _keygen(args: argparse.Namespace) -> int:
 
 
 def _read(path: str) -> bytes | None:
+    """The bytes of a file, or None after printing an error when it cannot be read; the caller returns exit code 2."""
     try:
         return Path(path).read_bytes()
     except OSError as exc:
@@ -54,6 +57,10 @@ def _read(path: str) -> bytes | None:
 
 
 def _sign(args: argparse.Namespace) -> int:
+    """`sign`: adds the digest list and its ed25519 signature to the package and writes it to `--out` (default: over the input file).
+
+        Exit 2 when a file cannot be read, the key is not usable, or the package is rejected by `sign_csar` (not a valid zip, for example).
+    """
     data, key_bytes = _read(args.package), _read(args.key)
     if data is None or key_bytes is None:
         return 2
@@ -71,6 +78,10 @@ def _sign(args: argparse.Namespace) -> int:
 
 
 def _verify(args: argparse.Namespace) -> int:
+    """`verify`: checks each package against the trust store and prints `OK` or `REJECTED` with the error code per package.
+
+        Returns 0 when all verify, 1 when any is rejected, and 2 when the trust store cannot be loaded or any package cannot be read (2 takes precedence over 1).
+    """
     try:
         trust = cs.load_trust_store(args.trust)
     except cs.TrustStoreError as exc:
@@ -92,6 +103,7 @@ def _verify(args: argparse.Namespace) -> int:
 
 
 def _digests(args: argparse.Namespace) -> int:
+    """`digests`: prints the sha-256 and name of every file in the package except the signing files, then whether the package is signed (yes, no, or incomplete)."""
     data = _read(args.package)
     if data is None:
         return 2
@@ -107,6 +119,7 @@ def _digests(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command-line entry for `keygen`, `sign`, `verify` and `digests`; returns the command's exit status (0 ok, 1 package not acceptable, 2 usage or file problem)."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
     keygen = commands.add_parser("keygen", help="make an ed25519 key pair")

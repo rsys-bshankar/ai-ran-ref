@@ -48,6 +48,12 @@ def _fake_ca(directory: Path) -> Path:
 
 
 def run_checks(host: str, port: int, user: str, password: str, database: str, ca: Path, expect_plain_refused: bool, workdir: Path) -> list[tuple[bool, str]]:
+    """Runs the checks of the module docstring against the server at `host:port` and returns `[(passed, one-line text)]`; it never raises for a failed check.
+
+        The plain-connection check runs only when `expect_plain_refused` is true. `ca` is the CA that signed the server's certificate; `workdir` receives the made-up
+        second CA. The failure checks match the driver's error text ("certificate verify failed", "does not match host name", ...), so a different libpq wording would
+        show as a failed check rather than a pass. The first check's connection is opened as the owner role, so `password` must be that role's.
+    """
     base = {"host": host, "port": port, "user": user, "password": password, "dbname": database}
     results: list[tuple[bool, str]] = []
 
@@ -89,6 +95,7 @@ def run_checks(host: str, port: int, user: str, password: str, database: str, ca
 
 
 def _is_ip(value: str) -> bool:
+    """True when `value` parses as an IPv4 or IPv6 address (then it is used as `hostaddr` as it is, otherwise it is resolved first)."""
     try:
         ipaddress.ip_address(value)
         return True
@@ -118,7 +125,10 @@ def _free_port() -> int:
 
 class LocalServer:
     """initdb + postgres in a temporary directory, with ssl on and a hostssl-only pg_hba.conf, as the compose overlay runs it.
-    Postgres refuses to run as root, so as root it runs as uid 65534 (nobody) and the directory is handed to it."""
+        Postgres refuses to run as root, so as root it runs as uid 65534 (nobody) and the directory is handed to it.
+
+        Listens on 127.0.0.1 on a free port (`port`) and on a unix socket inside `base`. The owner role is `smo`. `stop` must be called, or the server keeps running.
+    """
 
     def __init__(self, pg_bin: Path, base: Path, certs: Path, password: str):
         self.pg_bin, self.base, self.certs, self.password = pg_bin, base, certs, password
@@ -127,6 +137,7 @@ class LocalServer:
         self._uid = 65534 if os.geteuid() == 0 else None
 
     def _run(self, *argv: str, **kwargs):
+        """Runs a command to completion (raising `CalledProcessError` on failure, output captured), as uid 65534 when this process is root."""
         def drop():
             if self._uid is not None:
                 os.setgid(self._uid)
@@ -134,6 +145,12 @@ class LocalServer:
         return subprocess.run(argv, check=True, capture_output=True, text=True, preexec_fn=drop if self._uid is not None else None, **kwargs)  # noqa: S603
 
     def start(self) -> None:
+        """Prepares the data directory and starts the server; returns when it accepts TCP connections, raises `RuntimeError` if it exits or takes over 30 s.
+
+            Copies the server certificate and key out of `certs/postgres` (the key 0600 and owned by the server user, which Postgres insists on), installs the
+            `hostssl`-only `pg_hba.conf`, runs `initdb`, and sets the owner's password through a single-user backend's standard input so it never reaches a file or
+            a command line. The half-second wait after the port opens gives the server time to finish starting before the first login.
+        """
         data = self.base / "data"
         ssl_dir = self.base / "ssl"
         ssl_dir.mkdir()
@@ -166,6 +183,7 @@ class LocalServer:
         raise RuntimeError("postgres did not start in 30 s")
 
     def stop(self) -> None:
+        """Terminates the server and waits up to 20 s, then kills it. Does nothing when it is not running."""
         if self.process and self.process.poll() is None:
             self.process.terminate()
             try:
@@ -175,6 +193,11 @@ class LocalServer:
 
 
 def spawn_and_check(keep_dir: Path | None = None) -> list[tuple[bool, str]]:
+    """Creates a CA and certificates in a temporary directory, starts a `LocalServer`, runs all four checks against it and stops it; returns the check results.
+
+        Raises `SystemExit` when `initdb`/`postgres` are not installed. With `keep_dir` the working directory (certificates, server log) is copied there afterwards, also
+        after a failure.
+    """
     import mtls_certs
     pg_bin = find_pg_bin()
     if pg_bin is None:
@@ -197,6 +220,9 @@ def spawn_and_check(keep_dir: Path | None = None) -> list[tuple[bool, str]]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Runs the checks against `--host` (reading the password from `--password-file`) or, with `--spawn`, against a throwaway server; prints one `ok`/`FAIL` line each.
+        Returns 0 when all passed, else 1.
+    """
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--spawn", action="store_true", help="start a throwaway local Postgres with TLS and check that")
     ap.add_argument("--keep-dir", type=Path, default=None, help="with --spawn: copy the working directory (certificates, server log) here afterwards")

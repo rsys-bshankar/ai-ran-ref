@@ -21,6 +21,13 @@ def local(tag: str) -> str:
 
 
 def main() -> int:
+    """Runs the lab checks in order and returns 0 only if all pass; the first failure prints `FAIL: ...` to stderr and returns 1.
+
+        Order: the SSH session and `<hello>` (a base:1.0 or base:1.1 capability must be present), `<get-config>` of cells 101 and 102 against their seeded values,
+        the route-shaped read (`send_get_config` with `?model=smo-lab`), a valid write of tx-power 41 on cell 101 that is read back and then restored to 40, an
+        out-of-range write (99) that must be refused as `NETCONF_RPC_FAILED` with the server's detail, a model walk that must list both cells, and finally `check_tls`.
+        The URI is the first argument (default `ssh://netconf@127.0.0.1:8830`). Writes to the lab server's running datastore, so it must not be pointed at a real element.
+    """
     uri = sys.argv[1] if len(sys.argv) > 1 else "ssh://netconf@127.0.0.1:8830"
     try:
         with NetconfSession(uri, timeout=30) as session:

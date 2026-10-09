@@ -58,6 +58,8 @@ services:
     command: ["true"]
 Y
 
+# fresh_stack: throw away any earlier run's stack, start only Postgres, migrate it to THIS commit's head with this commit's scripts/migrate.py (and run the
+# models check), then make the per-module database roles with the previous release's own script. The previous release's modules are started afterwards by the caller.
 fresh_stack() {
   compose down -v --remove-orphans >/dev/null 2>&1 || true
   compose up -d --wait postgres
@@ -68,6 +70,8 @@ fresh_stack() {
   # no-op here, so make them the way it would: its own script and manifest, its own password files. Without them every module fails to log in.
   (cd "$prev_smo" && SMO_DATABASE_URL="$url" SMO_DB_ROLE_PASSWORD_DIR="$prev_smo/secrets" python scripts/db_roles.py)
 }
+# replay PYTEST_TARGET: run the previous release's own tests (its checkout, mounted at /work) in a Python container on the stack's network, as the demo consumer,
+# against the live stack (SMO_E2E_LIVE=1). Exit status is pytest's.
 replay() {
   docker run --rm --network "${project}_default" --network-alias demo-consumer \
     -e SMO_E2E_LIVE=1 -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONPATH=/work/smo/shared:/work/smo/sdk \
