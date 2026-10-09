@@ -19,6 +19,9 @@ Entries are written for an operator: what changed in behaviour, configuration or
 - **Database roles**: RAN NF OAM's role is additionally granted `audit_log` and `audit_head` (re-run `scripts/db_roles.py`, or let the chart's role Job do it) so it can chain a decision record. Without the grant a record is still made, stays `UNCHAINED`, and the `chain-decisions` task logs the failure each minute.
 - **Rolling upgrade**: a gateway of the previous release lets an rApp read the new lists (they are internal-only only from this release on); finish the rollout before relying on it.
 
+### Fixed
+- **The upgrade lane no longer fails on a read race of the previous release's `audit verify`.** Run beside the load, 0.4.0's verifier could report a broken chain that was only a row committed between its two reads (fixed in 0.5.0). The two steps that use the previous release's verifier look a second time before failing; a real break stays. CI only: nothing changes for an operator.
+
 ## [0.6.0] - 2026-10-08
 
 The operator's side of the platform grows up. The RAN O1 stub now emits what a real network function emits (alarms, performance reports and files, software phases, heartbeats) and the conformance kit checks that RAN NF OAM received it; the GUI has one **rApps** entry with a directory and a page per rApp that the rApp's own package declares, in place of one hand-written page per rApp, so a rApp onboarded at run time shows its page without rebuilding the GUI; sign-in gets a second factor (an OIDC-only mode, one-time codes for local accounts, mandatory for admins), the session token can be signed with a key pair, and the gateway can cache token checks. Retention periods, an External Secrets example, a plugfest plan and the SLO reference targets (`docs/SLOS.md`, accepted) are in. Nothing that deletes data or changes sign-in is on by default.
