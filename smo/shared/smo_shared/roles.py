@@ -49,6 +49,14 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/ran-nf-oam", ("GET",), r"^/safeguard-refusals$"),
         ("/ran-nf-oam", ("POST",), r"^/safeguard-refusals/purge$"),
         ("/ran-nf-oam", ("PUT", "DELETE"), r"^/kpi-schedules/[^/]+$"),
+        # AI-11: a human decides whether an rApp's action is written. An rApp never decides (the allow-list below refuses its changes here as well), never
+        # sets who needs approval, and does not list what other rApps asked or why (it reads its own request, and its own record, by id)
+        ("/ran-nf-oam", ("PUT", "DELETE"), r"^/rapp-approval-policy/[^/]+$"),
+        ("/ran-nf-oam", ("POST",), r"^/rapp-approvals/([^/]+/(approve|reject)|expire-due)$"),
+        ("/ran-nf-oam", ("GET",), r"^/rapp-approvals$"),
+        ("/ran-nf-oam", ("GET", "POST", "DELETE"), r"^/approval-subscriptions(/[^/]+)?$"),
+        # AI-13: the record of why rApps acted
+        ("/ran-nf-oam", ("GET",), r"^/decision-records$"),
     ))
 
 

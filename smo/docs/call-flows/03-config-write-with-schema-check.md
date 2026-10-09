@@ -24,6 +24,41 @@ the vendor capability registry (`ran-nf-oam/app/vendors.py`, call flow 21):
 `cm_schema_cache` holds those data models. An ME with no vendor capability registered is
 not schema-checked.
 
+**Approval and the decision record.** An rApp whose instance has an approval policy (`ASSIST` mode, `approvalPolicy`, or set by an admin) gets `PENDING_APPROVAL` instead of a job: the write is kept after every check passed, the approvers are told, and a person approves it in the GUI (checks run again, then the dispatch below) or rejects it, or it lapses and writes nothing. Every job an rApp makes, approved or not, has a decision record (`decision` on the request: inputs reference, model version, rationale), hashed into the audit chain.
+
+```mermaid
+sequenceDiagram
+    actor rApp
+    participant NFOAM as RAN NF OAM SMOS
+    participant Outbox as Outbox (approvers)
+    actor Operator as Operator (GUI)
+    participant Chain as audit_log (hash chain)
+
+    rApp->>NFOAM: POST /config-jobs (changes, decision: inputsRef, modelVersion, rationale)
+    NFOAM->>NFOAM: kill switch, rate, blast radius, magnitude, MSAC, schema
+    alt the rApp has no approval policy
+        NFOAM->>NFOAM: job created and dispatched (as below), decision record DIRECT
+        NFOAM-->>rApp: 202 jobId, status
+    else the rApp has an approval policy
+        NFOAM->>NFOAM: keep the request (status PENDING, expires_at = now + timeout)
+        NFOAM->>Outbox: RAPP_APPROVAL_REQUESTED (same transaction)
+        NFOAM-->>rApp: 202 PENDING_APPROVAL, approvalId
+        Operator->>NFOAM: GET /rapp-approvals?status=PENDING
+        alt the operator approves
+            Operator->>NFOAM: POST /rapp-approvals/id/approve (decidedBy = the signed-in user)
+            NFOAM->>NFOAM: safeguards again, MSAC, schema, job created and dispatched, decision record APPROVED
+            NFOAM-->>Operator: 200 request APPROVED with jobId
+        else the operator rejects
+            Operator->>NFOAM: POST /rapp-approvals/id/reject
+            NFOAM->>NFOAM: nothing written, decision record REJECTED
+        else nobody decides before expires_at
+            NFOAM->>NFOAM: EXPIRED or REJECTED by system timeout, decision record, notice RAPP_APPROVAL_LAPSED
+        end
+        rApp->>NFOAM: GET /rapp-approvals/id (status, jobId)
+    end
+    NFOAM->>Chain: record id and content hash (a moment after the commit, retried by the worker)
+```
+
 **Relation to call flows 02 and 09.** This flow is the CM-write mechanism itself,
 regardless of who decided the change was needed. An rApp that has pulled a prediction via
 DME (call flow 02) may act on it out of band through Path A or Path B; neither entry point

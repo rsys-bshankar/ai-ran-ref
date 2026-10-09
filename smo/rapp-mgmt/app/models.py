@@ -46,6 +46,9 @@ class RAppInstance(Versioned, Base):
     # ever enforced).
     autonomy_mode: Mapped[str] = mapped_column(String, nullable=False, default="SHADOW")
     region_scope: Mapped[dict | None] = mapped_column(JSON)
+    # PR-AI-11.4: {timeoutSeconds, onTimeout}, only for an ASSIST instance: its config jobs wait at RAN NF OAM for a human to approve them. Pushed there
+    # (under oauth_client_id) when the instance finishes bootstrapping, removed on teardown. NULL: the instance's writes are not held, as before.
+    approval_policy: Mapped[dict | None] = mapped_column(JSON)
     # OI-2-terminate-workload / OI-2-upgrade-completeness: the outcome of
     # the most recent best-effort workload teardown this row performed or
     # inherited — its own TERMINATE, the old row's teardown on an upgrade
@@ -86,6 +89,7 @@ class RAppInstanceVersion(Base):
     previous_configuration: Mapped[dict | None] = mapped_column(JSON)
     previous_autonomy_mode: Mapped[str] = mapped_column(String, nullable=False)
     previous_region_scope: Mapped[dict | None] = mapped_column(JSON)
+    previous_approval_policy: Mapped[dict | None] = mapped_column(JSON)       # PR-AI-11.4: restored with the rest by a rollback
     kind: Mapped[str] = mapped_column(String, nullable=False)  # UPGRADE | ROLLBACK
     # UPGRADE rows only: the ROLLBACK version that undid this one. A rolled-back
     # upgrade is skipped when looking for the next version to roll back to.

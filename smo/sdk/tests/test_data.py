@@ -189,6 +189,11 @@ def test_mediate_action(client, r1):
     }
 
 
+def test_mediate_action_forwards_the_decision_context_only_when_given(client, r1):
+    client.mediate_action("energy-optimizer", [{"managedElementRef": "me-1"}], decision={"inputsRef": "dme://jobs/1", "modelVersion": "m 1.0", "rationale": "low load"})
+    assert r1.calls[0]["json"]["decision"] == {"inputsRef": "dme://jobs/1", "modelVersion": "m 1.0", "rationale": "low load"}
+
+
 def test_get_and_list_actions(client, r1):
     action_id = uuid.uuid4()
     client.get_action(action_id)

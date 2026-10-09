@@ -4,6 +4,8 @@ process. Each task finds what is due from the database, does it in committed ste
   advance-waves             every 15 s   the next wave of every staged CM job whose pause has elapsed (`POST /config-jobs/advance-due`)
   publish-kpis              every 30 s   the KPI schedules whose interval has passed (`PUT /kpi-schedules/{id}`)
   run-kpi-guards            every minute the KPI guards of finished CM jobs whose observation window has passed (`kpiGuard` on `POST /config-jobs`)
+  expire-approvals          every minute the rApp action approvals nobody decided in time (EXPIRED or REJECTED by the policy they were parked under; AI-11.3)
+  chain-decisions           every minute the decision records not yet written to the audit chain (AI-13.1; normally done right after the commit)
   purge-safeguard-refusals  every hour   refusal records older than `SAFEGUARD_REFUSAL_RETENTION_DAYS` (default 0: keep them)
   purge-cleared-alarms      every hour   alarms cleared more than `SMO_RETENTION_ALARMS_DAYS` ago (default 0: keep); an alarm still raised is never purged
   purge-pm-files            every hour   PM files ready more than `SMO_RETENTION_PM_FILES_DAYS` ago (default 0: keep); the content is the row, no file on disk
@@ -37,6 +39,18 @@ def run_kpi_guards() -> None:
         main.run_due_kpi_guards(db)
 
 
+def expire_approvals() -> None:
+    from . import main
+    with SessionLocal() as db:
+        main.lapse_due_approvals(db)
+
+
+def chain_decisions() -> None:
+    from . import main
+    with SessionLocal() as db:
+        main.chain_decisions(db)
+
+
 def purge_safeguard_refusals() -> None:
     from . import main
     with SessionLocal() as db:
@@ -62,5 +76,6 @@ def purge_pm_files() -> None:
 
 
 TASKS = [Task("advance-waves", 15, advance_waves), Task("publish-kpis", 30, publish_kpis), Task("run-kpi-guards", 60, run_kpi_guards),
+         Task("expire-approvals", 60, expire_approvals), Task("chain-decisions", 60, chain_decisions),
          Task("purge-safeguard-refusals", 3600, purge_safeguard_refusals), Task("purge-cleared-alarms", 3600, purge_cleared_alarms),
          Task("purge-pm-files", 3600, purge_pm_files)]

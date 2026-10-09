@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import { useSmo, useSmoAction } from "../api/hooks";
-import type { ConfigJob, RollbackPreview } from "../api/types";
+import type { ConfigJob, DecisionRecord, RollbackPreview } from "../api/types";
 import { ActionButton, Can, DataTable, Drawer, ErrorBox, Id, KeyValue, Modal, StateBadge } from "./ui";
 import { HALT_MEANING, canRollback, describeDifferences, describeGuardResult, formatTime, waveActions, waveProgress } from "../lib/domain";
 
@@ -9,7 +10,9 @@ import { HALT_MEANING, canRollback, describeDifferences, describeGuardResult, fo
 export function ConfigJobDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const job = useSmo<ConfigJob>(`/ran-nf-oam/config-jobs/${id}`, undefined, { refetchInterval: 5_000 });
   const [rolling, setRolling] = useState(false);
+  const why = useSmo<DecisionRecord[]>("/ran-nf-oam/decision-records", { job_id: id, limit: 1 });      // AI-13.4: a job an rApp made has a record of why
   const data = job.data;
+  const decision = why.data?.[0];
   const base = `/ran-nf-oam/config-jobs/${id}`;
   return (
     <Drawer title={<>Config job <Id value={id} /></>} onClose={onClose}>
@@ -20,6 +23,14 @@ export function ConfigJobDrawer({ id, onClose }: { id: string; onClose: () => vo
           <span className="muted small">{waveProgress(data)}</span>
           {data.rollbackOf && <span className="small">undoes job <Id value={data.rollbackOf} />{data.rollbackForced ? " (forced over later changes)" : ""}</span>}
         </div>
+
+        {decision && (
+          <div className="card" role="note">
+            <strong>Made for an rApp</strong>{decision.approvedBy ? <span className="small"> · approved by {decision.approvedBy}</span> : null}
+            <p className="small">{decision.rationale ?? <span className="muted">The rApp gave no rationale.</span>}{decision.modelVersion ? <span className="muted"> ({decision.modelVersion})</span> : null}</p>
+            <Link to={`/decisions/${decision.decisionId}`}>Why this change →</Link>
+          </div>
+        )}
 
         {data.status === "HALTED" && (
           <div className="card" role="status">

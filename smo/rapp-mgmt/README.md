@@ -121,6 +121,7 @@ Every mode notifies the operator, best effort.
 | `sme_service_ids` (JSON list, null) | service ids registered at bootstrap-complete |
 | `autonomy_mode` | `AUTONOMOUS`, `ASSIST` or `SHADOW`, default `SHADOW` |
 | `region_scope` (JSON, null) | opaque scope for `AUTONOMOUS` |
+| `approval_policy` (JSON, null) | `AI-11.4` (revision `0031`): `{timeoutSeconds, onTimeout}`, only for an `ASSIST` instance; pushed to RAN NF OAM under `oauth_client_id` at bootstrap-complete (fail closed), removed on teardown, kept by an upgrade and restored by a rollback. Null: the instance's config jobs are not held |
 | `last_teardown` (JSON, null) | `{instanceId, reason, nfoTerminate, usageStop, at}` of the latest teardown this row performed or inherited |
 | `rollback_of_version_id` (null) | set on a replacement created by a rollback: the upgrade version it undoes |
 | `operator_api_base` (null) | PR-GUI-8 (revision `0030`): the base URL, http or https, at which the instance serves the operator API its package declares; set at create by an operator or by `PUT .../operator-api`; `null`: none registered, so the instance's declared page cannot read anything. Checked by `smo_shared.webhook.normalise_base_url` when stored and again by the gateway before each call |
@@ -133,7 +134,7 @@ Every mode notifies the operator, best effort.
 | `instance_id` | the row that became current |
 | `previous_instance_id` | the row it retired; this chains the lineage |
 | `package_id`, `previous_package_id` | |
-| `previous_configuration`, `previous_autonomy_mode`, `previous_region_scope` | the snapshot a rollback restores |
+| `previous_configuration`, `previous_autonomy_mode`, `previous_region_scope`, `previous_approval_policy` | the snapshot a rollback restores |
 | `kind` | `UPGRADE` or `ROLLBACK` |
 | `rolled_back_by_version_id` (FK to itself, null) | on an `UPGRADE` row: the `ROLLBACK` that undid it |
 | `committed_at` | |
@@ -168,15 +169,15 @@ Upgrade choreography (`upgrade.py`):
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/instances` (202) | `{packageId, config={}, autonomyMode="SHADOW", regionScope?, operatorApiBase?}` → `{instanceId, oauthClientId}` | 404 `PACKAGE_NOT_FOUND`; 409 `MODEL_NOT_CERTIFIED` (package not `AVAILABLE` / `PRIMED`, or no descriptor); 422 (invalid `autonomyMode`) |
+| POST | `/instances` (202) | `{packageId, config={}, autonomyMode="SHADOW", regionScope?, operatorApiBase?, approvalPolicy?}` → `{instanceId, oauthClientId}`. `approvalPolicy {timeoutSeconds=3600 (60..604800), onTimeout="EXPIRE" ("EXPIRE" or "REJECT")}` holds the instance's config jobs at RAN NF OAM until a person approves them (`AI-11.4`; the Approvals page of the GUI) | 404 `PACKAGE_NOT_FOUND`; 409 `MODEL_NOT_CERTIFIED` (package not `AVAILABLE` / `PRIMED`, or no descriptor); 422 (invalid `autonomyMode`, a policy out of bounds, or `APPROVAL_POLICY_NEEDS_ASSIST`: a policy on an `AUTONOMOUS` instance, where no one is asked, or a `SHADOW` one, which writes nothing) |
 | GET | `/instances?state=` | Paged `{instanceId, packageId, state, autonomyMode, operatorApiBase}`; applies the lazy timeout to every `UPGRADING` instance first | |
-| GET | `/instances/{id}` | Detail: `workloadRef, configuration, pendingUpgradeInstanceId, smeServiceIds, autonomyMode, regionScope, lastTeardown, operatorApiBase` | 404 `RAPP_INSTANCE_NOT_FOUND` (also for a replacement already rolled back) |
+| GET | `/instances/{id}` | Detail: `workloadRef, configuration, pendingUpgradeInstanceId, smeServiceIds, autonomyMode, regionScope, approvalPolicy, lastTeardown, operatorApiBase` | 404 `RAPP_INSTANCE_NOT_FOUND` (also for a replacement already rolled back) |
 | PUT | `/instances/{id}/operator-api` | `{operatorApiBase}` → `{instanceId, operatorApiBase}` (trailing slash dropped): register where this instance's operator API is reached (`PR-GUI-8`). From an operator or from the instance itself (an rApp-role caller whose `X-R1-Invoker-Id` is the instance's `oauthClientId`) | 403 `NOT_THIS_INSTANCE`; 404; 409 once `UNDEPLOYED`; 422 `OPERATOR_API_BASE_INVALID` |
 | DELETE | `/instances/{id}/operator-api` (204) | Forget it; idempotent; same callers | 403 `NOT_THIS_INSTANCE`; 404 |
 | GET | `/instances/{id}/operator-api` | `{instanceId, state, operatorApiBase}`, null for a terminated instance: what R1 Termination reads to resolve `/rapps/{instanceId}/operator/...` | 404 |
 | POST | `/instances/{id}/bootstrap-complete` | `DEPLOYING → RUNNING`; registers SME declarations | 409 |
 | POST | `/instances/{id}/recover` | `FAULTED → DEPLOYING` | 409 |
-| GET | `/instances/{id}/safeguards` | what holds this instance in check at RAN NF OAM, in one read, for the GUI: `{instanceId, invokerId, killed, kill?, limits?}` (limits include `configJobsLastHour`); a terminated instance has `invokerId` null; 503 when RAN NF OAM cannot answer, never reported as "not stopped" | 404; 503 |
+| GET | `/instances/{id}/safeguards` | what holds this instance in check at RAN NF OAM, in one read, for the GUI: `{instanceId, invokerId, killed, kill?, limits?, approvalPolicy?}` (limits include `configJobsLastHour`); a terminated instance has `invokerId` null; 503 when RAN NF OAM cannot answer, never reported as "not stopped" | 404; 503 |
 | PUT / DELETE | `/instances/{id}/kill` | `{requestedBy, reason?}`: throws / lifts the per-rApp kill switch at RAN NF OAM for this instance's `oauthClientId` (`AI-10.4`); the instance keeps running; 503 if RAN NF OAM cannot be told, 404 once terminated. Internal-only at R1 | 404; 503 |
 | POST | `/instances/{id}/credentials` | `{instanceId, oauthClientId, oauthClientSecret}`, issued once (`Cache-Control: no-store`, not an idempotent command, the secret is not stored); a new call rotates. DEPLOYING only. With `RAPP_CREDENTIAL_DELIVERY=kubernetes` the secret goes to the instance's Kubernetes Secret instead and the answer is `{instanceId, oauthClientId, credentialSecret: <name>}` | 404; 409; 503 (SME) |
 | POST | `/instances/{id}/upgrade` | `{newPackageId}` → `{newInstanceId, oldInstanceState, oauthClientId}` | 409; 404/409 from provisioning |
@@ -261,6 +262,7 @@ cd smo/rapp-mgmt && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Upgrade and rollback through the routes: replacement provisioned, refusal of a non-deployable package, commit releases old, rollback tears replacement down, pending replacement cannot be terminated, lazy timeout (read, list, resolve), version recording, rollback restore, superseded id, repeated rollbacks, rollback after upgrade, no history, failed rollback, non-running, no longer deployable | 18 |
 | `tests/test_upgrade.py` | FSM and credential behaviour: bootstrap success, revocation on terminate, terminate legality, crash and manual recovery | 7 |
 | | Upgrade orchestration: complete replacement, refused packages (409, 404), refused non-running instance before provisioning, commit retires old, commit of an already bootstrapped replacement, commit refused for a crashed replacement, auto rollback, lazy timeout, NFO failure recorded not raised | 11 |
+| `tests/test_approval_policy.py` | `AI-11.4`: an `ASSIST` instance with a policy has it pushed under its client id at bootstrap (nothing before), the defaults are the conservative ones, a policy on `AUTONOMOUS` or `SHADOW` is a 422, bounds, an instance without a policy behaves as before in every mode, a policy that cannot be put in force keeps the instance `DEPLOYING` (never running and writing at once), terminate removes it, an upgrade keeps it and the version snapshot holds it | 16 |
 | `tests/test_business_metrics.py` | `smo_rapp_instances` counts instances by state with every `InstanceState` present | 1 |
 | | Total | 89 |
 

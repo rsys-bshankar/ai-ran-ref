@@ -11,8 +11,10 @@ import { Layout } from "./components/Layout";
 import { ToastProvider } from "./components/Toast";
 import { Admin } from "./pages/Admin";
 import { Aiml } from "./pages/Aiml";
+import { Approvals } from "./pages/Approvals";
 import { Alarms } from "./pages/Alarms";
 import { Dashboard } from "./pages/Dashboard";
+import { DecisionDetail, Decisions } from "./pages/Decisions";
 import { Data } from "./pages/Data";
 import { Flows } from "./pages/Flows";
 import { Infrastructure } from "./pages/Infrastructure";
@@ -61,6 +63,9 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="rapps" element={<Rapps />} />
                 <Route path="rapps/:instanceId" element={<RappDetail />} />
                 <Route path="safeguards" element={<Safeguards />} />
+                <Route path="approvals" element={<Approvals />} />
+                <Route path="decisions" element={<Decisions />} />
+                <Route path="decisions/:decisionId" element={<DecisionDetail />} />
                 <Route path="aiml" element={<Aiml />} />
                 <Route path="alarms" element={<Alarms />} />
                 <Route path="kpis" element={<Kpis />} />

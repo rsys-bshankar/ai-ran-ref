@@ -104,10 +104,22 @@ def _reconsider_rapp_limits(instance: RAppInstance, **_) -> None:
         pass
 
 
+def _reconsider_approval_policy(instance: RAppInstance, **_) -> None:
+    """AI-11.4: drop the approval policy RAN NF OAM holds for this instance's client id. Best-effort, like the limit: a policy left behind holds a client id
+    that is revoked next. Requests already waiting stay in the queue."""
+    if instance.oauth_client_id is None or not instance.approval_policy:
+        return
+    try:
+        R1Client().delete(f"/ran-nf-oam/rapp-approval-policy/{instance.oauth_client_id}")
+    except httpx.HTTPError:
+        pass
+
+
 def _reconsider_registrations(instance: RAppInstance, **_) -> None:
     _reconsider_dme_registration(instance)
     _reconsider_sme_registration(instance)
     _reconsider_rapp_limits(instance)
+    _reconsider_approval_policy(instance)
 
 
 def _terminate_side_effects(instance: RAppInstance, **_) -> None:
