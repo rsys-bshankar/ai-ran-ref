@@ -5,6 +5,9 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Fixed
+- **The GUI image upgrades Alpine's `tiff` (CVE-2026-4775, HIGH, fixed in 4.7.2-r0)**, as it already does `pcre2`: the image scan gate failed on it for every change that touched an image. Drop the package from the `apk upgrade` line once the nginx base image carries the fix.
+
 ## [0.7.0] - 2026-10-09
 
 The platform learns who an rApp may act on, and what it has to ask first. A signed and checked rApp package, a person's approval before an rApp's change is written (with a record of why, hashed into the audit chain), and a region and tenant an rApp is held to; rApps can now be written in Go and Java; a new element can be set up from a template and software can be rolled out in waves with a health gate; RAN NF OAM takes VES events; and Postgres can be reached over verified TLS. Everything is opt-in: nothing changes on upgrade until you set it. A few things are stand-ins and are named under *Known limitations*.
