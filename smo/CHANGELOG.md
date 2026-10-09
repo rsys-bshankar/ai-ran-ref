@@ -5,6 +5,9 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Changed
+- **The introspection cache is on by default: 30 seconds in the compose file and the chart (`R1_INTROSPECTION_CACHE_SECONDS`, `PR-SEC-5.5`, decided by the owner).** R1 Termination reuses SME's answer about a bearer token for 30 s instead of asking SME on every request (measured: 98.4 introspections per 100 calls without the cache, 0.9 with it). The price: a revoked or re-scoped token, or a changed invoker role, is honoured for up to 30 s longer on every gateway replica except the one that carried the change. To keep the old behaviour set `R1_INTROSPECTION_CACHE_SECONDS=0` (compose `.env`; chart `modules.r1-termination.env.R1_INTROSPECTION_CACHE_SECONDS`). The code's own default, with nothing set, is still `0`.
+
 ## [0.7.0] - 2026-10-09
 
 The platform learns who an rApp may act on, and what it has to ask first. A signed and checked rApp package, a person's approval before an rApp's change is written (with a record of why, hashed into the audit chain), and a region and tenant an rApp is held to; rApps can now be written in Go and Java; a new element can be set up from a template and software can be rolled out in waves with a health gate; RAN NF OAM takes VES events; and Postgres can be reached over verified TLS. Everything is opt-in: nothing changes on upgrade until you set it. A few things are stand-ins and are named under *Known limitations*.
