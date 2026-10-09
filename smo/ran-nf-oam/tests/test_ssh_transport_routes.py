@@ -11,7 +11,7 @@ from smo_shared.outbox import NotificationOutbox
 from smo_shared.testing import make_test_engine
 
 from app.main import app
-from app.models import (ManagedObject, O1AdaptorHostKey, Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, O1AdaptorEndpoint, VendorCapability, WriteConfigJob, WriteConfigSubChange,
+from app.models import (ElementOnboarding, OnboardingTemplate, SoftwareCampaign, ManagedObject, O1AdaptorHostKey, Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, O1AdaptorEndpoint, VendorCapability, WriteConfigJob, WriteConfigSubChange,
                         MsacAccessRule, MsacIdentity, MsacRole)
 
 from netconf_ssh_server import Behaviour, NetconfTestServer
@@ -25,7 +25,7 @@ def db_session_factory():
     Base.metadata.create_all(engine, tables=[
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
         WriteConfigSubChange.__table__, CMSnapshot.__table__, VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__, MsacAccessRule.__table__,
-        IdempotencyKey.__table__, NotificationOutbox.__table__, ManagedObject.__table__, O1AdaptorHostKey.__table__])
+        IdempotencyKey.__table__, NotificationOutbox.__table__, ManagedObject.__table__, OnboardingTemplate.__table__, ElementOnboarding.__table__, SoftwareCampaign.__table__, O1AdaptorHostKey.__table__])
     return sessionmaker(bind=engine)
 
 

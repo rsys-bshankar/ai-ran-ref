@@ -9,8 +9,8 @@
 | Depends on (over R1) | none. It calls RAN NF OAM directly (not over R1) when an `/emit/...` route is triggered, at `MOCK_O1_OAM_URL` |
 | Called by | RAN NF OAM (`POST /edit-config` for both `edit-config` and `get-config`, `/restconf/data/...` for a RESTCONF ME, `GET /capabilities` for vendor discovery); tests and demos (introspection, fault and emit routes); the O1 conformance kit (`/capabilities`, the CM routes, the emit routes) |
 | Database tables | none (in-memory dicts) |
-| Unit tests | 64 passed (`tests/`, standalone), among them the emitter and the O1 conformance kit's CM checks run against this mock and against faulty fakes; the emitting checks against the real RAN NF OAM app are in `tests_integration/test_o1_conformance_emit.py` |
-| Status | Done (NETCONF and RESTCONF, `OI-1-cm-sync-restconf`; the emitting side, `SB-9.8`). Deliberately not a NETCONF / RESTCONF / YANG implementation (see [section 2.8](#28-limits-and-open-items)) |
+| Unit tests | 91 passed (`tests/`, standalone), among them the emitter, the vendor profile and the O1 conformance kit's CM checks run against this mock and against faulty fakes; the emitting checks against the real RAN NF OAM app are in `tests_integration/test_o1_conformance_emit.py` |
+| Status | Done (NETCONF and RESTCONF, `OI-1-cm-sync-restconf`; the emitting side, `SB-9.8`; a vendor profile, `SB-10`: `example-du`, a stand-in, not a real vendor). Deliberately not a NETCONF / RESTCONF / YANG implementation (see [section 2.8](#28-limits-and-open-items)) |
 
 ## 1. High-level design (HLD)
 
@@ -67,6 +67,7 @@ The real O-RAN-SC `sim-o1-interface` (`ntsim-ng`) is a YANG-validated NETCONF / 
 - **The answer is the adaptor's word, not the proof.** Each trigger returns `{emitted, status, response, target}`: `emitted` is whether RAN NF OAM answered 2xx. A refusal from RAN NF OAM (an unknown severity, an element that does not offer the service, no PM subscription) is **relayed** with `emitted: false` and RAN NF OAM's status and body, never raised as a 500; RAN NF OAM unreachable is a 502 (`application/problem+json`); no target configured, or a service this adaptor does not declare, is a 409. The kit checks RAN NF OAM's state, not this answer.
 - **It emits only what it declares.** `GET /capabilities` and the emit routes read the same `MOCK_O1_SUPPORTED_SERVICES`: `FM` (alarm), `PM` (pm-report), `FILE` (pm-file), `HEARTBEAT` (heartbeat), `SWM` (software-phase). Without a service in the list its route answers 409 and the kit skips that group, as it skips a CM protocol the adaptor does not speak.
 - **The target is the environment's, or the request's.** `MOCK_O1_OAM_URL`; a request may name its own `target`, which must be an http(s) origin that is not a literal loopback, link-local or unspecified address (`smo_shared.webhook.is_safe_webhook_destination`, the build's guard for caller-supplied destinations: 422 otherwise). A caller-supplied `target` is also why a developer who runs RAN NF OAM on `localhost` sets the environment variable and not the field.
+- **A vendor is a profile, and a profile is data (`SB-10`).** `MOCK_O1_PROFILE=<name>` makes the stub one vendor's adaptor from `app/profiles/<name>/` (the directory travels in the image because it is under `app/`): the declaration at `GET /capabilities`, the defaults of that vendor's classes on `get-config`, and no RESTCONF root (404) when the vendor does not declare `O1_RESTCONF`. The same profile gives the body of RAN NF OAM's `POST /vendor-onboarding` (`app/profile.py:onboarding_body`), so the capability entry and the stub cannot disagree. The environment variables of 2.6 still win over a profile; a name that is not a profile directory (a path is not accepted) stops the stub at start. Not done on purpose: the stub does not validate writes against the vendor's YANG (RAN NF OAM does, before dispatch: that is where the deviations are enforced, and where a real adaptor would not be asked to), and a profile does not change how the stub speaks NETCONF. `app/profiles/example-du/` is the first one and is **a stand-in**: no vendor lab was available, so its content is invented and its README says what a real vendor would add.
 - **Plain HTTP.** The mock is not an SMO module and has no certificate (`mtls: "off"` in the chart): with `SMO_MTLS=on` at RAN NF OAM the emit calls fail and the triggers answer 502. A known limit, documented in `docker-compose.mtls.yml` and the conformance README.
 
 ## 2. Low-level design (LLD)
@@ -75,6 +76,8 @@ The real O-RAN-SC `sim-o1-interface` (`ntsim-ng`) is a YANG-validated NETCONF / 
 
 | File | Responsibility |
 |---|---|
+| `app/profile.py` | The vendor profile loader and checker, and the onboarding body for RAN NF OAM (`SB-10`) |
+| `app/profiles/<name>/` | One vendor profile: `profile.json`, `yang/`, `schema/`, `README.md` (the deviations), `conformance-report.md` |
 | `app/main.py` | The whole service: RPC handling, the RESTCONF routes over the same state, defaults, capability declaration, fault and introspection routes, and the emit triggers (`_emit` and the five `/emit/...` routes) |
 
 ### 2.2 Data model
@@ -160,10 +163,11 @@ Inbound HTTP, and one outbound call per emit trigger (`httpx.post` to RAN NF OAM
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MOCK_O1_VENDOR_NAME` | `mock-vendor` | `vendorName` in `GET /capabilities` |
-| `MOCK_O1_SUPPORTED_SERVICES` | `PROV,FM,PM,FILE,STREAM,SWM,SUBSCRIPTION,HEARTBEAT` | Comma-separated `supportedServices`, and the services the emit routes are offered for (1.5) |
+| `MOCK_O1_VENDOR_NAME` | `mock-vendor` (the profile's, with `MOCK_O1_PROFILE`) | `vendorName` in `GET /capabilities` |
+| `MOCK_O1_SUPPORTED_SERVICES` | `PROV,FM,PM,FILE,STREAM,SWM,SUBSCRIPTION,HEARTBEAT` (the profile's, with `MOCK_O1_PROFILE`) | Comma-separated `supportedServices`, and the services the emit routes are offered for (1.5) |
 | `MOCK_O1_OAM_URL` | unset | RAN NF OAM's origin for the emit routes; compose and the chart set `http://ran-nf-oam:8000`. Unset: the emit routes answer 409 unless the request names a `target` |
-| `MOCK_O1_VENDOR_MODES` | `O1_NETCONF,O1_RESTCONF` | Comma-separated `supportedVendorModes` |
+| `MOCK_O1_VENDOR_MODES` | `O1_NETCONF,O1_RESTCONF` (the profile's, with `MOCK_O1_PROFILE`) | Comma-separated `supportedVendorModes`. Without `O1_RESTCONF` the RESTCONF routes answer 404 |
+| `MOCK_O1_PROFILE` | unset | Name of a vendor profile in `app/profiles/` (1.5). Sets the vendor name, services, modes and class defaults of the declaration; the three variables above override it. Unset: the generic mock |
 
 The variables are read on every request. The container listens on :8000.
 
@@ -175,7 +179,7 @@ No ProblemDetails on the CM routes; the emit routes answer a ProblemDetails-shap
 
 - **Not NETCONF / RESTCONF.** No SSH / TLS, no YANG, no capability negotiation, no attribute validation, no `create` / `replace` semantics distinct from `merge` (only `delete` / `remove` are special-cased). The RESTCONF side does distinguish `create` (POST, 409 if present), `replace` (PUT) and `merge` (PATCH).
 - **`_applied_changes` is per `ref`**, not per function: a later write to another function of the same ME overwrites the introspection value (the running state in `_object_state` is per function).
-- **Emission is on request only.** There is no periodic heartbeat and no alarm storm: a test or a developer triggers each one. Not emitted at all: streaming data, VES, alarm clear and acknowledge, file-ready notifications; no retry of an emit that failed.
+- **Emission is on request only.** There is no periodic heartbeat and no alarm storm: a test or a developer triggers each one. Not emitted at all: streaming data, VES (RAN NF OAM has a receiver for it, `SB-7`, but this stub does not send to it), alarm clear and acknowledge, file-ready notifications; no retry of an emit that failed.
 - **Emit calls are plain HTTP** (no mutual TLS; 1.5).
 - **Volatile.** All state is process memory.
 - **Open items:** none.
@@ -194,6 +198,7 @@ cd smo/mock-o1-adaptor && PYTHONPATH=.:../shared python -m pytest tests/ -q
 |---|---|---|
 | `tests/test_emit.py` | The emitter: each of the five triggers posts the right URL, query or JSON (unset fields left out, a new UUID `sourceAlarmId` per call, path ids encoded); a refusal from RAN NF OAM is relayed with `emitted: false`; non-JSON answers relayed as text; connect error and timeout are a 502 problem body; no target is a 409; a request `target` is honoured and a loopback, `file:` or link-local one is a 422 and nothing is sent; a service not in `MOCK_O1_SUPPORTED_SERVICES` is a 409 (all five parametrised) and absent from `/capabilities`; the OpenAPI document lists the error responses | 24 |
 | `tests/test_main.py` | `edit-config` ok / applied-change recording / empty payload rejected / delete and remove with empty payload accepted / malformed XML / entity-expansion XML rejected; introspection of an unknown ref; configurable capability declaration; per-function state read back via `get-config`; fault consumption order; neighbour-relation, DMRO, coverage and frequency-relation defaults and writes; RESTCONF: root discovery, GET answering IOC defaults, PATCH merge read back by both protocols, PUT replace (201 / 204), POST create once (409 `data-exists`), DELETE of a missing object (`data-missing`), mismatched or malformed bodies and unmodelled paths refused, shared fault injection | 25 |
+| `tests/test_profile.py` | The vendor profile (`SB-10`): the loader's checks (a name is a directory name, never a path; every malformed profile refused with the reason), the onboarding body, the descriptor equal to what the YANG gives, nothing changing without `MOCK_O1_PROFILE`, the declaration, the environment winning, a NETCONF-only vendor having no RESTCONF root, the vendor's defaults on `get-config`, a bad name stopping the stub, and the conformance kit passing the stub in the profile | 24 |
 
 An autouse fixture resets state with `DELETE /state`.
 
@@ -209,4 +214,4 @@ An autouse fixture resets state with `DELETE /state`.
 - Call flows: [03 config write with schema check](../docs/call-flows/03-config-write-with-schema-check.md), [21 O1 vendor onboarding](../docs/call-flows/21-o1-vendor-onboarding.md)
 - OpenAPI: [`../docs/openapi/mock-o1-adaptor.json`](../docs/openapi/mock-o1-adaptor.json)
 - Architecture: [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) (the southbound mocks are not R1-facing); open work: [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md)
-- Related READMEs: [RAN NF OAM](../ran-nf-oam/README.md)
+- Related READMEs: [RAN NF OAM](../ran-nf-oam/README.md); the profile: [`app/profiles/example-du/README.md`](app/profiles/example-du/README.md)

@@ -3,6 +3,7 @@
 
     scripts/load_run.py [--gateway http://r1-termination:8000] [--sme http://sme:8000] [--duration 30] [--concurrency 20] [--warmup 5] [--out load-results]
                         [--rate 20] [--stop-file /tmp/stop]
+                        [--sme-metrics http://sme:8000/metrics] [--gateway-metrics http://r1-termination:8000/metrics]
 
 Runs on the compose network (the workflow runs it in a one-shot container, so the load does not share a container's CPU with the stack): it registers one invoker with the
 enrollment secret (`/run/secrets/enrollment_secret`, an SMO module), takes a token, and each worker then picks a route by weight and calls it as fast as the answer comes
@@ -11,6 +12,11 @@ back (a closed loop: the concurrency is the number of calls in flight). Per rout
 
 `--rate N` paces the callers to about N calls a second in all (default 0: as fast as the answers come back); `--stop-file PATH` ends the run, after the call in flight, as soon as that file exists (the
 upgrade lane starts the load before `helm upgrade` and stops it afterwards: PR-V-10). The result also says WHEN the errors happened: the calls and errors in each 10 s since the end of the warm-up.
+
+It also counts the token checks the gateway made of SME during the measured part (PR-SEC-5.4): the difference of `smo_http_requests_total{route="/oauth2/introspect"}` at SME
+and of `smo_introspection_cache_total` at the gateway, read before and after the measured part, as `introspection` in the results and in the table. With
+`R1_INTROSPECTION_CACHE_SECONDS` unset or 0 every call through the gateway costs one introspection; with it above 0 the cache answers most of them (scripts/introspection_compare.py
+sets a run with the cache against a run without). A metrics page that cannot be read leaves that part out; it never fails the load.
 
 Exit status: 1 if any route answered a 5xx or the unexpected status more than `--max-error-rate` of the time (default 0), else 0. The numbers are the stack's on that runner:
 GitHub's runners vary, so they are compared run against run on the same kind of runner, not against an absolute.
@@ -22,6 +28,7 @@ import datetime
 import json
 import os
 import random
+import re
 import statistics
 import sys
 import time
@@ -96,6 +103,57 @@ async def one_call(client: httpx.AsyncClient, gateway: str, sme: str, reg: dict,
     return outcome(await client.get(f"{gateway}{path}", headers=headers))
 
 
+LABEL = re.compile(r'(\w+)="((?:[^"\\]|\\.)*)"')
+
+
+NOT_PROXIED = ("/metrics", "/live", "/ready", "/health", "/bootstrap")      # the gateway's own routes: a call to one of them is not a token check
+
+
+def metric_sum(text: str, name: str, not_routes: tuple[str, ...] = (), **labels: str) -> float:
+    """The sum of the samples of the Prometheus counter `name` whose labels include all of `labels` and whose `route` is none of `not_routes` (0.0 when there are none)."""
+    total = 0.0
+    for line in text.splitlines():
+        if not line.startswith(name):
+            continue
+        head, _, value = line.rpartition(" ")
+        base, _, label_text = head.partition("{")
+        if base != name:
+            continue
+        found = dict(LABEL.findall(label_text))
+        if found.get("route") in not_routes:
+            continue
+        if all(found.get(key) == wanted for key, wanted in labels.items()):
+            total += float(value)
+    return total
+
+
+async def scrape(client: httpx.AsyncClient, sme_url: str | None, gateway_url: str | None) -> dict | None:
+    """The counters the introspection comparison needs, or None when a page cannot be read (the load goes on without that part)."""
+    try:
+        sme = (await client.get(sme_url)).text if sme_url else ""
+        gateway = (await client.get(gateway_url)).text if gateway_url else ""
+    except httpx.HTTPError:
+        return None
+    return {"sme_introspect": metric_sum(sme, "smo_http_requests_total", route="/oauth2/introspect"),
+            "gateway_requests": metric_sum(gateway, "smo_http_requests_total", not_routes=NOT_PROXIED),
+            "cache_hit": metric_sum(gateway, "smo_introspection_cache_total", result="hit"),
+            "cache_miss": metric_sum(gateway, "smo_introspection_cache_total", result="miss")}
+
+
+def introspection_summary(before: dict | None, after: dict | None, gateway_calls: int) -> dict | None:
+    """What the gateway asked SME while calls went through it: the counters' differences and the share of calls that cost an introspection.
+    The calls are counted by the gateway itself over the same two readings (`gateway_requests`), so the callers still in flight at either reading do not skew the ratio;
+    `gateway_calls` (the ones this runner saw finish) is the fallback when the gateway's page has no such series."""
+    if not before or not after:
+        return None
+    asked = after["sme_introspect"] - before["sme_introspect"]
+    counted = int(after["gateway_requests"] - before["gateway_requests"])
+    gateway_calls = counted if counted > 0 else gateway_calls
+    hits, misses = after["cache_hit"] - before["cache_hit"], after["cache_miss"] - before["cache_miss"]
+    return {"sme_introspections": int(asked), "gateway_calls": gateway_calls, "introspections_per_100_calls": round(100 * asked / gateway_calls, 1) if gateway_calls else 0.0,
+            "cache_hits": int(hits), "cache_misses": int(misses), "cache_hit_ratio": round(hits / (hits + misses), 3) if hits + misses else None}
+
+
 BUCKET_SECONDS = 10
 MAX_FAILURES = 400
 
@@ -165,6 +223,11 @@ def markdown(result: dict, args) -> str:
              "| route | requests | req/s | p50 ms | p95 ms | p99 ms | max ms | errors |", "|---|---:|---:|---:|---:|---:|---:|---:|"]
     for row in result["routes"] + [result["total"]]:
         lines.append(f"| {row['route']} | {row['requests']} | {row['rps']} | {row['p50']} | {row['p95']} | {row['p99']} | {row['max']} | {row['errors']} |")
+    intro = result.get("introspection")
+    if intro:
+        ratio = f", the cache answered {intro['cache_hit_ratio']:.1%} of the token checks" if intro["cache_hit_ratio"] is not None else ", the cache was off"
+        lines += ["", f"Token checks: SME answered {intro['sme_introspections']} introspections for {intro['gateway_calls']} calls through the gateway "
+                      f"({intro['introspections_per_100_calls']} per 100 calls{ratio})."]
     bad = [row for row in result.get("timeline", []) if row["errors"]]
     lines += ["", ("Errors by time since the end of the warm-up: " + "; ".join(f"{b['from_s']}-{b['to_s']} s: {b['errors']} of {b['calls']}" for b in bad)) if bad
               else "No errors in any 10 s of the run."]
@@ -186,14 +249,25 @@ async def main_async(args) -> int:
         start = time.monotonic()
         deadline = start + args.warmup + args.duration
         rng = random.Random(args.seed)  # noqa: S311 — picks a route for the load, not a secret
+        counters: dict[str, dict | None] = {}
+
+        async def counters_at_start_of_measurement():
+            await asyncio.sleep(args.warmup)
+            counters["before"] = await scrape(client, args.sme_metrics, args.gateway_metrics)
+
+        sampler = asyncio.create_task(counters_at_start_of_measurement())
         await asyncio.gather(*[worker(client, args.gateway, args.sme, reg, access, deadline, start + args.warmup, series, weights, random.Random(rng.random()),  # noqa: S311
                                       timeline, interval, args.stop_file, failures) for _ in range(args.concurrency)])
         ended = time.monotonic()
+        await sampler
+        counters["after"] = await scrape(client, args.sme_metrics, args.gateway_metrics)
     seconds = max(1.0, min(args.duration, ended - start - args.warmup))     # a run ended by the stop file measured less than --duration
     result = summarise(series, seconds)
     result["timeline"] = timeline_rows(timeline)
     result["failures"] = sorted(failures, key=lambda f: f["t_s"])
     result["seconds"] = round(seconds, 1)
+    through_gateway = sum(len(series[route[0]].latencies_ms) for route in ROUTES if route[1] != "TOKEN")
+    result["introspection"] = introspection_summary(counters.get("before"), counters.get("after"), through_gateway)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "load-results.json").write_text(json.dumps({"concurrency": args.concurrency, "duration": seconds, **result}, indent=1))
@@ -219,8 +293,13 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--rate", type=float, default=0.0, help="about this many calls a second in all (0: as fast as the answers come back)")
     ap.add_argument("--stop-file", default=None, help="end the run when this file exists")
+    ap.add_argument("--sme-metrics", default=None, help="SME's metrics page (default: <--sme>/metrics)")
+    ap.add_argument("--gateway-metrics", default=None, help="the gateway's metrics page (default: <--gateway>/metrics)")
     ap.add_argument("--out", default=os.environ.get("LOAD_OUT", "load-results"))
-    return asyncio.run(main_async(ap.parse_args()))
+    args = ap.parse_args()
+    args.sme_metrics = args.sme_metrics or f"{args.sme}/metrics"
+    args.gateway_metrics = args.gateway_metrics or f"{args.gateway}/metrics"
+    return asyncio.run(main_async(args))
 
 
 if __name__ == "__main__":

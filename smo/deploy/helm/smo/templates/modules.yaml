@@ -88,6 +88,9 @@ spec:
           volumeMounts:
             - { name: secrets, mountPath: /run/secrets, readOnly: true }
             - { name: tmp, mountPath: /tmp }
+            {{- if eq (include "smo.pgTls" $) "true" }}
+            - { name: pg-tls-ca, mountPath: /run/pg-tls, readOnly: true }
+            {{- end }}
       {{- end }}
       containers:
         - name: {{ $name }}
@@ -247,6 +250,9 @@ spec:
             {{- if ne $mtls "off" }}
             - { name: mtls, mountPath: /run/mtls, readOnly: true }
             {{- end }}
+            {{- if and $m.database (eq (include "smo.pgTls" $) "true") }}
+            - { name: pg-tls-ca, mountPath: /run/pg-tls, readOnly: true }
+            {{- end }}
             {{- if and (eq $name "rapp-mgmt") (eq $.Values.rappCredentials.delivery "kubernetes") }}
             - { name: k8s-access, mountPath: /var/run/smo-k8s, readOnly: true }
             {{- end }}
@@ -288,6 +294,15 @@ spec:
                   items:
                     - { key: {{ printf "db-password-%s" $role }}, path: {{ printf "db_password_%s" $role }} }
               {{- end }}
+        {{- end }}
+        {{- if and $m.database (eq (include "smo.pgTls" $) "true") }}
+        # PR-SEC-2.4: only the CA certificate out of the bundled Postgres's Secret, never its key
+        - name: pg-tls-ca
+          secret:
+            secretName: {{ $.Values.postgres.tls.secretName }}
+            defaultMode: 0444
+            items:
+              - { key: ca.crt, path: ca.crt }
         {{- end }}
         {{- if ne $mtls "off" }}
         - name: mtls

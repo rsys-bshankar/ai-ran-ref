@@ -45,7 +45,7 @@ that realises a standard and adds its own behaviour on top says so.
 | [DME](dme/README.md) | O-RAN (R1 DME, ICS-derived) + Internal (O1 action mediation) | `dme/` | Data management and exposure: producers, types, data jobs, offers, type subscriptions | `/dme`, `/dme-push`, `/dme-pull` |
 | [Onboarding](onboarding/README.md) | O-RAN (rApp package, ASD / TOSCA CSAR) + Internal (`manifest.yaml`, `capabilities.yaml`) | `onboarding/` | CSAR package validation, `ApplicationPackage` FSM, priming, usage registrations | `/onboarding` |
 | [rApp Management](rapp-mgmt/README.md) | O-RAN (rApp Manager) + Internal (autonomy mode, region scope) | `rapp-mgmt/` | `RAppInstance` FSM, deploy/bootstrap/upgrade/terminate, perf/fault reports | `/rapp-mgmt` |
-| [RAN NF OAM](ran-nf-oam/README.md) | O-RAN (O1) + 3GPP (MnS: TS 28.532 / 28.541 / 28.111, TS 28.319 MSAC) + Internal (vendor capability registry) | `ran-nf-oam/` | O1: adaptor endpoints, NETCONF and RESTCONF CM writes with MSAC access control, alarms, PM subscriptions and PM files, software management, vendor capability registry | `/ran-nf-oam` |
+| [RAN NF OAM](ran-nf-oam/README.md) | O-RAN (O1) + 3GPP (MnS: TS 28.532 / 28.541 / 28.111, TS 28.319 MSAC) + Internal (vendor capability registry) | `ran-nf-oam/` | O1: adaptor endpoints, NETCONF and RESTCONF CM writes with MSAC access control (reads too, when switched on), alarms, PM subscriptions and PM files, a VES event receiver for adaptors (off until given a password), software management, vendor capability registry, zero-touch onboarding templates, software campaigns in waves | `/ran-nf-oam` |
 | [NFO](nfo/README.md) | O-RAN (O2-DMS-style deployment) + Internal (descriptor model) | `nfo/` | NF descriptors and deployments (`NFDeployment` FSM, heal/scale/terminate) | `/nfo` |
 | [FOCOM](focom/README.md) | O-RAN (O2-IMS) | `focom/` | O-Cloud inventory, provisioning, inventory subscriptions, FCAPS, TEIV topology export | `/focom` |
 | [AIMgF](aimgf/README.md) | 3GPP (TS 28.105) + Internal (lifecycle orchestration) | `aimgf/` | AI/ML lifecycle orchestration: model and runtime lifecycle FSMs, training/validation/emulation/inference jobs, feature groups, MLMF | `/aimgf` |
@@ -59,7 +59,7 @@ that realises a standard and adds its own behaviour on top says so.
 | Postgres | n/a (infrastructure) | — | `postgres:18-alpine`, schema by the `migrate` one-shot service (Alembic, `migrations/`) | host `5432` |
 
 **Workers.** A module's periodic work runs in its own process of the same image, never inside a request process: `ran-nf-oam-worker`
-(`python -m smo_shared.worker`, tasks in `ran-nf-oam/app/tasks.py`) advances staged CM jobs, publishes scheduled KPIs, checks (and, if asked, reverts) KPI guards and purges old refusal
+(`python -m smo_shared.worker`, tasks in `ran-nf-oam/app/tasks.py`) advances staged CM jobs and software campaigns, publishes scheduled KPIs, checks (and, if asked, reverts) KPI guards and purges old refusal
 records. It has no port; run more than one if you like, a task still runs once per interval (`smo_shared/worker.py`).
 
 ### Test doubles, SDK, GUI
@@ -139,8 +139,15 @@ Mutual TLS between the services (opt in, `PR-SEC-2`): `scripts/mtls_certs.py ini
 (`smo/certs/mtls/`, git-ignored) and `docker compose -f docker-compose.yml -f docker-compose.mtls.yml up -d --build` starts the stack with every
 service serving HTTPS and refusing a client that has no certificate from that CA; every call a module makes presents its own. Off unless you
 use the second file. A host client needs a certificate too (`scripts/mtls_certs.py client NAME`). What it covers, what it does not (the GUI's
-nginx and `mock-o1-adaptor` stay plain HTTP, Postgres TLS is `PR-SEC-2.4`), the health checks and the rotation: `docs/ARCHITECTURE.md`, "Mutual
+nginx and `mock-o1-adaptor` stay plain HTTP; Postgres over TLS is its own opt-in, `docker-compose.pgtls.yml`, `PR-SEC-2.4`), the health checks and the rotation: `docs/ARCHITECTURE.md`, "Mutual
 TLS between services"; on a cluster: `deploy/helm/smo/README.md`.
+
+Postgres over TLS (opt in, `PR-SEC-2.4`): after `scripts/mtls_certs.py init` (it also makes the database's server certificate),
+`docker compose -f docker-compose.yml -f docker-compose.pgtls.yml up -d --build` starts Postgres with TLS only (`pgtls/pg_hba.conf` rejects a plain
+connection) and every service, worker, sample rApp, the migrate and the backup container connect with `sslmode=verify-full` against that CA: a wrong
+CA or a certificate that does not name `postgres` stops the connection. It combines with the mTLS file. Through the pooler profile, set
+`SMO_DB_SSLMODE=disable` for the services (PgBouncer's own connection to Postgres is the one verified). `scripts/pg_tls_check.py` proves it; the chart's
+`postgres.tls` does the same for the bundled Postgres: `docs/ARCHITECTURE.md`, "Postgres over TLS"; `deploy/helm/smo/README.md`, "The database".
 
 Slow statements: Postgres logs any statement slower than `POSTGRES_SLOW_QUERY_MS` (default 500 ms, set in `.env`; `-1` turns
 it off) with its duration and text: `docker compose logs postgres | grep duration`.
