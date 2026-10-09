@@ -5,7 +5,11 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Changed
+- **Java SDK build tooling updated (`sdk-java/`, Dependabot group).** JUnit Jupiter 5.11.4 to 6.1.3 (test scope only; it needs Java 17 or newer, the SDK builds on 21; no test needed a change), the Maven plugins to their current releases, and the Maven wrapper's pinned distribution from 3.9.11 to 3.10.0 (its SHA-256 checked against Maven Central). `dependencies.sha256` was regenerated and reviewed: the JUnit jars changed and JUnit 6 brings `jspecify-1.0.0.jar`, so the pin now lists 12 jars. Nothing changes for a rApp that uses the SDK: the runtime dependency (`jackson-databind` 2.22.3) is unchanged.
+
 ### Fixed
+- **The `sdk-java` CI job failed on the Dependabot bump at *The resolved jars are the pinned ones*.** That step compares the jars Maven resolves with `dependencies.sha256`, and Dependabot does not update that file. The pin is regenerated together with the version change.
 - **The GUI image upgrades Alpine's `tiff` (CVE-2026-4775, HIGH, fixed in 4.7.2-r0)**, as it already does `pcre2`: the image scan gate failed on it for every change that touched an image. Drop the package from the `apk upgrade` line once the nginx base image carries the fix.
 
 ## [0.7.0] - 2026-10-09
