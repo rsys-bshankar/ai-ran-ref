@@ -10,6 +10,7 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ### Fixed
 - **The `sdk-java` CI job failed on the Dependabot bump at *The resolved jars are the pinned ones*.** That step compares the jars Maven resolves with `dependencies.sha256`, and Dependabot does not update that file. The pin is regenerated together with the version change.
+- **The GUI image upgrades Alpine's `tiff` (CVE-2026-4775, HIGH, fixed in 4.7.2-r0)**, as it already does `pcre2`: the image scan gate failed on it for every change that touched an image. Drop the package from the `apk upgrade` line once the nginx base image carries the fix.
 
 ## [0.7.0] - 2026-10-09
 
