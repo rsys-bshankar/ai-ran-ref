@@ -227,9 +227,35 @@ export interface RappLimits {
 }
 export interface RappKill { invokerId: string; killedBy: string; reason: string | null; killedAt: string }
 /** GET /rapp-mgmt/instances/{id}/safeguards: what holds one instance in check at RAN NF OAM. `invokerId` is null once it is terminated. */
-export interface InstanceSafeguards { instanceId: string; invokerId: string | null; killed: boolean; kill: RappKill | null; limits: RappLimits | null }
+export interface InstanceSafeguards { instanceId: string; invokerId: string | null; killed: boolean; kill: RappKill | null; limits: RappLimits | null; approvalPolicy?: ApprovalPolicy | null }
 export type RefusalCode = "RAPP_KILLED" | "RAPP_RATE_LIMITED" | "RAPP_BLAST_RADIUS_EXCEEDED" | "RAPP_MAGNITUDE_EXCEEDED";
 export interface SafeguardRefusal {
   refusalId: string; occurredAt: string; invokerId: string; requestedBy: string | null; refusal: RefusalCode; detail: string | null; announced: boolean;
 }
 export interface SafeguardSubscription { subscriptionId: string; callbackUri: string; refusals: RefusalCode[]; createdAt: string }
+
+// ---------------------------------------------------------------- human approval of rApp actions (AI-11) and the decision record (AI-13)
+export type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | "REFUSED";
+export interface ApprovalPolicy { invokerId: string; timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT"; setBy: string | null; updatedAt: string }
+/** Why the rApp is asking (AI-13.1): references and text it supplied with the action. */
+export interface DecisionContext { inputsRef?: string | null; modelVersion?: string | null; rationale?: string | null; actionId?: string | null }
+export interface Approval {
+  approvalId: string; invokerId: string; requestedBy: string; status: ApprovalStatus; managedElements: string[]; changeCount: number;
+  createdAt: string; expiresAt: string; onTimeout: "EXPIRE" | "REJECT"; decidedBy: string | null; decidedAt: string | null; decisionReason: string | null;
+  jobId: string | null; refusalCode: string | null; correlationId: string | null; decision: DecisionContext | null;
+}
+/** GET /rapp-approvals/{id}: the request with the changes it asks for. */
+export interface ApprovalDetail extends Approval {
+  changes: { managedElementRef: string; managedFunctionRef?: string | null; operation?: string; attributeChanges?: Record<string, unknown> }[];
+  accessScope: string | null;
+}
+export type Disposition = "DIRECT" | "APPROVED" | "ROLLBACK" | "REJECTED" | "EXPIRED" | "REFUSED";
+export type IntegrityStatus = "VERIFIED" | "UNCHAINED" | "MISMATCH";
+export interface DecisionRecord {
+  decisionId: string; occurredAt: string; invokerId: string; requestedBy: string; disposition: Disposition; jobId: string | null; approvalId: string | null;
+  actionId: string | null; inputsRef: string | null; modelVersion: string | null; rationale: string | null; approvedBy: string | null; decidedBy: string | null;
+  decidedAt: string | null; managedElements: string[]; changeCount: number; correlationId: string | null; contentHash: string; auditSeq: number | null;
+  integrity?: { status: IntegrityStatus; reason?: string; auditSeq?: number; auditHash?: string };
+}
+/** A list answer with its envelope kept (`useSmo` unwraps it): `total` is absent and `hasMore` present under `?total=false`. */
+export interface Page<T> { items: T[]; limit: number; offset: number; total?: number; hasMore?: boolean }

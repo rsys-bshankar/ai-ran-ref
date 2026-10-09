@@ -98,6 +98,9 @@ class ActionRequest(BaseModel):
     # action with an actionId DME already recorded is IGNORED — never
     # forwarded twice — so a retried or replayed decision can't double-write.
     actionId: uuid.UUID | None = None
+    # PR-AI-13: why the rApp is acting, forwarded to RAN NF OAM, which keeps it as the decision record of the job: {inputsRef?, modelVersion?, rationale?,
+    # actionId?} (a reference to the inputs, never the data). The action id above is added when the rApp gave one and this does not name it.
+    decision: dict | None = None
 
 
 class DataOfferRequest(BaseModel):
@@ -753,8 +756,12 @@ def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
     # Wave 9 (W9-02): className is forwarded too — RAN NF OAM's write
     # pre-check validates each change against its vendor's data model.
     # Wave 10.1 (W10-19): DME → RAN NF OAM is bounded at 10 s.
+    decision = {**body.decision} if body.decision else None
+    if body.actionId is not None and decision is not None:
+        decision.setdefault("actionId", str(body.actionId))
     resp = _r1.post("/ran-nf-oam/config-jobs", json={
         "requestedBy": body.requestedBy, "scope": body.scope, "msacRole": body.msacRole, "changes": body.changes,
+        **({"decision": decision} if decision is not None else {}),
     }, timeout=DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS)
     try:
         forwarded = resp.json()
@@ -771,6 +778,12 @@ def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
         record.status = "REJECTED"
         db.commit()
         raise HTTPException(status_code=resp.status_code, detail=forwarded.get("detail"))
+    if forwarded.get("jobId") is None:
+        # PR-AI-11: RAN NF OAM kept the write for a human to approve (status PENDING_APPROVAL): there is no job yet. The action is recorded as waiting;
+        # the rApp follows `approvalId` at RAN NF OAM (GET /rapp-approvals/{id}) for the outcome and the job id.
+        record.status = forwarded["status"]
+        db.commit()
+        return {"actionId": str(record.action_id), "forwardedJobId": None, "status": record.status, "approvalId": forwarded.get("approvalId")}
     record.forwarded_job_id = uuid.UUID(forwarded["jobId"])
     record.status = forwarded["status"]
     db.commit()

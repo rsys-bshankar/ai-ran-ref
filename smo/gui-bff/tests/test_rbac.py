@@ -86,6 +86,18 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("PUT", "/rapp-mgmt/instances/i/kill", "operator"),
     ("DELETE", "/rapp-mgmt/instances/i/kill", "admin"),
     ("PUT", "/ran-nf-oam/rapp-limits/i", "admin"),
+    # AI-11: a person decides an rApp's action (operator); who waits for a decision, and who is told, is administrative
+    ("POST", "/ran-nf-oam/rapp-approvals/a/approve", "operator"),
+    ("POST", "/ran-nf-oam/rapp-approvals/a/reject", "operator"),
+    ("PUT", "/ran-nf-oam/rapp-approval-policy/i", "admin"),
+    ("DELETE", "/ran-nf-oam/rapp-approval-policy/i", "admin"),
+    ("POST", "/ran-nf-oam/approval-subscriptions", "admin"),
+    ("DELETE", "/ran-nf-oam/approval-subscriptions/s", "admin"),
+    # AI-11 / AI-13: the queue, a request and the decision records are reads
+    ("GET", "/ran-nf-oam/rapp-approvals", "viewer"),
+    ("GET", "/ran-nf-oam/rapp-approvals/a", "viewer"),
+    ("GET", "/ran-nf-oam/decision-records", "viewer"),
+    ("GET", "/ran-nf-oam/decision-records/d", "viewer"),
     ("DELETE", "/ran-nf-oam/rapp-limits/i", "admin"),
     ("POST", "/ran-nf-oam/safeguard-subscriptions", "admin"),
     ("DELETE", "/ran-nf-oam/safeguard-subscriptions/s", "admin"),

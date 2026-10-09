@@ -420,3 +420,91 @@ export function moduleRows(modules: ModuleStatus[]): ModuleRow[] {
     skewed: !!m.buildSha && m.buildSha !== "unknown" && common !== undefined && m.buildSha !== common,
   }));
 }
+
+// ---------------------------------------------------------------- approval of rApp actions (AI-11) and the decision record (AI-13)
+
+/** What an approval request's status means, in the operator's words. */
+export const APPROVAL_MEANING: Record<string, string> = {
+  PENDING: "Waiting for a person to approve or reject it; nothing has been written",
+  APPROVED: "Approved: the config job was made from the request",
+  REJECTED: "Rejected: nothing was written",
+  EXPIRED: "Nobody decided in time: it lapsed and nothing was written",
+  REFUSED: "Approved, but a safeguard or a check refused it when it was run: nothing was written",
+};
+
+/** What a decision record's disposition means. */
+export const DISPOSITION_MEANING: Record<string, string> = {
+  DIRECT: "Written at once: this rApp's changes are not held for approval",
+  APPROVED: "Written after a person approved it",
+  ROLLBACK: "An undo of an earlier job",
+  REJECTED: "A person (or the timeout policy) rejected it: nothing was written",
+  EXPIRED: "Nobody decided in time: nothing was written",
+  REFUSED: "Approved, then refused by a safeguard or a check: nothing was written",
+};
+
+/** What the integrity check of a decision record says. */
+export const INTEGRITY_MEANING: Record<string, string> = {
+  VERIFIED: "The record still matches the hash written to the audit chain",
+  UNCHAINED: "Not yet written to the audit chain (a moment after the job; the worker retries)",
+  MISMATCH: "The record, or its audit row, was changed after it was written",
+};
+
+/** How long until a request lapses, for a table: "in 12 min", "in 2 h 5 min", or "overdue" (the platform lapses it on the next look). */
+export function timeLeft(expiresAt: string | null | undefined, now: number = Date.now()): string {
+  if (!expiresAt) return "—";
+  const t = new Date(expiresAt).getTime();
+  if (Number.isNaN(t)) return expiresAt;
+  const minutes = Math.floor((t - now) / 60_000);
+  if (minutes < 0) return "overdue";
+  if (minutes < 1) return "under a minute";
+  if (minutes < 60) return `in ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `in ${hours} h${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
+  return `in ${Math.floor(hours / 24)} days`;
+}
+
+/** The managed elements of an action, for a table cell: the first three, then "+N". */
+export function describeElements(elements: string[] | null | undefined): string {
+  const list = elements ?? [];
+  if (list.length <= 3) return list.join(", ") || "—";
+  return `${list.slice(0, 3).join(", ")} +${list.length - 3}`;
+}
+
+/** One change of a request as a line: "ME-1 / NRCellDU=101 merge txPower=20, tilt=3". */
+export function describeChange(change: { managedElementRef: string; managedFunctionRef?: string | null; operation?: string; attributeChanges?: Record<string, unknown> }): string {
+  const target = change.managedFunctionRef ? `${change.managedElementRef} / ${change.managedFunctionRef}` : change.managedElementRef;
+  const values = Object.entries(change.attributeChanges ?? {}).map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`).join(", ");
+  return `${target} ${change.operation ?? "merge"}${values ? ` ${values}` : ""}`;
+}
+
+/** One line for an approval policy: "held for approval · lapses after 60 min (rejected)"; "Writes at once" when there is none. */
+export function describeApprovalPolicy(policy: { timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT" } | null | undefined): string {
+  if (!policy) return "Writes at once";
+  const minutes = Math.round(policy.timeoutSeconds / 60);
+  const after = minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60} h` : `${minutes} min`;
+  return `Held for approval · lapses after ${after} (${policy.onTimeout === "REJECT" ? "rejected" : "expires"})`;
+}
+
+export interface ApprovalPolicyForm { minutes: string; onTimeout: "EXPIRE" | "REJECT" }
+
+export function approvalPolicyForm(policy: { timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT" } | null | undefined): ApprovalPolicyForm {
+  return policy ? { minutes: String(Math.round(policy.timeoutSeconds / 60)), onTimeout: policy.onTimeout } : { minutes: "60", onTimeout: "EXPIRE" };
+}
+
+/** The body of PUT /ran-nf-oam/rapp-approval-policy/{id} from the form (a minute to a week), or the problem to show. `requestedBy` is pinned by the BFF. */
+export function approvalPolicyPayload(form: ApprovalPolicyForm): { ok: true; body: { timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT" } } | { ok: false; error: string } {
+  const minutes = Number(form.minutes.trim());
+  if (!form.minutes.trim() || !Number.isInteger(minutes) || minutes < 1 || minutes > 10_080) return { ok: false, error: "How long a request may wait is a whole number of minutes, 1 to 10080 (a week)." };
+  return { ok: true, body: { timeoutSeconds: minutes * 60, onTimeout: form.onTimeout } };
+}
+
+/** The query of the decision list from its filter form: blank fields are left out. */
+export function decisionQuery(form: { invoker: string; disposition: string; model: string; job?: string; approval?: string }, offset: number, limit: number): Record<string, string | number | boolean> {
+  const query: Record<string, string | number | boolean> = { limit, offset, total: false };
+  if (form.invoker.trim()) query.invoker_id = form.invoker.trim();
+  if (form.disposition) query.disposition = form.disposition;
+  if (form.model.trim()) query.model_version = form.model.trim();
+  if (form.job?.trim()) query.job_id = form.job.trim();
+  if (form.approval?.trim()) query.approval_id = form.approval.trim();
+  return query;
+}

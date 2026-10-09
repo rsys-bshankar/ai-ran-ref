@@ -70,7 +70,8 @@ def test_the_egress_policy_changes_no_pod_template_so_it_restarts_nothing():
 @helm
 def test_the_egress_policy_options_drop_or_add_rules():
     def pods(policy):
-        return [r["to"][0]["podSelector"]["matchLabels"]["app.kubernetes.io/name"] for r in policy["spec"]["egress"] if "to" in r and "podSelector" in r["to"][0]]
+        labels = [r["to"][0]["podSelector"]["matchLabels"] for r in policy["spec"]["egress"] if "to" in r and "podSelector" in r["to"][0]]
+        return [m["app.kubernetes.io/name"] for m in labels if "app.kubernetes.io/name" in m]       # the DNS rule selects kube-dns by k8s-app, not by this label
     [bare] = _egress_policies("--set", "rappNetworkPolicy.database=false", "--set", "rappNetworkPolicy.dns=false")
     assert pods(bare) == ["r1-termination"] and len(bare["spec"]["egress"]) == 1
     [external_db] = _egress_policies("--set", "postgres.enabled=false", "--set", "postgres.external.host=db.example.com")

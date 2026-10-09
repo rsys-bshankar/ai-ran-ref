@@ -13,6 +13,8 @@ export const NAV: { to: string; label: string; icon: string; minRole?: Role }[] 
   { to: "/flows", label: "Lifecycle flows", icon: "⇉" },
   { to: "/rapps", label: "rApps", icon: "▣" },
   { to: "/safeguards", label: "Safeguards", icon: "⛨" },
+  { to: "/approvals", label: "Approvals", icon: "✓" },
+  { to: "/decisions", label: "Decisions", icon: "☰" },
   { to: "/aiml", label: "AI/ML", icon: "◈" },
   { to: "/alarms", label: "Alarms", icon: "⚠" },
   { to: "/kpis", label: "KPIs & Assurance", icon: "∿" },

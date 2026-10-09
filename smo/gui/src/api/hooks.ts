@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from "@ta
 
 import { useToast } from "../components/Toast";
 import { ApiError, smo, type Query } from "./client";
+import type { Page } from "./types";
 
 // Polling cadences (ms): fast-moving operational state vs slower inventory.
 export const POLL = { alarms: 5_000, status: 10_000, lists: 15_000 } as const;
@@ -26,6 +27,17 @@ export function useSmo<T>(path: string | null, query?: Query, opts: Partial<UseQ
   return useQuery<T, ApiError>({
     queryKey: ["smo", path, query ?? {}],
     queryFn: async ({ signal }) => unwrapPage<T>(await smo<unknown>(path!, { query, signal })),
+    enabled: path !== null && (opts.enabled ?? true),
+    refetchInterval: POLL.lists,
+    ...opts,
+  });
+}
+
+/** GET a list and keep its envelope (`total` or `hasMore`), for a page that pages: `useSmo` unwraps it to the bare array. */
+export function useSmoPage<T>(path: string | null, query?: Query, opts: Partial<UseQueryOptions<Page<T>, ApiError>> = {}) {
+  return useQuery<Page<T>, ApiError>({
+    queryKey: ["smo", path, "page", query ?? {}],
+    queryFn: ({ signal }) => smo<Page<T>>(path!, { query, signal }),
     enabled: path !== null && (opts.enabled ?? true),
     refetchInterval: POLL.lists,
     ...opts,

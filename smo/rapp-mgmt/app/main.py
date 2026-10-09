@@ -11,7 +11,7 @@ from typing import Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
@@ -34,7 +34,7 @@ from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
 
 from .models import RAppFaultReport, RAppInstance, RAppPerformanceReport
-from .provisioning import (DEPLOYABLE_PACKAGE_STATES, apply_rapp_limits, onboarding_status, provision_instance, register_instance_invoker, register_sme_declarations,  # noqa: F401
+from .provisioning import (DEPLOYABLE_PACKAGE_STATES, apply_approval_policy, apply_rapp_limits, onboarding_status, provision_instance, register_instance_invoker, register_sme_declarations,  # noqa: F401
                            release_instance_resources, deliver_credentials)
 from .statemachine import RAPP_INSTANCE_FSM, InstanceEvent, InstanceState
 from .upgrade import (current_instance_id, expire_overdue_upgrade, resolve_upgrade, rollback_target, start_rollback,
@@ -53,6 +53,13 @@ apply_correlation_id(app)
 install_health(app, checks=[database_check, sme_token_check])  # /live, /ready and the /health alias (PR-ST-7)
 
 
+class ApprovalPolicy(BaseModel):
+    """What happens to a request nobody decided within `timeoutSeconds` (a minute to a week, default an hour): `EXPIRE` (the default) lapses it,
+    `REJECT` has the platform reject it. Neither writes anything; there is no option that approves by itself."""
+    timeoutSeconds: int = Field(default=3600, ge=60, le=604_800)
+    onTimeout: Literal["EXPIRE", "REJECT"] = "EXPIRE"
+
+
 class CreateInstanceRequest(BaseModel):
     packageId: uuid.UUID
     config: dict = {}
@@ -65,6 +72,9 @@ class CreateInstanceRequest(BaseModel):
     regionScope: dict | None = None
     # PR-GUI-8: where the new instance's operator API is reached; an operator may give it here, the instance can register it later (PUT .../operator-api)
     operatorApiBase: str | None = None
+    # PR-AI-11.4: hold this instance's config jobs for a human to approve (RAN NF OAM's approval queue). Only for ASSIST, the mode in which a person
+    # decides: AUTONOMOUS means no one is asked, and a SHADOW instance writes nothing. Without it an instance of any mode behaves as before.
+    approvalPolicy: ApprovalPolicy | None = None
 
 
 class UpgradeRequest(BaseModel):
@@ -136,8 +146,10 @@ def create_instance(body: CreateInstanceRequest, request: Request, db: Session =
     replacement instance (provisioning.py).
     """
     base = _checked_operator_api_base(body.operatorApiBase) if body.operatorApiBase is not None else None
+    if body.approvalPolicy is not None and body.autonomyMode != "ASSIST":
+        raise problem(422, "APPROVAL_POLICY_NEEDS_ASSIST", "approvalPolicy applies to an ASSIST instance: AUTONOMOUS asks no one and SHADOW writes nothing")
     inst = provision_instance(db, body.packageId, configuration=body.config, autonomy_mode=body.autonomyMode,
-                              region_scope=body.regionScope)
+                              region_scope=body.regionScope, approval_policy=body.approvalPolicy.model_dump() if body.approvalPolicy else None)
     inst.operator_api_base = base
     db.commit()
     return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id}
@@ -155,9 +167,10 @@ def _checked_operator_api_base(value: str) -> str:
 
 def _on_bootstrap(inst) -> None:
     """What happens when an instance's bootstrap is accepted: the limits its manifest declares are put in force (fail-closed: AI-10.2), then
-    its SME declarations are registered (best-effort)."""
+    its approval policy, if it was created with one (AI-11.4, fail-closed as well), then its SME declarations are registered (best-effort)."""
     status = onboarding_status(inst)
     apply_rapp_limits(inst, status)
+    apply_approval_policy(inst)
     register_sme_declarations(inst, status)
 
 
@@ -234,21 +247,25 @@ def instance_safeguards(instance_id: uuid.UUID, db: Session = Depends(get_sessio
     started in the last hour. A terminated instance has no credential, so no invoker id and nothing to show. 503 when RAN NF OAM cannot answer: a
     stop that cannot be read is not reported as "not stopped"."""
     inst = _load_instance(db, instance_id)
-    answer = {"instanceId": str(inst.instance_id), "invokerId": inst.oauth_client_id, "killed": False, "kill": None, "limits": None}
+    answer = {"instanceId": str(inst.instance_id), "invokerId": inst.oauth_client_id, "killed": False, "kill": None, "limits": None, "approvalPolicy": None}
     if inst.oauth_client_id is None:
         return answer
     r1 = R1Client()
     try:
         kill = r1.get(f"/ran-nf-oam/rapp-kill/{inst.oauth_client_id}")
         limits = r1.get(f"/ran-nf-oam/rapp-limits/{inst.oauth_client_id}")
+        approval = r1.get(f"/ran-nf-oam/rapp-approval-policy/{inst.oauth_client_id}")
     except httpx.HTTPError:
-        kill = limits = None
-    if kill is None or limits is None or kill.status_code not in (200, 404) or limits.status_code not in (200, 404):
+        kill = limits = approval = None
+    if (kill is None or limits is None or approval is None or kill.status_code not in (200, 404) or limits.status_code not in (200, 404)
+            or approval.status_code not in (200, 404)):
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="RAN NF OAM did not answer; the safeguards of this instance could not be read")
     if kill.status_code == 200:
         answer.update(killed=True, kill=kill.json())
     if limits.status_code == 200:
         answer["limits"] = limits.json()
+    if approval.status_code == 200:
+        answer["approvalPolicy"] = approval.json()
     return answer
 
 
@@ -603,7 +620,7 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
         "workloadRef": inst.workload_ref, "configuration": inst.configuration,
         "pendingUpgradeInstanceId": str(inst.pending_upgrade_instance_id) if inst.pending_upgrade_instance_id else None,
         "smeServiceIds": inst.sme_service_ids,
-        "autonomyMode": inst.autonomy_mode, "regionScope": inst.region_scope,
+        "autonomyMode": inst.autonomy_mode, "regionScope": inst.region_scope, "approvalPolicy": inst.approval_policy,
         "lastTeardown": inst.last_teardown, "operatorApiBase": inst.operator_api_base,
     }
 

@@ -147,11 +147,11 @@ class DataClient(BaseClient):
     # ran-nf-oam's real NETCONF dispatch; it doesn't speak O1 itself.
 
     def mediate_action(self, requested_by: str, changes: list[dict], scope: str = "single-ME",
-                        msac_role: str | None = None, source_context: dict | None = None) -> dict:
-        return ensure_ok(self._r1.post("/dme/actions", json={
-            "requestedBy": requested_by, "changes": changes, "scope": scope,
-            "msacRole": msac_role, "sourceContext": source_context,
-        }))
+                        msac_role: str | None = None, source_context: dict | None = None, decision: dict | None = None) -> dict:
+        payload = {"requestedBy": requested_by, "changes": changes, "scope": scope, "msacRole": msac_role, "sourceContext": source_context}
+        if decision is not None:                       # PR-AI-13: why the rApp acts (see Platform.execute_action)
+            payload["decision"] = decision
+        return ensure_ok(self._r1.post("/dme/actions", json=payload))
 
     def get_action(self, action_id: uuid.UUID | str) -> dict:
         return ensure_ok(self._r1.get(f"/dme/actions/{action_id}"))
