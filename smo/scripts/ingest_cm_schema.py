@@ -37,6 +37,7 @@ _docs: dict[Path, dict] = {}
 
 
 def _load(path: Path) -> dict:
+    """Parses a YAML file once and caches it by resolved path in `_docs`, so the many `$ref`s into one spec file read it a single time."""
     path = path.resolve()
     if path not in _docs:
         _docs[path] = yaml.safe_load(path.read_text())
@@ -44,6 +45,10 @@ def _load(path: Path) -> dict:
 
 
 def _resolve(ref: str, base: Path) -> tuple[dict, Path]:
+    """Follows a `$ref` (`file.yaml#/components/schemas/X`, or `#/...` within `base`) and returns `(node, file the node lives in)`.
+
+        A file the checkout does not carry gives `({}, path)`: the reference is treated as opaque instead of failing. A pointer that leads nowhere gives `{}`.
+    """
     file_part, _, pointer = ref.partition("#")
     path = (base.parent / file_part) if file_part else base
     if not path.exists():
@@ -72,6 +77,11 @@ def _attributes(schema: dict, base: Path, seen: frozenset = frozenset()) -> dict
 
 
 def _type_of(prop: dict, base: Path, depth: int = 0) -> dict:
+    """The descriptor entry (`type`, optional `enum`, `range`, `length`, `pattern`) of one attribute schema.
+
+        Follows `$ref` and a single-element `allOf` up to eight levels (a longer chain, or an unresolvable `$ref`, becomes `object`). The type is the schema's own `type`,
+        else `object` when it has `properties`/`allOf`, else `any`. The `range`/`length`/`pattern` keys are the constraints `ran-nf-oam/app/leafcheck.py` applies (PR-SB-5.1).
+    """
     if "$ref" in prop and depth < 8:
         target, path = _resolve(prop["$ref"], base)
         return _type_of(target, path, depth + 1) if target else {"type": "object"}
@@ -92,6 +102,11 @@ def _type_of(prop: dict, base: Path, depth: int = 0) -> dict:
 
 
 def ingest(paths: list[Path]) -> dict:
+    """Returns `{IOC name: {attribute: descriptor entry}}` for every `<IOC>-Single` schema of the given NRM files.
+
+        An IOC without an `attributes` property is skipped. When two files define the same IOC the later file replaces the earlier one. Attributes are sorted so the
+        output is stable.
+    """
     classes: dict[str, dict] = {}
     for path in paths:
         schemas = _load(path).get("components", {}).get("schemas", {})
@@ -109,6 +124,7 @@ def ingest(paths: list[Path]) -> dict:
 
 
 def main() -> None:
+    """Writes the descriptor JSON (sorted keys, one trailing newline) to `--out`, creating its directory, and prints the IOC count. Overwrites an existing file."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("nrm", nargs="+", type=Path, help="NRM OpenAPI file(s)")
     parser.add_argument("--name", required=True)

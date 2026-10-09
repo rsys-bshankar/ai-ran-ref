@@ -31,6 +31,10 @@ def verdict(result: dict, max_error_rate: float = 0.01, min_calls: int = 2000, a
 
 
 def main(argv: list[str]) -> int:
+    """Prints the totals, the error slices and the first 150 failed calls of a `load_run.py` result, then the problems from `verdict`.
+
+        Returns 1 when there is a problem, unless `--report-only` (then the problems are printed as notes and the status is 0).
+    """
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("results")
     ap.add_argument("--max-error-rate", type=float, default=0.01)

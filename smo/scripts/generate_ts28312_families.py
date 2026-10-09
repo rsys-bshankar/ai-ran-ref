@@ -38,6 +38,7 @@ FAMILIES = {
 
 
 def _load(name: str) -> dict:
+    """Returns `components.schemas` of one TS 28.312 YAML file in `specs/5G_APIs`; raises `KeyError` when the file has no such section."""
     return yaml.safe_load((SPECS / name).read_text())["components"]["schemas"]
 
 
@@ -72,6 +73,11 @@ def _simplify(schema, local: dict, depth: int = 0):
 
 
 def _specialisations(schemas: dict, name_key: str, condition_key: str, value_key: str) -> dict:
+    """Collects, from one family's schemas, the specialised targets or contexts: those whose `name_key` property is a single-value enum.
+
+        Returns `{name: {"conditions": [...] | None, "value": simplified value schema}}`. A schema whose name property is absent or has more than one allowed value
+        is the generic type and is skipped, which is how the runtime falls back to validating an unknown name as the generic type.
+    """
     found = {}
     for schema in schemas.values():
         props = schema.get("properties", {}) if isinstance(schema, dict) else {}
@@ -86,6 +92,11 @@ def _specialisations(schemas: dict, name_key: str, condition_key: str, value_key
 
 
 def main() -> None:
+    """Regenerates `intent-service/app/ts28312_families.py` from the five family spec files and prints the (targets, contexts) count per objectType.
+
+        Overwrites the output file unconditionally, so a changed spec shows up as a diff of the generated module. Takes no arguments; reads the YAML under
+        `specs/5G_APIs` and needs PyYAML. Does not touch the network or the database.
+    """
     families = {}
     for object_type, file_name in FAMILIES.items():
         schemas = _load(file_name)

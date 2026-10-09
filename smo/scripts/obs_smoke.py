@@ -137,6 +137,7 @@ def http(method: str, url: str, headers: dict[str, str] | None = None, timeout: 
 
 
 def http_json(url: str) -> tuple[int, Any]:
+    """GET `url` and return `(status, parsed JSON)`; the parsed value is None when the body is not JSON (including the exception name `http` returns when nothing answered)."""
     status, body = http("GET", url)
     try:
         return status, json.loads(body)
@@ -145,6 +146,12 @@ def http_json(url: str) -> tuple[int, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Runs the checks in the module docstring, each group retried until `--deadline` seconds have passed, and returns 1 if any group missed it.
+
+        Order: Tempo and Loki ready; then one request through the gateway (retried until it answers 200; if it never does the rest cannot run and the function returns 1
+        at once); then the trace in Tempo, the log line in Loki, Grafana healthy and its two provisioned data sources. The request is made only after both stores are
+        ready because Fluent Bit tails from the end of the file, so an earlier log line could be missed.
+    """
     parser = argparse.ArgumentParser(description="Live check of the compose tracing and logging profiles")
     parser.add_argument("--gateway", default="http://localhost:8000", help="R1 Termination, as seen from where this runs")
     parser.add_argument("--tempo", default="http://tempo:3200")

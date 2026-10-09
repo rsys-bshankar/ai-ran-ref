@@ -32,6 +32,9 @@ def images(compose: Path = SMO_ROOT / "docker-compose.yml") -> list[dict]:
 
 
 def main(argv: list[str]) -> int:
+    """Prints the image list in the form `argv[1]` asks for (`matrix`, the default: JSON `{"include": [...]}` for a GitHub Actions matrix; `names`: one name per line).
+        Any other command prints the module docstring and returns 2.
+    """
     command = argv[1] if len(argv) > 1 else "matrix"
     listed = images()
     if command == "matrix":

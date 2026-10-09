@@ -33,6 +33,7 @@ BLOCKING_IMPACT = ("serious", "critical")
 
 
 def _dast_baseline():
+    """Loads `scripts/dast_baseline.py` by file path and returns it as a module (the scripts directory is not a package, so it cannot be imported by name)."""
     spec = importlib.util.spec_from_file_location("dast_baseline", SMO / "scripts" / "dast_baseline.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -40,7 +41,10 @@ def _dast_baseline():
 
 
 def axe_violations(page, axe_source: str, route: str) -> dict[str, str]:
-    """The serious and critical violations on the page now, as {"<route> <rule id>": detail}."""
+    """The serious and critical axe-core violations on the page now, as `{"<route> <rule id>": "<help text>, <n> element(s), first <selector>"}`.
+
+        Injects axe into the page, runs only the WCAG 2 A/AA tags, and keeps only the impacts in `BLOCKING_IMPACT`; minor and moderate findings are ignored.
+    """
     page.evaluate(axe_source)
     result = page.evaluate("axe.run(document, {runOnly: {type: 'tag', values: %s}})" % json.dumps(WCAG_TAGS))
     found = {}
@@ -53,10 +57,17 @@ def axe_violations(page, axe_source: str, route: str) -> dict[str, str]:
 
 
 def slug(route: str) -> str:
+    """The file-name stem for a route's screenshot: `home` for `/`, otherwise the path with `/` turned into `-`."""
     return "home" if route == "/" else route.strip("/").replace("/", "-")
 
 
 def run(base_url: str, out: Path, user: str, password: str, axe_path: Path, baseline: dict[str, str], chromium: str | None) -> int:
+    """Signs in once, opens every route in `PAGES`, and returns the exit code (0 only when nothing was reported).
+
+        Per page it records backend answers in `BAD_API_STATUS` for URLs containing `/api/`, uncaught script errors, and axe findings; the findings are then compared
+        with `baseline` through `dast_baseline.compare`, so only NEW ones fail and STALE ones are printed. A Playwright error ends the walk (the problem is recorded
+        and a `failure.png` taken); the browser is always closed. Writes screenshots under `out`; prints one line per page and the problems to stderr.
+    """
     out.mkdir(parents=True, exist_ok=True)
     axe_source = axe_path.read_text()
     dast = _dast_baseline()
@@ -112,6 +123,10 @@ def run(base_url: str, out: Path, user: str, password: str, axe_path: Path, base
 
 
 def main() -> int:
+    """Command-line entry: reads the options, takes the password from `GUI_E2E_PASSWORD` (exit 2 when it is unset) and returns `run`'s exit code.
+
+        Baseline keys starting with `_` are comments in the JSON file and are dropped before the comparison.
+    """
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--base-url", default="http://localhost:3000")
     ap.add_argument("--out", default="gui-e2e", help="directory for the screenshots")

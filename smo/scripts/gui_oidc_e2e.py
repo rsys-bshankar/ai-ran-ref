@@ -33,25 +33,36 @@ COMMON_PAGES = ["Dashboard", "Alarms"]
 
 
 def password_for(user: str, default: str) -> str:
+    """The password of a CI realm account: `GUI_E2E_OIDC_<USER>_PASSWORD` (USER without the `oidc-` prefix, upper-cased) when set, otherwise `default`."""
     return os.environ.get(f"GUI_E2E_OIDC_{user.removeprefix('oidc-').upper()}_PASSWORD", default)
 
 
 def sidebar(page) -> list[str]:
+    """The visible labels of the GUI's main navigation, stripped; used to tell which pages a role is offered."""
     return [t.strip() for t in page.locator("nav[aria-label='Main'] a").all_inner_texts()]
 
 
 def keycloak_login(page, user: str, password: str) -> None:
+    """Fills in and submits Keycloak's login form (the default theme's `#username`, `#password`, `#kc-login`). Does not wait for the redirect back."""
     page.locator("#username").fill(user)
     page.locator("#password").fill(password)
     page.locator("#kc-login").click()
 
 
 def start_sign_in(page, base_url: str, provider: str) -> None:
+    """Opens the GUI sign-in page and clicks the "Sign in with <provider>" link, which sends the browser to the identity provider."""
     page.goto(f"{base_url}/login")
     page.get_by_role("link", name=f"Sign in with {provider}").click()
 
 
 def check_role(browser, base_url: str, provider: str, user: str, role: str, password: str, problems: list[str]) -> None:
+    """Signs in as one account in a fresh browser context and appends to `problems` anything that differs from the expected behaviour for `role`.
+
+        Checks, in order: the landing page and the sidebar (Admin only for the admin), the cookies (`smo_session` HttpOnly, SameSite=Strict, Path=/api; the
+        binding cookie `smo_oidc` gone), `/api/me` (an `oidc:` user with that role), `/api/admin/users` (200 for admin, 403 otherwise), then signing out and
+        that the copied session cookie is refused (401) afterwards and that Keycloak asks for a password again. Returns early when the session cookies are missing.
+        Playwright errors are recorded as problems rather than raised; the context is always closed.
+    """
     context = browser.new_context()
     page = context.new_page()
     page.set_default_timeout(30_000)
@@ -114,6 +125,7 @@ def check_role(browser, base_url: str, provider: str, user: str, role: str, pass
 
 
 def check_no_group(browser, base_url: str, provider: str, problems: list[str]) -> None:
+    """A user who is in no mapped group must be sent back to the sign-in page with `oidc_error=no_role`, the "none of your groups" text, and no session."""
     user, password = NO_GROUP[0], password_for(*NO_GROUP)
     context = browser.new_context()
     page = context.new_page()
@@ -136,6 +148,7 @@ def check_no_group(browser, base_url: str, provider: str, problems: list[str]) -
 
 
 def check_forged_callback(browser, base_url: str, problems: list[str]) -> None:
+    """A callback carrying a `state` the GUI never issued must end on the sign-in page with `oidc_error=invalid_state` and no session."""
     context = browser.new_context()
     page = context.new_page()
     try:
@@ -153,6 +166,9 @@ def check_forged_callback(browser, base_url: str, problems: list[str]) -> None:
 
 
 def check_audit(browser, base_url: str, provider: str, problems: list[str]) -> None:
+    """Signs in as the admin and checks the audit log: `OIDC_LOGIN` rows exist and carry an `oidc:` user, and `OIDC_LOGIN_FAILED` rows hold both the
+        `no_role` and the `invalid_state` refusals produced by the earlier checks (which is why `main` runs this check last).
+    """
     user, role, default = ACCOUNTS[0]
     context = browser.new_context()
     page = context.new_page()
@@ -179,6 +195,7 @@ def check_audit(browser, base_url: str, provider: str, problems: list[str]) -> N
 
 
 def main() -> int:
+    """Runs the role checks for the admin, operator and viewer accounts, then the no-group, forged-callback and audit checks. Returns 1 if any problem was found, else 0."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--base-url", default="http://localhost:3000")
     ap.add_argument("--provider-name", default="Keycloak", help="GUI_OIDC_PROVIDER_NAME of the stack")

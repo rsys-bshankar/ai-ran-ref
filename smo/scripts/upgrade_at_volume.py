@@ -37,6 +37,7 @@ def failure_line(text: str) -> str:
 
 
 def markdown(rows: list[tuple[str, float, str]], total: float, budget: float) -> str:
+    """A markdown table of the revisions with their times and notes, closing with a total row that states the budget."""
     lines = ["| Revision | Seconds | |", "|---|---:|---|"]
     lines += [f"| {revision} | {seconds:.1f} | {note} |" for revision, seconds, note in rows]
     lines += [f"| **all** | **{total:.1f}** | budget {budget:.0f} s |"]
@@ -59,6 +60,10 @@ def run_upgrade(url: str, revisions: list[str], runner=subprocess.run, clock=tim
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Times the upgrade from `--from-revision` to this checkout's head and returns 1 if there is nothing to apply, a revision failed, or the total is over `--budget-seconds`.
+
+        Prints the table, and writes it to `--out` when given. The database named by `--url` is changed; point it at a throwaway one.
+    """
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--url", required=True)
     ap.add_argument("--from-revision", required=True)
