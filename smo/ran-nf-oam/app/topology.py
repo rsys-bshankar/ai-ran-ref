@@ -18,8 +18,11 @@ Containment relations between two DNs (`a` relative to `b`): SAME, ANCESTOR (a c
 branches of one element) and DIFFERENT_ELEMENT.
 """
 
+from collections.abc import Callable
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import Select
 
 from . import mo_tree
 from .models import ManagedEntity, ManagedObject
@@ -27,10 +30,13 @@ from .models import ManagedEntity, ManagedObject
 CELL_LINK_TYPES = ("INTRA_ELEMENT", "INTER_ELEMENT", "AMBIGUOUS", "EXTERNAL")
 
 
-def cell_links(db: Session, managed_element_ref: str | None = None, link_type: str | None = None) -> list[dict]:
+def cell_links(db: Session, managed_element_ref: str | None = None, link_type: str | None = None,
+               restrict: Callable[[Select], Select] | None = None) -> list[dict]:
     """Every declared neighbour relation, as declared (a lists b), with its type and whether b lists a back. `managed_element_ref` keeps the links
-    with that element at either end; `link_type` keeps one type."""
-    entities = db.scalars(select(ManagedEntity).order_by(ManagedEntity.managed_element_ref)).all()
+    with that element at either end; `link_type` keeps one type. `restrict` (PR-SEC-10.9) limits the elements the world is made of: a caller sees the links among the
+    elements it may touch, and a neighbour on any other element is `EXTERNAL` to it, as if no element declared it."""
+    stmt = select(ManagedEntity).order_by(ManagedEntity.managed_element_ref)
+    entities = db.scalars(restrict(stmt) if restrict else stmt).all()
     guards = {e.managed_element_ref: (e.cell_guards or {}) for e in entities}
     owners: dict[str, list[str]] = {}
     for element, cells in guards.items():

@@ -76,3 +76,32 @@ def test_the_reads_through_the_modules_are_scoped_too(places):
     assert [e["managedElementRef"] for e in places["ran-nf-oam"].get("/managed-entities", headers=eu).json()["items"]] == ["ME-EU"]
     assert places["ran-nf-oam"].get("/managed-entities/ME-US/config", headers=eu).status_code == 403
     assert len(places["ran-nf-oam"].get("/managed-entities", headers=RAPP).json()["items"]) == 3
+
+
+def test_the_actions_dme_lists_are_those_inside_the_callers_scope(places):
+    """PR-SEC-10.7: DME has no region or tenant, so it asks RAN NF OAM which elements the rApp's claim covers (the claim travels with the call, as for a write)."""
+    eu = scoped(regions=["eu"])
+    inside = _action(places, RAPP, ["ME-EU"]).json()["actionId"]                         # an unscoped rApp wrote to an eu element and a us one
+    outside = _action(places, RAPP, ["ME-US"]).json()["actionId"]
+    mixed = _action(places, RAPP, ["ME-EU", "ME-US"]).json()["actionId"]
+    listed = lambda headers: {a["actionId"] for a in places["dme"].get("/actions", headers=headers).json()["items"]}      # noqa: E731
+    assert listed(RAPP) == listed({}) == {inside, outside, mixed}
+    assert listed(eu) == {inside} and places["dme"].get("/actions", headers=eu).json()["total"] == 1
+    assert listed(scoped(regions=["nowhere"])) == set()
+    assert places["dme"].get(f"/actions/{inside}", headers=eu).status_code == 200
+    for hidden in (outside, mixed):
+        assert places["dme"].get(f"/actions/{hidden}", headers=eu).status_code == 404
+    assert places["dme"].get(f"/actions/{outside}", headers=RAPP).status_code == 200
+    assert listed({"X-R1-Role": "internal", "X-R1-Invoker-Id": "gui-invoker"}) == {inside, outside, mixed}
+
+
+def test_a_scoped_rapp_reads_its_own_jobs_through_dme_and_not_an_operators(places):
+    eu = scoped(regions=["eu"])
+    mine = _action(places, eu, ["ME-EU"]).json()["forwardedJobId"]
+    operator = {"X-R1-Role": "internal", "X-R1-Invoker-Id": "gui-invoker"}
+    operators = places["ran-nf-oam"].post("/config-jobs", headers=operator, json={
+        "requestedBy": "alice", "scope": "cell", "changes": [{"managedElementRef": "ME-EU", "attributeChanges": {"txPower": 3}}]}).json()["jobId"]
+    assert places["ran-nf-oam"].get(f"/config-jobs/{mine}", headers=eu).status_code == 200
+    assert places["ran-nf-oam"].get(f"/config-jobs/{operators}", headers=eu).status_code == 404
+    assert places["ran-nf-oam"].get(f"/config-jobs/{operators}", headers=RAPP).status_code == 200            # an rApp nobody scoped: as before
+    assert {j["jobId"] for j in places["ran-nf-oam"].get("/config-jobs", headers=eu).json()["items"]} == {mine}

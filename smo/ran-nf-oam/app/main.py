@@ -272,7 +272,7 @@ def _valid_refs(*refs: str | None) -> None:
 def _msac_reach() -> bool:
     """MGT-2: `RAN_NF_OAM_MSAC_REACH` (off by default). On, the TS 28.319 access rules that guard CM writes also guard the reads and the other changes listed in
     `_require_msac`'s callers. Off, nothing below is asked: an Identity or Role that exists for writes does not begin to refuse reads on upgrade. Read at each call."""
-    return os.environ.get("RAN_NF_OAM_MSAC_REACH", "").strip().lower() in ("1", "true", "yes", "on")
+    return msac.reach_on()
 
 
 def _require_msac(db: Session, request: Request, operation: str, managed_element_ref: str, managed_function_ref: str | None = None) -> None:
@@ -308,13 +308,7 @@ def _require_msac_everywhere(db: Session, request: Request, operation: str) -> N
 
 def _unreadable_elements(db: Session, request: Request, column) -> list[str]:
     """MGT-2.5: the elements named in `column` (of the rows a route would list) that a managed caller may not read; none for a caller that is not asked."""
-    if not _msac_reach():
-        return []
-    requester = invoker_id(request)
-    managed, roles = msac.resolve_roles(db, requester, None) if requester else (False, [])
-    if not managed:
-        return []
-    return [ref for ref in db.scalars(select(column).distinct()).all() if not msac.authorize(db, roles, msac.target_path(ref, None), "read")]
+    return msac.unreadable_elements(db, request, column)
 
 
 class KpiGuard(BaseModel):
@@ -511,9 +505,10 @@ class PinHostKeyRequest(BaseModel):
     pinnedBy: str
 
 
-def _ssh_endpoint(db: Session, endpoint_id: uuid.UUID) -> O1AdaptorEndpoint:
+def _ssh_endpoint(db: Session, endpoint_id: uuid.UUID, request: Request) -> O1AdaptorEndpoint:
+    """The endpoint (by the id the system made). PR-SEC-10.9: one of an element outside the caller's scope is a 404, as if there were no such endpoint."""
     endpoint = db.get(O1AdaptorEndpoint, endpoint_id)
-    if endpoint is None:
+    if endpoint is None or not scoping.element_permitted(db, scoping.request_scope(request), endpoint.managed_element_ref):
         raise framework_error(FrameworkError.O1_ENDPOINT_NOT_FOUND, detail=f"no such O1 adaptor endpoint {endpoint_id}")
     if endpoint.transport != "ssh":
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="host keys apply to endpoints with transport ssh")
@@ -525,12 +520,12 @@ def _host_key_view(row: O1AdaptorHostKey) -> dict:
 
 
 @app.put("/o1-adaptor-endpoints/{endpoint_id}/host-keys")
-def pin_host_key(endpoint_id: uuid.UUID, body: PinHostKeyRequest, db: Session = Depends(get_session)):
+def pin_host_key(endpoint_id: uuid.UUID, body: PinHostKeyRequest, request: Request, db: Session = Depends(get_session)):
     """PR-SB-2.3: pin the SSH host key an ssh endpoint must present (one per key type). The operator supplies the public key from a source
     they trust (the device's own label, `ssh-keygen -lf`, a signed inventory): this build never learns a key by connecting, so there is no
     trust on first use. A connection whose server key is not pinned (or differs from the pinned key of its type) is refused. Pinning a
     different key for a type that already has one replaces it (`replaced: true`): the one way to accept a changed key, by a named operator."""
-    endpoint = _ssh_endpoint(db, endpoint_id)
+    endpoint = _ssh_endpoint(db, endpoint_id, request)
     try:
         key = netconf_ssh.parse_host_key(body.keyType, body.publicKey)
     except ValueError as exc:
@@ -551,16 +546,16 @@ def pin_host_key(endpoint_id: uuid.UUID, body: PinHostKeyRequest, db: Session = 
 
 
 @app.get("/o1-adaptor-endpoints/{endpoint_id}/host-keys")
-def list_host_keys(endpoint_id: uuid.UUID, db: Session = Depends(get_session)):
-    endpoint = _ssh_endpoint(db, endpoint_id)
+def list_host_keys(endpoint_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    endpoint = _ssh_endpoint(db, endpoint_id, request)
     rows = db.scalars(select(O1AdaptorHostKey).where(O1AdaptorHostKey.endpoint_id == endpoint.endpoint_id)
                       .order_by(O1AdaptorHostKey.key_type)).all()
     return {"items": [_host_key_view(r) for r in rows]}
 
 
 @app.delete("/o1-adaptor-endpoints/{endpoint_id}/host-keys/{key_type}", status_code=204)
-def unpin_host_key(endpoint_id: uuid.UUID, key_type: str, db: Session = Depends(get_session)):
-    endpoint = _ssh_endpoint(db, endpoint_id)
+def unpin_host_key(endpoint_id: uuid.UUID, key_type: str, request: Request, db: Session = Depends(get_session)):
+    endpoint = _ssh_endpoint(db, endpoint_id, request)
     row = db.scalars(select(O1AdaptorHostKey).where(O1AdaptorHostKey.endpoint_id == endpoint.endpoint_id,
                                                     O1AdaptorHostKey.key_type == key_type)).first()
     if row is None:
@@ -572,42 +567,56 @@ def unpin_host_key(endpoint_id: uuid.UUID, key_type: str, db: Session = Depends(
 # --- PR-SB-6: the managed-object containment tree -------------------------------------------------------------------------------------------
 
 
-def _managed_object(db: Session, dn: str) -> ManagedObject:
+def _managed_object(db: Session, dn: str, request: Request) -> ManagedObject:
+    """The node `dn`, or 404 `MANAGED_OBJECT_NOT_FOUND`. PR-SEC-10.9: a node of an element outside the caller's scope is the same 404, as if it were not in the tree
+    (the answer for a DN that is not there and for one that is must not differ, or a scoped caller could ask which DNs exist). MGT-2.6: with the MSAC switch on, a managed
+    caller needs `read` on the node's element (403 `MSAC_ACCESS_DENIED`; asked after the scope, so only for a node the caller may see)."""
     obj = db.get(ManagedObject, dn)
-    if obj is None:
+    if obj is None or not scoping.element_permitted(db, scoping.request_scope(request), obj.managed_element_ref):
         raise framework_error(FrameworkError.MANAGED_OBJECT_NOT_FOUND, detail=f"no managed object {dn!r} in the tree")
+    _require_msac(db, request, "read", obj.managed_element_ref)
     return obj
 
 
+def _tree_filter(db: Session, request: Request):
+    """What a list of tree nodes is limited to for this caller: the nodes of the elements inside its scope (PR-SEC-10.9) that its access rules let it read (MGT-2.6)."""
+    scope = scoping.request_scope(request)
+    return lambda stmt: msac.readable(scoping.scoped_to_elements(stmt, scope, ManagedObject.managed_element_ref), db, request, ManagedObject.managed_element_ref)
+
+
 @app.get("/managed-objects/{dn}")
-def read_managed_object(dn: str, db: Session = Depends(get_session)):
-    """PR-SB-6: one node of the containment tree by its distinguished name (`ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101`)."""
-    return mo_tree.view(_managed_object(db, dn))
+def read_managed_object(dn: str, request: Request, db: Session = Depends(get_session)):
+    """PR-SB-6: one node of the containment tree by its distinguished name (`ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101`). PR-SEC-10.9: a node of an element
+    outside the caller's scope is a 404."""
+    return mo_tree.view(_managed_object(db, dn, request))
 
 
 @app.get("/managed-objects/{dn}/children")
-def list_managed_object_children(dn: str, limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
-    """PR-SB-6.3: the direct children of a node (404 `MANAGED_OBJECT_NOT_FOUND` when the node itself is not in the tree), ordered by class then id."""
-    _managed_object(db, dn)
-    page = paginate(db, mo_tree.children_stmt(dn), limit, offset)
+def list_managed_object_children(dn: str, request: Request, limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    """PR-SB-6.3: the direct children of a node (404 `MANAGED_OBJECT_NOT_FOUND` when the node itself is not in the tree), ordered by class then id. PR-SEC-10.9: only
+    the children inside the caller's scope."""
+    _managed_object(db, dn, request)
+    page = paginate(db, _tree_filter(db, request)(mo_tree.children_stmt(dn)), limit, offset)
     return {**page, "items": [mo_tree.view(o) for o in page["items"]]}
 
 
 @app.get("/managed-objects/{dn}/subtree")
-def read_managed_object_subtree(dn: str, depth: int = Query(default=mo_tree.MAX_SUBTREE_DEPTH, ge=0, le=mo_tree.MAX_SUBTREE_DEPTH),
+def read_managed_object_subtree(dn: str, request: Request, depth: int = Query(default=mo_tree.MAX_SUBTREE_DEPTH, ge=0, le=mo_tree.MAX_SUBTREE_DEPTH),
                                 db: Session = Depends(get_session)):
     """PR-SB-6.4: a node and its descendants as a nested tree (`children` on each node), down to `depth` levels below it (default and most 16).
-    At most 1000 nodes are returned; `truncated` says when that cut the answer short."""
-    _managed_object(db, dn)
-    tree, truncated = mo_tree.subtree(db, dn, depth)
+    At most 1000 nodes are returned; `truncated` says when that cut the answer short. PR-SEC-10.9: only the nodes inside the caller's scope."""
+    _managed_object(db, dn, request)
+    tree, truncated = mo_tree.subtree(db, dn, depth, _tree_filter(db, request))
     return {"tree": tree, "truncated": truncated}
 
 
 @app.post("/managed-entities/{managed_element_ref}/managed-objects/refresh")
-def refresh_managed_objects(managed_element_ref: str, db: Session = Depends(get_session)):
+def refresh_managed_objects(managed_element_ref: str, request: Request, db: Session = Depends(get_session)):
     """PR-SB-6.2: read the element's server with a whole-container `get-config` and make the containment tree match what it reports: new objects
     are added with `source=walk`, walked objects it no longer reports are removed, and registry objects are kept. Needs an ssh or tls endpoint
-    registered with `?model=` (a server without a model has nothing to walk): 409 `PROTOCOL_NOT_SUPPORTED` otherwise, 503 when the read fails."""
+    registered with `?model=` (a server without a model has nothing to walk): 409 `PROTOCOL_NOT_SUPPORTED` otherwise, 503 when the read fails.
+    PR-SEC-10.9: 403 `SCOPE_DENIED` for an element outside the caller's scope."""
+    scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])
     me = db.get(ManagedEntity, managed_element_ref)
     if me is None:
         raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
@@ -630,12 +639,12 @@ TEIV_URN_PREFIX = "urn:oran:smo:teiv"
 
 
 @app.get("/topology")
-def export_topology(managed_element_ref: str | None = None, db: Session = Depends(get_session)):
+def export_topology(request: Request, managed_element_ref: str | None = None, db: Session = Depends(get_session)):
     """PR-SB-6.7: the containment tree in the wire shape FOCOM's `/topology` already uses for the TEIV adapter (entities keyed `<prefix>:<Entity>`
     with `{id, attributes}`; relationships keyed `<prefix>:<A>_<REL>_<B>` with `{id, aSide, bSide, sourceIds}`). One generic `ManagedObject` entity
     per node and one `MANAGEDOBJECT_CHILD_OF_MANAGEDOBJECT` relationship per parent link, the child on the a-side. This is this build's own export
     of what it holds, not the TEIV RAN domain model (which has typed entities such as GNBDUFunction). Link types: `/topology/links`, `/topology/relation` (MGT-10.2)."""
-    stmt = select(ManagedObject).order_by(ManagedObject.dn)
+    stmt = _tree_filter(db, request)(select(ManagedObject).order_by(ManagedObject.dn))       # PR-SEC-10.9: the caller's elements only (naming another's gives an empty export)
     if managed_element_ref:
         stmt = stmt.where(ManagedObject.managed_element_ref == managed_element_ref)
     objects = db.scalars(stmt).all()
@@ -651,24 +660,26 @@ def export_topology(managed_element_ref: str | None = None, db: Session = Depend
 
 
 @app.get("/topology/links")
-def topology_links(managed_element_ref: str | None = None, link_type: Literal["INTRA_ELEMENT", "INTER_ELEMENT", "AMBIGUOUS", "EXTERNAL"] | None = None,
-                   db: Session = Depends(get_session)):
+def topology_links(request: Request, managed_element_ref: str | None = None,
+                   link_type: Literal["INTRA_ELEMENT", "INTER_ELEMENT", "AMBIGUOUS", "EXTERNAL"] | None = None, db: Session = Depends(get_session)):
     """PR-MGT-10.2: the neighbour relations declared in the cell guards, each with its link type (`topology.py`): both cells on one element
     (`INTRA_ELEMENT`), on different elements (`INTER_ELEMENT`), a cell id several elements claim (`AMBIGUOUS`) or none does (`EXTERNAL`), and whether
-    the other side declares the relation back (`reciprocal`). `managed_element_ref` keeps the links with that element at either end."""
-    return {"items": topology.cell_links(db, managed_element_ref, link_type)}
+    the other side declares the relation back (`reciprocal`). `managed_element_ref` keeps the links with that element at either end.
+
+    PR-SEC-10.9: a caller with a scope claim gets the links among the elements inside it. The elements outside are not part of its world, so a neighbour that is declared
+    on one of them is `EXTERNAL` for it (and `AMBIGUOUS` and `reciprocal` are worked out among its elements only): the answer never names an element it may not touch.
+    MGT-2.6: the same for the elements its access rules do not let it read."""
+    scope = scoping.request_scope(request)
+    restrict = lambda stmt: msac.readable(scoping.scoped_to_elements(stmt, scope, ManagedEntity.managed_element_ref), db, request, ManagedEntity.managed_element_ref)  # noqa: E731
+    return {"items": topology.cell_links(db, managed_element_ref, link_type, restrict)}
 
 
 @app.get("/topology/relation")
-def topology_relation(a: str, b: str, db: Session = Depends(get_session)):
+def topology_relation(a: str, b: str, request: Request, db: Session = Depends(get_session)):
     """PR-MGT-10.2: how the managed object `a` (a DN) stands to `b` in the containment tree: SAME, ANCESTOR (a contains b), DESCENDANT, SIBLING,
-    SAME_ELEMENT or DIFFERENT_ELEMENT. 404 when either is not in the tree."""
-    objects = []
-    for dn in (a, b):
-        obj = db.get(ManagedObject, dn)
-        if obj is None:
-            raise framework_error(FrameworkError.MANAGED_OBJECT_NOT_FOUND, detail=f"{dn!r} is not in the containment tree")
-        objects.append(obj)
+    SAME_ELEMENT or DIFFERENT_ELEMENT. 404 when either is not in the tree. PR-SEC-10.9: a node outside the caller's scope is not in its tree (404), so DIFFERENT_ELEMENT
+    is only ever said of two nodes the caller may see."""
+    objects = [_managed_object(db, dn, request) for dn in (a, b)]
     return {"a": a, "b": b, "relation": topology.containment_relation(db, *objects)}
 
 
@@ -733,6 +744,26 @@ def _acting_rapp(request: Request) -> str | None:
     if role_of(request) == ROLE_INTERNAL and not request.headers.get(ON_BEHALF_OF_HEADER):
         return None
     return invoker_id(request)
+
+
+def _job_owner_filter(request: Request) -> str | None | Literal[False]:
+    """PR-SEC-10.11: whose jobs the caller is limited to. `False`: nobody's (the job routes behave as before). Otherwise the invoker id the caller's jobs carry (`None`: the
+    caller is limited to its own jobs but R1 named no invoker, so it owns none).
+
+    Applies to an rApp that carries a scope claim (the request is an rApp's own, or an SMO module's on behalf of one): the platform is then shared by parties, and one
+    rApp's rollback of, or read of, another's job is a way round the scope (two rApps of one tenant share its elements). An SMO module on its own account (the
+    operator's GUI, an admin's tool) is not limited, and neither is an rApp with no claim: an upgrade changes nothing until a claim is set, as for the scope itself.
+    This is one decision in one place: to hold every rApp to its own jobs, drop the claim test below."""
+    if scoping.request_scope(request) is None:
+        return False
+    if role_of(request) == ROLE_INTERNAL and not request.headers.get(ON_BEHALF_OF_HEADER):       # an SMO module on its own account
+        return False
+    return invoker_id(request)
+
+
+def _job_owned(db: Session, request: Request, job: WriteConfigJob) -> bool:
+    owner = _job_owner_filter(request)
+    return owner is False or scoping.job_owned_by(db, job, owner)
 
 
 RATE_WINDOW = datetime.timedelta(hours=1)
@@ -1265,7 +1296,7 @@ def rollback_configuration_job(job_id: uuid.UUID, body: RollbackRequest, request
     the schema check and dispatch like any other write: `requestedBy` is the actor and the new job names `rollbackOf`. MGT-1.7: if what the job
     wrote has been changed since, 409 `CONFIG_CHANGED_SINCE` unless `force`; `dryRun` returns the plan and the differences without writing."""
     job = db.get(WriteConfigJob, job_id)
-    if job is None:
+    if job is None or not _job_owned(db, request, job):         # PR-SEC-10.11: another rApp's job is not the caller's to undo, nor to know of: 404, before the scope is asked
         raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"no configuration job {job_id}")
     # PR-SEC-10.4: undoing a job writes to every element it wrote to, so every one of them must be inside the caller's scope (a dry run too). The detail names none
     # of them: the caller did not send them.
@@ -1952,9 +1983,13 @@ def list_approvals(status: Literal["PENDING", "APPROVED", "REJECTED", "EXPIRED",
 
 
 @app.get("/rapp-approvals/{approval_id}")
-def read_approval(approval_id: uuid.UUID, db: Session = Depends(get_session)):
-    """One request with the changes it asks for. The rApp that made it polls this for the outcome (`jobId` once approved)."""
+def read_approval(approval_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    """One request with the changes it asks for. The rApp that made it polls this for the outcome (`jobId` once approved). PR-SEC-10.11: an rApp with a scope claim reads
+    only its own."""
     row = _approval_or_404(db, approval_id)
+    owner = _job_owner_filter(request)
+    if owner is not False and row.invoker_id != owner:           # PR-SEC-10.11: another rApp's request is not the caller's to read: 404, as if it did not exist
+        raise framework_error(FrameworkError.APPROVAL_NOT_FOUND, detail=f"no approval request {approval_id}")
     if _lapse_if_due(db, row):
         db.commit()
         _chain_decisions_quietly(db)
@@ -2145,10 +2180,12 @@ def list_decision_records(invoker_id_: str | None = Query(default=None, alias="i
 
 
 @app.get("/decision-records/{decision_id}")
-def read_decision_record(decision_id: uuid.UUID, db: Session = Depends(get_session)):
-    """AI-13.3: one record with its `integrity` (VERIFIED, UNCHAINED while the chain write is pending, or MISMATCH when the record or its audit row was changed)."""
+def read_decision_record(decision_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    """AI-13.3: one record with its `integrity` (VERIFIED, UNCHAINED while the chain write is pending, or MISMATCH when the record or its audit row was changed).
+    PR-SEC-10.11: an rApp with a scope claim reads only its own (404 for another's)."""
     rec = db.scalars(select(RAppDecisionRecord).where(RAppDecisionRecord.decision_id == decision_id).execution_options(populate_existing=True)).one_or_none()
-    if rec is None:
+    owner = _job_owner_filter(request)
+    if rec is None or (owner is not False and rec.invoker_id != owner):
         raise framework_error(FrameworkError.DECISION_RECORD_NOT_FOUND, detail=f"no decision record {decision_id}")
     return _decision_view(rec, _integrity(db, rec))
 
@@ -2160,10 +2197,12 @@ def compute_kpi(name: str, from_time: datetime.datetime, request: Request, to_ti
     """MGT-11.3/11.4/11.5: the KPI over [from_time, to_time) (to_time: now), per cell, per element, per sector group or incident zone (the cell
     guards of the registry), or over everything asked for. A ratio is computed from the group's summed counters, not from its cells' ratios.
     `managed_element_ref` and `cell_id` narrow what is read. A group without data has a null `value` and a `reason`.
-    PR-SEC-10.6: a caller with a scope claim gets the KPI over the performance files of the elements inside it only (so `all` is its elements, never the network's)."""
+    PR-SEC-10.6: a caller with a scope claim gets the KPI over the performance files of the elements inside it only (so `all` is its elements, never the network's).
+    MGT-2.6: with the MSAC switch on, a caller that is a registered Identity gets it over the elements its access rules let it `read` only."""
     definition = _kpi_or_404(db, name)
     start, end = _kpi_window(from_time, to_time)
-    return kpi.compute(db, definition, start, end, group_by, managed_element_ref, cell_id, scoping.request_scope(request))
+    return kpi.compute(db, definition, start, end, group_by, managed_element_ref, cell_id, scoping.request_scope(request),
+                       _unreadable_elements(db, request, PMFile.managed_element_ref))
 
 
 def _kpi_window(from_time: datetime.datetime, to_time: datetime.datetime | None) -> tuple[datetime.datetime, datetime.datetime]:
@@ -2238,13 +2277,31 @@ def _schedule_view(row: KpiSchedule) -> dict:
             "nextRunAt": (last + datetime.timedelta(seconds=row.interval_seconds)) if (last and row.enabled) else None}
 
 
+def _schedule_visible(db: Session, request: Request, row: KpiSchedule) -> bool:
+    """PR-SEC-10.9: a schedule is the caller's to see when it names an element inside the caller's scope. One with no element is a schedule of the whole network, which a
+    caller with a claim (that restricts the network) cannot be said to touch: only an unscoped caller sees it."""
+    scope = scoping.request_scope(request)
+    if scope is None:
+        return True
+    return row.managed_element_ref is not None and scoping.element_permitted(db, scope, row.managed_element_ref)
+
+
 @app.put("/kpi-schedules/{schedule_id}")
-def put_kpi_schedule(schedule_id: str, body: KpiScheduleRequest, db: Session = Depends(get_session)):
+def put_kpi_schedule(schedule_id: str, body: KpiScheduleRequest, request: Request, db: Session = Depends(get_session)):
     """MSG-4: publish `kpi` to DME every `intervalSeconds` (over the last `lookbackSeconds`), as `POST /kpis/{name}/publish` does. The worker runs it
     (`ran-nf-oam-worker`); with no worker nothing happens. 404 for a KPI that is not defined. Replaces the schedule of that id (its `last*` stay).
-    Internal-only at R1."""
+    Internal-only at R1. PR-SEC-10.9: for a caller with a scope claim, 403 `SCOPE_DENIED` when the schedule names an element outside it, when it names none (a schedule of
+    the whole network), or when the id is a schedule the caller may not see (it is not replaced)."""
+    scope = scoping.request_scope(request)
+    if scope is not None:
+        if body.managedElementRef is None:
+            raise scoping.scope_denied("a schedule with no managedElementRef covers the whole network, which the caller's scope does not")
+        scoping.require_elements(db, scope, [body.managedElementRef])
     _kpi_or_404(db, body.kpi)
-    row = db.get(KpiSchedule, schedule_id) or KpiSchedule(schedule_id=schedule_id)
+    existing = db.get(KpiSchedule, schedule_id)
+    if existing is not None and not _schedule_visible(db, request, existing):
+        raise scoping.scope_denied("the caller's scope does not cover this schedule")
+    row = existing or KpiSchedule(schedule_id=schedule_id)
     row.kpi, row.interval_seconds, row.group_by = body.kpi, body.intervalSeconds, body.groupBy
     row.lookback_seconds = body.lookbackSeconds or body.intervalSeconds
     row.managed_element_ref, row.cell_id, row.enabled = body.managedElementRef, body.cellId, body.enabled
@@ -2254,22 +2311,24 @@ def put_kpi_schedule(schedule_id: str, body: KpiScheduleRequest, db: Session = D
 
 
 @app.get("/kpi-schedules")
-def list_kpi_schedules(db: Session = Depends(get_session)):
-    return {"items": [_schedule_view(r) for r in db.scalars(select(KpiSchedule).order_by(KpiSchedule.schedule_id)).all()]}
+def list_kpi_schedules(request: Request, db: Session = Depends(get_session)):
+    """PR-SEC-10.9: a caller with a scope claim sees the schedules of the elements inside it (a schedule of the whole network is for an unscoped caller)."""
+    rows = [r for r in db.scalars(select(KpiSchedule).order_by(KpiSchedule.schedule_id)).all() if _schedule_visible(db, request, r)]
+    return {"items": [_schedule_view(r) for r in rows]}
 
 
 @app.get("/kpi-schedules/{schedule_id}")
-def get_kpi_schedule(schedule_id: str, db: Session = Depends(get_session)):
+def get_kpi_schedule(schedule_id: str, request: Request, db: Session = Depends(get_session)):
     row = db.get(KpiSchedule, schedule_id)
-    if row is None:
+    if row is None or not _schedule_visible(db, request, row):                  # PR-SEC-10.9: one outside the caller's scope is a 404, as if it were not there
         raise framework_error(FrameworkError.KPI_SCHEDULE_NOT_FOUND, detail=f"no KPI schedule {schedule_id!r}")
     return _schedule_view(row)
 
 
 @app.delete("/kpi-schedules/{schedule_id}", status_code=204)
-def delete_kpi_schedule(schedule_id: str, db: Session = Depends(get_session)):
+def delete_kpi_schedule(schedule_id: str, request: Request, db: Session = Depends(get_session)):
     row = db.get(KpiSchedule, schedule_id)
-    if row is None:
+    if row is None or not _schedule_visible(db, request, row):
         raise framework_error(FrameworkError.KPI_SCHEDULE_NOT_FOUND, detail=f"no KPI schedule {schedule_id!r}")
     db.delete(row)
     db.commit()
@@ -2309,8 +2368,8 @@ def run_due_kpi_schedules(db: Session, now: datetime.datetime | None = None) -> 
 @app.get("/config-jobs/{job_id}")
 def query_write_config_job_status(job_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     job = db.get(WriteConfigJob, job_id)
-    # PR-SEC-10: a job that touched an element outside the caller's scope is not shown to it: 404, as if it did not exist
-    if job is None or scoping.denied_refs(db, scoping.request_scope(request), _job_elements(db, job_id)):
+    # PR-SEC-10: a job that touched an element outside the caller's scope is not shown to it: 404, as if it did not exist. PR-SEC-10.11: nor is another rApp's job
+    if job is None or not _job_owned(db, request, job) or scoping.denied_refs(db, scoping.request_scope(request), _job_elements(db, job_id)):
         raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"unknown jobId {job_id}")
     sub_changes = db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job_id).order_by(WriteConfigSubChange.position)).all()
     return {"jobId": str(job.job_id), "status": job.status, "requestedBy": job.requested_by,
@@ -2339,6 +2398,7 @@ def query_alarms(request: Request, managed_element_ref: str | None = None, sever
     the scope in `managed_element_ref` gives an empty page, the same as an element with no alarms).
     """
     stmt = scoping.scoped_to_elements(select(Alarm), scoping.request_scope(request), Alarm.managed_element_ref)
+    stmt = msac.readable(stmt, db, request, Alarm.managed_element_ref)                         # MGT-2.6: the alarms of elements the caller's access rules do not let it read are left out
     if managed_element_ref:
         stmt = stmt.where(Alarm.managed_element_ref == managed_element_ref)
     if managed_function_ref:
@@ -2647,6 +2707,11 @@ def download_pm_file(file_id: uuid.UUID, request: Request, db: Session = Depends
 
 @app.post("/file-subscriptions", status_code=201)
 def create_file_subscription(body: FileSubscriptionRequest, request: Request, db: Session = Depends(get_session)):
+    """TS 28.532: subscribe to `notifyFileReady`. A subscription is sent the notice of every file, of every element, so there is no part of it a caller with a scope
+    claim could hold: PR-SEC-10.9 refuses it, 403 `SCOPE_DENIED` (an unscoped caller is unchanged). MGT-2.5: with the MSAC switch on, a managed caller needs `read` on the
+    whole network."""
+    if scoping.request_scope(request) is not None:
+        raise scoping.scope_denied("a file subscription is sent the files of every managed element, which the caller's scope does not cover")
     _require_msac_everywhere(db, request, "read")                                                    # MGT-2.5: it is sent the ready-notice of every file, so it needs to read everything
     sub = FileSubscription(consumer_reference=body.consumerReference, file_data_type=body.fileDataType)
     db.add(sub)
@@ -2656,9 +2721,11 @@ def create_file_subscription(body: FileSubscriptionRequest, request: Request, db
 
 
 @app.delete("/file-subscriptions/{subscription_id}", status_code=204)
-def delete_file_subscription(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+def delete_file_subscription(subscription_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    """Idempotent. A subscription covers every element, so it is never inside a caller's scope claim (PR-SEC-10.9) and a managed caller needs `read` on the whole network
+    to remove it (MGT-2.6, as to create it): for any other the answer is 204 and nothing is removed, as for an id that is not there."""
     sub = db.get(FileSubscription, subscription_id)
-    if sub is not None:
+    if sub is not None and scoping.request_scope(request) is None and msac.may_read_everywhere(db, request):
         db.delete(sub)
         db.commit()
 
@@ -2892,6 +2959,7 @@ def _alarm_view(a: Alarm) -> dict:
 def list_pm_subscriptions(request: Request, managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                            db: Session = Depends(get_session)):
     stmt = scoping.scoped_to_elements(select(PMSubscription), scoping.request_scope(request), PMSubscription.managed_element_ref)      # PR-SEC-10.6
+    stmt = msac.readable(stmt, db, request, PMSubscription.managed_element_ref)                                                         # MGT-2.6
     if managed_element_ref:
         stmt = stmt.where(PMSubscription.managed_element_ref == managed_element_ref)
     page = paginate(db, stmt, limit, offset)
@@ -2912,7 +2980,8 @@ def unsubscribe_pm(subscription_id: uuid.UUID, request: Request, db: Session = D
     those.
     """
     sub = db.get(PMSubscription, subscription_id)
-    if sub is not None and scoping.element_permitted(db, scoping.request_scope(request), sub.managed_element_ref):       # PR-SEC-10.6: one outside the scope is left alone, and 204 says nothing
+    if sub is not None and scoping.element_permitted(db, scoping.request_scope(request), sub.managed_element_ref) \
+            and msac.may_read(db, request, sub.managed_element_ref):                    # PR-SEC-10.6, MGT-2.6: one outside the scope, or not readable to the caller, is left alone, and 204 says nothing
         db.delete(sub)
         db.commit()
 
@@ -2957,6 +3026,7 @@ def subscribe_fm(managed_element_ref: str, delivery_method: str, request: Reques
 def list_fm_subscriptions(request: Request, managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                            db: Session = Depends(get_session)):
     stmt = scoping.scoped_to_elements(select(FMSubscription), scoping.request_scope(request), FMSubscription.managed_element_ref)      # PR-SEC-10.6
+    stmt = msac.readable(stmt, db, request, FMSubscription.managed_element_ref)                                                         # MGT-2.6
     if managed_element_ref:
         stmt = stmt.where(FMSubscription.managed_element_ref == managed_element_ref)
     page = paginate(db, stmt, limit, offset)
@@ -2971,7 +3041,8 @@ def unsubscribe_fm(subscription_id: uuid.UUID, request: Request, db: Session = D
     every other subscription-shaped resource in this build.
     """
     sub = db.get(FMSubscription, subscription_id)
-    if sub is not None and scoping.element_permitted(db, scoping.request_scope(request), sub.managed_element_ref):       # PR-SEC-10.6: one outside the scope is left alone
+    if sub is not None and scoping.element_permitted(db, scoping.request_scope(request), sub.managed_element_ref) \
+            and msac.may_read(db, request, sub.managed_element_ref):                    # PR-SEC-10.6, MGT-2.6: one outside the scope, or not readable to the caller, is left alone
         db.delete(sub)
         db.commit()
 
@@ -2982,6 +3053,7 @@ def list_o1_adaptor_endpoints(request: Request, health_status: str | None = None
     """The registered O1 adaptor endpoints, one per managed element, with the element's `region` and `tenant` (PR-SEC-10.2). A caller with a scope claim sees only the
     endpoints of the elements inside it (PR-SEC-10.6)."""
     stmt = scoping.scoped_to_elements(select(O1AdaptorEndpoint), scoping.request_scope(request), O1AdaptorEndpoint.managed_element_ref)
+    stmt = msac.readable(stmt, db, request, O1AdaptorEndpoint.managed_element_ref)                         # MGT-2.6
     if health_status:
         stmt = stmt.where(O1AdaptorEndpoint.health_status == health_status)
     page = paginate(db, stmt, limit, offset)
@@ -3007,6 +3079,13 @@ def list_write_config_jobs(request: Request, status: str | None = None, limit: i
                    .where(WriteConfigSubChange.job_id == WriteConfigJob.job_id,
                           ManagedEntity.managed_element_ref.is_(None) | authz_scope.denied_condition(scope, ManagedEntity.region, ManagedEntity.tenant)))
         stmt = stmt.where(~outside.exists())
+    unreadable = _unreadable_elements(db, request, WriteConfigSubChange.managed_element_ref)                  # MGT-2.6: a job that wrote to an element the caller's access rules do not let it read is left out
+    if unreadable:
+        stmt = stmt.where(~select(WriteConfigSubChange.id).where(WriteConfigSubChange.job_id == WriteConfigJob.job_id,
+                                                                 WriteConfigSubChange.managed_element_ref.in_(unreadable)).exists())
+    owner = _job_owner_filter(request)
+    if owner is not False:                                                                                    # PR-SEC-10.11: a scoped rApp sees the jobs that are its own
+        stmt = stmt.where(WriteConfigJob.job_id.in_(scoping.owned_jobs(owner)))
     if status:
         stmt = stmt.where(WriteConfigJob.status == status)
     page = paginate(db, stmt, limit, offset)
@@ -3018,6 +3097,7 @@ def list_write_config_jobs(request: Request, status: str | None = None, limit: i
 def list_software_management_jobs(request: Request, managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                                    db: Session = Depends(get_session)):
     stmt = scoping.scoped_to_elements(select(SoftwareManagementJob), scoping.request_scope(request), SoftwareManagementJob.managed_element_ref)     # PR-SEC-10.6
+    stmt = msac.readable(stmt, db, request, SoftwareManagementJob.managed_element_ref)                                                              # MGT-2.6
     if managed_element_ref:
         stmt = stmt.where(SoftwareManagementJob.managed_element_ref == managed_element_ref)
     page = paginate(db, stmt, limit, offset)
