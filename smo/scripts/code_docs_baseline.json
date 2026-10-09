@@ -49,12 +49,12 @@
       "tests_without_docstring": 55
     },
     "focom": {
-      "files_without_description": 1,
-      "functions_without_description": 79,
-      "items_requiring_description": 103,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 114,
       "source_files": 8,
       "tests": 76,
-      "tests_without_docstring": 50
+      "tests_without_docstring": 0
     },
     "fuzz": {
       "files_without_description": 0,
@@ -89,12 +89,12 @@
       "tests_without_docstring": 199
     },
     "intent-service": {
-      "files_without_description": 1,
-      "functions_without_description": 78,
-      "items_requiring_description": 114,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 117,
       "source_files": 8,
       "tests": 64,
-      "tests_without_docstring": 52
+      "tests_without_docstring": 0
     },
     "mdaf": {
       "files_without_description": 1,

@@ -1,3 +1,20 @@
+"""SQLAlchemy models of the Intent Service: intents, their reports, intent handling functions (RMIHs), utility formulas and autonomy dispatches.
+
+What it is: one class per table (`intent`, `intent_report`, `intent_handling_function`, `intent_utility_formula`, `autonomy_dispatch`) on the shared
+`smo_shared.db.Base`. The tables come from the Alembic revisions in `migrations/`; `scripts/check_migration_matches_models.py` fails when a column here
+differs from the migrated schema. Column list and meaning: `intent-service/README.md` (2.2).
+
+Where it sits: read and written only by `main.py`; the unit tests create the tables on SQLite from every class in this module.
+
+Owns: column types, defaults and the foreign keys with their `ondelete` rule: `intent.rmih_id` and `autonomy_dispatch.rmih_id` CASCADE from the handling
+function, `intent_report.intent_id` CASCADE from the intent, `intent.intent_utility_formula_id` and `autonomy_dispatch.intent_id` SET NULL. Does not
+own: any rule about what an intent may contain (`ts28312.py`) or who may change it (`main.py`).
+
+Before editing: the cascades are done by the database, not the ORM (no `relationship()` is declared), so on SQLite they do not happen and only
+PostgreSQL shows them. A column change is a schema revision (`CLAUDE.md`, "Schema changes are revisions"), made in the same PR.
+`instance_id`, `model_id` and `intent_report_reference` are bare UUIDs on purpose (see the comments on the columns).
+"""
+
 import datetime
 import uuid
 
@@ -8,24 +25,27 @@ from smo_shared.db import Base
 
 
 class Intent(Base):
+    """A TS 28.312 `Intent`, table `intent`: what an intent owner (RMIO) asks of one intent handling function (RMIH).
+
+    The expectation, context, report-control and guarantee-period attributes are stored as the validated JSON of `ts28312.py`. `rmio_id` is the creator's
+    identity and is what gates admin-state changes; `intent_report_reference` points at the current report.
+    """
     __tablename__ = "intent"
 
     intent_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_label: Mapped[str | None] = mapped_column(String)
-    # Wave 6: strict TS 28.312 IntentExpectation list (app/ts28312.py),
-    # validated per expectation family on the way in.
+    # The TS 28.312 IntentExpectation list as validated by app/ts28312.py (per expectation family), stored as JSON.
     intent_expectations: Mapped[list] = mapped_column(JSON, nullable=False)
     intent_mgmt_purpose: Mapped[str | None] = mapped_column(String)
     intent_admin_state: Mapped[str] = mapped_column(String, nullable=False, default="ACTIVATED")
     intent_priority: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     intent_preemption_capability: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     rmio_id: Mapped[str] = mapped_column(String, nullable=False)
-    # Wave 3 (docs/ARCHITECTURE.md's Intent Service "Open item
-    # carried into Wave 3"): consumer-side RMIH selection — TS28.312's
-    # own NRM containment (IntentHandlingFunction *contains* Intent).
-    # ON DELETE CASCADE matches that containment literally.
+    # Consumer-side RMIH selection: the intent belongs to the handling function it is addressed to (TS 28.312 NRM containment: an
+    # IntentHandlingFunction contains its Intents). ON DELETE CASCADE matches that, so deregistering the function removes its intents
+    # (enforced by PostgreSQL; SQLite ignores it).
     rmih_id: Mapped[str] = mapped_column(String, ForeignKey("intent_handling_function.rmih_id", ondelete="CASCADE"), nullable=False)
-    # Wave 6 — the remaining TS 28.312 Intent attributes.
+    # The remaining TS 28.312 Intent attributes.
     context_selectivity: Mapped[str | None] = mapped_column(String)
     consumer_satisfaction_index_threshold: Mapped[int | None] = mapped_column(Integer)
     expectation_selectivity: Mapped[str | None] = mapped_column(String)
@@ -35,15 +55,17 @@ class Intent(Base):
     guarantee_periods: Mapped[list | None] = mapped_column(JSON)
     intent_handling_info: Mapped[dict | None] = mapped_column(JSON)
     intent_interpretation_assistance_info: Mapped[dict | None] = mapped_column(JSON)
-    # readOnly in the spec: the intent's current IntentReport. Bare UUID
-    # (intent_report also points back at intent — no FK cycle).
+    # readOnly in the spec: the intent's current IntentReport. A bare UUID, not a foreign key, because intent_report already points
+    # back at intent (no FK cycle).
     intent_report_reference: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     intent_utility_formula_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("intent_utility_formula.intent_utility_formula_id", ondelete="SET NULL"))
 
 
 class IntentUtilityFormula(Base):
-    """Wave 6 — TS 28.312 IntentUtilityFormula IOC."""
+    """A TS 28.312 `IntentUtilityFormula` IOC, table `intent_utility_formula`. An intent may name one (`intent.intent_utility_formula_id`); deleting the
+    formula sets that reference to null in PostgreSQL.
+    """
     __tablename__ = "intent_utility_formula"
 
     intent_utility_formula_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -54,13 +76,18 @@ class IntentUtilityFormula(Base):
 
 
 class IntentReport(Base):
+    """One TS 28.312 `IntentReport`, table `intent_report`: a set of report kinds published for an intent at `last_updated_time`.
+
+    Each kind has its own nullable JSON column and a row holds only the kinds that were published together. Reports are append-only except that a
+    negotiation report gets the consumer's feedback written into it. The newest one an intent has is the one `intent_report_reference` names.
+    """
     __tablename__ = "intent_report"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    intent_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("intent.intent_id", ondelete="CASCADE"))  # was intent_reference (bare string) pre-LLD; NEW: delete_intent's cascade
+    intent_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("intent.intent_id", ondelete="CASCADE"))  # ON DELETE CASCADE: deleting an intent deletes its reports (PostgreSQL only)
     intent_fulfilment_report: Mapped[dict | None] = mapped_column(JSON)
     intent_conflict_reports: Mapped[list | None] = mapped_column(JSON)
-    # Wave 6 — the rest of the spec's report kinds.
+    # One nullable JSON column per further report kind of the spec.
     intent_feasibility_check_report: Mapped[dict | None] = mapped_column(JSON)
     intent_exploration_report: Mapped[dict | None] = mapped_column(JSON)
     intent_utility_reports: Mapped[list | None] = mapped_column(JSON)
@@ -70,35 +97,30 @@ class IntentReport(Base):
 
 
 class IntentHandlingFunction(Base):
+    """A TS 28.312 `IntentHandlingFunction` (RMIH), table `intent_handling_function`; the primary key is the registering module's service name.
+
+    Holds what the function declares it can handle (`intent_handling_capability_list`, optional `intent_handling_scope`, negotiation functionalities)
+    and where new intents are pushed (`notification_destination`).
+    """
     __tablename__ = "intent_handling_function"
 
     rmih_id: Mapped[str] = mapped_column(String, primary_key=True)
     sme_service_id: Mapped[str] = mapped_column(String, nullable=False)
     intent_handling_scope: Mapped[list | None] = mapped_column(JSON)
     intent_handling_capability_list: Mapped[list] = mapped_column(JSON, nullable=False)
-    # Closes the Intent-to-RMIH matching/dispatch gap — CreateIntent POSTs
-    # here on a capability match, same established pattern as DME's
-    # producerHealthCallbackUrl.
+    # Where a new intent addressed to this function is pushed (an outbox row written by main.py); required.
     notification_destination: Mapped[str] = mapped_column(String, nullable=False)
-    # Wave 6 — TS 28.312 IntentHandlingFunction attributes.
+    # TS 28.312 IntentHandlingFunction attributes.
     supported_negotiation_functionalities: Mapped[list | None] = mapped_column(JSON)
     supported_utility_list: Mapped[list | None] = mapped_column(JSON)
 
 
 class AutonomyDispatch(Base):
-    """HISTORY.md OI-6.3 — rApp Autonomy Modes: closes call flow
-    02/03's own "no automated hand-off from inference outcome to Intent"
-    gap and call flow 09's own "who creates an Intent and why" gap. A
-    real, queryable record of each inference-driven dispatch decision —
-    one per RequestAutonomyDispatch call — distinct from `Intent` itself
-    since not every mode actually produces one (SHADOW never does; ASSIST
-    doesn't until an operator resolves it).
+    """One rApp autonomy-mode decision about an inference outcome, table `autonomy_dispatch` (HISTORY.md OI-6.3): one row per `POST /autonomy-dispatches`.
 
-    instance_id/model_id are bare UUIDs, not ORM ForeignKeys — rapp-mgmt
-    and MLMR run in their own processes, the same cross-module-reference
-    shape used throughout this build (e.g. TrainingJob's own model_id).
-    rmih_id is a real FK: IntentHandlingFunction lives in this same
-    module/table.
+    A separate record from `Intent` because not every mode produces an intent (SHADOW never does; ASSIST only once an operator resolves it).
+    `instance_id` and `model_id` are bare UUIDs, not foreign keys, because rApp Management and MLMR are separate processes; `rmih_id` is a real foreign
+    key since the handling function lives in this module. `autonomy_mode` is copied from the instance when the row is made.
     """
     __tablename__ = "autonomy_dispatch"
 
@@ -120,7 +142,7 @@ class AutonomyDispatch(Base):
     # for an ASSIST dispatch still AWAITING_SCOPE.
     region_scope: Mapped[dict | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String, nullable=False)  # AWAITING_SCOPE | DISPATCHED | SHADOWED | REJECTED
-    # Wave 8 (W8-08): an ASSIST dispatch the operator declined.
+    # Set when an operator rejects an ASSIST dispatch.
     rejected_by: Mapped[str | None] = mapped_column(String)
     rejection_reason: Mapped[str | None] = mapped_column(String)
     intent_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("intent.intent_id", ondelete="SET NULL"))

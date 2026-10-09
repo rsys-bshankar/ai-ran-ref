@@ -1,4 +1,8 @@
-"""PR-OBS-4: `smo_intents{admin_state}` follows the intent table (the policy objects; A1 policies left the build)."""
+"""PR-OBS-4: the `smo_intents{admin_state}` gauge follows the `intent` table (intents are the policy objects of this build; A1 policies left it).
+
+Uses `smo_shared.testing.make_test_engine` (SQLite) and the module's own models; importing `app.main` is what registers the gauge. Run:
+`cd smo/intent-service && PYTHONPATH=.:../shared python -m pytest tests/test_business_metrics.py -q`. Needs nothing external.
+"""
 
 import uuid
 
@@ -14,6 +18,9 @@ from app.models import Intent, IntentHandlingFunction
 
 
 def test_intents_are_counted_by_admin_state_with_both_states_present():
+    """With no intents the gauge reports ACTIVATED and DEACTIVATED both at 0 (so a dashboard never sees a missing series); after inserting 2 and 1 it reports 2 and 1.
+    The cache is cleared by hand because the gauge caches its reading for 15 seconds.
+    """
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
         cls.__table__ for cls in vars(intent_models).values()
