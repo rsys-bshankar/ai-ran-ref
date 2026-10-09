@@ -83,6 +83,10 @@ Every module that uses the database has an init container, `wait-for-schema`, th
 
 Every variable a module reads is in `docs/CONFIGURATION.md` (default, secret or not, what it does). The chart sets the database, secret and enrollment variables itself; any other goes under `modules.<name>.env` (merged over `moduleDefaults.env`), the GUI backend's under `gui.env`. `tests_integration/test_helm_chart.py` still fails when a service's environment in the chart and in `docker-compose.yml` disagree. A secret has a `*_FILE` form: the chart uses it for the database password and the enrollment secret (a Secret volume), and so should any value you add.
 
+### Switches that are off by default (release 0.7.0)
+
+Set under `modules.ran-nf-oam.env` (or `modules.mock-o1-adaptor.env`): `RAN_NF_OAM_MSAC_REACH: "on"` (MSAC also guards reads and the other changes; add `read` rules to the Identities you made for writes first), `RAN_NF_OAM_VES_USERNAME` and `RAN_NF_OAM_VES_PASSWORD` (the VES listener at `/ves/eventListener/v7`, which exists only with a password; it is **not** routed by the gateway, so give an adaptor a Service or ingress path to RAN NF OAM's port 8000 and restrict it to the adaptors' network), `MOCK_O1_PROFILE` (the stub as one vendor). The chart has no setting yet to mount a Secret for `RAN_NF_OAM_VES_PASSWORD_FILE` (`OPEN_ITEMS.md`, SB-7.8): until then the password is an environment value, visible to whoever can read the Deployment.
+
 ## Build identity
 
 Every module answers `GET /version` (`{module, version, buildSha, builtAt}`, PR-OBS-8.1) from `SMO_VERSION`, `SMO_BUILD_SHA` and `SMO_BUILT_AT`, which are baked into the image as Docker build arguments: the release workflow sets them from the tag, the tag's commit and the build time, so a published `smo-<module>:<version>` image reports its own build and the chart needs no value for it. An image built by hand reports `unknown` unless built with `--build-arg SMO_BUILD_SHA=<commit>` (compose: export `SMO_BUILD_SHA` first). The operator GUI's Module health table shows them, and a module running a different commit than most is marked while a rolling upgrade is in progress.

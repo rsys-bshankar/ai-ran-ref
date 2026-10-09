@@ -1,0 +1,73 @@
+{
+ "classes": {
+  "ExampleBeamProfile": {
+   "horizontalBeamwidth": {
+    "range": [
+     [
+      10,
+      120
+     ]
+    ],
+    "type": "integer"
+   },
+   "id": {
+    "type": "string"
+   },
+   "profileName": {
+    "length": [
+     [
+      1,
+      32
+     ]
+    ],
+    "pattern": [
+     "[A-Za-z0-9_-]+"
+    ],
+    "type": "string"
+   }
+  },
+  "NRCellDU": {
+   "exampleBeamMode": {
+    "enum": [
+     "NARROW",
+     "WIDE",
+     "ADAPTIVE"
+    ],
+    "type": "string"
+   },
+   "exampleTxBackoffDb": {
+    "range": [
+     [
+      0,
+      20
+     ]
+    ],
+    "type": "integer"
+   },
+   "id": {
+    "type": "string"
+   }
+  },
+  "NRSectorCarrier": {
+   "configuredMaxTxPower": {
+    "range": [
+     [
+      0,
+      40
+     ]
+    ],
+    "type": "integer"
+   },
+   "id": {
+    "type": "string"
+   }
+  }
+ },
+ "revision": "2026-10-01",
+ "schemaName": "example-du-ext",
+ "source": [
+  "example-du-ext.yang"
+ ],
+ "type": "YANG",
+ "unresolved": []
+}
