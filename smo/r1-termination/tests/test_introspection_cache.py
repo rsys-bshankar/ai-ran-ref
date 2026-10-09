@@ -2,6 +2,8 @@
 
 A fake SME stands behind the gateway's httpx client: it knows a set of tokens, counts every introspection it is asked, can be told to fail, and (like the real one)
 forgets an invoker's tokens when `DELETE /invoker-registrations/{id}` reaches it. The cache's clock is a fake, so "within the TTL" and "after it" are exact.
+Covers `introspection_cache.py` and the cache path of `main._introspect_token`: off by default, fewer SME calls, the revocation bounds, SME down, negative
+answers, the token hash, the size bound. Run: `PYTHONPATH=.:../shared python -m pytest tests/test_introspection_cache.py -q`.
 """
 
 import time
@@ -77,11 +79,13 @@ class FakeSme:
 
 @pytest.fixture
 def clock():
+    """Fixture: the fake clock the cache under test uses; `advance(seconds)` moves it."""
     return Clock()
 
 
 @pytest.fixture
 def sme(monkeypatch, clock):
+    """Fixture: a `FakeSme` installed as the gateway's httpx client, with a fresh cache on the fake `clock`, the rate limit off and the limiter emptied; returns the fake."""
     fake = FakeSme()
     monkeypatch.setattr("app.main.httpx.AsyncClient", fake.client())
     monkeypatch.setattr(main, "_introspection_cache", IntrospectionCache(100, clock))
@@ -93,20 +97,24 @@ def sme(monkeypatch, clock):
 
 @pytest.fixture
 def gateway():
+    """Fixture: a test client for the gateway app."""
     return TestClient(app)
 
 
 def call(gateway, token, method="GET", path=PATH):
+    """Sends one request through the gateway with `token` as the bearer token (default: a GET of a service-discovery path) and returns the response."""
     return gateway.request(method, path, headers={"Authorization": f"Bearer {token}"})
 
 
 def counter(result):
+    """The current value of the introspection-cache metric for `result` (`hit` or `miss`)."""
     return INTROSPECTION_CACHE.labels(result)._value.get()
 
 
 # ---------------------------------------------------------------- off by default
 
 def test_off_by_default_every_request_asks_sme(sme, gateway, monkeypatch):
+    """Without `R1_INTROSPECTION_CACHE_SECONDS` every request asks SME, the cache stays empty and no hit or miss is counted."""
     monkeypatch.delenv("R1_INTROSPECTION_CACHE_SECONDS", raising=False)
     sme.add("t1")
     hits, misses = counter("hit"), counter("miss")
@@ -118,6 +126,7 @@ def test_off_by_default_every_request_asks_sme(sme, gateway, monkeypatch):
 
 @pytest.mark.parametrize("value", ["0", "-5", "abc", "", "nan"])
 def test_a_zero_negative_or_unreadable_setting_is_off(sme, gateway, monkeypatch, value):
+    """A setting of 0, a negative number, or text that is not a number switches the cache off rather than failing."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", value)
     sme.add("t1")
     for _ in range(3):
@@ -128,6 +137,7 @@ def test_a_zero_negative_or_unreadable_setting_is_off(sme, gateway, monkeypatch,
 # ---------------------------------------------------------------- fewer SME calls
 
 def test_a_cached_token_costs_sme_one_lookup_not_one_per_request(sme, gateway, monkeypatch):
+    """Ten requests with two tokens make two SME calls (eight hits, two misses) and all ten are still forwarded."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "30")
     sme.add("t1")
     sme.add("t2", invoker="rapp-2")
@@ -140,6 +150,7 @@ def test_a_cached_token_costs_sme_one_lookup_not_one_per_request(sme, gateway, m
 
 
 def test_the_identity_and_role_come_from_the_cache_as_from_sme(sme, gateway, monkeypatch):
+    """A cached answer carries the same invoker id and role as SME's, so the policy decisions that depend on them do not change when the cache answers."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "30")
     sme.add("t1", invoker="rapp-9", role="rapp")
     assert asyncio_run(main._introspect_token, request_with("t1")) == Caller("rapp-9", "rapp")
@@ -148,12 +159,14 @@ def test_the_identity_and_role_come_from_the_cache_as_from_sme(sme, gateway, mon
 
 
 def request_with(token):
+    """A minimal request object carrying only a bearer `Authorization` header, enough for `_introspect_token`."""
     class Req:
         headers = {"authorization": f"Bearer {token}"}
     return Req()
 
 
 def asyncio_run(fn, *args):
+    """Runs the coroutine function `fn(*args)` to completion and returns its result (the tests here are synchronous)."""
     import asyncio
     return asyncio.run(fn(*args))
 
@@ -161,6 +174,7 @@ def asyncio_run(fn, *args):
 # ---------------------------------------------------------------- revocation
 
 def test_a_token_revoked_through_this_gateway_is_refused_on_the_next_request(sme, gateway, monkeypatch):
+    """Offboarding an invoker through the gateway evicts its cached answers at once (a 401 on the next call, not after the TTL), leaving other invokers' entries alone."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "3600")
     sme.add("victim", invoker="rapp-1")
     sme.add("other", invoker="rapp-2")
@@ -175,6 +189,7 @@ def test_a_token_revoked_through_this_gateway_is_refused_on_the_next_request(sme
 
 
 def test_a_failed_revocation_evicts_nothing(sme, gateway, monkeypatch):
+    """Only a `DELETE` of an invoker registration evicts: a GET of it, or a DELETE of another resource, leaves the cached answer in place."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "3600")
     sme.add("victim", invoker="rapp-1")
     sme.add("admin", invoker="smo-admin", role="internal")
@@ -187,6 +202,7 @@ def test_a_failed_revocation_evicts_nothing(sme, gateway, monkeypatch):
 
 
 def test_purge_stale_clears_every_entry(sme, gateway, monkeypatch):
+    """A real `purge-stale` empties the cache, because it offboards invokers the gateway is not told by name."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "3600")
     sme.add("a", invoker="rapp-1")
     sme.add("admin", invoker="smo-admin", role="internal")
@@ -198,7 +214,7 @@ def test_purge_stale_clears_every_entry(sme, gateway, monkeypatch):
 
 
 def test_a_token_revoked_at_another_replica_is_refused_within_the_ttl_and_not_before(sme, gateway, monkeypatch, clock):
-    """The bound, stated exactly: the revocation happened at SME without this gateway hearing of it, so the cached answer is honoured until its TTL runs out."""
+    """The documented window: a revocation this gateway did not see is honoured until the cached answer's TTL ends, and refused right after."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "30")
     sme.add("victim", invoker="rapp-1")
     assert call(gateway, "victim").status_code == 200              # t = 0: SME says active, cached until t = 30
@@ -212,6 +228,7 @@ def test_a_token_revoked_at_another_replica_is_refused_within_the_ttl_and_not_be
 
 
 def test_the_window_never_exceeds_the_ttl_after_the_last_sme_answer(sme, gateway, monkeypatch, clock):
+    """The window is counted from SME's last answer, not from the revocation: a token revoked late in the TTL is refused as soon as the TTL runs out."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "30")
     sme.add("victim")
     call(gateway, "victim")
@@ -222,6 +239,7 @@ def test_the_window_never_exceeds_the_ttl_after_the_last_sme_answer(sme, gateway
 
 
 def test_an_answer_fetched_while_a_revocation_evicts_is_not_stored(sme, monkeypatch, clock):
+    """The generation number closes the race between a lookup and a revocation: an answer fetched while an eviction or clear ran is not stored."""
     cache = IntrospectionCache(10, clock)
     generation = cache.generation                                  # an introspection starts ...
     cache.evict_invoker("rapp-1")                                  # ... a revocation evicts while SME is still answering ...
@@ -235,6 +253,7 @@ def test_an_answer_fetched_while_a_revocation_evicts_is_not_stored(sme, monkeypa
 # ---------------------------------------------------------------- SME down
 
 def test_sme_unreachable_is_a_503_once_the_cached_answer_has_expired_and_never_before_that_a_stale_one(sme, gateway, monkeypatch, clock):
+    """SME down: a live cached answer still serves, an expired one is not served stale but gives a 503 `AUTH_SERVICE_UNAVAILABLE`, and an unknown token cannot be judged."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "30")
     sme.add("t1")
     assert call(gateway, "t1").status_code == 200
@@ -249,6 +268,7 @@ def test_sme_unreachable_is_a_503_once_the_cached_answer_has_expired_and_never_b
 
 
 def test_an_sme_error_is_never_cached(sme, gateway, monkeypatch):
+    """A 5xx from SME is a 503 and is not remembered as an answer; the next call asks SME again."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "30")
     sme.add("t1")
     sme.status = 500
@@ -261,6 +281,7 @@ def test_an_sme_error_is_never_cached(sme, gateway, monkeypatch):
 # ---------------------------------------------------------------- negative answers and lifetime
 
 def test_a_wrong_token_is_remembered_for_seconds_not_for_the_ttl(sme, gateway, monkeypatch, clock):
+    """An inactive token is remembered for `NEGATIVE_SECONDS` at most (one SME call for four requests), so a flood of wrong tokens is cheap but the answer does not stick."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "300")
     assert [call(gateway, "nope").status_code for _ in range(4)] == [401] * 4
     assert sme.introspections == ["nope"]                          # one SME call for four requests
@@ -272,6 +293,7 @@ def test_a_wrong_token_is_remembered_for_seconds_not_for_the_ttl(sme, gateway, m
 
 
 def test_a_short_ttl_also_shortens_the_negative_answer(sme, gateway, monkeypatch, clock):
+    """The negative answer lives for the smaller of the TTL and `NEGATIVE_SECONDS`."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "2")
     call(gateway, "nope")
     clock.advance(2.1)
@@ -280,6 +302,7 @@ def test_a_short_ttl_also_shortens_the_negative_answer(sme, gateway, monkeypatch
 
 
 def test_a_positive_answer_never_outlives_the_token(sme, gateway, monkeypatch, clock):
+    """A cached positive answer ends at the token's own `exp`; a token already past it is not stored at all."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "300")
     sme.add("short", exp_in=10)
     assert call(gateway, "short").status_code == 200
@@ -299,6 +322,7 @@ def test_a_positive_answer_never_outlives_the_token(sme, gateway, monkeypatch, c
 # ---------------------------------------------------------------- the cache itself
 
 def test_the_raw_token_is_never_held_only_its_hash(sme, gateway, monkeypatch):
+    """The cache's keys are SHA-256 digests and the raw bearer token appears nowhere in the cache object."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "30")
     secret = "very-secret-bearer-token-value"
     sme.add(secret)
@@ -309,6 +333,7 @@ def test_the_raw_token_is_never_held_only_its_hash(sme, gateway, monkeypatch):
 
 
 def test_the_cache_is_bounded_and_drops_the_oldest(clock):
+    """A cache of 3 never holds more than 3 entries and the oldest go first."""
     cache = IntrospectionCache(3, clock)
     for i in range(10):
         cache.put(f"t{i}", Caller(f"rapp-{i}", "rapp"), 30, cache.generation)
@@ -318,6 +343,7 @@ def test_the_cache_is_bounded_and_drops_the_oldest(clock):
 
 
 def test_a_full_cache_drops_expired_entries_before_live_ones(clock):
+    """When room is needed, expired entries are dropped before any live one is."""
     cache = IntrospectionCache(2, clock)
     cache.put("old", Caller("a", "rapp"), 5, cache.generation)
     cache.put("live", Caller("b", "rapp"), 100, cache.generation)
@@ -327,6 +353,7 @@ def test_a_full_cache_drops_expired_entries_before_live_ones(clock):
 
 
 def test_an_entry_is_gone_when_its_time_is_up_and_zero_or_negative_ttl_stores_nothing(clock):
+    """An entry is live up to its expiry and gone at it; a zero or negative lifetime stores nothing."""
     cache = IntrospectionCache(5, clock)
     assert cache.put("t", Caller("a", "rapp"), 0, cache.generation) is False and cache.put("t", Caller("a", "rapp"), -3, cache.generation) is False
     assert cache.put("t", Caller("a", "rapp"), 10, cache.generation) is True
@@ -337,6 +364,7 @@ def test_an_entry_is_gone_when_its_time_is_up_and_zero_or_negative_ttl_stores_no
 
 
 def test_evicting_an_invoker_leaves_negative_entries_and_other_invokers(clock):
+    """`evict_invoker` removes only that invoker's positive entries, keeps "inactive" entries and other invokers, and reports the count; a capacity below 1 is raised to 1."""
     cache = IntrospectionCache(5, clock)
     cache.put("a", Caller("rapp-1", "rapp"), 10, cache.generation)
     cache.put("b", Caller("rapp-2", "rapp"), 10, cache.generation)
@@ -348,6 +376,7 @@ def test_evicting_an_invoker_leaves_negative_entries_and_other_invokers(clock):
 
 
 def test_the_max_entries_setting_falls_back_on_a_bad_value(monkeypatch):
+    """`R1_INTROSPECTION_CACHE_MAX_ENTRIES` sets the capacity; text that is not a number gives the default of 10000."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_MAX_ENTRIES", "many")
     assert main._cache_max_entries() == 10000
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_MAX_ENTRIES", "250")

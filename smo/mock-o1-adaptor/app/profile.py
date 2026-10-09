@@ -14,6 +14,10 @@ transport the vendor does not speak answers 404 (a NETCONF-only vendor has no RE
 
 `onboarding_body` is the other half: the body of `POST /ran-nf-oam/vendor-onboarding` that registers the same vendor at RAN NF OAM (the capability entry,
 SB-10.2, and the descriptor), so the two sides cannot disagree about what the vendor is.
+
+Where it sits: imported by `main.py` as `vendor_profile` (and used by the profile tests). It only reads files under `PROFILES`, validates them
+and returns plain dicts; it writes nothing. A profile name is a directory name matched by `NAME`, never a path, so a caller-influenced name cannot read outside `PROFILES`.
+Before editing: `load` is cached (`lru_cache`), so a test that points `PROFILES` elsewhere must call `load.cache_clear()`.
 """
 
 import json
@@ -34,6 +38,7 @@ class ProfileError(ValueError):
 
 
 def _read(path: Path) -> Any:
+    """Reads `path` as JSON; raises `ProfileError` (naming the file, not its directory) when it is unreadable or not JSON."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -41,6 +46,11 @@ def _read(path: Path) -> Any:
 
 
 def _check(profile: Any, name: str) -> dict:
+    """Validates a parsed `profile.json` against its directory `name` and returns it; raises `ProfileError` listing every problem found at once.
+
+    Checks: it is an object whose `name` equals the directory name, a non-empty `vendorName`, non-empty `supportedServices` and `supportedVendorModes` drawn from the known
+    sets, a known `conformanceMode`, `iocDefaults` as class -> attribute -> string (the stub keeps values as text), and a `schema` block when the mode is OWN or COMBINED.
+    """
     if not isinstance(profile, dict):
         raise ProfileError(f"profile {name}: profile.json is not an object")
     problems = []
@@ -78,6 +88,7 @@ def load(name: str) -> dict:
 
 
 def available() -> list[str]:
+    """The names of the profiles that exist (directories under `PROFILES` holding a `profile.json`), sorted; empty when `PROFILES` does not exist."""
     return sorted(p.name for p in PROFILES.iterdir() if (p / "profile.json").is_file()) if PROFILES.is_dir() else []
 
 
