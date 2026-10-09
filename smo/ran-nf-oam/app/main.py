@@ -14,6 +14,7 @@ rejected with PROTOCOL_NOT_SUPPORTED rather than silently applied.
 """
 
 import datetime
+import hashlib
 import logging
 import json
 import os
@@ -39,15 +40,17 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.timeutil import as_utc
 from smo_shared.openapi_security import apply_r1_gateway_security
-from smo_shared.correlation import apply_correlation_id
+from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.outbox import enqueue
 from smo_shared.webhook import is_safe_webhook_destination
 from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
-from smo_shared.invoker import invoker_id
+from smo_shared.invoker import ON_BEHALF_OF_HEADER, invoker_id
+from smo_shared.roles import ROLE_INTERNAL, ROLE_RAPP, role_of
+from smo_shared import audit
 
-from .models import Alarm, RAppKill, RAppLimit, SafeguardRefusal, SafeguardSubscription, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, KpiSchedule, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
+from .models import Alarm, ApprovalSubscription, RAppActionApproval, RAppApprovalPolicy, RAppDecisionRecord, RAppKill, RAppLimit, SafeguardRefusal, SafeguardSubscription, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, KpiSchedule, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from . import msac
 from .ldn import check_ref, leaf_class, leaf_id
 from . import mo_tree
@@ -265,8 +268,18 @@ class KpiGuard(BaseModel):
     msacRole: str | None = None
 
 
+class DecisionContext(BaseModel):
+    """AI-13.1: why the rApp is asking, kept with the job it makes (`GET /decision-records`): a reference to the inputs it decided on (a data job, a dataset,
+    a feature snapshot: a reference, never the data), the version of the model that decided, its stated rationale, and the id of its own action. All optional."""
+    inputsRef: str | None = Field(default=None, max_length=1000)
+    modelVersion: str | None = Field(default=None, max_length=200)
+    rationale: str | None = Field(default=None, max_length=4000)
+    actionId: str | None = Field(default=None, max_length=100)
+
+
 class WriteConfigRequest(BaseModel):
     requestedBy: str
+    decision: DecisionContext | None = None
     # SA-RANOAM-2: `scope` collides with the ProvMnS ScopeType, so the access
     # scope is `accessScope`. `scope` stays as a deprecated alias (same value);
     # at least one is required and both, if sent, must agree.
@@ -615,7 +628,16 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
     _refuse_if_killed(db, caller, body.requestedBy)
     _enforce_rapp_limit(db, caller, body.requestedBy)
     _enforce_change_limits(db, body, caller)
-    return _execute_write(body, db, invoker=caller)
+    return _execute_write(body, db, invoker=caller, actor=_acting_rapp(request), park=True)
+
+
+def _acting_rapp(request: Request) -> str | None:
+    """The rApp a request is for, when it is for one (AI-13.2): the id of an rApp that called, or the one an SMO module passed on (`X-R1-On-Behalf-Of`).
+    A call by an SMO module on its own account (the GUI, an operator's tool) is not an rApp's action and has no decision record. A request that did not
+    come through R1 (no role) is taken at its invoker id, as the safeguards take it."""
+    if role_of(request) == ROLE_INTERNAL and not request.headers.get(ON_BEHALF_OF_HEADER):
+        return None
+    return invoker_id(request)
 
 
 RATE_WINDOW = datetime.timedelta(hours=1)
@@ -725,9 +747,14 @@ def _enforce_change_limits(db: Session, body: WriteConfigRequest, caller: str | 
 
 
 def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID | None = None, rollback_forced: bool = False,
-                   invoker: str | None = None):
+                   invoker: str | None = None, actor: str | None = None, park: bool = False, approval: RAppActionApproval | None = None):
     """The body of `POST /config-jobs`, shared with the rollback route (MGT-1.6), which builds the same request from a recorded job and so
-    goes through the same MSAC, schema, dispatch and snapshot steps as any other write."""
+    goes through the same MSAC, schema, dispatch and snapshot steps as any other write.
+
+    `park` (only the route that takes a new write from a caller sets it): an rApp with an approval policy (AI-11) does not get a job here; the request,
+    once it has passed every check, is kept as a `rapp_action_approval` and the answer says `PENDING_APPROVAL`. `approval` is that request when a human
+    has approved it (`POST /rapp-approvals/{id}/approve`): the job is made from it and the approval is closed in the same transaction. `actor` is the rApp
+    the action is for, when it is one: it gets a decision record (AI-13.2)."""
     # SA-RANOAM-1: TS 28.319 role-based access control, per sub-change, before
     # anything is dispatched. A requester with a registered Identity or a
     # defined Role is evaluated against its AccessRules; any other requester
@@ -773,6 +800,11 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
             "waves": [[e for e in elements if wave_of[e] == w] for w in range(1, max(wave_of.values(), default=1) + 1)],
             "changes": verdicts})
 
+    if park and invoker:
+        policy = db.get(RAppApprovalPolicy, invoker)
+        if policy is not None:
+            return _park_for_approval(db, body, invoker, policy)
+
     job = WriteConfigJob(requested_by=body.requestedBy, scope=body.accessScope, msac_role=body.msacRole, rollback_of=rollback_of,
                          rollback_forced=rollback_forced, wave_size=body.waveSize, wave_pause_seconds=body.wavePauseSeconds,
                          wave_count=max(wave_of.values(), default=1), gate_max_new_alarms=body.gateMaxNewAlarms,
@@ -795,8 +827,14 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
                                      attribute_changes=change.get("attributeChanges", {}), operation=change.get("operation", "merge"),
                                      status="PENDING", position=index, wave=wave_of[change["managedElementRef"]]))
     db.flush()
+    if approval is not None:
+        approval.status, approval.job_id = "APPROVED", job.job_id
+    if actor:
+        _record_decision(db, actor, body, "ROLLBACK" if rollback_of else "APPROVED" if approval is not None else "DIRECT", job_id=job.job_id, approval=approval)
     _advance(db, job)
     db.commit()
+    if actor:
+        _chain_decisions_quietly(db)
     return _job_summary(job)
 
 
@@ -1134,7 +1172,7 @@ def rollback_configuration_job(job_id: uuid.UUID, body: RollbackRequest, request
                                      f"{first['managedFunctionRef'] or first['managedElementRef']} {first['attribute']}: expected {first['expected']!r}, "
                                      f"found {first['actual']!r}; send force=true to restore anyway")
     request_body = WriteConfigRequest(requestedBy=body.requestedBy, accessScope=body.accessScope or job.scope, msacRole=body.msacRole, changes=changes)
-    result = _execute_write(request_body, db, rollback_of=job_id, rollback_forced=bool(changed))
+    result = _execute_write(request_body, db, rollback_of=job_id, rollback_forced=bool(changed), actor=_acting_rapp(request))
     return {**result, "rollbackOf": str(job_id), "forced": bool(changed)}
 
 
@@ -1434,10 +1472,11 @@ def _limit_or_404(db: Session, invoker: str) -> RAppLimit:
     return row
 
 
-def _not_own_limit(request: Request, invoker: str) -> None:
-    """An rApp may not change its own limit. (Any valid token reaches every route behind R1 today; this at least keeps a caller from lifting its own cap.)"""
+def _not_own_limit(request: Request, invoker: str, what: str = "limit") -> None:
+    """An rApp may not change its own limit (or its own approval policy). (Any valid token reaches every route behind R1 today; this at least keeps a
+    caller from lifting its own cap.)"""
     if invoker_id(request) == invoker:
-        raise framework_error(FrameworkError.RAPP_LIMIT_SELF_CHANGE, detail="a caller cannot change its own limit")
+        raise framework_error(FrameworkError.RAPP_LIMIT_SELF_CHANGE, detail=f"a caller cannot change its own {what}")
 
 
 @app.put("/rapp-limits/{invoker_id_}")
@@ -1596,6 +1635,402 @@ def purge_refusals(older_than_days: int | None = None, db: Session = Depends(get
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
                               detail="older_than_days is required (and positive) unless SAFEGUARD_REFUSAL_RETENTION_DAYS is set")
     return {"deleted": purge_safeguard_refusals(db, days), "olderThanDays": days}
+
+
+# ---------------------------------------------------------------- human approval of rApp actions (PR-AI-11) and the decision record (PR-AI-13)
+
+APPROVAL_STATUSES = ("PENDING", "APPROVED", "REJECTED", "EXPIRED", "REFUSED")
+SYSTEM_DECIDER = "system:timeout"
+APPROVAL_SWEEP_BATCH = 100
+
+
+class ApprovalPolicyRequest(BaseModel):
+    """What happens to the config jobs of one rApp: each waits for a human. `timeoutSeconds` (a minute to a week, default an hour) is how long a request
+    may wait; `onTimeout` is what a request nobody decided becomes: `EXPIRE` (the default) or `REJECT` (the platform rejects it). Neither writes anything:
+    there is deliberately no option that approves by itself."""
+    requestedBy: str = Field(min_length=1)
+    timeoutSeconds: int = Field(default=3600, ge=60, le=604_800)
+    onTimeout: Literal["EXPIRE", "REJECT"] = "EXPIRE"
+
+
+def _policy_view(row: RAppApprovalPolicy) -> dict:
+    return {"invokerId": row.invoker_id, "timeoutSeconds": row.timeout_seconds, "onTimeout": row.on_timeout, "setBy": row.set_by, "updatedAt": row.updated_at}
+
+
+def _policy_or_404(db: Session, invoker: str) -> RAppApprovalPolicy:
+    row = db.get(RAppApprovalPolicy, invoker)
+    if row is None:
+        raise framework_error(FrameworkError.APPROVAL_POLICY_NOT_FOUND, detail=f"{invoker} has no approval policy: its config jobs are not held for approval")
+    return row
+
+
+@app.put("/rapp-approval-policy/{invoker_id_}")
+def set_approval_policy(invoker_id_: str, body: ApprovalPolicyRequest, request: Request, db: Session = Depends(get_session)):
+    """AI-11.4: from now on the config jobs of this rApp (by its invoker id) wait for a human to approve them (`/rapp-approvals`). Replaces an earlier
+    policy. Jobs already running, rollbacks, reverts and dry runs are not held. Called by rApp Management when an instance created with an approval
+    policy finishes bootstrapping; an admin may also set it from the GUI. An rApp cannot set its own."""
+    _not_own_limit(request, invoker_id_, "approval policy")
+    row = db.get(RAppApprovalPolicy, invoker_id_)
+    if row is None:
+        row = RAppApprovalPolicy(invoker_id=invoker_id_)
+        db.add(row)
+    row.timeout_seconds, row.on_timeout, row.set_by = body.timeoutSeconds, body.onTimeout, body.requestedBy
+    db.commit()
+    return _policy_view(db.get_one(RAppApprovalPolicy, invoker_id_, populate_existing=True))
+
+
+@app.get("/rapp-approval-policy/{invoker_id_}")
+def read_approval_policy(invoker_id_: str, db: Session = Depends(get_session)):
+    return _policy_view(_policy_or_404(db, invoker_id_))
+
+
+@app.delete("/rapp-approval-policy/{invoker_id_}", status_code=204)
+def delete_approval_policy(invoker_id_: str, request: Request, db: Session = Depends(get_session)):
+    """The rApp's config jobs are written at once again. Requests already waiting stay waiting (and can still be decided or lapse)."""
+    _not_own_limit(request, invoker_id_, "approval policy")
+    db.delete(_policy_or_404(db, invoker_id_))
+    db.commit()
+    return Response(status_code=204)
+
+
+class ApprovalSubscriptionRequest(BaseModel):
+    callbackUri: str = Field(min_length=1, max_length=2000)
+
+
+def _approval_subscription_view(sub: ApprovalSubscription) -> dict:
+    return {"subscriptionId": str(sub.subscription_id), "callbackUri": sub.callback_uri, "createdAt": sub.created_at}
+
+
+@app.post("/approval-subscriptions", status_code=201)
+def subscribe_to_approvals(body: ApprovalSubscriptionRequest, db: Session = Depends(get_session)):
+    """AI-11.5: be told (a POST to `callbackUri`, through the outbox) when an rApp action needs a decision (`RAPP_APPROVAL_REQUESTED`) and when a request
+    lapsed with nobody deciding (`RAPP_APPROVAL_LAPSED`). A destination the SSRF guard refuses is a 422 here rather than a silent drop later."""
+    if not is_safe_webhook_destination(body.callbackUri):
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="callbackUri is not an acceptable destination")
+    sub = ApprovalSubscription(callback_uri=body.callbackUri)
+    db.add(sub)
+    db.commit()
+    return _approval_subscription_view(sub)
+
+
+@app.get("/approval-subscriptions")
+def list_approval_subscriptions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    page = paginate(db, select(ApprovalSubscription).order_by(ApprovalSubscription.created_at), limit, offset)
+    return {**page, "items": [_approval_subscription_view(s) for s in page["items"]]}
+
+
+@app.delete("/approval-subscriptions/{subscription_id}", status_code=204)
+def unsubscribe_from_approvals(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    sub = db.get(ApprovalSubscription, subscription_id)
+    if sub is None:
+        raise framework_error(FrameworkError.APPROVAL_SUBSCRIPTION_NOT_FOUND, detail=f"no subscription {subscription_id}")
+    db.delete(sub)
+    db.commit()
+    return Response(status_code=204)
+
+
+def _notify_approvers(db: Session, event_type: str, row: RAppActionApproval) -> None:
+    """AI-11.5: one outbox row per subscriber, in the transaction that parks (or lapses) the request, so a request exists exactly when its notice does."""
+    event = {"href": "/ran-nf-oam/rapp-approvals", "eventType": event_type, "approvalId": str(row.approval_id), "invokerId": row.invoker_id,
+             "requestedBy": row.requested_by, "status": row.status, "managedElements": row.managed_elements, "changeCount": row.change_count,
+             "expiresAt": as_utc(row.expires_at).isoformat(), "occurredAt": datetime.datetime.now(datetime.UTC).isoformat()}
+    for sub in db.scalars(select(ApprovalSubscription)).all():
+        enqueue(db, sub.callback_uri, event)
+
+
+def _park_for_approval(db: Session, body: WriteConfigRequest, invoker: str, policy: RAppApprovalPolicy) -> dict:
+    """AI-11.4: keep a write that passed every check as a request for a human, and tell the approvers. Nothing is dispatched and no job exists yet."""
+    now = datetime.datetime.now(datetime.UTC)
+    elements = list(dict.fromkeys(c["managedElementRef"] for c in body.changes))
+    row = RAppActionApproval(invoker_id=invoker, requested_by=body.requestedBy, status="PENDING", request=body.model_dump(mode="json"),
+                             managed_elements=elements, change_count=len(body.changes), created_at=now,
+                             expires_at=now + datetime.timedelta(seconds=policy.timeout_seconds), on_timeout=policy.on_timeout,
+                             correlation_id=get_correlation_id())
+    db.add(row)
+    db.flush()
+    _notify_approvers(db, "RAPP_APPROVAL_REQUESTED", row)
+    db.commit()
+    return {"status": "PENDING_APPROVAL", "jobId": None, "approvalId": str(row.approval_id), "expiresAt": as_utc(row.expires_at).isoformat(),
+            "wave": None, "waveCount": None, "haltedReason": None}
+
+
+def _approval_view(row: RAppActionApproval, detail: bool = False) -> dict:
+    view = {"approvalId": str(row.approval_id), "invokerId": row.invoker_id, "requestedBy": row.requested_by, "status": row.status,
+            "managedElements": row.managed_elements, "changeCount": row.change_count, "createdAt": as_utc(row.created_at).isoformat(),
+            "expiresAt": as_utc(row.expires_at).isoformat(), "onTimeout": row.on_timeout, "decidedBy": row.decided_by,
+            "decidedAt": as_utc(row.decided_at).isoformat() if row.decided_at else None, "decisionReason": row.decision_reason,
+            "jobId": str(row.job_id) if row.job_id else None, "refusalCode": row.refusal_code, "correlationId": row.correlation_id,
+            "decision": (row.request or {}).get("decision")}
+    if detail:
+        view["changes"] = (row.request or {}).get("changes", [])
+        view["accessScope"] = (row.request or {}).get("accessScope")
+    return view
+
+
+def _approval_or_404(db: Session, approval_id: uuid.UUID, lock: bool = False) -> RAppActionApproval:
+    stmt = select(RAppActionApproval).where(RAppActionApproval.approval_id == approval_id).execution_options(populate_existing=True)
+    row = db.scalars(stmt.with_for_update() if lock else stmt).one_or_none()
+    if row is None:
+        raise framework_error(FrameworkError.APPROVAL_NOT_FOUND, detail=f"no approval request {approval_id}")
+    return row
+
+
+def _lapse_if_due(db: Session, row: RAppActionApproval, now: datetime.datetime | None = None) -> bool:
+    """AI-11.3: a PENDING request past `expires_at` becomes EXPIRED or REJECTED (the policy it was parked under), decided by `system:timeout`, with a
+    decision record and a notice to the approvers. Flushes, does not commit. True when it lapsed."""
+    now = now or datetime.datetime.now(datetime.UTC)
+    if row.status != "PENDING" or as_utc(row.expires_at) > now:
+        return False
+    row.status = "REJECTED" if row.on_timeout == "REJECT" else "EXPIRED"
+    row.decided_by, row.decided_at = SYSTEM_DECIDER, now
+    row.decision_reason = f"nobody decided before {as_utc(row.expires_at).isoformat()}"
+    _record_decision(db, row.invoker_id, WriteConfigRequest.model_validate(row.request), row.status, approval=row)
+    _notify_approvers(db, "RAPP_APPROVAL_LAPSED", row)
+    db.flush()
+    return True
+
+
+def lapse_due_approvals(db: Session) -> list[str]:
+    """The body of `POST /rapp-approvals/expire-due`, also what the worker's `expire-approvals` task runs and what a list runs first, so a timeout holds
+    whether or not a scheduler is running. Each request is lapsed and committed on its own (a row another replica holds is skipped)."""
+    now = datetime.datetime.now(datetime.UTC)
+    ids = list(db.scalars(select(RAppActionApproval.approval_id).where(RAppActionApproval.status == "PENDING", RAppActionApproval.expires_at <= now)
+                          .order_by(RAppActionApproval.expires_at).limit(APPROVAL_SWEEP_BATCH)).all())
+    lapsed = []
+    for approval_id in ids:
+        row = db.scalars(select(RAppActionApproval).where(RAppActionApproval.approval_id == approval_id).with_for_update(skip_locked=True)
+                         .execution_options(populate_existing=True)).one_or_none()
+        if row is not None and _lapse_if_due(db, row, now):
+            db.commit()
+            lapsed.append(str(approval_id))
+        else:
+            db.rollback()
+    if lapsed:
+        _chain_decisions_quietly(db)
+    return lapsed
+
+
+@app.post("/rapp-approvals/expire-due")
+def expire_due_approvals(db: Session = Depends(get_session)):
+    """AI-11.3: for a scheduler. Lapses every pending request whose time has passed (EXPIRED or REJECTED, by the policy it was parked under). Internal-only at R1."""
+    return {"lapsed": lapse_due_approvals(db)}
+
+
+@app.get("/rapp-approvals")
+def list_approvals(status: Literal["PENDING", "APPROVED", "REJECTED", "EXPIRED", "REFUSED"] | None = None,
+                   invoker_id_: str | None = Query(default=None, alias="invoker_id"), since: datetime.datetime | None = None,
+                   limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    """AI-11.2: the approval queue, newest first. `status=PENDING` is the inbox. Requests whose time has passed are lapsed first. Names other rApps'
+    actions: internal-only at R1 (an rApp reads its own request by id)."""
+    lapse_due_approvals(db)
+    stmt = select(RAppActionApproval).order_by(RAppActionApproval.created_at.desc(), RAppActionApproval.approval_id)
+    if status:
+        stmt = stmt.where(RAppActionApproval.status == status)
+    if invoker_id_:
+        stmt = stmt.where(RAppActionApproval.invoker_id == invoker_id_)
+    if since:
+        stmt = stmt.where(RAppActionApproval.created_at >= as_utc(since))
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_approval_view(r) for r in page["items"]]}
+
+
+@app.get("/rapp-approvals/{approval_id}")
+def read_approval(approval_id: uuid.UUID, db: Session = Depends(get_session)):
+    """One request with the changes it asks for. The rApp that made it polls this for the outcome (`jobId` once approved)."""
+    row = _approval_or_404(db, approval_id)
+    if _lapse_if_due(db, row):
+        db.commit()
+        _chain_decisions_quietly(db)
+        row = _approval_or_404(db, approval_id)
+    return _approval_view(row, detail=True)
+
+
+class ApprovalDecisionRequest(BaseModel):
+    decidedBy: str = Field(min_length=1, max_length=200)
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+def _decidable(db: Session, approval_id: uuid.UUID, request: Request, body: ApprovalDecisionRequest) -> RAppActionApproval:
+    """The request to decide, locked: 404, 403 for an rApp (it can never decide, whatever it is deciding) or for the requester itself, and 409 when it is
+    no longer pending (decided, or lapsed just now)."""
+    if role_of(request) == ROLE_RAPP:
+        raise framework_error(FrameworkError.ROLE_NOT_PERMITTED, detail="an rApp cannot decide an approval request")
+    row = _approval_or_404(db, approval_id, lock=True)
+    if body.decidedBy in (row.invoker_id, row.requested_by) or invoker_id(request) == row.invoker_id:
+        raise framework_error(FrameworkError.APPROVAL_SELF_DECISION, detail="the requester of an action cannot decide it")
+    if _lapse_if_due(db, row):
+        db.commit()
+        _chain_decisions_quietly(db)
+        row = _approval_or_404(db, approval_id)
+    if row.status != "PENDING":
+        raise framework_error(FrameworkError.APPROVAL_NOT_PENDING, detail=f"the request is {row.status}"
+                              + (f" ({row.decision_reason})" if row.decision_reason else ""))
+    return row
+
+
+@app.post("/rapp-approvals/{approval_id}/approve")
+def approve_action(approval_id: uuid.UUID, body: ApprovalDecisionRequest, request: Request, db: Session = Depends(get_session)):
+    """AI-11.2: approve a waiting request. The safeguards are checked again now (a kill switch thrown while it waited refuses it: 403 `RAPP_KILLED`, the
+    request is closed REFUSED), then MSAC, the schema check and the dispatch run as for any write, and the job is made from the request as the rApp
+    sent it. 200 with the request (now APPROVED, `jobId`) and the job's status. 404, 403 (an rApp, or the requester), 409 (not pending)."""
+    row = _decidable(db, approval_id, request, body)
+    try:
+        _refuse_if_killed(db, row.invoker_id, row.requested_by)
+        _enforce_rapp_limit(db, row.invoker_id, row.requested_by)
+        replay = WriteConfigRequest.model_validate(row.request)
+        _enforce_change_limits(db, replay, row.invoker_id)
+        row.decided_by, row.decided_at, row.decision_reason = body.decidedBy, datetime.datetime.now(datetime.UTC), body.reason
+        result = _execute_write(replay, db, invoker=row.invoker_id, actor=row.invoker_id, approval=row)
+    except HTTPException as exc:
+        db.rollback()                                       # a refusal committed its own record; the rest of this attempt is undone
+        _close_refused(db, approval_id, body, exc)
+        raise
+    return {**_approval_view(_approval_or_404(db, approval_id), detail=True), "jobStatus": result["status"]}
+
+
+def _close_refused(db: Session, approval_id: uuid.UUID, body: ApprovalDecisionRequest, exc: HTTPException) -> None:
+    """The request was approved but refused when it was run (a safeguard, MSAC, the schema check): it is closed REFUSED with the code, so it does not
+    wait for a decision that cannot succeed. The approver sees the refusal as the answer to the approve call."""
+    row = _approval_or_404(db, approval_id, lock=True)
+    if row.status != "PENDING":
+        return
+    detail: dict[str, Any] = exc.detail if isinstance(exc.detail, dict) else {}
+    row.status, row.refusal_code = "REFUSED", str(detail.get("title") or "REFUSED")
+    row.decided_by, row.decided_at, row.decision_reason = body.decidedBy, datetime.datetime.now(datetime.UTC), body.reason
+    _record_decision(db, row.invoker_id, WriteConfigRequest.model_validate(row.request), "REFUSED", approval=row)
+    db.commit()
+    _chain_decisions_quietly(db)
+
+
+@app.post("/rapp-approvals/{approval_id}/reject")
+def reject_action(approval_id: uuid.UUID, body: ApprovalDecisionRequest, request: Request, db: Session = Depends(get_session)):
+    """AI-11.2: reject a waiting request. Nothing is written; the rApp reads the outcome (`status` REJECTED, the reason) from the request. 404, 403, 409 as for approve."""
+    row = _decidable(db, approval_id, request, body)
+    row.status, row.decided_by, row.decided_at, row.decision_reason = "REJECTED", body.decidedBy, datetime.datetime.now(datetime.UTC), body.reason
+    _record_decision(db, row.invoker_id, WriteConfigRequest.model_validate(row.request), "REJECTED", approval=row)
+    db.commit()
+    _chain_decisions_quietly(db)
+    return _approval_view(_approval_or_404(db, approval_id), detail=True)
+
+
+# ---- the decision record (PR-AI-13)
+
+def _stamp(moment: datetime.datetime | None) -> str | None:
+    return as_utc(moment).strftime("%Y-%m-%dT%H:%M:%S.%fZ") if moment else None
+
+
+def _decision_hash(rec: RAppDecisionRecord) -> str:
+    """SHA-256 over every field of the record but `audit_seq`, as canonical JSON: what is written to the audit chain and compared when the record is read."""
+    body = {"decision_id": str(rec.decision_id), "occurred_at": _stamp(rec.occurred_at), "invoker_id": rec.invoker_id, "requested_by": rec.requested_by,
+            "disposition": rec.disposition, "job_id": str(rec.job_id) if rec.job_id else None, "approval_id": str(rec.approval_id) if rec.approval_id else None,
+            "action_id": rec.action_id, "inputs_ref": rec.inputs_ref, "model_version": rec.model_version, "rationale": rec.rationale,
+            "decided_by": rec.decided_by, "decided_at": _stamp(rec.decided_at), "managed_elements": rec.managed_elements,
+            "change_count": rec.change_count, "correlation_id": rec.correlation_id}
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+
+
+def _record_decision(db: Session, invoker: str, body: WriteConfigRequest, disposition: str, job_id: uuid.UUID | None = None,
+                     approval: RAppActionApproval | None = None) -> RAppDecisionRecord:
+    """AI-13.2: the record of one rApp action, in the transaction that makes (or ends) it: `DIRECT` job (no approval was needed), `APPROVED` job,
+    `ROLLBACK` job, or an approval that ended with no job (`REJECTED`, `EXPIRED`, `REFUSED`). Flushed, not committed; it is chained after the commit."""
+    context = body.decision or DecisionContext()
+    rec = RAppDecisionRecord(
+        decision_id=uuid.uuid4(), occurred_at=datetime.datetime.now(datetime.UTC), invoker_id=invoker, requested_by=body.requestedBy, disposition=disposition,
+        job_id=job_id, approval_id=approval.approval_id if approval is not None else None, action_id=context.actionId, inputs_ref=context.inputsRef,
+        model_version=context.modelVersion, rationale=context.rationale, decided_by=approval.decided_by if approval is not None else None,
+        decided_at=approval.decided_at if approval is not None else None,
+        managed_elements=list(dict.fromkeys(c["managedElementRef"] for c in body.changes)), change_count=len(body.changes), correlation_id=get_correlation_id())
+    rec.content_hash = _decision_hash(rec)
+    db.add(rec)
+    db.flush()
+    return rec
+
+
+def chain_decisions(db: Session) -> int:
+    """AI-13.1: write the hash of each decision record not yet chained to the shared audit chain (`smo_shared.audit`: who, what, the record's id and
+    `contentHash`), one row and one commit each so the chain's head is locked briefly. Done a moment after the commit that made the record, not in it:
+    that transaction can run for a minute (a dispatch) and would hold the head against every other writer. A record whose chain write failed is picked up by
+    the worker's `chain-decisions` task. Returns how many were chained."""
+    done = 0
+    for _ in range(APPROVAL_SWEEP_BATCH):
+        # one record at a time, selected and locked afresh: after a commit another replica may have taken the next one, and a skipped (locked) row is theirs
+        rec = db.scalars(select(RAppDecisionRecord).where(RAppDecisionRecord.audit_seq.is_(None)).order_by(RAppDecisionRecord.occurred_at)
+                         .limit(1).with_for_update(skip_locked=True).execution_options(populate_existing=True)).first()
+        if rec is None:
+            break
+        entry = audit.record(db, actor=rec.invoker_id, role=ROLE_RAPP, action="DECISION", target=f"/ran-nf-oam/decision-records/{rec.decision_id}",
+                             result=rec.disposition, correlation_id=rec.correlation_id,
+                             detail={"decisionId": str(rec.decision_id), "jobId": str(rec.job_id) if rec.job_id else None, "contentHash": rec.content_hash})
+        rec.audit_seq = entry.seq
+        db.commit()
+        done += 1
+    db.rollback()                                          # ends the read that found nothing
+    return done
+
+
+def _chain_decisions_quietly(db: Session) -> None:
+    """After a commit: chain what that commit recorded. A failure is logged and left to the worker; it never fails the request that has been served."""
+    try:
+        chain_decisions(db)
+    except Exception:                                      # noqa: BLE001 — the request's own outcome is already committed
+        log.exception("decision records could not be chained to the audit log; the worker will retry")
+        db.rollback()
+
+
+def _integrity(db: Session, rec: RAppDecisionRecord) -> dict:
+    """Whether this record is what was written: its fields still hash to `content_hash`, and the audit row it names carries that same hash for this record.
+    It does not walk the chain (`python -m smo_shared.audit verify` does); a record whose chain write has not happened yet is UNCHAINED."""
+    if _decision_hash(rec) != rec.content_hash:
+        return {"status": "MISMATCH", "reason": "the record no longer hashes to the value written when it was made"}
+    if rec.audit_seq is None:
+        return {"status": "UNCHAINED", "reason": "not yet written to the audit chain"}
+    entry = db.execute(select(audit.AuditEntry.detail, audit.AuditEntry.hash).where(audit.AuditEntry.seq == rec.audit_seq)).first()
+    carried = (entry.detail or {}) if entry else {}
+    if entry is None or carried.get("contentHash") != rec.content_hash or carried.get("decisionId") != str(rec.decision_id):
+        return {"status": "MISMATCH", "reason": f"audit row {rec.audit_seq} does not carry this record's hash"}
+    return {"status": "VERIFIED", "auditSeq": rec.audit_seq, "auditHash": entry.hash}
+
+
+def _decision_view(rec: RAppDecisionRecord, integrity: dict | None = None) -> dict:
+    view: dict[str, Any] = {"decisionId": str(rec.decision_id), "occurredAt": _stamp(rec.occurred_at), "invokerId": rec.invoker_id, "requestedBy": rec.requested_by,
+            "disposition": rec.disposition, "jobId": str(rec.job_id) if rec.job_id else None, "approvalId": str(rec.approval_id) if rec.approval_id else None,
+            "actionId": rec.action_id, "inputsRef": rec.inputs_ref, "modelVersion": rec.model_version, "rationale": rec.rationale,
+            "approvedBy": rec.decided_by if rec.disposition == "APPROVED" else None, "decidedBy": rec.decided_by, "decidedAt": _stamp(rec.decided_at),
+            "managedElements": rec.managed_elements, "changeCount": rec.change_count, "correlationId": rec.correlation_id,
+            "contentHash": rec.content_hash, "auditSeq": rec.audit_seq}
+    if integrity is not None:
+        view["integrity"] = integrity
+    return view
+
+
+@app.get("/decision-records")
+def list_decision_records(invoker_id_: str | None = Query(default=None, alias="invoker_id"), job_id: uuid.UUID | None = None,
+                          approval_id: uuid.UUID | None = None, disposition: Literal["DIRECT", "APPROVED", "ROLLBACK", "REJECTED", "EXPIRED", "REFUSED"] | None = None,
+                          model_version: str | None = None, since: datetime.datetime | None = None, until: datetime.datetime | None = None,
+                          limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    """AI-13.3: why rApps acted, newest first: one record per config job an rApp made (and per approval that ended with none). Narrow by rApp (`invoker_id`),
+    `job_id`, `approval_id`, `disposition`, `model_version` and the time (`since` inclusive, `until` exclusive). `?total=false` skips the count. Names other rApps'
+    actions: internal-only at R1 (an rApp reads a record by id)."""
+    stmt = select(RAppDecisionRecord).order_by(RAppDecisionRecord.occurred_at.desc(), RAppDecisionRecord.decision_id)
+    for column, value in ((RAppDecisionRecord.invoker_id, invoker_id_), (RAppDecisionRecord.job_id, job_id), (RAppDecisionRecord.approval_id, approval_id),
+                          (RAppDecisionRecord.disposition, disposition), (RAppDecisionRecord.model_version, model_version)):
+        if value is not None:
+            stmt = stmt.where(column == value)
+    if since:
+        stmt = stmt.where(RAppDecisionRecord.occurred_at >= as_utc(since))
+    if until:
+        stmt = stmt.where(RAppDecisionRecord.occurred_at < as_utc(until))
+    page = paginate(db, stmt, limit, offset)
+    return {**page, "items": [_decision_view(r) for r in page["items"]]}
+
+
+@app.get("/decision-records/{decision_id}")
+def read_decision_record(decision_id: uuid.UUID, db: Session = Depends(get_session)):
+    """AI-13.3: one record with its `integrity` (VERIFIED, UNCHAINED while the chain write is pending, or MISMATCH when the record or its audit row was changed)."""
+    rec = db.scalars(select(RAppDecisionRecord).where(RAppDecisionRecord.decision_id == decision_id).execution_options(populate_existing=True)).one_or_none()
+    if rec is None:
+        raise framework_error(FrameworkError.DECISION_RECORD_NOT_FOUND, detail=f"no decision record {decision_id}")
+    return _decision_view(rec, _integrity(db, rec))
 
 
 @app.get("/kpis/{name}")

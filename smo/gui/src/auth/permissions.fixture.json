@@ -443,6 +443,36 @@
   },
   {
     "method": "POST",
+    "pattern": "^/ran-nf-oam/rapp-approvals/[^/]+/(approve|reject)$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/ran-nf-oam/rapp-approval-policy/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-nf-oam/rapp-approval-policy/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/approval-subscriptions$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-nf-oam/approval-subscriptions/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/dme/data-jobs$",
     "role": "operator",
     "queryMatch": {}

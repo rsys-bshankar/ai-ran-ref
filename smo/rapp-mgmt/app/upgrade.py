@@ -58,11 +58,13 @@ def start_upgrade(db: Session, old: RAppInstance, new_package_id: uuid.UUID,
         raise IllegalTransition(old_state, InstanceEvent.START_UPGRADE)
     if restore is None:
         configuration, autonomy_mode, region_scope = old.configuration, old.autonomy_mode, old.region_scope
+        approval_policy = old.approval_policy
     else:
         configuration = restore.previous_configuration
         autonomy_mode, region_scope = restore.previous_autonomy_mode, restore.previous_region_scope
+        approval_policy = restore.previous_approval_policy
     new = provision_instance(db, new_package_id, configuration=copy.deepcopy(configuration),
-                             autonomy_mode=autonomy_mode, region_scope=copy.deepcopy(region_scope))
+                             autonomy_mode=autonomy_mode, region_scope=copy.deepcopy(region_scope), approval_policy=copy.deepcopy(approval_policy))
     new.upgrade_timeout_seconds = old.upgrade_timeout_seconds
     new.rollback_of_version_id = restore.version_id if restore is not None else None
     old.state = RAPP_INSTANCE_FSM.fire(old_state, InstanceEvent.START_UPGRADE, instance=old)
@@ -152,7 +154,7 @@ def _record_version(db: Session, old: RAppInstance, new: RAppInstance) -> RAppIn
         version_id=uuid.uuid4(), instance_id=new.instance_id, previous_instance_id=old.instance_id,
         package_id=new.package_id, previous_package_id=old.package_id,
         previous_configuration=copy.deepcopy(old.configuration), previous_autonomy_mode=old.autonomy_mode,
-        previous_region_scope=copy.deepcopy(old.region_scope),
+        previous_region_scope=copy.deepcopy(old.region_scope), previous_approval_policy=copy.deepcopy(old.approval_policy),
         kind="ROLLBACK" if new.rollback_of_version_id is not None else "UPGRADE",
     )
     db.add(version)

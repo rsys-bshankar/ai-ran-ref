@@ -16,7 +16,9 @@ Coverage Optimization, Traffic Steering). Each rApp runs a closed loop from
 O1 PM data through the governed TS 28.105 model lifecycle to verified O1 CM
 writes. The GUI has one rApps entry: a searchable directory of every rApp and, for each,
 a page its own package declares (`operatorUi` in `manifest.yaml`) that a generic renderer
-draws, so a rApp onboarded at run time has its page with no GUI build.
+draws, so a rApp onboarded at run time has its page with no GUI build. An operator can hold an rApp's config jobs for a person's
+approval (an Approvals inbox in the GUI, a timeout that writes nothing), and every config job an rApp makes has a record of why,
+hashed into the audit chain.
 
 ## Stack and modules
 

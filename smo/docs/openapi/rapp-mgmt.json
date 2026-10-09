@@ -1,8 +1,41 @@
 {
   "components": {
     "schemas": {
+      "ApprovalPolicy": {
+        "description": "What happens to a request nobody decided within `timeoutSeconds` (a minute to a week, default an hour): `EXPIRE` (the default) lapses it,\n`REJECT` has the platform reject it. Neither writes anything; there is no option that approves by itself.",
+        "properties": {
+          "onTimeout": {
+            "default": "EXPIRE",
+            "enum": [
+              "EXPIRE",
+              "REJECT"
+            ],
+            "title": "Ontimeout",
+            "type": "string"
+          },
+          "timeoutSeconds": {
+            "default": 3600,
+            "maximum": 604800.0,
+            "minimum": 60.0,
+            "title": "Timeoutseconds",
+            "type": "integer"
+          }
+        },
+        "title": "ApprovalPolicy",
+        "type": "object"
+      },
       "CreateInstanceRequest": {
         "properties": {
+          "approvalPolicy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "autonomyMode": {
             "default": "SHADOW",
             "enum": [

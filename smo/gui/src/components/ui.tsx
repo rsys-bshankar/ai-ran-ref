@@ -84,6 +84,8 @@ const TONES: Record<string, string> = {
   // Wave 10.4 Traffic Steering rApp
   STEER_IDLE: "info", STEER_CONNECTED: "info", RELEASE_IDLE: "ok", RELEASE_CONNECTED: "ok",
   CONGESTED: "bad", NORMAL: "ok",
+  // AI-11 / AI-13: approval requests and decision records (PENDING, APPROVED-> ok, REJECTED, FAILED are above)
+  APPROVED: "ok", EXPIRED: "muted", REFUSED: "bad", DIRECT: "info", ROLLBACK: "warn", UNCHAINED: "warn", MISMATCH: "bad", PENDING_APPROVAL: "warn",
 };
 
 export function StateBadge({ state }: { state: string | null | undefined }) {

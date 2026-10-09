@@ -148,7 +148,7 @@ Usage: `sdk = AiRuntimeSdk()` (or `AiRuntimeSdk(r1=R1Client(base_url, bearer_tok
 | `unsubscribe_type_changes(subscription_id)` -> None | `DELETE /dme/type-subscriptions/{id}` | |
 | `ingest_data_record(data_job_id, payload)` | `POST /dme/data-jobs/{id}/records` | body `{payload}` |
 | `fetch_data_records(data_job_id, limit=100)` | `GET /dme/data-jobs/{id}/records` | |
-| `mediate_action(requested_by, changes, scope="single-ME", msac_role=None, source_context=None)` | `POST /dme/actions` | DME forwards to RAN NF OAM's config-job dispatch |
+| `mediate_action(requested_by, changes, scope="single-ME", msac_role=None, source_context=None, decision=None)` | `POST /dme/actions` | DME forwards to RAN NF OAM's config-job dispatch |
 | `get_action(action_id)` | `GET /dme/actions/{id}` | |
 | `list_actions(managed_element_ref=None, requested_by=None)` | `GET /dme/actions` | |
 | `query_cell_guards(managed_element_ref=None, cell_id=None, cell_class=None, sector_group=None, incident_zone=None)` | `GET /ran-nf-oam/cell-guards` | unset filters omitted |
@@ -261,7 +261,8 @@ Module function `energy_saving_expectation(object_instance, cells=None, max_ener
 | `subscribe_to_events(subscriber_id, event_types, callback_uri, api_ids=None, api_invoker_ids=None, aef_ids=None)` | `POST /sme/capif-events/v1/{subscriber}/subscriptions` | `callbackUri` is SME's CAPIF-fixed name; the three lists are CAPIFEventFilter |
 | `list_event_subscriptions(subscriber_id)` | `GET /sme/capif-events/v1/{subscriber}/subscriptions` | |
 | `unsubscribe_from_events(subscriber_id, subscription_id)` -> None | `DELETE /sme/capif-events/v1/{subscriber}/subscriptions/{id}` | |
-| `execute_action(requested_by, changes, action_id=None, source_context=None, scope="single-ME", msac_role=None)` | `POST /dme/actions` | An O1 configuration action mediated by DME to RAN NF OAM (NETCONF). `action_id` is an idempotency key: a repeat is `IGNORED` (DME reports the original status). Same route as `data.mediate_action`, which has no `actionId` parameter |
+| `execute_action(requested_by, changes, action_id=None, source_context=None, scope="single-ME", msac_role=None, decision=None)` | `POST /dme/actions` | An O1 configuration action mediated by DME to RAN NF OAM (NETCONF). `action_id` is an idempotency key: a repeat is `IGNORED` (DME reports the original status). Same route as `data.mediate_action`, which has no `actionId` parameter |
+| `get_approval(approval_id)` | `GET /ran-nf-oam/rapp-approvals/{id}` | `AI-11`: the state of an action the operator holds for approval (`execute_action` answered `PENDING_APPROVAL` with an `approvalId`): `status` `PENDING`, `APPROVED` (then `jobId`), `REJECTED`, `EXPIRED` or `REFUSED`. `decision={"inputsRef", "modelVersion", "rationale"}` on `execute_action` / `mediate_action` is why the rApp acts, kept by the platform as the decision record of the job (`AI-13`) |
 
 ### 2.5 Interactions
 

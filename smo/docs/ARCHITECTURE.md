@@ -323,6 +323,12 @@ pattern:
 Design decisions are in [STANDARDS.md](STANDARDS.md); how each was built and
 reviewed (waves 10.1–10.4) is in [HISTORY.md](../HISTORY.md).
 
+### Approval of rApp actions and the decision record
+
+Two things the platform does between an rApp's decision and the network, both at RAN NF OAM where the write happens (`ran-nf-oam/README.md`, `AI-11`, `AI-13`):
+
+- **A person can be asked first.** An `ASSIST` instance created with an `approvalPolicy` (or an rApp an admin set one for) has its `POST /config-jobs` checked as always (kill switch, rate, blast radius and magnitude limits, MSAC, schema) and then *kept* as an approval request instead of dispatched; the rApp is answered `PENDING_APPROVAL` with an `approvalId` and polls it. An operator approves or rejects it in the GUI's Approvals inbox (the BFF pins who decided); approving checks the safeguards again, then makes the job from the request exactly as the rApp sent it. A request nobody decides lapses at its time (`EXPIRE`, the default, or `REJECT`) and writes nothing: no setting approves by itself. An rApp can never decide: the gateway refuses it on these routes (`INTERNAL_ONLY` and the change allow-list) and RAN NF OAM refuses the `rapp` role and the requester again. Approvers are told through the outbox (`approval-subscriptions`, `docs/NOTIFICATIONS.md`). An instance without a policy, and every rApp in `AUTONOMOUS` or `SHADOW` mode, is not touched.
+- **Every rApp config job has a record of why.** The rApp may send `decision {inputsRef, modelVersion, rationale}` with the action (DME forwards it); RAN NF OAM writes a decision record in the job's transaction (and one for an approval that ended without a job) and, a moment after the commit, a row of the shared hash chain (`audit_log`) carrying the record's hash. `GET /decision-records` filters and pages; one record says whether it still matches its chain row. The GUI's Decisions page and the config job drawer show it.
 ## Related documents
 
 | Document | Content |
