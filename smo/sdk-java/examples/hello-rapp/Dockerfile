@@ -2,7 +2,7 @@
 #   docker build -f examples/hello-rapp/Dockerfile -t hello-java-rapp:dev .
 # Base images are pinned by digest (Dependabot's docker ecosystem updates them).
 
-# The build stage is the Maven image, pinned by digest (Maven 3.9.11, the version the wrapper pins for local and CI builds): the image build
+# The build stage is the Maven image, pinned by digest (Maven 3.9.11; the wrapper pins 3.10.0 for local and CI builds, and Dependabot moves the two separately; the same `package` command was run with 3.9.11 against the current POM): the image build
 # downloads no Maven distribution, so there is no wrapper download to fail or to verify here.
 FROM maven:3.9.11-eclipse-temurin-21-noble@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 AS build
 WORKDIR /src
