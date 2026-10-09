@@ -17,6 +17,9 @@ are written the way they are, and, for a test, what behaviour it pins down.
 | Every test file | A description of **what is covered and how to run it**, and the fixtures it relies on |
 | Every test function | A one-line description of **the behaviour it pins down** (the name says what; the description says why it matters or what would go wrong) |
 
+"Public" means: no leading underscore, or decorated as a route, a fixture or a test. A private helper needs a description when it is longer than five lines or has a
+side effect. Nested functions, closures and test stubs need only a `#` why-comment, not a docstring.
+
 "Trivial" is the only exemption: a one-line accessor, a property that returns a field, a `__repr__`, a pass-through wrapper whose name says everything.
 When in doubt, write the description. A function that is simple enough to need none is simple enough that writing it takes ten seconds.
 
@@ -52,9 +55,9 @@ branching logic gets a short comment at the top saying what the block decides, t
 
 - File description: which module or behaviour the file covers, the main fixtures it uses (and where they come from), and how to run it
   (`PYTHONPATH=.:../shared python -m pytest tests/test_x.py -q`); say if it needs Postgres, a stub server, or a built GUI.
-- Each test function: one line that states the behaviour or rule being protected and, when it is not obvious, the failure it guards against
+- Each test function: one sentence (two lines at most) that states the behaviour or rule being protected and, when it is not obvious, the failure it guards against
   ("a revoked token must stop working on the replica that carried the revocation"). A test that exists because of a past bug names the symptom, not the
-  ticket. Table-driven tests describe the table once, above it.
+  ticket. A parametrized test describes the table once, in a `#` comment above the decorator.
 - Helpers and fixtures: say what they build and what the tests may assume about the state they leave.
 
 ## Language conventions
@@ -69,6 +72,24 @@ branching logic gets a short comment at the top saying what the block decides, t
 | Dockerfile, YAML (workflows, compose, Helm values, GitOps) | Header comment: what the file builds or runs, and what changes it needs when something else changes | A comment above each stage, job, service or top-level key whose purpose is not obvious from its name | `#` comments |
 | Helm templates | A `{{- /* ... */ -}}` comment at the top: what the template renders and which values drive it | A comment above each conditional block that explains when it renders | same |
 | Alembic revisions | Module docstring: what the revision changes, why, the expand/contract step it is, and what the downgrade does | Docstrings on `upgrade()` and `downgrade()` that list the statements by purpose | comments on any statement that is not a plain `create_table`/`add_column` |
+
+## FastAPI routes and request models: the docstring is published
+
+FastAPI puts the docstring of a **route function** and of a **pydantic request or response model** into the OpenAPI document (`docs/openapi/*.json`), and
+`tests_integration/test_openapi_specs.py` fails when the committed specs and the live schema differ. So in a comment-only change:
+
+- do not add, remove or edit the docstring of a route function or of a request or response model;
+- put the maintainer detail (status and error codes, ordering, the transaction, what is deliberately not checked) in a `#` block directly under the route's
+  docstring (or directly after the `def` line when there is none), and for a model in a `#` block above the class;
+- write a docstring there only when the API consumer should read it, and then regenerate the specs in the same change (`scripts/generate_openapi_specs.py`).
+
+A route or model with such a `#` note counts as documented for `check_code_docs.py`.
+
+## Existing text
+
+Keep a good existing docstring. Rewrite one that is wrong, vague, or written as history ("added in this pass", "was absent before"): state what is true now, in
+the present tense, and keep the clause and `HISTORY.md` citations. When a file has no docstring and starts with imports, the file description goes before the
+first import.
 
 ## What must not happen
 
