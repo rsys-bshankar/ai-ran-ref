@@ -139,8 +139,15 @@ Mutual TLS between the services (opt in, `PR-SEC-2`): `scripts/mtls_certs.py ini
 (`smo/certs/mtls/`, git-ignored) and `docker compose -f docker-compose.yml -f docker-compose.mtls.yml up -d --build` starts the stack with every
 service serving HTTPS and refusing a client that has no certificate from that CA; every call a module makes presents its own. Off unless you
 use the second file. A host client needs a certificate too (`scripts/mtls_certs.py client NAME`). What it covers, what it does not (the GUI's
-nginx and `mock-o1-adaptor` stay plain HTTP, Postgres TLS is `PR-SEC-2.4`), the health checks and the rotation: `docs/ARCHITECTURE.md`, "Mutual
+nginx and `mock-o1-adaptor` stay plain HTTP; Postgres over TLS is its own opt-in, `docker-compose.pgtls.yml`, `PR-SEC-2.4`), the health checks and the rotation: `docs/ARCHITECTURE.md`, "Mutual
 TLS between services"; on a cluster: `deploy/helm/smo/README.md`.
+
+Postgres over TLS (opt in, `PR-SEC-2.4`): after `scripts/mtls_certs.py init` (it also makes the database's server certificate),
+`docker compose -f docker-compose.yml -f docker-compose.pgtls.yml up -d --build` starts Postgres with TLS only (`pgtls/pg_hba.conf` rejects a plain
+connection) and every service, worker, sample rApp, the migrate and the backup container connect with `sslmode=verify-full` against that CA: a wrong
+CA or a certificate that does not name `postgres` stops the connection. It combines with the mTLS file. Through the pooler profile, set
+`SMO_DB_SSLMODE=disable` for the services (PgBouncer's own connection to Postgres is the one verified). `scripts/pg_tls_check.py` proves it; the chart's
+`postgres.tls` does the same for the bundled Postgres: `docs/ARCHITECTURE.md`, "Postgres over TLS"; `deploy/helm/smo/README.md`, "The database".
 
 Slow statements: Postgres logs any statement slower than `POSTGRES_SLOW_QUERY_MS` (default 500 ms, set in `.env`; `-1` turns
 it off) with its duration and text: `docker compose logs postgres | grep duration`.
