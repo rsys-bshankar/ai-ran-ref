@@ -187,9 +187,9 @@
     "ran-nf-oam": {
       "files_without_description": 1,
       "functions_without_description": 246,
-      "items_requiring_description": 496,
+      "items_requiring_description": 497,
       "source_files": 57,
-      "tests": 579,
+      "tests": 580,
       "tests_without_docstring": 516
     },
     "rapp-mgmt": {
@@ -250,9 +250,9 @@
     },
     "scripts": {
       "files_without_description": 0,
-      "functions_without_description": 219,
-      "items_requiring_description": 282,
-      "source_files": 71,
+      "functions_without_description": 221,
+      "items_requiring_description": 349,
+      "source_files": 78,
       "tests": 0,
       "tests_without_docstring": 0
     },
@@ -306,11 +306,11 @@
     },
     "tests_integration": {
       "files_without_description": 0,
-      "functions_without_description": 89,
-      "items_requiring_description": 142,
-      "source_files": 81,
-      "tests": 517,
-      "tests_without_docstring": 471
+      "functions_without_description": 90,
+      "items_requiring_description": 151,
+      "source_files": 83,
+      "tests": 575,
+      "tests_without_docstring": 484
     }
   }
 }
