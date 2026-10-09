@@ -50,7 +50,7 @@ Theme: rApps that could be handed to another party. Core (1 to 3) first, then th
 | 1 | Signed and conformant rApp packages | `RAPP-1` CSAR signing with a trust store and a policy flag to require signed packages (sample CSARs signed); `RAPP-3` offline validator and runtime conformance checks with a report; `RAPP-2.1` and `2.3` (runtime profile becomes pod limits, egress only to R1) | The rApp-side counterpart of the O1 conformance kit. **Built** (`HISTORY.md` PR-RAPP-1, PR-RAPP-2a, PR-RAPP-3); `RAPP-2.2` (pod `securityContext`) is not part of this row and stays open; the CI step of the conformance pack and the chart's render tests are to be confirmed by CI |
 | 2 | Approval and decision audit | `AI-11` approval queue for rApp actions (timeout, notification, autonomy-mode hook) with the GUI inbox; `AI-13` decision record per rApp config job (inputs, model version, rationale, job id), query route and GUI detail; `AI-12` shadow mode if time allows | Answers "who let the rApp do that, and why". **Built** (`HISTORY.md` PR-AI-11, PR-AI-13): the approval queue, the timeout, the hook for an `ASSIST` instance, the notice, the GUI inbox (`GUI-7.2`) and the decision record. **Not started:** `AI-12` shadow mode |
 | 3 | Tenant and region authorization | `SEC-10`: `region` and `tenant` on managed elements, a scope claim on the caller, enforced first on `POST /config-jobs` (the pilot, `SEC-10.1` to `10.4`), then config reads, alarms, PM, DME and MLMR reads | The main security gap left before 1.0.0. Scoping axes: both region and tenant. **Built** (`HISTORY.md` PR-SEC-10): `SEC-10.1` to `10.6`, the pilot, config reads, alarms and PM, with both axes. **Open:** `SEC-10.7` (DME and MLMR have nothing to match on, see below), `10.8` (OPA), and the rest of RAN NF OAM's reads (`10.9`) |
-| 4 | rApp SDK in two more languages | `RAPP-4` (Java and Go, decided): a Java SDK and a Go SDK generated from `docs/openapi/` with token acquisition and refresh, one example rApp in each, and a CI build for each | Python SDK stays. Each example runs against the stack |
+| 4 | rApp SDK in two more languages | `RAPP-4` (Java and Go, decided): a Java SDK and a Go SDK built from `docs/openapi/` (the Java one: hand-written clients held to the specs by a contract test, `HISTORY.md` PR-RAPP-4 Java) with token acquisition and refresh, one example rApp in each, and a CI build for each | Python SDK stays. Each example runs against the stack |
 | 5 | Life-cycle flows (stretch) | `MGT-14` zero-touch onboarding (templates, discovery triggers a template, status FSM); `MGT-15` software campaigns (waves with a health gate, rollback, report) | The wave machinery is `MGT-5`, done |
 | 6 | Spec and stub realism (stretch) | `MGT-2` MSAC beyond writes; `SB-7` VES event receiver; `SB-10` first vendor profile on the O1 stub | |
 | 7 | Carry-overs from 0.6.0 | `GUI-8.7` compose browser check; `SEC-5.4` load test and the cache default (`SEC-5.5`); `SEC-2.4` Postgres `verify-full` | Closed here rather than carried into 1.0.0 |
@@ -1145,15 +1145,9 @@ Closed (`HISTORY.md` PR-RAPP-3): the offline validator, the runtime checks and t
 
 #### PR-RAPP-4 — Java and Go SDK
 
-Decided: both languages. The Go SDK is built (RAPP-4.2 to 4.5 for Go: `HISTORY.md` PR-RAPP-4 (Go), `sdk-go/README.md`); the Java SDK (`sdk-java/`) is a separate change, so each step stays open until it is done for Java. Open beside it: a live run of the Go example against the compose stack, and the finding that `bootstrap-complete` and `performance` are not on the rApp role's allow-list (`sdk-go/README.md` 2.5).
+RAPP-4.1 decided (both languages) and RAPP-4.2 to 4.5 are done for Go (`sdk-go/`) and for Java (`sdk-java/`); `HISTORY.md`, PR-RAPP-4 (Go) and PR-RAPP-4 (Java).
 
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| RAPP-4.1 | Pick the language: **decided, both Java and Go** | Decision | – |
-| RAPP-4.2 | **Java**: generate or write models and clients from `docs/openapi/` (Go done) | Builds | RAPP-4.1 |
-| RAPP-4.3 | **Java**: token acquisition and refresh (Go done; both: test against a live stack) | Test against the stack | RAPP-4.2 |
-| RAPP-4.4 | **Java**: one example rApp using it (Go done) | Runs | RAPP-4.3 |
-| RAPP-4.5 | **Java**: CI build (Go done, job `sdk-go`) | Job green | RAPP-4.2 |
+Open, not steps: a run of either example against the compose stack (CI builds, unit-tests and image-builds them, it does not start the stack), mTLS configured from the environment in the Java SDK, and the Python namespaces (analytics, lifecycle, intent) that neither SDK covers.
 
 #### PR-RAPP-5 — Developer portal
 

@@ -15,6 +15,9 @@ Onboarding is [`../onboarding/README.md`](../onboarding/README.md); the code is
 `onboarding/app/main.py` (`_validate_package`, `_parse_ai_capabilities`,
 `_validate_runtime_profiles`, `_parse_sme_declarations`; the `operatorUi` check is `shared/smo_shared/operator_ui.py`).
 
+A rApp need not be Python. The Java SDK's example rApp ([`../sdk-java/examples/hello-rapp/`](../sdk-java/README.md)) has a package of the same layout (§1) and
+runs as its own container; §7.1 and §7.2 say what a non-Python rApp needs.
+
 ## 1. Package layout
 
 An rApp package is a CSAR (a zip). `python3 samples/build_csar.py <name>`
@@ -304,6 +307,22 @@ The code is `onboarding/app/package_validation.py` (the part that needs no datab
 ### 7.1 An rApp that is not written in Python
 
 The package is language-neutral: Onboarding reads the CSAR files in §1 and never the rApp's source, and the executable is not in the CSAR for any of the reference rApps (it runs as a service beside the stack). A rApp in Go follows §7 with two differences. The package directory holds only the package files (no `app/`), and the container is a static binary in an empty image. [`../sdk-go/examples/hello-rapp/`](../sdk-go/examples/hello-rapp/) is the worked example: `package/` (manifest with an `operatorUi` page, `capabilities.yaml`, ASD, `TOSCA.meta`), `build_csar.py` (calls `samples/build_csar.py`'s `build_bytes` on that directory, so the same fixed timestamps and exclusions apply), a `Dockerfile` and a compose override; [`../sdk-go/README.md`](../sdk-go/README.md) §4 says how to run it and package it. In `capabilities.yaml`, `namespace` names the platform area the rApp calls (`data`, `models`, `platform`, ...) whichever SDK it uses. Which routes an rApp may *change* through R1 is the role policy (`shared/smo_shared/roles.py`), the same for every language.
+
+### 7.2 A rApp written in Java (the Java SDK example)
+
+The CSAR does not start the process (§2), so the language of the workload is outside the package; what the platform needs from any rApp is the same.
+
+| Needed | Python sample rApps | Java example (`sdk-java/examples/hello-rapp/`) |
+|---|---|---|
+| The package | `samples/<name>/`, `python3 samples/build_csar.py <name>` | `package/`, `python3 samples/build_csar.py --source-dir sdk-java/examples/hello-rapp/package --name hello-java-rapp` writes `./hello-java-rapp.csar` (same fixed timestamps, so a rebuild is byte-identical; the CSAR is not committed) |
+| The runtime image | one `Dockerfile` for all services, `MODULE=samples/<name>` | `examples/hello-rapp/Dockerfile`: multi-stage, the digest-pinned Maven 3.9.11 / Temurin 21 image builds, Temurin 21 JRE (digest-pinned) runs `java -jar hello-rapp.jar` as uid 10001 |
+| The service in compose | an entry in `docker-compose.yml` (and the chart) | `examples/hello-rapp/docker-compose.java-rapp.yml`, an override file: `docker compose -f docker-compose.yml -f sdk-java/examples/hello-rapp/docker-compose.java-rapp.yml up -d --build hello-java-rapp`; hardening as the stack's (`cap_drop: ALL`, read-only root, `no-new-privileges`) |
+| Identity | `SMO_IDENTITY_KIND=rapp`; enrols on first use | the same variables; or the pair `POST /rapp-mgmt/instances/{id}/credentials` issues, as `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` |
+| Where it is reached | operator API base registered at rApp Management | `PUT /rapp-mgmt/instances/{id}/operator-api` made by the rApp at start; `HELLO_OPERATOR_API_BASE` is the address the gateway reaches the container at |
+| Health | `/live`, `/ready` | the same two routes, on the JDK's built-in HTTP server |
+
+The manifest of the Java package has `executionModes: [INFERENCE]` and a small `runtimeProfiles.INFERENCE` (the example trains nothing); its `operatorUi` is the
+three-panel page `sdk-java/README.md` describes, and `sdk/tests/test_java_example_package.py` checks it with the code Onboarding runs. The example is not in the Helm chart.
 
 ## 8. Signing a package (PR-RAPP-1)
 

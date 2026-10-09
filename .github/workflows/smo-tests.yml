@@ -190,6 +190,36 @@ jobs:
         working-directory: smo/gui
         run: npm run validate:diagrams
 
+  # PR-RAPP-4: the Java AI Runtime SDK (smo/sdk-java) and its example rApp. JDK 21, Maven through the checked-in wrapper (the Maven
+  # distribution is pinned by SHA-256), every dependency pinned by version and by jar hash (dependencies.sha256).
+  sdk-java:
+    name: Java SDK (build, tests, pinned dependencies, example image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: smo/sdk-java/**/pom.xml
+
+      # -C: a checksum Maven Central publishes that does not match the download fails the build instead of warning.
+      # The SDK's contract test compares its routes with smo/docs/openapi/*.json.
+      - name: Build and test (SDK, example rApp)
+        working-directory: smo/sdk-java
+        run: ./mvnw -B -ntp -C verify
+
+      - name: The resolved jars are the pinned ones
+        working-directory: smo/sdk-java
+        run: scripts/verify-dependencies.sh
+
+      - name: The example rApp's image builds
+        working-directory: smo/sdk-java
+        run: docker build -f examples/hello-rapp/Dockerfile -t hello-java-rapp:ci .
+
   compose-e2e:
     name: Full docker-compose stack runs end to end
     runs-on: ubuntu-latest

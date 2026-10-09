@@ -1,0 +1,102 @@
+# HelloJava_rApp package manifest: the example rApp of the Java SDK (smo/sdk-java/examples/hello-rapp).
+rappManifest:
+  manifestVersion: "1.0"
+  aiRuntimeSdkVersion: "1.0"
+
+name: HelloJava_rApp
+version: 1.0.0
+vendor: Radisys
+ownerTeam: AI-RAN-SMO
+description: >
+  Example rApp written in Java with the Java AI Runtime SDK. Reads DME types and MLMR models,
+  reports a heartbeat, serves a small operator page. Takes no action on the network.
+useCase: SDK example
+domain: RAN
+deploymentModel: NonRT-RIC
+
+executionModes:
+  - INFERENCE
+
+autonomyModes:
+  - SHADOW
+
+requiredServices:
+  - DME
+  - MLMR
+
+runtimeProfiles:
+  INFERENCE:
+    cpu: 0.5
+    memory: 256Mi
+    gpu: 0
+
+# The operator page (docs/adr/0004-operator-ui-declaration.md). The routes are served by
+# io.smo.example.OperatorServer under the operator API base the instance registers.
+operatorUi:
+  version: 1
+  panels:
+  - id: status
+    title: Status
+    kind: keyValues
+    items:
+    - label: State
+      path: state
+      format: badge
+    - label: Mode
+      path: mode
+      format: badge
+    - label: Runs
+      path: processed
+      format: number
+    - label: Last run
+      path: lastRunAt
+      format: datetime
+    - label: DME types seen
+      path: dmeTypes
+      format: number
+    - label: Models seen
+      path: models
+      format: number
+    source:
+      path: /instances/{instanceId}/status
+      refreshSeconds: 15
+  - id: runs
+    title: Recent runs
+    kind: table
+    rows: items
+    rowKey: runId
+    columns:
+    - path: startedAt
+      label: Started
+      format: datetime
+    - path: result
+      label: Result
+      format: badge
+    - path: dmeTypes
+      label: DME types
+      format: number
+    - path: models
+      label: Models
+      format: number
+    empty: No runs yet.
+    source:
+      path: /instances/{instanceId}/runs
+      query:
+        limit: 20
+    rowActions: []
+  - id: controls
+    title: Controls
+    kind: actions
+    actions:
+    - id: run
+      label: Run now
+      method: POST
+      path: /instances/{instanceId}/run
+      success: Run started
+      confirm: Start a run now?
+      tone: primary
+      inputs:
+      - name: dryRun
+        label: Dry run
+        type: boolean
+  readOnly: false
