@@ -269,7 +269,7 @@ class RAppApprovalPolicy(Base):
     set_by: Mapped[str | None] = mapped_column(String)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
     # How many different people must approve a request before the job is made: 1 (a single approval, as before) or 2 (two distinct approvers; the requester's own
-    # approval never counts). Revision 0036.
+    # approval never counts). Revision 0034.
     required_approvals: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
 
@@ -298,7 +298,7 @@ class RAppActionApproval(Base):
     # PR-SEC-10.4: the scope claim of the requester when the request was parked ({"regions": [...], "tenants": [...]}; NULL: unscoped), checked again against
     # the targets as they are when the request is approved
     requester_scope: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
-    # Revision 0036: the number of distinct approvers the policy asked for when the request was parked (a later change of the policy does not change what a
+    # Revision 0034: the number of distinct approvers the policy asked for when the request was parked (a later change of the policy does not change what a
     # waiting request needs), and the approvals given so far, `[{"by", "at", "reason"}]` in the order given (NULL while there are none; a request that needs one
     # approval keeps its single approver in `decided_by`, as before). Changed only under the row lock of a decision.
     required_approvals: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
@@ -338,7 +338,7 @@ class RAppDecisionRecord(Base):
     correlation_id: Mapped[str | None] = mapped_column(String)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     audit_seq: Mapped[int | None] = mapped_column(BigInteger().with_variant(Integer, "sqlite"))     # NULL until the chain entry is written (a moment after the commit)
-    # Revision 0036: who approved, in the order given, when the request needed two approvals. NULL for every other record, which then hashes exactly as it did
+    # Revision 0034: who approved, in the order given, when the request needed two approvals. NULL for every other record, which then hashes exactly as it did
     # before this column existed (the hash covers `approvers` only when it is set).
     approvers: Mapped[list | None] = mapped_column(JSON(none_as_null=True))
 

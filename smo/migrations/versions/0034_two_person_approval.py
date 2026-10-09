@@ -12,13 +12,13 @@ Expand only. The two `required_approvals` columns are NOT NULL with a default of
 2. No existing row changes meaning, and no policy asks for two until an operator sets `requiredApprovals: 2` on one. No status is added, so the CHECK on
 `rapp_action_approval.status` (revision 0031) is untouched.
 
-Revision ID: 0036
-Revises: 0035
+Revision ID: 0034
+Revises: 0033
 """
 from alembic import op
 
-revision = "0036"
-down_revision = "0035"
+revision = "0034"
+down_revision = "0033"
 branch_labels = None
 depends_on = None
 
