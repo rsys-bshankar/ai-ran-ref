@@ -68,7 +68,9 @@ def rt_onboard(ctx: RuntimeContext) -> None:
         ctx.cleanups.append(lambda: _delete_package(ctx, package_id))
     status = _json(ctx.call("onboarding", "get", f"/packages/{package_id}/onboarding-status"), "reading the onboarding status", 200)
     if status.get("state") != "AVAILABLE":
-        raise Fail(f"the package is {status.get('state')}, not AVAILABLE" + (f": {answer['failureReason']}" if answer.get("failureReason") else ""))
+        reason = str(answer.get("failureReason") or "")
+        hint = " (Onboarding refuses bytes it already holds: run a package this stack has not onboarded, e.g. scripts/unique_sample_csar.py for a sample)" if "already onboarded" in reason else ""
+        raise Fail(f"the package is {status.get('state')}, not AVAILABLE" + (f": {reason}" if reason else "") + hint)
     if not status.get("nfDeploymentDescriptorId"):
         raise Fail("the package is AVAILABLE but has no NFO deployment descriptor")
     ctx.state["package_id"] = package_id

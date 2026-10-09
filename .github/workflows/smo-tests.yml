@@ -246,7 +246,8 @@ jobs:
 
       # PR-RAPP-3: the rApp conformance pack. Offline first: every sample package against Onboarding's validation, with its signature checked against the demo
       # publisher's key and signing required. Then the runtime checks against the stack, modules addressed by name (--direct, as the runbook replay does): the
-      # kit serves the signed energy-saving package, Onboarding fetches it, and the kit takes it through register, heartbeat, R1 usage and terminate and removes
+      # kit serves a signed copy of the energy-saving package that is new to the stack (scripts/unique_sample_csar.py: the runbook replay above already onboarded the
+      # committed one, and Onboarding refuses identical bytes), Onboarding fetches it, and the kit takes it through register, heartbeat, R1 usage and terminate and removes
       # what it made. Every check must run: none failed, no warning, none skipped. Not run locally (no docker in the session that wrote it): this step is the
       # first run against the real stack.
       - name: rApp conformance pack, offline and against the stack (PR-RAPP-3)
@@ -258,8 +259,9 @@ jobs:
               pip install -q --no-deps -e shared &&
               python -m conformance.rapp package samples --trust samples/demo-signing --require-signed --out /work/rapp-conformance-package &&
               grep -q "0 failed, 0 warnings" /work/rapp-conformance-package.md &&
-              (python -m http.server 9100 --directory samples > /dev/null 2>&1 &) && sleep 2 &&
-              python -m conformance.rapp runtime --package-url http://rapp-packages:9100/energy-saving-rapp.csar --direct --out /work/rapp-conformance-runtime &&
+              mkdir -p /tmp/pkg && python scripts/unique_sample_csar.py energy-saving-rapp /tmp/pkg/conformance-rapp.csar &&
+              (python -m http.server 9100 --directory /tmp/pkg > /dev/null 2>&1 &) && sleep 2 &&
+              python -m conformance.rapp runtime --package-url http://rapp-packages:9100/conformance-rapp.csar --direct --out /work/rapp-conformance-runtime &&
               grep -q "0 failed, 0 warnings, 0 skipped" /work/rapp-conformance-runtime.md'
           { echo "### rApp conformance pack, offline"; echo; cat ../rapp-conformance-package.md; echo; echo "### rApp conformance pack, against the stack"; echo; cat ../rapp-conformance-runtime.md; } >> "$GITHUB_STEP_SUMMARY"
 
