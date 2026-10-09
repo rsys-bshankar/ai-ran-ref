@@ -149,3 +149,83 @@ describe("the approval inbox", () => {
     expect(container.textContent).not.toContain("Nothing is waiting");
   });
 });
+
+
+describe("two-person approval (opt-in; a request that needs one approval looks as before)", () => {
+  const vote = (by: string, reason: string | null = null) => ({ by, at: new Date().toISOString(), reason });
+
+  it("shows how many approvals a waiting request has and needs, and nothing extra for a single approval", async () => {
+    bff("operator", {
+      "GET /smo/ran-nf-oam/rapp-approvals": { items: [approval({ approvalId: "two-1", requiredApprovals: 2, approvals: [vote("smo-gui:bob")] }), approval({ approvalId: "one-1", requiredApprovals: 1, approvals: [] }), approval({ approvalId: "old-1" })], limit: 100, offset: 0, hasMore: false },
+    });
+    const { container } = await open();
+    await settle();
+    const rows = Array.from(container.querySelectorAll("tbody tr")).map((r) => r.textContent ?? "");
+    expect(rows[0]).toContain("1 of 2 approvals");
+    expect(rows[1]).toContain("one needed");
+    expect(rows[2]).toContain("one needed");                              // a RAN NF OAM that predates the field sends neither key
+  });
+
+  it("lists the approvals so far in the drawer and sends the first of two approvals without claiming the change is written", async () => {
+    const calls = bff("operator", {
+      [`GET /smo/ran-nf-oam/rapp-approvals/${AID}`]: { body: detail({ requiredApprovals: 2, approvals: [] }) },
+      [`POST /smo/ran-nf-oam/rapp-approvals/${AID}/approve`]: { body: { ...detail({ requiredApprovals: 2, approvals: [vote("smo-gui:ana")] }), jobStatus: null } },
+    });
+    await open();
+    await settle();
+    await click(byText(document.body, "button", "Review…")!);
+    await settle();
+    const drawer = document.querySelector("[role=dialog]") as HTMLElement;
+    expect(drawer.textContent).toContain("Approvals so far (0 of 2)");
+    expect(drawer.textContent).toContain("first of two approvals");
+    await click(byText(drawer, "button", "Approve")!);
+    await settle();
+    expect(calls.find((c) => c.method === "POST")!.body).toEqual({ reason: null });
+    expect(document.body.textContent).toContain("Your approval is recorded: another person must approve before anything is written");
+    expect(document.body.textContent).not.toContain("Approved: the change is being written");
+  });
+
+  it("shows who has approved and does not offer the same person a second approval (they may still reject)", async () => {
+    bff("operator", { [`GET /smo/ran-nf-oam/rapp-approvals/${AID}`]: { body: detail({ requiredApprovals: 2, approvals: [vote("smo-gui:Ana", "fine by me")] }) } });   // the signed-in user is ana
+    await open();
+    await settle();
+    await click(byText(document.body, "button", "Review…")!);
+    await settle();
+    const drawer = document.querySelector("[role=dialog]") as HTMLElement;
+    const lines = Array.from(drawer.querySelectorAll("ul[aria-label='Approvals so far'] li")).map((li) => li.textContent ?? "");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("smo-gui:Ana");
+    expect(lines[0]).toContain("fine by me");
+    expect((byText(drawer, "button", "Approve") as HTMLButtonElement).disabled).toBe(true);
+    expect(drawer.textContent).toContain("You have approved this request");
+    expect((byText(drawer, "button", "Reject") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("tells a second person that theirs is the last approval and says the change is written when they send it", async () => {
+    const calls = bff("operator", {
+      [`GET /smo/ran-nf-oam/rapp-approvals/${AID}`]: { body: detail({ requiredApprovals: 2, approvals: [vote("smo-gui:bob")] }) },
+      [`POST /smo/ran-nf-oam/rapp-approvals/${AID}/approve`]: { body: { ...detail({ status: "APPROVED", jobId: JOB, requiredApprovals: 2, approvals: [vote("smo-gui:bob"), vote("smo-gui:ana")] }), jobStatus: "COMPLETED" } },
+    });
+    await open();
+    await settle();
+    await click(byText(document.body, "button", "Review…")!);
+    await settle();
+    const drawer = document.querySelector("[role=dialog]") as HTMLElement;
+    expect(drawer.textContent).toContain("Your approval is the last one needed");
+    await click(byText(drawer, "button", "Approve")!);
+    await settle();
+    expect(calls.find((c) => c.method === "POST")!.path).toBe(`/smo/ran-nf-oam/rapp-approvals/${AID}/approve`);
+    expect(document.body.textContent).toContain("Approved: the change is being written");
+  });
+
+  it("names both approvers in the decided list", async () => {
+    bff("operator", {
+      "GET /smo/ran-nf-oam/rapp-approvals": { items: [approval({ status: "APPROVED", decidedBy: "smo-gui:ana", requiredApprovals: 2, approvals: [vote("smo-gui:bob"), vote("smo-gui:ana")] })], limit: 100, offset: 0, hasMore: false },
+    });
+    const { container } = await open();
+    await settle();
+    await click(byText(container, "button", "Decided")!);
+    await settle();
+    expect(container.querySelector("tbody tr")!.textContent).toContain("smo-gui:bob, smo-gui:ana");
+  });
+});

@@ -244,13 +244,18 @@ export interface SafeguardSubscription { subscriptionId: string; callbackUri: st
 
 // ---------------------------------------------------------------- human approval of rApp actions (AI-11) and the decision record (AI-13)
 export type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | "REFUSED";
-export interface ApprovalPolicy { invokerId: string; timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT"; setBy: string | null; updatedAt: string }
+/** `requiredApprovals` is absent for the usual single approval and 2 when two different people must approve. */
+export interface ApprovalPolicy { invokerId: string; timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT"; requiredApprovals?: 1 | 2; setBy: string | null; updatedAt: string }
+/** One person's approval of a request that is still waiting for another (or the approval that decided it). */
+export interface ApprovalVote { by: string; at: string | null; reason: string | null }
 /** Why the rApp is asking (AI-13.1): references and text it supplied with the action. */
 export interface DecisionContext { inputsRef?: string | null; modelVersion?: string | null; rationale?: string | null; actionId?: string | null }
 export interface Approval {
   approvalId: string; invokerId: string; requestedBy: string; status: ApprovalStatus; managedElements: string[]; changeCount: number;
   createdAt: string; expiresAt: string; onTimeout: "EXPIRE" | "REJECT"; decidedBy: string | null; decidedAt: string | null; decisionReason: string | null;
   jobId: string | null; refusalCode: string | null; correlationId: string | null; decision: DecisionContext | null;
+  /** How many different people must approve (1 or 2) and the approvals given so far; absent from a RAN NF OAM that predates two-person approval. */
+  requiredApprovals?: number; approvals?: ApprovalVote[];
 }
 /** GET /rapp-approvals/{id}: the request with the changes it asks for. */
 export interface ApprovalDetail extends Approval {
@@ -263,6 +268,8 @@ export interface DecisionRecord {
   decisionId: string; occurredAt: string; invokerId: string; requestedBy: string; disposition: Disposition; jobId: string | null; approvalId: string | null;
   actionId: string | null; inputsRef: string | null; modelVersion: string | null; rationale: string | null; approvedBy: string | null; decidedBy: string | null;
   decidedAt: string | null; managedElements: string[]; changeCount: number; correlationId: string | null; contentHash: string; auditSeq: number | null;
+  /** Who approved, in order, when the request needed two approvals; null for every other record. */
+  approvers?: string[] | null;
   integrity?: { status: IntegrityStatus; reason?: string; auditSeq?: number; auditHash?: string };
 }
 /** A list answer with its envelope kept (`useSmo` unwraps it): `total` is absent and `hasMore` present under `?total=false`. */

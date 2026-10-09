@@ -159,6 +159,15 @@ def _verify(inst: EnergySavingInstance, cells: list[str], want_locked: bool) -> 
             "attribute": f"{act['ioc']}.{act['readAttribute']}"}
 
 
+def _decision(inst, execution_id: str, reason: str) -> dict:
+    """PR-AI-13: why this write is made, kept by RAN NF OAM as the decision record of the config job (and shown to a person who is asked to approve it): a
+    reference to this execution (its inputs are on the instance's operator page, not in the record), the version of the model that decided, and the reason in words.
+    The direct path of this rApp is a service-restoring write (a wake, a revert, a rollback, an operator override)."""
+    wanted = {"inputsRef": f"{RAPP_ID}:{inst.instance_id}:execution:{execution_id}", "modelVersion": inst.model_version,
+              "rationale": f"Restoring service: {reason}"}
+    return {k: v for k, v in wanted.items() if v}
+
+
 def _execute_direct(inst: EnergySavingInstance, cells: list[str], lock: bool, execution_id: str, reason: str) -> dict:
     """A DME O1 action carrying its own idempotency key and this
     execution's correlation id (W10-16/W10-18)."""
@@ -167,7 +176,8 @@ def _execute_direct(inst: EnergySavingInstance, cells: list[str], lock: bool, ex
     try:
         result = sdk.platform.execute_action(
             f"{RAPP_ID}:{inst.instance_id}", [_change(inst, c, act["lock"] if lock else act["unlock"]) for c in cells],
-            action_id=action_id, source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason})
+            action_id=action_id, source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason},
+            decision=_decision(inst, execution_id, reason))
         return {"path": "DME_DIRECT", "actionId": result["actionId"], "forwardedJobId": result.get("forwardedJobId"),
                 "status": result["status"]}
     except SdkError as e:

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ModuleStatus } from "../api/types";
 
-import { REFUSAL_CODES, REFUSAL_MEANING, APPROVAL_MEANING, DISPOSITION_MEANING, approvalPolicyForm, approvalPolicyPayload, describeApprovalPolicy, INTEGRITY_MEANING, completionRoute, decisionQuery, describeChange, describeElements, timeLeft, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describePlace, describeScope, describeSeconds, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, waveProgress, metricSeries, moduleRows, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
+import { REFUSAL_CODES, REFUSAL_MEANING, APPROVAL_MEANING, DISPOSITION_MEANING, approvalPolicyForm, approvalPolicyPayload, approvalProgress, decidedByText, describeApprovalPolicy, INTEGRITY_MEANING, completionRoute, decisionQuery, describeChange, describeElements, timeLeft, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describePlace, describeScope, describeSeconds, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, waveProgress, metricSeries, moduleRows, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
 
 describe("model lifecycle", () => {
   it("maps each state to the FSM's next legal action", () => {
@@ -305,6 +305,33 @@ describe("approvals and decision records (AI-11, AI-13)", () => {
     expect(approvalPolicyPayload({ minutes: " 30 ", onTimeout: "REJECT" })).toEqual({ ok: true, body: { timeoutSeconds: 1800, onTimeout: "REJECT" } });
     expect(approvalPolicyPayload({ minutes: "10080", onTimeout: "EXPIRE" }).ok).toBe(true);
     for (const bad of ["", " ", "0", "-5", "1.5", "10081", "soon"]) expect(approvalPolicyPayload({ minutes: bad, onTimeout: "EXPIRE" }).ok).toBe(false);
+  });
+});
+
+describe("two-person approval", () => {
+  it("describes, builds and sends a policy for two approvals, and leaves the usual one exactly as it was", () => {
+    expect(describeApprovalPolicy({ timeoutSeconds: 3600, onTimeout: "EXPIRE", requiredApprovals: 2 })).toBe("Held for approval · two different people must approve · lapses after 1 h (expires)");
+    expect(describeApprovalPolicy({ timeoutSeconds: 3600, onTimeout: "EXPIRE", requiredApprovals: 1 })).toBe("Held for approval · lapses after 1 h (expires)");
+    expect(approvalPolicyForm({ timeoutSeconds: 1800, onTimeout: "REJECT", requiredApprovals: 2 })).toEqual({ minutes: "30", onTimeout: "REJECT", twoApprovals: true });
+    expect(approvalPolicyForm({ timeoutSeconds: 1800, onTimeout: "REJECT", requiredApprovals: 1 })).toEqual({ minutes: "30", onTimeout: "REJECT" });
+    expect(approvalPolicyPayload({ minutes: "30", onTimeout: "REJECT", twoApprovals: true })).toEqual({ ok: true, body: { timeoutSeconds: 1800, onTimeout: "REJECT", requiredApprovals: 2 } });
+    expect(approvalPolicyPayload({ minutes: "30", onTimeout: "REJECT" })).toEqual({ ok: true, body: { timeoutSeconds: 1800, onTimeout: "REJECT" } });
+  });
+
+  it("says how far a waiting request is, only when it needs more than one approval", () => {
+    expect(approvalProgress({ requiredApprovals: 2, approvals: [{ by: "a" }] })).toBe("1 of 2 approvals");
+    expect(approvalProgress({ requiredApprovals: 2 })).toBe("0 of 2 approvals");
+    expect(approvalProgress({ requiredApprovals: 1, approvals: [] })).toBeNull();
+    expect(approvalProgress({})).toBeNull();
+  });
+
+  it("names the people behind a decision: the approvers in order, then whoever rejected it or the timeout", () => {
+    expect(decidedByText({ decidedBy: "smo-gui:bob" })).toBe("smo-gui:bob");
+    expect(decidedByText({ decidedBy: null })).toBe("—");
+    expect(decidedByText({ decidedBy: "smo-gui:bob", requiredApprovals: 2, approvals: [{ by: "smo-gui:ana" }, { by: "smo-gui:bob" }] })).toBe("smo-gui:ana, smo-gui:bob");
+    expect(decidedByText({ decidedBy: "smo-gui:cy", requiredApprovals: 2, approvals: [{ by: "smo-gui:ana" }] })).toBe("smo-gui:ana, smo-gui:cy");
+    expect(decidedByText({ decidedBy: "system:timeout", requiredApprovals: 2, approvals: [] })).toBe("system:timeout");
+    expect(decidedByText({ decidedBy: null, requiredApprovals: 2, approvals: [] })).toBe("—");
   });
 });
 

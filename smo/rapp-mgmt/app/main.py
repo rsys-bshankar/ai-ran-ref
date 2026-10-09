@@ -56,9 +56,24 @@ install_health(app, checks=[database_check, sme_token_check])  # /live, /ready a
 
 class ApprovalPolicy(BaseModel):
     """What happens to a request nobody decided within `timeoutSeconds` (a minute to a week, default an hour): `EXPIRE` (the default) lapses it,
-    `REJECT` has the platform reject it. Neither writes anything; there is no option that approves by itself."""
+    `REJECT` has the platform reject it. Neither writes anything; there is no option that approves by itself.
+
+    `requiredApprovals` (default 1, one approval, as before) may be 2: the request then needs two different people to approve it (the first approval keeps it waiting,
+    the requester's own never counts, one rejection ends it). Stored and pushed only when it is 2, so a policy that does not use it is exactly what it was."""
     timeoutSeconds: int = Field(default=3600, ge=60, le=604_800)
     onTimeout: Literal["EXPIRE", "REJECT"] = "EXPIRE"
+    requiredApprovals: Literal[1, 2] = 1
+
+
+def _policy_to_store(policy: ApprovalPolicy | None) -> dict | None:
+    """The policy as kept on the instance and pushed to RAN NF OAM. `requiredApprovals` is left out while it is 1, so an instance that did not opt into two-person
+    approval has the policy it had before the field existed (stored, returned and pushed unchanged)."""
+    if policy is None:
+        return None
+    stored = policy.model_dump()
+    if stored["requiredApprovals"] == 1:
+        del stored["requiredApprovals"]
+    return stored
 
 
 class CreateInstanceRequest(BaseModel):
@@ -158,7 +173,7 @@ def create_instance(body: CreateInstanceRequest, request: Request, db: Session =
     except ValueError as exc:
         raise framework_error(FrameworkError.AUTHZ_SCOPE_INVALID, detail=str(exc)) from None
     inst = provision_instance(db, body.packageId, configuration=body.config, autonomy_mode=body.autonomyMode,
-                              region_scope=body.regionScope, approval_policy=body.approvalPolicy.model_dump() if body.approvalPolicy else None,
+                              region_scope=body.regionScope, approval_policy=_policy_to_store(body.approvalPolicy),
                               authz_scope=claim)
     inst.operator_api_base = base
     db.commit()

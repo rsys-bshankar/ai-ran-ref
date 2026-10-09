@@ -149,6 +149,15 @@ def _verify_cio(inst: MobilityInstance, relations: dict[str, int]) -> dict:
             "expected": relations, "observed": observed, "attribute": CIO_TARGET}
 
 
+def _decision(inst, execution_id: str, reason: str) -> dict:
+    """PR-AI-13: why this write is made, kept by RAN NF OAM as the decision record of the config job (and shown to a person who is asked to approve it): a
+    reference to this execution (its inputs are on the instance's operator page, not in the record), the version of the model that decided, and the reason in words.
+    The direct path of this rApp is a service-restoring write (a wake, a revert, a rollback, an operator override)."""
+    wanted = {"inputsRef": f"{RAPP_ID}:{inst.instance_id}:execution:{execution_id}", "modelVersion": inst.model_version,
+              "rationale": f"Restoring service: {reason}"}
+    return {k: v for k, v in wanted.items() if v}
+
+
 def _execute_direct(inst: MobilityInstance, changes: dict[str, int], execution_id: str, reason: str) -> dict:
     action_id = str(uuid.uuid4())
     try:
@@ -157,7 +166,8 @@ def _execute_direct(inst: MobilityInstance, changes: dict[str, int], execution_i
             [{"managedElementRef": inst.managed_element_ref, "className": "NRCellRelation",
               "managedFunctionRef": f"NRCellRelation={rel}", "attributeChanges": {"cellIndividualOffset": _cio_list(v)}}
              for rel, v in changes.items()],
-            action_id=action_id, source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason})
+            action_id=action_id, source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason},
+            decision=_decision(inst, execution_id, reason))
         return {"path": "DME_DIRECT", "actionId": result["actionId"], "forwardedJobId": result.get("forwardedJobId"),
                 "status": result["status"]}
     except SdkError as e:
@@ -415,7 +425,8 @@ def deploy(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     action = sdk.platform.execute_action(
         f"{RAPP_ID}:{inst.instance_id}", [{"managedElementRef": inst.managed_element_ref, "className": "DMROFunction",
                                            "managedFunctionRef": dmro_ref, "attributeChanges": inst.dmro_bounds}],
-        action_id=uuid.uuid4(), source_context={"rApp": RAPP_ID, "reason": "DMRO_BOUNDS"})
+        action_id=uuid.uuid4(), source_context={"rApp": RAPP_ID, "reason": "DMRO_BOUNDS"},
+        decision={"modelVersion": inst.model_version, "rationale": "Apply the DMRO bounds the package declares once the model is certified and deployed"})
     observed = _read(inst, dmro_ref) or {}
     verified = all(str(observed.get(k)) == str(v) for k, v in inst.dmro_bounds.items())
     db.commit()

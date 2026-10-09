@@ -108,8 +108,8 @@ class FakePlatform:
             raise SdkError(404, {})
         return self.prediction
 
-    def execute_action(self, consumer, changes, action_id, source_context):
-        self.actions.append({"changes": changes, "actionId": action_id, "context": source_context})
+    def execute_action(self, consumer, changes, action_id, source_context, decision=None):
+        self.actions.append({"changes": changes, "actionId": action_id, "context": source_context, "decision": decision})
         if not self.stuck:
             for change in changes:
                 self.config[change["managedFunctionRef"].split("=")[1]] = change["attributeChanges"]["administrativeState"]
@@ -189,6 +189,15 @@ def _dispatched(mode="AUTONOMOUS", **extra):
 
 
 # ---------------------------------------------------------------- instance binding
+
+
+def _assert_decision(action, rapp, reason):
+    """PR-AI-13: a direct write says why it is made, so RAN NF OAM's decision record (and an approver) has more than the job: the execution it came from, the
+    version of the model that decided (when the instance has one) and the reason in words."""
+    decision = action["decision"]
+    assert decision["rationale"] == f"Restoring service: {reason}"
+    assert decision["inputsRef"].startswith(f"{rapp}:") and ":execution:" in decision["inputsRef"] and decision["inputsRef"].endswith(action["context"]["correlationId"])
+    assert set(decision) <= {"inputsRef", "modelVersion", "rationale"}
 
 def test_start_binds_the_instance_and_discovers_a_dataset_per_stage(client, platform, r1):
     instance_id = _start(client, r1, "ASSIST", operatorNotificationUri="http://ops/notify")
@@ -381,6 +390,7 @@ def test_returning_load_wakes_a_sleeping_cell_straight_through_dme(client, platf
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
     assert (d["decision"], d["reason"], d["outcome"], d["finalState"]) == ("UNLOCK", "PREDICTED_LOAD", "EXECUTED", {"state": "SERVING", "o1": "UNLOCKED"})
     assert platform.config[CELL] == "UNLOCKED" and platform.actions[-1]["context"]["reason"] == "WAKE:PREDICTED_LOAD"
+    _assert_decision(platform.actions[-1], "energy-saving-rapp", "WAKE:PREDICTED_LOAD")
 
 
 def test_a_wake_that_will_not_stick_is_resent_once_and_reported(client, platform, r1):

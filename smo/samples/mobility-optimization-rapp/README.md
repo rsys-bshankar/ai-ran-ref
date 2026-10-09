@@ -26,6 +26,7 @@ One `POST /instances/{id}/evaluate` is one pass of the loop over the instance's 
 - **Autonomy dispatch.** CIO changes (RAISE or LOWER) go to `AutonomyDispatch`. SHADOW only records a recommendation. ASSIST waits for the operator, and `reconcile` settles it afterwards. AUTONOMOUS goes through an Intent, the SA SMOS O1-CM handler, DME and RAN NF OAM.
 - **O1 write.** `NRCellRelation.cellIndividualOffset` is written (six identical entries per TS 28.541). At deploy, the DMRO bounds are written to `DMROFunction`.
 - **Verify.** Every write is read back over O1. A failed or unverified write is rolled back to the previous CIO.
+- **Decision record.** The direct writes (revert, rollback, and the DMRO bounds at deploy) send a `decision` (`PR-AI-13`): a reference to the execution, the model version and the reason in words, kept by RAN NF OAM as the decision record of the config job. Writes made through an Intent carry none.
 - **Revert.** A changed relation is OBSERVING until 60 minutes of post-change PM exist. If its rate is then worse, the previous CIO is restored straight through DME `/actions`.
 - **Audit.** One decision row per relation per pass, keyed by the request's correlation id.
 

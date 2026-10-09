@@ -25,6 +25,8 @@ helm = pytest.mark.skipif(shutil.which("helm") is None, reason="helm is not inst
 # the settings in days that docs/RETENTION.md proposes a value for, and where the chart puts each (module env; "gui" is gui.env)
 PROPOSED = {"SMO_RETENTION_ALARMS_DAYS": "90", "SMO_RETENTION_PM_FILES_DAYS": "14", "SAFEGUARD_REFUSAL_RETENTION_DAYS": "90",
             "SMO_RETENTION_MDAF_REPORTS_DAYS": "30", "GUI_AUDIT_RETENTION_DAYS": "365"}
+# settings with a column in the table but no proposal ("keep"): the code and the chart keep every row, the production sample does not set them
+KEPT = {"SMO_RETENTION_APPROVALS_DAYS": "keep", "SMO_RETENTION_DECISION_RECORDS_DAYS": "keep"}
 WHERE = {"SMO_RETENTION_ALARMS_DAYS": ["ran-nf-oam-worker"], "SMO_RETENTION_PM_FILES_DAYS": ["ran-nf-oam-worker"],
          "SAFEGUARD_REFUSAL_RETENTION_DAYS": ["ran-nf-oam", "ran-nf-oam-worker"], "SMO_RETENTION_MDAF_REPORTS_DAYS": ["mdaf-worker"],
          "GUI_AUDIT_RETENTION_DAYS": ["gui"]}
@@ -48,13 +50,21 @@ def _env(values: dict, where: str) -> dict:
 
 
 def test_the_document_proposes_the_values_the_samples_carry():
-    assert _table() == PROPOSED, "docs/RETENTION.md and the production sample disagree about the days-settings or their proposed values"
+    assert _table() == {**PROPOSED, **KEPT}, "docs/RETENTION.md and the production sample disagree about the days-settings or their proposed values"
 
 
 def test_the_production_sample_sets_every_days_setting_of_the_document_to_the_proposed_value():
     for variable, value in PROPOSED.items():
         for where in WHERE[variable]:
             assert _env(PRODUCTION, where)[variable] == value, f"{where}: {variable}"
+
+
+def test_a_setting_with_no_proposal_is_in_the_chart_and_compose_at_zero_and_in_no_sample_that_would_delete_anything():
+    for variable in KEPT:
+        assert DEFAULTS["modules"]["ran-nf-oam-worker"]["env"][variable] == "0", variable
+        assert variable not in _env(PRODUCTION, "ran-nf-oam-worker") and variable not in _env(GITOPS_PROD, "ran-nf-oam-worker"), variable
+        assert re.search(rf"^# {variable}=0\b", ENV_EXAMPLE, re.M), f".env.example: {variable}=0"
+        assert re.search(rf"{variable}: \$\{{{variable}:-0\}}", COMPOSE), variable
 
 
 def test_the_production_sample_only_names_modules_the_chart_has_and_sets_nothing_but_retention():

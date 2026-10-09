@@ -1,6 +1,7 @@
 """PR-MSG-4: what the RAN NF OAM worker does: KPI schedules, the wave advance, the refusal purge."""
 
 import datetime
+import uuid
 
 import pytest
 from sqlalchemy import select
@@ -177,7 +178,8 @@ def test_the_task_list_is_what_the_docs_say():
     assert {t.name: t.interval_seconds for t in tasks.TASKS} == {"advance-waves": 15, "publish-kpis": 30, "run-kpi-guards": 60,
                                                                        "expire-approvals": 60, "chain-decisions": 60,
                                                                        "purge-safeguard-refusals": 3600,
-                                                                       "purge-cleared-alarms": 3600, "purge-pm-files": 3600}
+                                                                       "purge-cleared-alarms": 3600, "purge-pm-files": 3600,
+                                                                       "purge-approvals": 3600, "purge-decision-records": 3600}
 
 
 def test_the_worker_tick_runs_the_tasks_through_the_claim(db_session_factory, monkeypatch):
@@ -187,7 +189,7 @@ def test_the_worker_tick_runs_the_tasks_through_the_claim(db_session_factory, mo
     Base.metadata.create_all(engine, tables=[PeriodicRun.__table__])
     monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
     out = tick(tasks.TASKS, module="ran-nf-oam", session_factory=db_session_factory, engine=engine)
-    assert out == {name: "ran" for name in ("advance-waves", "publish-kpis", "run-kpi-guards", "expire-approvals", "chain-decisions", "purge-safeguard-refusals", "purge-cleared-alarms", "purge-pm-files")}
+    assert out == {name: "ran" for name in ("advance-waves", "publish-kpis", "run-kpi-guards", "expire-approvals", "chain-decisions", "purge-safeguard-refusals", "purge-cleared-alarms", "purge-pm-files", "purge-approvals", "purge-decision-records")}
     assert tick(tasks.TASKS, module="ran-nf-oam", session_factory=db_session_factory, engine=engine) == {
         name: "skipped" for name in out}
 
@@ -246,3 +248,94 @@ def test_a_table_with_retention_off_reports_its_rows_and_one_with_retention_on_d
     tasks.purge_pm_files()
     assert REGISTRY.get_sample_value("smo_retention_off_rows", {"table": "alarm"}) == 3
     assert REGISTRY.get_sample_value("smo_retention_off_rows", {"table": "pm_file"}) is None
+
+
+# ---- retention of approvals and decision records (follow-up to AI-11 / AI-13; DB-3 mechanism)
+
+def _approvals_and_records(db_session_factory):
+    """Approvals: old decided, old lapsed, old PENDING (nobody decided, deadline far ahead), recent decided. Records: old chained, old unchained, recent chained."""
+    from smo_shared import audit
+    from app.models import RAppActionApproval, RAppDecisionRecord
+    now = datetime.datetime.now(datetime.UTC)
+    day = datetime.timedelta(days=1)
+    with db_session_factory() as db:
+        for name, status, decided_days in (("old-approved", "APPROVED", 200), ("old-expired", "EXPIRED", 150), ("old-pending", "PENDING", None), ("new-rejected", "REJECTED", 1)):
+            db.add(RAppActionApproval(approval_id=uuid.uuid5(uuid.NAMESPACE_URL, name), invoker_id="es", requested_by="es-rapp", status=status, request={"changes": []},
+                                      managed_elements=[], change_count=0, created_at=now - (decided_days or 300) * day, expires_at=now + 30 * day,
+                                      on_timeout="EXPIRE", decided_at=now - decided_days * day if decided_days else None))
+        for name, age, chained in (("old-chained", 200, True), ("old-unchained", 200, False), ("new-chained", 1, True)):
+            entry = audit.record(db, actor="es", role="rapp", action="DECISION", target=f"/ran-nf-oam/decision-records/{name}", result="DIRECT",
+                                 detail={"decisionId": name}) if chained else None
+            db.add(RAppDecisionRecord(decision_id=uuid.uuid5(uuid.NAMESPACE_URL, name), occurred_at=now - age * day, invoker_id="es", requested_by="es-rapp",
+                                      disposition="DIRECT", managed_elements=[], change_count=0, content_hash="0" * 64, audit_seq=entry.seq if entry else None))
+        db.commit()
+
+
+def _kept(db_session_factory):
+    from app.models import RAppActionApproval, RAppDecisionRecord
+    ids = {uuid.uuid5(uuid.NAMESPACE_URL, n): n for n in ("old-approved", "old-expired", "old-pending", "new-rejected", "old-chained", "old-unchained", "new-chained")}
+    with db_session_factory() as db:
+        return (sorted(ids[a] for a in db.scalars(select(RAppActionApproval.approval_id))), sorted(ids[r] for r in db.scalars(select(RAppDecisionRecord.decision_id))))
+
+
+def test_approvals_and_decision_records_are_kept_unless_a_retention_is_set(db_session_factory, monkeypatch):
+    _approvals_and_records(db_session_factory)
+    monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
+    tasks.purge_approvals()
+    tasks.purge_decision_records()
+    assert _kept(db_session_factory) == (["new-rejected", "old-approved", "old-expired", "old-pending"], ["new-chained", "old-chained", "old-unchained"])
+    monkeypatch.setenv("SMO_RETENTION_APPROVALS_DAYS", "0")
+    monkeypatch.setenv("SMO_RETENTION_DECISION_RECORDS_DAYS", "not a number")           # unset, 0 and rubbish all keep
+    tasks.purge_approvals()
+    tasks.purge_decision_records()
+    assert len(_kept(db_session_factory)[0]) == 4 and len(_kept(db_session_factory)[1]) == 3
+
+
+def test_only_decided_approvals_older_than_the_retention_go_and_a_waiting_one_stays(db_session_factory, monkeypatch):
+    _approvals_and_records(db_session_factory)
+    monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
+    monkeypatch.setenv("SMO_RETENTION_APPROVALS_DAYS", "30")
+    tasks.purge_approvals()
+    assert _kept(db_session_factory)[0] == ["new-rejected", "old-pending"]                  # a request nobody has decided is never purged, however old
+    assert len(_kept(db_session_factory)[1]) == 3                                           # and the decision records are another setting
+
+
+def test_only_chained_decision_records_older_than_the_retention_go_and_the_audit_chain_is_untouched(db_session_factory, monkeypatch):
+    from smo_shared import audit
+    _approvals_and_records(db_session_factory)
+    monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
+    monkeypatch.setenv("SMO_RETENTION_DECISION_RECORDS_DAYS", "30")
+    with db_session_factory() as db:
+        before = [(e.seq, e.hash) for e in db.scalars(select(audit.AuditEntry).order_by(audit.AuditEntry.seq))]
+        assert audit.verify(db) is None and len(before) == 2
+    tasks.purge_decision_records()
+    assert _kept(db_session_factory)[1] == ["new-chained", "old-unchained"]                 # an unchained record is not purged: its evidence is not in the chain yet
+    assert len(_kept(db_session_factory)[0]) == 4                                           # the approvals are another setting
+    with db_session_factory() as db:
+        assert [(e.seq, e.hash) for e in db.scalars(select(audit.AuditEntry).order_by(audit.AuditEntry.seq))] == before      # no audit row deleted
+        assert audit.verify(db) is None                                                     # and the chain verifies
+        assert db.get(audit.AuditEntry, before[0][0]).detail["decisionId"] == "old-chained"  # what the purged record said is still in the chain
+
+
+def test_a_purged_record_is_a_404_and_the_rest_of_the_list_is_unchanged(client, db_session_factory, monkeypatch):
+    _approvals_and_records(db_session_factory)
+    monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
+    monkeypatch.setenv("SMO_RETENTION_DECISION_RECORDS_DAYS", "30")
+    monkeypatch.setenv("SMO_RETENTION_APPROVALS_DAYS", "30")
+    tasks.purge_decision_records()
+    tasks.purge_approvals()
+    assert client.get(f"/decision-records/{uuid.uuid5(uuid.NAMESPACE_URL, 'old-chained')}").status_code == 404
+    assert client.get(f"/rapp-approvals/{uuid.uuid5(uuid.NAMESPACE_URL, 'old-approved')}").status_code == 404
+    assert client.get(f"/decision-records/{uuid.uuid5(uuid.NAMESPACE_URL, 'new-chained')}").status_code == 200
+    assert client.get(f"/rapp-approvals/{uuid.uuid5(uuid.NAMESPACE_URL, 'old-pending')}").status_code == 200
+
+
+def test_a_table_with_retention_off_reports_its_rows_for_these_two_as_well(db_session_factory, monkeypatch):
+    from prometheus_client import REGISTRY
+    _approvals_and_records(db_session_factory)
+    monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
+    monkeypatch.setenv("SMO_RETENTION_APPROVALS_DAYS", "30")
+    tasks.purge_approvals()
+    tasks.purge_decision_records()
+    assert REGISTRY.get_sample_value("smo_retention_off_rows", {"table": "rapp_decision_record"}) == 3
+    assert REGISTRY.get_sample_value("smo_retention_off_rows", {"table": "rapp_action_approval"}) is None       # retention is on for this one

@@ -26,7 +26,7 @@ One `POST /instances/{id}/evaluate` is one pass of the loop over the whole clust
 - **Decision.** Guards and bounds decide which moves each cell may make; the joint optimiser picks the best move set (at most 2 cells).
 - **Autonomy dispatch.** The change set goes to one `AutonomyDispatch` with one expectation per cell. SHADOW only recommends, ASSIST waits for the operator (`reconcile` settles it), AUTONOMOUS goes through an Intent, the SA SMOS O1-CM handler, DME and RAN NF OAM.
 - **O1 write and verify.** `digitalTilt` or `configuredMaxTxPower` is written and read back. A failed or unverified write is rolled back.
-- **Revert.** A degraded cluster restores every cell in the set straight through DME `/actions`.
+- **Revert.** A degraded cluster restores every cell in the set straight through DME `/actions`, with a `decision` (`PR-AI-13`): a reference to the execution, the model version and the reason in words, kept by RAN NF OAM as the decision record of the job. Writes made through an Intent carry none.
 - **Audit.** One decision row per cell per pass, keyed by the request's correlation id.
 
 ## Design

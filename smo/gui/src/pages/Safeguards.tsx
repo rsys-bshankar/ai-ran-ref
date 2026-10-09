@@ -163,6 +163,12 @@ function ApprovalPolicyDialog({ invokerId, current, onClose }: { invokerId: stri
           <option value="REJECT">is rejected by the platform</option>
         </select>
       </Field>
+      <Field label="Approvals needed" hint="Two: two different people must approve; the first keeps it waiting, the second writes it, one rejection ends it, and the requester's own never counts">
+        <select value={form.twoApprovals ? "2" : "1"} onChange={(e) => { const { twoApprovals: _drop, ...rest } = form; setForm(e.target.value === "2" ? { ...rest, twoApprovals: true } : rest); }}>
+          <option value="1">one person (the default)</option>
+          <option value="2">two different people</option>
+        </select>
+      </Field>
       {problem && <div className="error-box" role="alert">{problem}</div>}
       <div className="row gap">
         <button className="btn primary" disabled={action.isPending} onClick={save}>{action.isPending ? "…" : "Hold for approval"}</button>
