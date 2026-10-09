@@ -410,7 +410,7 @@ cd smo/gui-bff && PYTHONPATH=.:../shared python -m pytest tests/ -q
 - Against a real R1 Termination / SME / modules: not in `tests_integration/` either; the BFF is exercised only against the fake in `tests/test_main.py` (`FakeSmo`).
 - The SPA side (role gating in JavaScript, API helpers, the renderer of a declared page, the directory): `cd smo/gui && npx vitest run`, including `src/auth/rbac.test.ts` against the shared fixture.
 - That the vendored matcher equals `smo_shared`'s: `tests_integration/test_gui_bff_operator_ui_parity.py` (it imports both; this module's job cannot).
-- A rApp's page in a browser against the compose stack (`GUI-8.7`, open).
+- A rApp's page in a browser: `scripts/gui_rapp_pages_e2e.py` (GUI-8.7) drives it in Chromium against the real backend, with a stub rApp (`scripts/gui_rapp_stub.py`), as an operator and as a viewer; the CI job is a step of `smo-gui-e2e.yml`.
 - The whole BFF against a non-SQLite database: only the shared-state operations (stored setting, failed-login counting, SME credential store and replace) run on Postgres, in `tests/test_shared_state.py`.
 
 ## 4. References

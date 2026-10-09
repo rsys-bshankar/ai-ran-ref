@@ -15,6 +15,8 @@ DIR defaults to smo/certs/mtls (git-ignored). Layout:
     DIR/ca/previous.crt            the CA being retired (rotate-ca issue ... retire)
     DIR/<service>/tls.crt, tls.key, ca.crt     what a service mounts at /run/mtls (docker-compose.mtls.yml). ca.crt is the CA, or old and new CA during a rotation
     DIR/clients/<name>/...         the same three files for a client-only certificate
+    DIR/postgres/tls.crt, tls.key, ca.crt      the database's server certificate (names: postgres, localhost, 127.0.0.1, ::1, SMO_MTLS_NAMES) and the CA bundle the clients
+                                   verify it against (docker-compose.pgtls.yml, PR-SEC-2.4). Postgres refuses a key file that is group or world readable, so that overlay copies it
 
 A service certificate is ECDSA P-256, valid 90 days by default, with the service's name, `localhost`, 127.0.0.1 and ::1 as subject alternative names and the
 extended key usages serverAuth AND clientAuth: the one certificate is the service's server certificate and its client certificate. Names for Kubernetes
@@ -53,6 +55,9 @@ SERVERS = ("r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oa
            "intent-service", "so-smos", "sa-smos", "energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimization-rapp", "traffic-steering-rapp")
 CLIENT_ONLY = ("ran-nf-oam-worker", "mdaf-worker", "gui-bff", "runbook")   # no server port (a worker), a plain server (the BFF), or a test driver
 SERVICES = SERVERS + CLIENT_ONLY
+# A server certificate for the database (PR-SEC-2.4): docker-compose.pgtls.yml mounts DIR/postgres. It is not a service of the mTLS overlay (it is not in SERVERS or
+# SERVICES, which the overlay and its tests enumerate): Postgres is verified by the clients (sslmode=verify-full against ca.crt), it does not ask them for a certificate.
+DATABASES = ("postgres",)
 
 CA_DAYS = 3650
 LEAF_DAYS = 90
@@ -185,10 +190,10 @@ def init(root: Path, days: int, force: bool = False) -> str:
     ca_cert, ca_key = make_ca()
     _write(ca / "ca.key", key_pem(ca_key), 0o600)
     _write(ca / "ca.crt", cert_pem(ca_cert), 0o644)
-    for service in SERVICES:
-        cert, key = make_leaf(ca_cert, ca_key, service, days, server=service in SERVERS)
+    for service in SERVICES + DATABASES:
+        cert, key = make_leaf(ca_cert, ca_key, service, days, server=service in SERVERS or service in DATABASES)
         _write_leaf(root / service, cert, key, cert_pem(ca_cert))
-    return f"created: {root}  (CA, {len(SERVICES)} service certificates, {days} days)"
+    return f"created: {root}  (CA, {len(SERVICES)} service certificates and one for the database, {days} days)"
 
 
 def renew(root: Path, days: int) -> str:

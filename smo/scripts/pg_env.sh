@@ -22,9 +22,11 @@ if not env["PGPASSWORD"] and not os.environ.get("PGPASSWORD") and os.environ.get
             env["PGPASSWORD"] = handle.read().strip()
     except OSError as error:
         sys.exit(f"cannot read SMO_DATABASE_PASSWORD_FILE: {error}")
-sslmode = parse_qs(parts.query).get("sslmode")
-if sslmode:
-    env["PGSSLMODE"] = sslmode[0]
+query = parse_qs(parts.query)
+# A query parameter wins, as in libpq; PGSSLMODE / PGSSLROOTCERT already in the environment (docker-compose.pgtls.yml sets them) are left alone when the URL has none.
+for parameter, variable in (("sslmode", "PGSSLMODE"), ("sslrootcert", "PGSSLROOTCERT")):
+    if query.get(parameter):
+        env[variable] = query[parameter][0]
 for key, value in env.items():
     if value:
         print(f"export {key}={shlex.quote(value)}")

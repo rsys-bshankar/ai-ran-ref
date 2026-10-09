@@ -1,10 +1,12 @@
-"""Three separate lifecycles hosted by RAN NF OAM SMOS, per RAN NF OAM LLD
+"""Separate lifecycles hosted by RAN NF OAM SMOS, the first three per RAN NF OAM LLD
 section 6:
   - WriteConfigJob      (section 3.2's decomposed-PATCH aggregation)
   - SoftwareManagementJob
   - O1AdaptorEndpoint health (section 1.2's new endpoint registry)
+  - the onboarding of a newly registered element (MGT-14.5)
+  - a software campaign over many elements (MGT-15)
 
-Kept as three independent StateMachine instances rather than one shared
+Kept as independent StateMachine instances rather than one shared
 FSM — the entities don't share transitions or a common lifecycle shape,
 so merging them would just be false economy.
 """
@@ -142,3 +144,81 @@ def build_endpoint_health_fsm() -> StateMachine[EndpointHealth, EndpointEvent]:
 
 
 ENDPOINT_HEALTH_FSM = build_endpoint_health_fsm()
+
+# ---------------------------------------------------------------- Onboarding of an element (MGT-14.5)
+
+class OnboardingState(StrEnum):
+    DISCOVERED = "DISCOVERED"               # registered, not yet matched against the templates
+    NO_TEMPLATE = "NO_TEMPLATE"             # templates exist, none fits this element
+    TEMPLATE_SELECTED = "TEMPLATE_SELECTED"
+    APPLYING = "APPLYING"                   # the template's config job is being written
+    ONBOARDED = "ONBOARDED"
+    FAILED = "FAILED"
+
+
+class OnboardingEvent(StrEnum):
+    TEMPLATE_MATCHED = "TEMPLATE_MATCHED"
+    NO_MATCH = "NO_MATCH"
+    APPLY = "APPLY"
+    APPLIED = "APPLIED"
+    APPLY_FAILED = "APPLY_FAILED"
+
+
+def build_onboarding_fsm() -> StateMachine[OnboardingState, OnboardingEvent]:
+    """The way an element goes from "registered" to "configured". Selecting again (an operator changed the templates) is allowed wherever the element is not
+    being written; applying again is allowed from ONBOARDED, FAILED and TEMPLATE_SELECTED."""
+    fsm: StateMachine[OnboardingState, OnboardingEvent] = StateMachine()
+    S, E = OnboardingState, OnboardingEvent
+    for state in (S.DISCOVERED, S.NO_TEMPLATE, S.TEMPLATE_SELECTED, S.ONBOARDED, S.FAILED):
+        fsm.add(state, E.TEMPLATE_MATCHED, S.TEMPLATE_SELECTED)
+    for state in (S.DISCOVERED, S.NO_TEMPLATE, S.TEMPLATE_SELECTED, S.ONBOARDED, S.FAILED):
+        fsm.add(state, E.NO_MATCH, S.NO_TEMPLATE)
+    for state in (S.TEMPLATE_SELECTED, S.ONBOARDED, S.FAILED):
+        fsm.add(state, E.APPLY, S.APPLYING)
+    fsm.add(S.APPLYING, E.APPLIED, S.ONBOARDED)
+    fsm.add(S.APPLYING, E.APPLY_FAILED, S.FAILED)
+    return fsm
+
+
+ONBOARDING_FSM = build_onboarding_fsm()
+
+# ---------------------------------------------------------------- Software campaign (MGT-15)
+
+class CampaignState(StrEnum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"                     # a wave is in progress
+    HALTED = "HALTED"                       # between waves: a pause, a failed gate, an operator's halt
+    COMPLETED = "COMPLETED"
+    ABORTED = "ABORTED"                     # ended by an operator before the last wave
+    ROLLING_BACK = "ROLLING_BACK"
+    ROLLED_BACK = "ROLLED_BACK"
+    ROLLBACK_FAILED = "ROLLBACK_FAILED"
+
+
+class CampaignEvent(StrEnum):
+    START = "START"
+    HALT = "HALT"
+    RESUME = "RESUME"
+    FINISH = "FINISH"
+    ABORT = "ABORT"
+    ROLLBACK = "ROLLBACK"
+    ROLLBACK_DONE = "ROLLBACK_DONE"
+    ROLLBACK_FAILED = "ROLLBACK_FAILED"
+
+
+def build_campaign_fsm() -> StateMachine[CampaignState, CampaignEvent]:
+    fsm: StateMachine[CampaignState, CampaignEvent] = StateMachine()
+    S, E = CampaignState, CampaignEvent
+    fsm.add(S.PENDING, E.START, S.RUNNING)
+    fsm.add(S.RUNNING, E.HALT, S.HALTED)
+    fsm.add(S.RUNNING, E.FINISH, S.COMPLETED)
+    fsm.add(S.HALTED, E.RESUME, S.RUNNING)
+    fsm.add(S.HALTED, E.ABORT, S.ABORTED)
+    for state in (S.RUNNING, S.HALTED, S.COMPLETED, S.ABORTED, S.ROLLBACK_FAILED):
+        fsm.add(state, E.ROLLBACK, S.ROLLING_BACK)
+    fsm.add(S.ROLLING_BACK, E.ROLLBACK_DONE, S.ROLLED_BACK)
+    fsm.add(S.ROLLING_BACK, E.ROLLBACK_FAILED, S.ROLLBACK_FAILED)
+    return fsm
+
+
+CAMPAIGN_FSM = build_campaign_fsm()
