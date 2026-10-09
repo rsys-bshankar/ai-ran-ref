@@ -1,0 +1,76 @@
+# Postgres over TLS, and every client verifying it (PR-SEC-2.4). Off unless you ask for it: the default stack is unchanged.
+#
+#   scripts/init_secrets.sh                                     (once, as for the default stack)
+#   scripts/mtls_certs.py init                                  the development CA and, among the others, a server certificate for Postgres in certs/mtls/postgres
+#   docker compose -f docker-compose.yml -f docker-compose.pgtls.yml up -d --build         (add -f docker-compose.mtls.yml for the services' mutual TLS as well)
+#
+# What it does: Postgres starts with ssl=on and the certificate of certs/mtls/postgres (copied to a place the postgres user owns, mode 0600: Postgres refuses
+# a key file anyone else can read) and with pgtls/pg_hba.conf, which accepts a connection from the network only as TLS (`hostssl`) and rejects a plain one. Every
+# service that opens a database connection (the modules, the workers, the sample rApps, the one-shot `migrate`, the `db-backup` profile) gets
+# PGSSLMODE=verify-full and PGSSLROOTCERT=/run/pgtls/ca.crt, the CA bundle of certs/mtls/postgres/ca.crt, mounted read-only. libpq reads both from the
+# environment, so the URLs in docker-compose.yml are not touched: the certificate must chain to that CA AND carry the name the client connected to (`postgres`),
+# or the connection fails. A wrong CA, or another name, is not a warning: the service does not start.
+#
+# Through PgBouncer (`--profile pooler`, SMO_DB_HOST=pgbouncer SMO_DB_PORT=6432): the services talk to the pooler inside the compose network, which serves no TLS, so
+# set SMO_DB_SSLMODE=disable for them; PgBouncer's own connection to Postgres is then the one that is verified (PGBOUNCER_SERVER_TLS_SSLMODE=verify-full below,
+# with the same CA). Without the pooler leave SMO_DB_SSLMODE unset.
+#
+# Proof (CI job compose-pgtls in smo-tests.yml, scripts/pg_tls_check.py): a client with the right CA connects over TLS and `pg_stat_ssl` says so; a client with
+# another CA, or a name the certificate does not carry, is refused; sslmode=disable is refused by the server.
+# Rotation: scripts/mtls_certs.py renew, then `docker compose ... up -d --force-recreate postgres` (Postgres reads its certificate at start; a client reads the
+# CA file at every connection). Not for production: a deployment brings its own CA and issuance (docs/ARCHITECTURE.md, "Postgres over TLS").
+
+x-pgtls-client: &pgtls_client
+  environment:
+    PGSSLMODE: ${SMO_DB_SSLMODE:-verify-full}
+    PGSSLROOTCERT: /run/pgtls/ca.crt
+  volumes:
+    - ./certs/mtls/postgres/ca.crt:/run/pgtls/ca.crt:ro
+
+services:
+  postgres:
+    # The base command, plus TLS. The image's entrypoint starts as root, so the copy below can give the key to postgres; the entrypoint then drops to that user.
+    command:
+      - sh
+      - -c
+      - >-
+        install -d -m 0755 /run/pgtls &&
+        install -m 0644 -o postgres -g postgres /run/pgtls-src/tls.crt /run/pgtls/tls.crt &&
+        install -m 0600 -o postgres -g postgres /run/pgtls-src/tls.key /run/pgtls/tls.key &&
+        exec docker-entrypoint.sh postgres
+        -c log_min_duration_statement=${POSTGRES_SLOW_QUERY_MS:-500}
+        -c ssl=on -c ssl_cert_file=/run/pgtls/tls.crt -c ssl_key_file=/run/pgtls/tls.key
+        -c ssl_min_protocol_version=TLSv1.2
+        -c hba_file=/etc/smo/pg_hba.conf
+    volumes:
+      - ./certs/mtls/postgres:/run/pgtls-src:ro
+      - ./pgtls/pg_hba.conf:/etc/smo/pg_hba.conf:ro
+  pgbouncer:
+    environment:
+      PGBOUNCER_SERVER_TLS_SSLMODE: verify-full
+      PGBOUNCER_SERVER_TLS_CA_FILE: /run/pgtls/ca.crt
+    volumes:
+      - ./certs/mtls/postgres/ca.crt:/run/pgtls/ca.crt:ro
+  db-backup: *pgtls_client
+  migrate: *pgtls_client
+  r1-termination: *pgtls_client
+  sme: *pgtls_client
+  dme: *pgtls_client
+  onboarding: *pgtls_client
+  rapp-mgmt: *pgtls_client
+  ran-nf-oam: *pgtls_client
+  ran-nf-oam-worker: *pgtls_client
+  energy-saving-rapp: *pgtls_client
+  mobility-optimization-rapp: *pgtls_client
+  coverage-optimization-rapp: *pgtls_client
+  traffic-steering-rapp: *pgtls_client
+  nfo: *pgtls_client
+  focom: *pgtls_client
+  mlmr: *pgtls_client
+  aimgf: *pgtls_client
+  ran-analytics: *pgtls_client
+  mdaf: *pgtls_client
+  mdaf-worker: *pgtls_client
+  intent-service: *pgtls_client
+  so-smos: *pgtls_client
+  sa-smos: *pgtls_client

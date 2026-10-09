@@ -52,6 +52,20 @@ spec:
         - name: postgres
           image: {{ .Values.postgres.image }}
           imagePullPolicy: {{ .Values.postgres.pullPolicy }}
+          {{- if .Values.postgres.tls.enabled }}
+          # PR-SEC-2.4: TLS from the network only (the hba file below: `hostssl`, plain `host` rejected); the modules verify the certificate (sslmode=verify-full)
+          args:
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/run/pg-tls/tls.crt
+            - -c
+            - ssl_key_file=/run/pg-tls/tls.key
+            - -c
+            - ssl_min_protocol_version=TLSv1.2
+            - -c
+            - hba_file=/etc/smo/pg_hba.conf
+          {{- end }}
           ports:
             - { name: postgres, containerPort: 5432 }
           env:
@@ -77,6 +91,10 @@ spec:
             - { name: pgdata, mountPath: /var/lib/postgresql }    # PostgreSQL 18+ keeps its data in a version-named subdirectory here
             - { name: run, mountPath: /var/run/postgresql }
             - { name: secrets, mountPath: /run/secrets, readOnly: true }
+            {{- if .Values.postgres.tls.enabled }}
+            - { name: pg-tls, mountPath: /run/pg-tls, readOnly: true }
+            - { name: pg-hba, mountPath: /etc/smo, readOnly: true }
+            {{- end }}
       volumes:
         - name: run
           emptyDir: {}
@@ -86,6 +104,15 @@ spec:
             defaultMode: 0444
             items:
               - { key: db-password, path: db_password }
+        {{- if .Values.postgres.tls.enabled }}
+        - name: pg-tls
+          secret:
+            secretName: {{ .Values.postgres.tls.secretName }}
+            defaultMode: 0440              # owned by root, readable by the pod's group (fsGroup 70): Postgres accepts a key that root owns with mode 0640 or less
+        - name: pg-hba
+          configMap:
+            name: postgres-hba
+        {{- end }}
   volumeClaimTemplates:
     - metadata:
         name: pgdata
@@ -97,4 +124,46 @@ spec:
         resources:
           requests:
             storage: {{ .Values.postgres.storage }}
+{{- if .Values.postgres.tls.enabled }}
+---
+# PR-SEC-2.4: the same rules as smo/pgtls/pg_hba.conf (docker-compose.pgtls.yml); a test keeps the two equal.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-hba
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: postgres
+data:
+  pg_hba.conf: |
+    local   all   all                    trust
+    hostssl all   all   all              scram-sha-256
+    host    all   all   all              reject
+{{- if .Values.postgres.tls.certManager.enabled }}
+{{- $ref := .Values.postgres.tls.certManager.issuerRef }}
+{{- if not $ref.name }}{{ fail "postgres.tls.certManager.enabled needs postgres.tls.certManager.issuerRef.name (an Issuer or ClusterIssuer of cert-manager; with mtls.certManager.createCA that is smo-mtls-ca)" }}{{ end }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.postgres.tls.secretName }}
+  labels:
+    {{- $labels | nindent 4 }}
+    app.kubernetes.io/name: postgres
+spec:
+  commonName: postgres
+  secretName: {{ .Values.postgres.tls.secretName }}
+  duration: {{ .Values.postgres.tls.certManager.duration }}
+  renewBefore: {{ .Values.postgres.tls.certManager.renewBefore }}
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
+  usages: [digital signature, server auth]
+  dnsNames:
+    - postgres
+    - postgres.{{ .Release.Namespace }}.svc
+    - postgres.{{ .Release.Namespace }}.svc.cluster.local
+    - localhost
+  issuerRef:
+    {{- toYaml $ref | nindent 4 }}
+{{- end }}
+{{- end }}
 {{- end }}

@@ -87,6 +87,18 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("DELETE", "/rapp-mgmt/instances/i/kill", "admin"),
     ("PUT", "/ran-nf-oam/rapp-limits/i", "admin"),
     ("PUT", "/ran-nf-oam/managed-entities/e/scope", "admin"),           # SEC-10
+    # MGT-14 / MGT-15: templates are configuration (admin); applying one and driving a campaign are operator actions; reads are viewer
+    ("PUT", "/ran-nf-oam/onboarding-templates/t", "admin"),
+    ("DELETE", "/ran-nf-oam/onboarding-templates/t", "admin"),
+    ("POST", "/ran-nf-oam/element-onboarding/e/select", "operator"),
+    ("POST", "/ran-nf-oam/element-onboarding/e/apply", "operator"),
+    ("POST", "/ran-nf-oam/software-campaigns", "operator"),
+    ("POST", "/ran-nf-oam/software-campaigns/c/continue", "operator"),
+    ("POST", "/ran-nf-oam/software-campaigns/c/halt", "operator"),
+    ("POST", "/ran-nf-oam/software-campaigns/c/abort", "operator"),
+    ("POST", "/ran-nf-oam/software-campaigns/c/rollback", "operator"),
+    ("GET", "/ran-nf-oam/software-campaigns/c/report", "viewer"),
+    ("GET", "/ran-nf-oam/element-onboarding", "viewer"),
     ("PUT", "/sme/invoker-registrations/i/authz-scope", "admin"),
     # AI-11: a person decides an rApp's action (operator); who waits for a decision, and who is told, is administrative
     ("POST", "/ran-nf-oam/rapp-approvals/a/approve", "operator"),

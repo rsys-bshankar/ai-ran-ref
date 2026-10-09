@@ -45,11 +45,21 @@ app.kubernetes.io/instance: {{ .root.Release.Name }}
 {{- if and .root.Values.databaseRoles.enabled .module.databaseRole -}}{{ .module.databaseRole }}{{- end -}}
 {{- end -}}
 
+{{/* PR-SEC-2.4: "true" when the bundled Postgres serves TLS and the modules verify it (postgres.enabled and postgres.tls.enabled), else "false". smo.pgTls (the root context). */}}
+{{- define "smo.pgTls" -}}
+{{- if and .Values.postgres.enabled .Values.postgres.tls.enabled -}}true{{- else -}}false{{- end -}}
+{{- end -}}
+
 {{/* Where Postgres is, as the URL every module takes (the password is read from the file, never put in the URL). */}}
 {{- define "smo.databaseUrl" -}}
 {{- $user := ternary (printf "smo_%s" (replace "-" "_" (default "" .role))) "" (ne (default "" .role) "") -}}
 {{- if .root.Values.postgres.enabled -}}
+{{- if eq (include "smo.pgTls" .root) "true" -}}
+{{- /* PR-SEC-2.4: the bundled Postgres serves TLS; the module checks its certificate against the CA mounted at /run/pg-tls and against the name `postgres` */ -}}
+{{- printf "postgresql+psycopg://%s@postgres:5432/smo?sslmode=verify-full&sslrootcert=/run/pg-tls/ca.crt" (default "smo" $user) -}}
+{{- else -}}
 {{- printf "postgresql+psycopg://%s@postgres:5432/smo" (default "smo" $user) -}}
+{{- end -}}
 {{- else -}}
 {{- $e := .root.Values.postgres.external -}}
 {{- if not $e.host }}{{ fail "postgres.enabled=false needs postgres.external.host" }}{{ end -}}

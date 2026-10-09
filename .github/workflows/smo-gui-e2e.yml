@@ -5,6 +5,10 @@ name: SMO GUI browser checks
 # smo/security/gui-axe-baseline.json does not accept, and a screenshot of each page is kept. smo/scripts/gui_e2e.py.
 # Nightly, on demand, and on a pull request that changes the script, this workflow or the GUI's sources. Not a required check yet (a first slice).
 #
+# GUI-8.7 (PR-GUI-8): in the same job, a package that declares an operator page is onboarded after the GUI was built, with a stub rApp on the compose network, and the page
+# is driven by the operator and the viewer (smo/scripts/gui_rapp_pages_e2e.py, smo/scripts/gui_rapp_stub.py): panels, the row drawer, a button and a row action reaching
+# the rApp, no change button for the viewer, and the backend refusing a hand-made call (UNDECLARED_ROUTE, FORBIDDEN, RAPP_READ_ONLY).
+#
 # The second job, `oidc` (PR-SEC-6), starts the same stack with OIDC login switched on against a real Keycloak (the realm in
 # smo/gui-bff/tests/keycloak/smo-realm.json) and drives the browser through the provider's own login page: smo/scripts/gui_oidc_e2e.py.
 
@@ -18,6 +22,9 @@ on:
       - "smo/scripts/gui_e2e.py"
       - "smo/scripts/gui_session_e2e.py"
       - "smo/scripts/gui_oidc_e2e.py"
+      - "smo/scripts/gui_rapp_pages_e2e.py"
+      - "smo/scripts/gui_rapp_stub.py"
+      - "smo/samples/energy-saving-rapp.csar"
       - "smo/gui-bff/**"
       - "smo/security/gui-axe-baseline.json"
       - "smo/gui/**"
@@ -77,6 +84,27 @@ jobs:
           # the generated admin password is in the BFF container (mode 0600, never in the log)
           GUI_E2E_PASSWORD=$(docker compose exec -T gui-bff cat /data/initial-admin-password) \
             python scripts/gui_e2e.py --base-url http://localhost:3000 --out "$RUNNER_TEMP/gui-e2e"
+
+      - name: A package onboarded at run time gets its declared page, and the roles hold (GUI-8.7)
+        working-directory: smo
+        env:
+          GUI_E2E_OPERATOR_PASSWORD: ci-operator-pass-1
+          GUI_E2E_VIEWER_PASSWORD: ci-viewer-pass-1
+        run: |
+          # The GUI was built before this step: the packages below are onboarded NOW, so a page for them is drawn with no GUI rebuild. The stub rApp and the package host run
+          # inside the compose network (the platform has to reach them), as the runbook's package server does (DEMO_RUNBOOK.md section 1).
+          docker compose cp samples/energy-saving-rapp.csar r1-termination:/srv/scratch/energy-saving-rapp.csar
+          docker compose cp scripts/gui_rapp_stub.py r1-termination:/srv/scratch/gui_rapp_stub.py
+          docker compose exec -d -T r1-termination python3 /srv/scratch/gui_rapp_stub.py serve --csar /srv/scratch/energy-saving-rapp.csar --port 8898
+          for i in $(seq 1 20); do
+            docker compose exec -T r1-termination python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8898/_calls')" > /dev/null 2>&1 && break
+            sleep 1
+          done
+          docker compose exec -T r1-termination python3 /srv/scratch/gui_rapp_stub.py setup --public http://r1-termination:8898 > "$RUNNER_TEMP/instances.json"
+          cat "$RUNNER_TEMP/instances.json"
+          # the admin is not used here: the operator drives the page, the viewer is refused
+          python scripts/gui_rapp_pages_e2e.py --base-url http://localhost:3000 --instances "$RUNNER_TEMP/instances.json" --out "$RUNNER_TEMP/gui-e2e/rapp-pages" \
+            --calls-command "docker compose exec -T r1-termination python3 -c \"import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8898/_calls').read().decode())\""
 
       - name: Sessions and roles in the browser (viewer, operator, admin)
         working-directory: smo

@@ -1,0 +1,20 @@
+{
+  "profileVersion": 1,
+  "name": "example-du",
+  "vendorName": "example-vendor",
+  "description": "A stand-in for the first real vendor profile (SB-10): an O-DU that speaks NETCONF only, offers no software management, and models three things differently from 3GPP TS 28.541. It is not a real vendor: see README.md.",
+  "supportedServices": ["PROV", "FM", "PM", "FILE", "HEARTBEAT"],
+  "supportedVendorModes": ["O1_NETCONF"],
+  "conformanceMode": "COMBINED",
+  "schema": {
+    "schemaName": "example-du-ext",
+    "revision": "2026-10-01",
+    "yang": ["yang/example-du-ext.yang"],
+    "descriptor": "schema/example-du-ext.json"
+  },
+  "iocDefaults": {
+    "NRCellDU": {"exampleTxBackoffDb": "0", "exampleBeamMode": "ADAPTIVE"},
+    "NRSectorCarrier": {"configuredMaxTxPower": "40"},
+    "ExampleBeamProfile": {"profileName": "default", "horizontalBeamwidth": "65"}
+  }
+}

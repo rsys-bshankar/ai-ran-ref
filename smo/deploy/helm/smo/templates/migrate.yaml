@@ -52,9 +52,21 @@ spec:
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
             - { name: secrets, mountPath: /run/secrets, readOnly: true }
+            {{- if eq (include "smo.pgTls" .) "true" }}
+            - { name: pg-tls-ca, mountPath: /run/pg-tls, readOnly: true }
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: { medium: Memory }
+        {{- if eq (include "smo.pgTls" .) "true" }}
+        # PR-SEC-2.4: only the CA certificate out of the bundled Postgres's Secret, never its key
+        - name: pg-tls-ca
+          secret:
+            secretName: {{ .Values.postgres.tls.secretName }}
+            defaultMode: 0444
+            items:
+              - { key: ca.crt, path: ca.crt }
+        {{- end }}
         - name: secrets
           projected:
             defaultMode: 0444

@@ -24,6 +24,21 @@ postgres:
   resources:                                   # 150 MiB and 36 % of a core at its peak under the load of docs/SIZING.md (10 000 managed elements); values-sized.yaml asks for 250m
     requests: { cpu: 100m, memory: 256Mi }
     limits: { memory: 1Gi }
+  # PR-SEC-2.4: TLS for the bundled Postgres (postgres.enabled), off by default. On, Postgres serves TLS only (ssl=on, pg_hba `hostssl`; a plain connection is rejected) with the
+  # certificate in the Secret `secretName` (keys tls.crt, tls.key, ca.crt: what cert-manager writes), and every module and the migrate Job connect with sslmode=verify-full
+  # against that Secret's ca.crt (mounted at /run/pg-tls) and the name `postgres`: a wrong CA, or a certificate without that name, stops the connection. The certificate must
+  # name postgres, postgres.<namespace>.svc and postgres.<namespace>.svc.cluster.local. certManager.enabled makes the Certificate from the Issuer or ClusterIssuer in
+  # issuerRef (with mtls.certManager.createCA that is `smo-mtls-ca`), else you create the Secret. For a NEW install: switching it on in a running release makes the pre-upgrade
+  # migrate Job connect with verify-full to a Postgres that still serves plain, so the upgrade stops there (old pods keep serving); README, "Postgres over TLS".
+  # An external Postgres is not touched by this: its own `external.sslmode` below.
+  tls:
+    enabled: false
+    secretName: postgres-tls
+    certManager:
+      enabled: false
+      issuerRef: { name: "", kind: Issuer, group: cert-manager.io }
+      duration: 2160h              # 90 days
+      renewBefore: 720h            # 30 days
   external:
     host: ""
     port: 5432
@@ -157,7 +172,7 @@ placement:
 # CA (smo_shared/mtls.py). Each module mounts the Secret `<module><secretSuffix>` (keys tls.crt, tls.key, ca.crt: what cert-manager writes) at /run/mtls.
 # The probes of such a module become `python -m smo_shared.mtls probe` (an exec probe: the kubelet's httpGet cannot present a certificate). Not part of it:
 # `mock-o1-adaptor` (a stand-in for a network function, plain HTTP: `mtls: "off"`), `gui` (nginx) and the GUI backend (`mtls: client`: it calls R1 with a
-# certificate and serves the GUI's nginx plain HTTP). Postgres TLS (`postgres.external.sslmode: verify-full`) is separate and still open (PR-SEC-2.4).
+# certificate and serves the GUI's nginx plain HTTP). Postgres TLS is separate: `postgres.tls` for the bundled one, `postgres.external.sslmode: verify-full` for your own (PR-SEC-2.4).
 #   certManager.enabled: true   the chart makes the Certificates (and, with createCA, a self-signed CA chain: Issuer -> CA Certificate -> CA Issuer);
 #                               needs cert-manager's CRDs. With createCA: false, name your own Issuer or ClusterIssuer in issuerRef.
 #   certManager.enabled: false  you create the Secrets, one per module (names: `<module><secretSuffix>`), from your own CA or from scripts/mtls_certs.py

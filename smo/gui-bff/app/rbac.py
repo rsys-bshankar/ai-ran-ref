@@ -178,6 +178,17 @@ RULES: list[Rule] = [
     _rule("POST", "/ran-nf-oam/(pm-subscriptions|software-management-jobs|o1-adaptor-endpoints|o1-adaptor-endpoints/discover)", O),
     _rule("POST", "/ran-nf-oam/software-management-jobs/{id}/advance", O),
     _rule("POST", "/ran-nf-oam/o1-adaptor-endpoints/{id}/heartbeat", A),   # what the ME's adaptor sends: simulation
+    # MGT-14 / MGT-15: what a new element is configured with is platform configuration (admin); applying it to an element and driving a software campaign are
+    # operator actions, attributed to the signed-in user. The sweep (`advance-due`) is the worker's and is not exposed.
+    _rule("PUT", "/ran-nf-oam/onboarding-templates/{id}", A),
+    _rule("DELETE", "/ran-nf-oam/onboarding-templates/{id}", A),
+    _rule("POST", "/ran-nf-oam/element-onboarding/{id}/select", O),
+    _rule("POST", "/ran-nf-oam/element-onboarding/{id}/apply", O,
+          json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
+    _rule("POST", "/ran-nf-oam/software-campaigns", O,
+          json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
+    _rule("POST", "/ran-nf-oam/software-campaigns/{id}/(continue|halt|abort|rollback)", O,
+          json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
     # Wave 9 (W9-01..06): the vendor capability registry, CM schema
     # descriptors and cell guards are inventory/onboarding data — admin.
     _rule("POST", "/ran-nf-oam/(cm-schemas|vendor-onboarding)", A),
