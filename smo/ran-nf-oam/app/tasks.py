@@ -2,7 +2,7 @@
 process. Each task finds what is due from the database, does it in committed steps, and may run again after a crash.
 
   advance-waves             every 15 s   the next wave of every staged CM job whose pause has elapsed (`POST /config-jobs/advance-due`), and of every software campaign
-                                         (`POST /software-campaigns/advance-due`)
+                                         (`POST /software-campaigns/advance-due`, which also fails the software jobs of a campaign with a `jobTimeoutSeconds` that have not reported in time, MGT-15.7)
   publish-kpis              every 30 s   the KPI schedules whose interval has passed (`PUT /kpi-schedules/{id}`)
   run-kpi-guards            every minute the KPI guards of finished CM jobs whose observation window has passed (`kpiGuard` on `POST /config-jobs`)
   expire-approvals          every minute the rApp action approvals nobody decided in time (EXPIRED or REJECTED by the policy they were parked under; AI-11.3)

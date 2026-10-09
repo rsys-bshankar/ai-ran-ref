@@ -25,7 +25,7 @@ from smo_shared.testing import make_test_engine
 
 from app.main import app
 from app.models import (ManagedObject, Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, MsacAccessRule, MsacIdentity, MsacRole, O1AdaptorEndpoint,
-                        O1AdaptorHostKey, OnboardingTemplate, ElementOnboarding, VendorCapability, WriteConfigJob, WriteConfigSubChange)
+                        O1AdaptorHostKey, OnboardingTemplate, ElementOnboarding, LifecycleSubscription, VendorCapability, WriteConfigJob, WriteConfigSubChange)
 
 ME = "SubNetwork=lab,ManagedElement=ME-1"
 CELL = "GNBDUFunction=1,NRCellDU=101"
@@ -45,7 +45,7 @@ def main() -> int:
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
         WriteConfigSubChange.__table__, CMSnapshot.__table__, VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__,
         MsacAccessRule.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__, ManagedObject.__table__, O1AdaptorHostKey.__table__,
-        OnboardingTemplate.__table__, ElementOnboarding.__table__])         # registering an element looks for an onboarding template (PR-MGT-14)
+        OnboardingTemplate.__table__, ElementOnboarding.__table__, LifecycleSubscription.__table__])         # registering an element looks for an onboarding template, and a failed onboarding for its subscribers (PR-MGT-14)
     factory = sessionmaker(bind=engine)
 
     def session():

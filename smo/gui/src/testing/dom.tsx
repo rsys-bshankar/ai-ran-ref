@@ -44,6 +44,31 @@ export async function type(input: HTMLInputElement, value: string): Promise<void
   });
 }
 
+/** Write into a textarea (`type` is for inputs). */
+export async function typeArea(el: HTMLTextAreaElement, value: string): Promise<void> {
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+  await act(async () => {
+    setter.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+/** Choose an option of a select by its value. */
+export async function pick(select: HTMLSelectElement, value: string): Promise<void> {
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+  await act(async () => {
+    setter.call(select, value);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+/** The input, select or textarea inside the `<label class="field">` whose text starts with `label`. */
+export function field<T extends HTMLElement = HTMLInputElement>(root: ParentNode, label: string): T {
+  const wrapper = Array.from(root.querySelectorAll("label")).find((l) => l.querySelector(".field-label")?.textContent?.startsWith(label));
+  if (!wrapper) throw new Error(`no field labelled ${label}`);
+  return wrapper.querySelector("input, select, textarea") as T;
+}
+
 export async function click(el: HTMLElement): Promise<void> {
   await act(async () => { el.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
 }

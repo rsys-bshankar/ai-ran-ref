@@ -4,7 +4,7 @@ import pytest
 
 from test_main import _make_me, client, db_session_factory  # noqa: F401  (pytest fixtures)
 
-from app.models import ElementOnboarding, OnboardingTemplate, SoftwareCampaign, ManagedObject, CMSnapshot
+from app.models import ElementOnboarding, LifecycleSubscription, OnboardingTemplate, SoftwareCampaign, ManagedObject, CMSnapshot
 from app.netconf_client import EditResult
 
 
@@ -156,7 +156,7 @@ def test_snapshots_insert_cleanly_where_foreign_keys_are_enforced(db_session_fac
     Base.metadata.create_all(engine, tables=[
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
         WriteConfigSubChange.__table__, CMSnapshot.__table__, VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__,
-        MsacAccessRule.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__, ManagedObject.__table__, OnboardingTemplate.__table__, ElementOnboarding.__table__, SoftwareCampaign.__table__])
+        MsacAccessRule.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__, ManagedObject.__table__, OnboardingTemplate.__table__, ElementOnboarding.__table__, LifecycleSubscription.__table__, SoftwareCampaign.__table__])
     factory = sessionmaker(bind=engine)
 
     def override():

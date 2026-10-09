@@ -104,6 +104,21 @@ def test_every_state_of_a_state_machine_is_allowed_by_the_check_on_its_column(da
 
 
 @needs_postgres
+def test_the_options_of_a_campaign_are_the_values_the_check_on_its_column_allows(database):  # noqa: F811
+    """Not a state machine, but a choice the API takes as a `Literal` and the table checks (revision 0034, `rollback_order`; 0033, `on_gate_failure`): the two lists are one."""
+    url, *_ = database
+    engine = create_engine(url, isolation_level="AUTOCOMMIT")
+    with engine.connect() as connection:
+        checks = _checks(connection)
+    engine.dispose()
+    source = (SMO_ROOT / "ran-nf-oam" / "app" / "lifecycle.py").read_text()
+    for column, field in (("rollback_order", "rollbackOrder"), ("on_gate_failure", "onGateFailure")):
+        literal = re.search(rf"{field}: Literal\[([^\]]*)\]", source)
+        assert literal, f"{field} is no longer a Literal in lifecycle.py: take it out of this test"
+        assert set(re.findall(r'"([^"]*)"', literal.group(1))) == checks[("software_campaign", column)], f"software_campaign.{column}: the CHECK and the request's choices differ"
+
+
+@needs_postgres
 def test_a_literal_the_code_assigns_to_a_checked_column_is_allowed(database):  # noqa: F811
     url, *_ = database
     engine = create_engine(url, isolation_level="AUTOCOMMIT")

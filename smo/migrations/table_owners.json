@@ -52,6 +52,7 @@
   "fm_subscription",
   "kpi_definition",
   "kpi_schedule",
+  "lifecycle_subscription",
   "managed_entity",
   "managed_object",
   "msac_access_rule",

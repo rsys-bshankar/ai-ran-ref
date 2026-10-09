@@ -267,3 +267,31 @@ export interface DecisionRecord {
 }
 /** A list answer with its envelope kept (`useSmo` unwraps it): `total` is absent and `hasMore` present under `?total=false`. */
 export interface Page<T> { items: T[]; limit: number; offset: number; total?: number; hasMore?: boolean }
+
+// ---------------------------------------------------------------- zero-touch onboarding (MGT-14) and software campaigns (MGT-15)
+export type OnboardingStatus = "DISCOVERED" | "NO_TEMPLATE" | "TEMPLATE_SELECTED" | "APPLYING" | "ONBOARDED" | "FAILED";
+export type SoftwareCheck = "NOT_CHECKED" | "MATCH" | "MISMATCH";
+export interface TemplateChange { managedFunctionRef?: string | null; attributeChanges: Record<string, unknown>; operation: string }
+export interface OnboardingTemplate {
+  name: string; description: string | null; entityType: string; vendorName: string | null; softwareBaseline: string | null; requireBaseline: boolean;
+  autoApply: boolean; enabled: boolean; changes: TemplateChange[]; createdAt: string | null; updatedAt: string | null;
+}
+export interface ElementOnboarding {
+  managedElementRef: string; status: OnboardingStatus; templateName: string | null; softwareVersion: string | null; softwareBaseline: string | null;
+  softwareCheck: SoftwareCheck; configJobId: string | null; detail: string | null; createdAt: string | null; updatedAt: string | null;
+}
+export type CampaignStatus = "PENDING" | "RUNNING" | "HALTED" | "COMPLETED" | "ABORTED" | "ROLLING_BACK" | "ROLLED_BACK" | "ROLLBACK_FAILED";
+export interface CampaignSummary {
+  campaignId: string; status: CampaignStatus; wave: number; waveCount: number; haltedReason: string | null; name?: string; softwareVersion?: string | null; createdAt?: string | null;
+}
+export interface CampaignEvent { at: string; event: string; wave: number; detail: string | null; by: string | null; job?: string }
+export interface CampaignJob { managedElementRef: string; jobId: string; phase: string; status: string; revert: "COMPLETED" | "IN_PROGRESS" | "FAILED" | null; timedOut?: boolean }
+export interface CampaignReport extends CampaignSummary {
+  name: string; requestedBy: string; softwareVersion: string | null; selector: Record<string, string> | null; elements: string[]; waveSize: number | null;
+  wavePauseSeconds: number; gateMaxNewAlarms: number; onGateFailure: "halt" | "rollback"; jobTimeoutSeconds: number | null; rollbackOrder: "all" | "reverse";
+  haltedDetail: string | null; nextWaveAt: string | null; createdAt: string | null; finishedAt: string | null; events: CampaignEvent[];
+  summary: { elements: number; started: number; notReached: number; completed: number; failed: number; inProgress: number; reverted: number };
+  waves: { wave: number; elements: string[]; started: boolean; jobs: CampaignJob[] }[];
+  attention: { managedElementRef: string; problem: string }[];
+}
+export interface CampaignPreview { dryRun: true; status: "VALIDATED"; waveCount: number; waves: string[][] }

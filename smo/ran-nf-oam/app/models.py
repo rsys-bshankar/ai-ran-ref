@@ -306,6 +306,17 @@ class ApprovalSubscription(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
 
 
+class LifecycleSubscription(Base):
+    """MGT-14.7, MGT-15.6: who is told (a POST to `callback_uri`, through the outbox) when an element's onboarding fails (`ONBOARDING_FAILED`), a software campaign
+    halts (`CAMPAIGN_HALTED`) or its rollback fails (`CAMPAIGN_ROLLBACK_FAILED`). `events` narrows it to those types; empty means all three."""
+    __tablename__ = "lifecycle_subscription"
+
+    subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    callback_uri: Mapped[str] = mapped_column(String, nullable=False)
+    events: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+
+
 class RAppDecisionRecord(Base):
     """AI-13.1: why an rApp acted, written when its config job is made (and when an action that needed approval ended without a job). Written once:
     `content_hash` covers every field but `audit_seq`, which is set a moment later and is the row of the shared hash chain (`smo_shared.audit`) that carries that hash, so a
@@ -544,6 +555,10 @@ class SoftwareCampaign(Versioned, Base):
     wave_pause_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     gate_max_new_alarms: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     on_gate_failure: Mapped[str] = mapped_column(String, nullable=False, default="halt", server_default="halt")
+    # MGT-15.7: NULL = no timeout (a wave waits for every job, as before); seconds a wave's (or a rollback step's) jobs may take before the sweep fails those still running.
+    # `rollback_order`: "all" starts every revert job at once (as before), "reverse" the last wave first and the next only when the one before it has ended.
+    job_timeout_seconds: Mapped[int | None] = mapped_column(Integer)
+    rollback_order: Mapped[str] = mapped_column(String, nullable=False, default="all", server_default="all")
     wave_started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     next_wave_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     halted_reason: Mapped[str | None] = mapped_column(String)

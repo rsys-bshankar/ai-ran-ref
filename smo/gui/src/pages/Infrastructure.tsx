@@ -8,23 +8,27 @@ import type {
 import { useAuth } from "../auth/AuthContext";
 import { ConfigJobDrawer } from "../components/ConfigJobDrawer";
 import { ActionButton, Can, Card, DataTable, Drawer, ErrorBox, Field, Id, Json, KeyValue, Modal, PageHeader, StateBadge, Tabs, useHashTab } from "../components/ui";
+import { CampaignsTab } from "./Campaigns";
+import { OnboardingTab } from "./Onboarding";
 import { describePlace, formatTime, parseJsonObject, splitList, stagedPayload, type GuardForm, type StagedForm } from "../lib/domain";
 
-const TABS = ["nfo", "ocloud", "topology", "o1", "orders"] as const;
+const TABS = ["nfo", "ocloud", "topology", "o1", "onboarding", "campaigns", "orders"] as const;
 
 export function Infrastructure() {
   const [tab, setTab] = useHashTab(TABS, "nfo");
   return (
     <>
-      <PageHeader title="Infrastructure" subtitle="Workloads (NFO / O2dms), O-Cloud inventory (FOCOM / O2ims), O1 management and service orders" />
+      <PageHeader title="Infrastructure" subtitle="Workloads (NFO / O2dms), O-Cloud inventory (FOCOM / O2ims), O1 management, onboarding of new elements, software campaigns and service orders" />
       <Tabs value={tab} onChange={setTab} tabs={[
         { id: "nfo", label: "NF deployments" }, { id: "ocloud", label: "O-Cloud inventory" }, { id: "topology", label: "Topology" },
-        { id: "o1", label: "O1 endpoints & jobs" }, { id: "orders", label: "Service orders" }
+        { id: "o1", label: "O1 endpoints & jobs" }, { id: "onboarding", label: "Onboarding" }, { id: "campaigns", label: "Software campaigns" }, { id: "orders", label: "Service orders" }
       ]} />
       {tab === "nfo" && <Deployments />}
       {tab === "ocloud" && <OCloud />}
       {tab === "topology" && <TopologyView />}
       {tab === "o1" && <O1 />}
+      {tab === "onboarding" && <OnboardingTab />}
+      {tab === "campaigns" && <CampaignsTab />}
       {tab === "orders" && <Orders />}
     </>
   );

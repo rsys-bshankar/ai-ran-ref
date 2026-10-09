@@ -5,6 +5,18 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Added
+- **GUI pages for onboarding templates and software campaigns (`PR-MGT-14` step 14.6, `PR-MGT-15` step 15.5). Two new tabs of Infrastructure: Onboarding and Software campaigns.** Onboarding: the templates (an admin makes, edits and deletes them; everyone else reads), each element's onboarding with its state, template, software check and why it failed, and Apply and Select… where the state allows them (an operator; recorded under the signed-in user). Campaigns: start one for named elements or a selector with a preview of the waves, the list, and a detail with each wave's jobs, what needs attention and the event log, with Continue, Halt, Abort and Roll back as the campaign's state allows. Nothing changes for a user who does not open them.
+- **A notice when an onboarding fails, a campaign halts or a rollback fails (`MGT-14.7`, `MGT-15.6`). Nothing is sent until an admin subscribes.** `POST /ran-nf-oam/lifecycle-subscriptions {callbackUri, events?}` (also under Infrastructure → Onboarding or Software campaigns → Who is told about failures) registers a webhook for `ONBOARDING_FAILED`, `CAMPAIGN_HALTED` (a failed gate or an operator's halt; not the routine pause between waves) and `CAMPAIGN_ROLLBACK_FAILED`. Delivery is through the outbox, after the commit that records the failure. Internal-only at R1; `docs/NOTIFICATIONS.md` has the row.
+- **A timeout for a software job that never reports, and a rollback in reverse wave order (`MGT-15.7`). Both are opt in per campaign.** `jobTimeoutSeconds` on `POST /software-campaigns`: the worker's sweep fails a job still running that long after its wave started, and the campaign then treats it as any failed job (the report marks it `timedOut`). `rollbackOrder: reverse` undoes the last wave first and each earlier wave when the one after it has ended; the default, `all`, starts every revert job at once as before. The GUI's start form offers both (its rollback default is the reverse order).
+
+### Changed
+- **`POST /ran-nf-oam/software-management-jobs/{id}/advance` answers 409 `LIFECYCLE_ILLEGAL_TRANSITION` for a job whose state does not allow the report (one that has completed or failed), where it answered an unhandled 500.** A report for a job a campaign timed out is refused the same way.
+- **The GUI's dialogs and drawers carry an accessible name** (`aria-labelledby` on the heading); nothing else about them changes.
+
+### Upgrading from 0.7.0
+- **Schema**: Alembic head is `0034` (expand only: the table `lifecycle_subscription`, and on `software_campaign` the nullable `job_timeout_seconds` and `rollback_order` with default `all` and a CHECK; the previous release's code ignores the first two and its campaigns get `all`, which is what they do). No configuration, chart or image change beyond the images.
+
 ## [0.7.0] - 2026-10-09
 
 The platform learns who an rApp may act on, and what it has to ask first. A signed and checked rApp package, a person's approval before an rApp's change is written (with a record of why, hashed into the audit chain), and a region and tenant an rApp is held to; rApps can now be written in Go and Java; a new element can be set up from a template and software can be rolled out in waves with a health gate; RAN NF OAM takes VES events; and Postgres can be reached over verified TLS. Everything is opt-in: nothing changes on upgrade until you set it. A few things are stand-ins and are named under *Known limitations*.
