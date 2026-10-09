@@ -291,6 +291,10 @@ The code is `onboarding/app/package_validation.py` (the part that needs no datab
    `PYTHONPATH=shared python -m pytest tests_integration/ -q`.
 6. Check the package the way Onboarding will, without a stack: `python -m conformance.rapp package my-rapp.csar` (§9). Sign it for an operator who requires signatures: §8.
 
+### 7.1 An rApp that is not written in Python
+
+The package is language-neutral: Onboarding reads the CSAR files in §1 and never the rApp's source, and the executable is not in the CSAR for any of the reference rApps (it runs as a service beside the stack). A rApp in Go follows §7 with two differences. The package directory holds only the package files (no `app/`), and the container is a static binary in an empty image. [`../sdk-go/examples/hello-rapp/`](../sdk-go/examples/hello-rapp/) is the worked example: `package/` (manifest with an `operatorUi` page, `capabilities.yaml`, ASD, `TOSCA.meta`), `build_csar.py` (calls `samples/build_csar.py`'s `build_bytes` on that directory, so the same fixed timestamps and exclusions apply), a `Dockerfile` and a compose override; [`../sdk-go/README.md`](../sdk-go/README.md) §4 says how to run it and package it. In `capabilities.yaml`, `namespace` names the platform area the rApp calls (`data`, `models`, `platform`, ...) whichever SDK it uses. Which routes an rApp may *change* through R1 is the role policy (`shared/smo_shared/roles.py`), the same for every language.
+
 ## 8. Signing a package (PR-RAPP-1)
 
 A signed package lets an operator accept only packages from publishers it has chosen, and notice a package that was changed after the publisher signed it. It is off unless the operator configures it: with `ONBOARDING_TRUST_STORE` unset nothing about onboarding changes, signed packages included.

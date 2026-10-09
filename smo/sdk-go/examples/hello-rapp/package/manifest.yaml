@@ -1,0 +1,59 @@
+# HelloGo_rApp package manifest: the smallest rApp written against the Go SDK (sdk-go/examples/hello-rapp).
+rappManifest:
+  manifestVersion: "1.0"
+  aiRuntimeSdkVersion: "1.0"
+
+name: HelloGo_rApp
+version: 1.0.0
+vendor: Radisys
+ownerTeam: AI-RAN-SMO
+description: >
+  Example rApp in Go: enrolls with SME, registers its operator API, reads the DME type catalogue as its heartbeat,
+  and withdraws cleanly on SIGTERM.
+useCase: SDK example
+domain: RAN
+deploymentModel: NonRT-RIC
+
+executionModes:
+  - INFERENCE
+
+autonomyModes:
+  - SHADOW
+
+requiredServices:
+  - DME
+
+runtimeProfiles:
+  INFERENCE:
+    cpu: 1
+    memory: 128Mi
+    gpu: 0
+
+# The page the operator console draws for this rApp (docs/adr/0004-operator-ui-declaration.md). Both routes are served by
+# examples/hello-rapp/main.go on the operator API base the process registers at rApp Management.
+operatorUi:
+  version: 1
+  panels:
+    - id: status
+      title: Status
+      kind: keyValues
+      source:
+        path: "/instances/{instanceId}/status"
+        refreshSeconds: 15
+      items:
+        - {label: State, path: state, format: badge}
+        - {label: Operator API registered, path: operatorApiRegistered}
+        - {label: Heartbeats, path: beats, format: number}
+        - {label: Last heartbeat, path: lastBeatAt, format: datetime}
+        - {label: DME types seen, path: dmeTypes, format: number}
+        - {label: Last error, path: lastError}
+    - id: controls
+      title: Controls
+      kind: actions
+      actions:
+        - id: run
+          label: Heartbeat now
+          tone: primary
+          method: POST
+          path: "/instances/{instanceId}/run"
+          success: Heartbeat done

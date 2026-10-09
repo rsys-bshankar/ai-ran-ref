@@ -1,0 +1,20 @@
+tosca_definitions_version: tosca_simple_yaml_1_3
+
+description: >
+  HelloGo_rApp: the Go SDK's example rApp (sdk-go/examples/hello-rapp). It reads the DME type catalogue through R1 and
+  declares an operator page. No A1, Near-RT RIC, xApps or E2.
+
+topology_template:
+  node_templates:
+    applicationServiceDescriptor:
+      type: tosca.nodes.asd
+      description: "hello-go-rapp"
+      properties:
+        descriptor_id: 1cd2ebf5-2011-43b8-a74d-4585c48d3458
+        descriptor_invariant_id: e2101283-363e-42a7-a42c-a56a0ed8de8e
+        descriptor_version: "1.0.0"
+        schema_version: "2.0"
+        function_description: "HelloGo_rApp: Go SDK example"
+        provider: "Radisys"
+        application_name: HelloGo_rApp
+        application_version: "1.0.0"
