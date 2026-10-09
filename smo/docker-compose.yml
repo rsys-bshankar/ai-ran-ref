@@ -246,6 +246,10 @@ services:
     environment:
       SMO_OTEL_ENDPOINT: ${SMO_OTEL_ENDPOINT:-}    # distributed traces, off when empty (docs: README "Distributed traces and logs")
       SMO_ENROLLMENT_SECRET_FILE: /run/secrets/enrollment_secret    # PR-SEC-14: what makes this an SMO module at SME
+      # PR-RAPP-1: signed rApp packages. ONBOARDING_TRUST_STORE is a path inside the container to a PEM public key file or a directory of <publisher>.pub files (mount it
+      # with a docker-compose.override.yml, docs/RAPP_PACKAGING.md "Signing"); empty: no signature is checked. ONBOARDING_REQUIRE_SIGNED_PACKAGES=true refuses an unsigned package.
+      ONBOARDING_TRUST_STORE: ${ONBOARDING_TRUST_STORE:-}
+      ONBOARDING_REQUIRE_SIGNED_PACKAGES: ${ONBOARDING_REQUIRE_SIGNED_PACKAGES:-false}
       <<: *db_env
       SMO_DATABASE_URL: postgresql+psycopg://smo_onboarding@${SMO_DB_HOST:-postgres}:${SMO_DB_PORT:-5432}/smo    # the role can use schema `onboarding` and the shared tables it is given, nothing else
       SMO_DB_POOLER: ${SMO_DB_POOLER:-}

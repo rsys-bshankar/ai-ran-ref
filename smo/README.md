@@ -192,7 +192,11 @@ brings the full stack up (`compose-e2e`: the whole runbook, §2–§27, replayed
 
 After editing a sample rApp, rebuild its package with
 `python3 samples/build_csar.py <name>`. The integration suite fails if a
-committed `.csar` no longer matches its sources. After changing a route's
+committed `.csar` no longer matches its sources. The committed packages are **signed** with a
+demo publisher key whose private half is public on purpose (`samples/README.md`,
+`samples/demo-signing/`): never trust it in production. Onboarding checks signatures only when
+`ONBOARDING_TRUST_STORE` is set; `scripts/csar_sign.py` signs and verifies your own package
+(`docs/RAPP_PACKAGING.md` section 8). After changing a route's
 request or response shape, regenerate the specs with
 `PYTHONPATH=shared python scripts/generate_openapi_specs.py`.
 
@@ -245,13 +249,16 @@ smo/
   <module>/tests/           that module's unit tests (standalone, SQLite)
   mock-o1-adaptor/          NETCONF / RESTCONF O1 test double (RAN NF OAM's southbound), also an FM / PM / SW / heartbeat source
   conformance/o1/           O1 adaptor conformance kit: `python -m conformance.o1 --adaptor URL [--oam-url URL]`, CM checks and, with RAN NF OAM, FM, PM, SW and heartbeat checks (conformance/README.md)
+  conformance/rapp/         rApp conformance pack: `python -m conformance.rapp package my-rapp.csar` (Onboarding's validation, offline, signatures checked against a trust store) and `python -m conformance.rapp runtime` (onboard, register, heartbeat, R1 usage, terminate on a running stack) (conformance/rapp/README.md)
   sdk/smo_sdk/              AI Runtime SDK: data, analytics, models, lifecycle, intent, platform clients; operator_ui (writes a rApp's declared operator page)
   sdk/examples/             the smallest package that declares an operator page
   sdk-go/                   Go AI Runtime SDK (standard library only): `smosdk` package, tests, and `examples/hello-rapp` (a rApp in Go with its package, Dockerfile and compose service)
   gui/                      React + TypeScript operator console (nginx): the rApp directory and the generic renderer of declared pages
   gui-bff/                  GUI backend-for-frontend: auth, RBAC (app/rbac.py), audit, R1 proxy, the rApp directory, declared-route proxy and pins (app/rapps.py)
   samples/
-    build_csar.py           builds samples/<name>.csar from samples/<name>/
+    build_csar.py           builds samples/<name>.csar from samples/<name>/, signed with the demo key (--key, --unsigned)
+    demo-signing/           the DEMO publisher key: its private half is public on purpose, never trust it in production (README.md)
+    README.md               the four samples, how the packages are built and signed
     <name>-rapp/README.md   each sample's README: what it does, design, package, API, tests
     energy-saving-rapp/     Wave 10.1 rApp: service, model, decision engine, demo.py (§24); also the package used by DEMO_RUNBOOK.md §0–§23
     mobility-optimization-rapp/  Wave 10.2 rApp: service, model, MRO engine, demo.py (§25)

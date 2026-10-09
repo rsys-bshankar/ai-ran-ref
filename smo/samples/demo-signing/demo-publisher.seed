@@ -1,0 +1,3 @@
+# DEMO MATERIAL, PUBLIC ON PURPOSE. This is the PRIVATE signing key of the demo publisher: anyone who reads this repository has it.
+# It signs the sample CSARs under smo/samples/ so the signing path can be shown and tested. NEVER put demo-publisher.pub in a production trust store.
+ed25519-seed:lq5+GmKSlAkgC07Cr4e2S9qJ14VrL40cqtX8r9yZY+s=
