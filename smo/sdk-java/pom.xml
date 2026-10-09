@@ -22,7 +22,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <!-- reproducible jars: a rebuild of the same sources is byte-identical -->
     <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
-    <jackson.version>2.18.2</jackson.version>
+    <jackson.version>2.22.3</jackson.version>
     <junit.version>5.11.4</junit.version>
   </properties>
 
