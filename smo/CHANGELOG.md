@@ -14,6 +14,7 @@ Entries are written for an operator: what changed in behaviour, configuration or
 ### Changed
 - **A package whose manifest has a `runtimeProfiles.<MODE>.memory` that is not a Kubernetes quantity (`16 GB`, a boolean) now fails onboarding, and AIMgF answers 422 to an explicit `runtimeProfile` with one.** The memory becomes a container limit. `16Gi`, `512Mi`, `4G`, `1.5Gi` are unchanged; packages already onboarded are untouched.
 - **A `TOSCA.meta` with no `Entry-Definitions:` line is a `FAILED` package.** It raised an uncaught `StopIteration` before.
+- **The scope of 0.7.0 is decided (`OPEN_ITEMS.md`).** Signed and conformant rApp packages (CSAR signing, a conformance pack, runtime limits and egress), approval of rApp actions and a decision record per config job, tenant and region authorization, rApp SDKs in Java and Go, and, as time allows, zero-touch onboarding, software campaigns, MSAC beyond writes, a VES receiver and a first vendor profile. Nothing changes in the product with this entry.
 
 ## [0.6.0] - 2026-10-08
 
