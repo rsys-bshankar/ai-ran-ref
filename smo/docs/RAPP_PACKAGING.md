@@ -190,6 +190,15 @@ What there is now (`shared/smo_shared/runtime_resources.py`): the same descripto
 
 The profile `{cpu: 4, memory: 8Gi, gpu: 0}` becomes `{requests: {cpu: "4", memory: 8Gi}, limits: {cpu: "4", memory: 8Gi}}`. Requests equal limits (the pod is `Guaranteed`: a runtime that asks for less than it may use is the one a busy node squeezes). A fractional CPU is written in millicores (`0.5` is `500m`); a zero or an absent value sets nothing for that resource, and a descriptor with nothing to set has no such key. **GPUs are not mapped**: the resource name is vendor specific and where a GPU runs is NFO's decision through `requiredResourceTypeId`. `workloadTemplate.resources` is unchanged. AIMgF's explicit `runtimeProfile.memory` must be a quantity too (422 otherwise). Nothing applies the block yet: that is what a real deployment manager behind NFO would do (`nfo/README.md`, "No real runtime").
 
+### 3.3 The regions and tenants an rApp may touch are not in the package
+
+A scope claim (`{"regions": [...], "tenants": [...]}`, `PR-SEC-10`, `docs/adr/0005-tenant-region-authorization.md`) says which managed elements an rApp instance may touch. It is **not** a key of
+`manifest.yaml` or `capabilities.yaml`, and nothing reads one if a package carries it: reach is granted by the operator who creates the instance (`POST /rapp-mgmt/instances`,
+field `authzScope`), not claimed by the author of the package. (The `limits` of the manifest are different: they are the most the author says the rApp needs, and the platform holds it to
+them.) So the package does not change; the same package can be run unscoped in one deployment and scoped to a tenant in another. A rApp that runs scoped should expect, from
+RAN NF OAM, `403 SCOPE_DENIED` for a write that names an element outside its scope (the whole job is refused), the same for a read of such an element's configuration, an empty or shorter
+list where it used to see every element, and `404` for an alarm, job or file by id that belongs to another region or tenant.
+
 ## 4. `capabilities.yaml`
 
 `capabilities.consumes` and `capabilities.provides` are lists of
@@ -287,7 +296,8 @@ The code is `onboarding/app/package_validation.py` (the part that needs no datab
 3. In `manifest.yaml` list only the modes you implement, and keep every
    `runtimeProfiles` key inside `executionModes`.
 4. In `capabilities.yaml` declare exactly the SDK namespaces your code calls. To give the rApp its own operator page, add `operatorUi` to the manifest (§3.1; `smo_sdk.operator_ui` builds and checks it).
-5. Rebuild with `python3 samples/build_csar.py <name>` and run
+5. If the rApp will run scoped, handle `403 SCOPE_DENIED` and filtered lists (§3.2); nothing in the package declares the scope.
+6. Rebuild with `python3 samples/build_csar.py <name>` and run
    `PYTHONPATH=shared python -m pytest tests_integration/ -q`.
 6. Check the package the way Onboarding will, without a stack: `python -m conformance.rapp package my-rapp.csar` (§9). Sign it for an operator who requires signatures: §8.
 

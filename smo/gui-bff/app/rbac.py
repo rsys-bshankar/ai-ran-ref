@@ -186,6 +186,10 @@ RULES: list[Rule] = [
     _rule("PUT", "/ran-nf-oam/managed-entities/{id}/cells/{id}/guards", A),
     _rule("DELETE", "/ran-nf-oam/managed-entities/{id}/cells/{id}/guards", A),
 
+    # SEC-10: where a managed element is and whom it belongs to, and which regions and tenants an invoker (an rApp) may touch, are administrative decisions
+    _rule("PUT", "/ran-nf-oam/managed-entities/{id}/scope", A),
+    _rule("PUT", "/sme/invoker-registrations/{id}/authz-scope", A),
+
     # AI-10.2/10.3, AI-10.6: what an rApp may do (its limits) and who is told when it is refused are administrative decisions
     _rule("PUT", "/ran-nf-oam/rapp-limits/{id}", A),
     _rule("DELETE", "/ran-nf-oam/rapp-limits/{id}", A),

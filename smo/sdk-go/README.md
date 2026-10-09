@@ -117,15 +117,15 @@ loop:
 
 ### 2.5 The routes and the role policy
 
-An rApp token is held to `smo_shared/roles.py`: reads are open, **changes** only on an allow-list. The SDK's routes are all on it except two, which are in the SDK because the architecture has the rApp container call them (`rapp-mgmt/README.md`, "Called by"):
+An rApp token is held to `smo_shared/roles.py`: reads are open, **changes** only on an allow-list. Every route the SDK calls is on it; the two lifecycle reports (`bootstrap-complete`, `performance`) were not until `PR-SEC-10` opened them for the rApp's own instance (`rapp-mgmt/README.md`, "Called by"):
 
 | Route | `RApp()` method | Through R1 with an rApp token |
 |---|---|---|
 | `PUT/DELETE /rapp-mgmt/instances/{id}/operator-api` | `RegisterOperatorAPI`, `ClearOperatorAPI` | allowed (the caller's own instance) |
 | `GET /rapp-mgmt/instances/{id}`, `.../operator-api` | `Instance`, `OperatorAPI` | open (reads) |
-| `POST .../bootstrap-complete`, `POST .../performance` | `BootstrapComplete`, `ReportPerformance` | **403 `ROLE_NOT_PERMITTED`** under `SMO_ROLE_ENFORCEMENT=enforce` (the default); the runbook calls them from inside the compose network, directly at `rapp-mgmt:8000` |
+| `POST .../bootstrap-complete`, `POST .../performance` | `BootstrapComplete`, `ReportPerformance` | allowed (the caller's own instance; rApp Management answers 403 `NOT_THIS_INSTANCE` for another's). Before `PR-SEC-10` they were 403 `ROLE_NOT_PERMITTED` and the runbook called them from inside the compose network, directly at `rapp-mgmt:8000` |
 
-`tests_integration/test_sdk_go_example.py` pins exactly these two as the refused ones: if the policy opens them the test fails and this note goes. This is a finding about the platform, not the SDK: the instance's lifecycle report (`DEPLOYING` to `RUNNING`) cannot be sent by an rApp through R1 today. `OPEN_ITEMS.md` does not track it; see the PR description.
+`tests_integration/test_sdk_go_example.py` checks that no route the SDK calls is refused to an rApp. (The finding that the policy lacked these two, which this SDK's author raised, is closed by `PR-SEC-10`: `HISTORY.md`.)
 
 ## 3. Tests
 

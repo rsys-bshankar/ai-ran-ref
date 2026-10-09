@@ -19,7 +19,7 @@ from typing import Literal
 import httpx
 import jwt
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -35,7 +35,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
 from smo_shared.outbox import enqueue
-from smo_shared import mtls, roles
+from smo_shared import mtls, roles, scope as authz_scope
 from smo_shared.secretfile import read_secret
 
 from .models import (API_INVOKER_EVENTS, EVENT_TYPES, InvokerRegistration, IssuedAccessToken, ProviderRegistration,
@@ -164,6 +164,17 @@ def deregister_provider(apf_id: str, db: Session = Depends(get_session)):
 
 class InvokerRegistrationRequest(BaseModel):
     apiInvokerPublicKey: str
+    # PR-SEC-10.3: which managed elements this invoker may touch, `{"regions": [...], "tenants": [...]}` (either key optional; docs/adr/0005). Absent: unscoped, as
+    # before. Checked in the route (422 AUTHZ_SCOPE_INVALID with a fixed message), not by the model, because a validation error of the model repeats the input.
+    authzScope: dict | None = None
+
+
+def _checked_scope(value: dict | None) -> dict | None:
+    """The claim to store: normalised (sorted, `{}` is none), or 422 `AUTHZ_SCOPE_INVALID`."""
+    try:
+        return authz_scope.to_claim(authz_scope.from_claim(value))
+    except ValueError as exc:
+        raise framework_error(FrameworkError.AUTHZ_SCOPE_INVALID, detail=str(exc)) from None
 
 
 def _pem_public_key(value: str):
@@ -201,7 +212,7 @@ def _check_public_key(value: str) -> None:
 
 
 @app.post("/invoker-registrations", status_code=201)
-def register_invoker(body: InvokerRegistrationRequest, db: Session = Depends(get_session),
+def register_invoker(body: InvokerRegistrationRequest, request: Request, db: Session = Depends(get_session),
                      enrollment: str | None = Header(default=None, alias=roles.ENROLLMENT_HEADER)):
     """HISTORY.md §2: API Invoker onboarding
     (`invokermanagement.go`'s `InvokerManager`) — the real registry the
@@ -221,16 +232,26 @@ def register_invoker(body: InvokerRegistrationRequest, db: Session = Depends(get
     API_INVOKER_ONBOARDED.
     """
     _check_public_key(body.apiInvokerPublicKey)
+    claim = _checked_scope(body.authzScope)
+    caller = authz_scope.request_scope(request)
+    if caller is not None:
+        if any(getattr(caller, axis) == frozenset() for axis in authz_scope.AXES):
+            raise framework_error(FrameworkError.SCOPE_DENIED, detail="the caller's scope claim permits nothing, so it has nothing to hand out")
+        # PR-SEC-10.3: a scoped caller cannot mint an invoker with more reach than its own (it would otherwise leave its scope by registering a new identity): the new
+        # invoker carries the caller's claim, or a narrower one it names
+        if claim is not None and not authz_scope.covers(caller, authz_scope.from_claim(claim)):
+            raise framework_error(FrameworkError.SCOPE_DENIED, detail="the scope claim asked for is wider than the caller's own")
+        claim = claim or authz_scope.to_claim(caller)
     kind = _enrolled(enrollment)                                  # PR-SEC-14: `X-SMO-Enrollment` makes the invoker an SMO module's
     api_invoker_id = f"api-invoker-{uuid.uuid4()}"
     onboarding_secret = secrets.token_urlsafe(32)
     inv = InvokerRegistration(api_invoker_id=api_invoker_id, public_key=body.apiInvokerPublicKey,
-                               onboarding_secret_hash=_hash_secret(onboarding_secret), kind=kind)
+                               onboarding_secret_hash=_hash_secret(onboarding_secret), kind=kind, authz_scope=claim)
     db.add(inv)
     notify_invoker_change(db, api_invoker_id, "API_INVOKER_ONBOARDED")  # enqueued in this transaction (PR-MSG-1.6)
     db.commit()
     return {"apiInvokerId": inv.api_invoker_id, "onboardingSecret": onboarding_secret, "role": kind,
-            "keyAuthentication": _pem_public_key(inv.public_key) is not None}
+            "keyAuthentication": _pem_public_key(inv.public_key) is not None, "authzScope": inv.authz_scope}
 
 
 @app.put("/invoker-registrations/{api_invoker_id}")
@@ -246,6 +267,25 @@ def update_invoker(api_invoker_id: str, body: InvokerRegistrationRequest, db: Se
     notify_invoker_change(db, api_invoker_id, "API_INVOKER_UPDATED")
     db.commit()
     return {"apiInvokerId": inv.api_invoker_id, "keyAuthentication": _pem_public_key(inv.public_key) is not None}
+
+
+class AuthzScopeRequest(BaseModel):
+    authzScope: dict | None = None
+
+
+@app.put("/invoker-registrations/{api_invoker_id}/authz-scope")
+def set_invoker_authz_scope(api_invoker_id: str, body: AuthzScopeRequest, db: Session = Depends(get_session)):
+    """PR-SEC-10.3: set (or, with `authzScope` null or `{}`, remove) the scope claim of an invoker: which managed elements, by region and tenant, it may touch
+    (docs/adr/0005-tenant-region-authorization.md). Replaces the claim. For an operator or an SMO module: an rApp is refused at the gateway (the route
+    is in `INTERNAL_ONLY` and not in `RAPP_MAY_CHANGE`). Takes effect on the invoker's next request (R1 Termination reads the claim from the
+    introspection; with its introspection cache on, within `R1_INTROSPECTION_CACHE_SECONDS`). 404 for an unknown invoker, 422 `AUTHZ_SCOPE_INVALID`."""
+    inv = db.get(InvokerRegistration, api_invoker_id)
+    if inv is None:
+        raise framework_error(FrameworkError.INVOKER_NOT_REGISTERED, detail=f"invoker {api_invoker_id} not registered")
+    inv.authz_scope = _checked_scope(body.authzScope)
+    notify_invoker_change(db, api_invoker_id, "API_INVOKER_UPDATED")
+    db.commit()
+    return {"apiInvokerId": inv.api_invoker_id, "authzScope": inv.authz_scope}
 
 
 @app.delete("/invoker-registrations/{api_invoker_id}", status_code=204)
@@ -475,6 +515,8 @@ def introspect_token(body: IntrospectRequest, db: Session = Depends(get_session)
             "role": registration.kind if registration is not None else roles.ROLE_RAPP}     # PR-SEC-14: what R1 Termination applies its role policy on
     if rec.scope:
         view["scope"] = rec.scope
+    if registration is not None and registration.authz_scope:
+        view["authz_scope"] = registration.authz_scope           # PR-SEC-10.3: the scope claim, read live: an edit applies from the invoker's next request
     return view
 
 
@@ -852,7 +894,7 @@ def list_providers(limit: int = PageLimit, offset: int = PageOffset, db: Session
 def list_invokers(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     page = paginate(db, select(InvokerRegistration), limit, offset)
     return {**page, "items": [{"apiInvokerId": i.api_invoker_id, "apiInvokerPublicKey": i.public_key,
-             "keyAuthentication": _pem_public_key(i.public_key) is not None,
+             "keyAuthentication": _pem_public_key(i.public_key) is not None, "authzScope": i.authz_scope,
              "trusted": db.get(TrustedInvoker, i.api_invoker_id) is not None}
             for i in page["items"]]}
 

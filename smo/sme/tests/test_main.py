@@ -832,7 +832,7 @@ def test_list_invokers_never_exposes_the_secret(client):
     _register_trusted_invoker(client, inv["apiInvokerId"])
     listed = client.get("/invoker-registrations").json()["items"]
     assert listed == [{"apiInvokerId": inv["apiInvokerId"], "apiInvokerPublicKey": "pk-9", "keyAuthentication": False,
-                       "trusted": True}]
+                       "trusted": True, "authzScope": None}]
     assert inv["onboardingSecret"] not in str(listed)
 
 

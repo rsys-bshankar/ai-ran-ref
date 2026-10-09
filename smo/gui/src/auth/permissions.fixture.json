@@ -413,6 +413,18 @@
   },
   {
     "method": "PUT",
+    "pattern": "^/ran-nf-oam/managed-entities/[^/]+/scope$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/sme/invoker-registrations/[^/]+/authz-scope$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
     "pattern": "^/ran-nf-oam/rapp-limits/[^/]+$",
     "role": "admin",
     "queryMatch": {}

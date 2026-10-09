@@ -61,9 +61,11 @@ def apply_correlation_id(app: FastAPI) -> None:
     SMO_OTEL_ENDPOINT is set).
     """
     from .invoker import apply_invoker_context
+    from .scope import apply_scope_context
     from .security_headers import apply_security_headers
     from .tracing import apply_tracing
     apply_invoker_context(app)
+    apply_scope_context(app)    # the claim of that originator (PR-SEC-10), passed on beside it
     apply_security_headers(app)
     apply_tracing(app)       # inside the correlation middleware below, so a span can carry the correlation id (PR-OBS-3)
 

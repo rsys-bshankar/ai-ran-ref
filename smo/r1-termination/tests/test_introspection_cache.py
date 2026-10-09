@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
-from app.introspection_cache import NEGATIVE_SECONDS, IntrospectionCache, token_key
+from app.introspection_cache import NEGATIVE_SECONDS, Caller, IntrospectionCache, token_key
 from app.main import ROUTES, app
 from smo_shared.metrics import INTROSPECTION_CACHE
 
@@ -142,8 +142,8 @@ def test_a_cached_token_costs_sme_one_lookup_not_one_per_request(sme, gateway, m
 def test_the_identity_and_role_come_from_the_cache_as_from_sme(sme, gateway, monkeypatch):
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "30")
     sme.add("t1", invoker="rapp-9", role="rapp")
-    assert asyncio_run(main._introspect_token, request_with("t1")) == ("rapp-9", "rapp")
-    assert asyncio_run(main._introspect_token, request_with("t1")) == ("rapp-9", "rapp")      # second one from the cache
+    assert asyncio_run(main._introspect_token, request_with("t1")) == Caller("rapp-9", "rapp")
+    assert asyncio_run(main._introspect_token, request_with("t1")) == Caller("rapp-9", "rapp")      # second one from the cache
     assert sme.introspections == ["t1"]
 
 
@@ -225,9 +225,9 @@ def test_an_answer_fetched_while_a_revocation_evicts_is_not_stored(sme, monkeypa
     cache = IntrospectionCache(10, clock)
     generation = cache.generation                                  # an introspection starts ...
     cache.evict_invoker("rapp-1")                                  # ... a revocation evicts while SME is still answering ...
-    assert cache.put("t", ("rapp-1", "rapp"), 30, generation) is False       # ... so that answer (maybe from before the revocation) is dropped
+    assert cache.put("t", Caller("rapp-1", "rapp"), 30, generation) is False       # ... so that answer (maybe from before the revocation) is dropped
     assert cache.get("t") == (False, None)
-    assert cache.put("t", ("rapp-1", "rapp"), 30, cache.generation) is True
+    assert cache.put("t", Caller("rapp-1", "rapp"), 30, cache.generation) is True
     cache.clear()
     assert cache.put("u", None, 30, generation) is False
 
@@ -311,7 +311,7 @@ def test_the_raw_token_is_never_held_only_its_hash(sme, gateway, monkeypatch):
 def test_the_cache_is_bounded_and_drops_the_oldest(clock):
     cache = IntrospectionCache(3, clock)
     for i in range(10):
-        cache.put(f"t{i}", (f"rapp-{i}", "rapp"), 30, cache.generation)
+        cache.put(f"t{i}", Caller(f"rapp-{i}", "rapp"), 30, cache.generation)
         assert len(cache) <= 3
     assert cache.get("t9")[0] and cache.get("t8")[0] and cache.get("t7")[0]
     assert not cache.get("t0")[0] and not cache.get("t6")[0]
@@ -319,27 +319,27 @@ def test_the_cache_is_bounded_and_drops_the_oldest(clock):
 
 def test_a_full_cache_drops_expired_entries_before_live_ones(clock):
     cache = IntrospectionCache(2, clock)
-    cache.put("old", ("a", "rapp"), 5, cache.generation)
-    cache.put("live", ("b", "rapp"), 100, cache.generation)
+    cache.put("old", Caller("a", "rapp"), 5, cache.generation)
+    cache.put("live", Caller("b", "rapp"), 100, cache.generation)
     clock.advance(10)
-    cache.put("new", ("c", "rapp"), 100, cache.generation)
+    cache.put("new", Caller("c", "rapp"), 100, cache.generation)
     assert cache.get("live")[0] and cache.get("new")[0] and not cache.get("old")[0]
 
 
 def test_an_entry_is_gone_when_its_time_is_up_and_zero_or_negative_ttl_stores_nothing(clock):
     cache = IntrospectionCache(5, clock)
-    assert cache.put("t", ("a", "rapp"), 0, cache.generation) is False and cache.put("t", ("a", "rapp"), -3, cache.generation) is False
-    assert cache.put("t", ("a", "rapp"), 10, cache.generation) is True
+    assert cache.put("t", Caller("a", "rapp"), 0, cache.generation) is False and cache.put("t", Caller("a", "rapp"), -3, cache.generation) is False
+    assert cache.put("t", Caller("a", "rapp"), 10, cache.generation) is True
     clock.advance(9.99)
-    assert cache.get("t") == (True, ("a", "rapp"))
+    assert cache.get("t") == (True, Caller("a", "rapp"))
     clock.advance(0.01)
     assert cache.get("t") == (False, None) and len(cache) == 0
 
 
 def test_evicting_an_invoker_leaves_negative_entries_and_other_invokers(clock):
     cache = IntrospectionCache(5, clock)
-    cache.put("a", ("rapp-1", "rapp"), 10, cache.generation)
-    cache.put("b", ("rapp-2", "rapp"), 10, cache.generation)
+    cache.put("a", Caller("rapp-1", "rapp"), 10, cache.generation)
+    cache.put("b", Caller("rapp-2", "rapp"), 10, cache.generation)
     cache.put("bad", None, 10, cache.generation)
     assert cache.evict_invoker("rapp-1") == 1
     assert not cache.get("a")[0] and cache.get("b")[0] and cache.get("bad") == (True, None)

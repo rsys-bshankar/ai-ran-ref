@@ -149,9 +149,9 @@ func (p PlatformClient) DiscoverServices(ctx context.Context, f ServiceFilter) (
 // RAppClient is the rApp's side of rApp Management (/rapp-mgmt/instances/{id}/...).
 //
 // Which of these an rApp may call through R1 is decided by the role policy (smo_shared/roles.py): reads are open and
-// registering or clearing the operator API of the caller's own instance is allowed; BootstrapComplete and
-// ReportPerformance are not on the rApp allow-list, so R1 answers 403 ROLE_NOT_PERMITTED for an rApp token. They are
-// here because the reference deployment calls them on the compose network, bypassing the gateway (see the README).
+// registering or clearing the operator API of the caller's own instance, BootstrapComplete and ReportPerformance are
+// allowed for the caller's own instance (rApp Management answers 403 NOT_THIS_INSTANCE for another's). They were off the
+// rApp allow-list until PR-SEC-10, which opened them: the container reports that it is up and how it performs.
 type RAppClient struct{ c *Client }
 
 // RApp returns the rApp-instance namespace.

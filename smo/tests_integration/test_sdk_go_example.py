@@ -75,14 +75,12 @@ def _sdk_routes() -> list[tuple[str, str, str]]:
     return [(f"/{spec}", method, re.sub(r"\{[^}]+\}", "x", tmpl)) for spec, method, tmpl in re.findall(r'gw\("([\w-]+)", "(\w+)", "([^"]+)"\)', text)]
 
 
-def test_the_routes_the_sdk_calls_through_r1_are_open_to_an_rapp_except_the_two_the_readme_names():
+def test_the_routes_the_sdk_calls_through_r1_are_open_to_an_rapp():
     routes = _sdk_routes()
     assert len(routes) >= 10
     refused = {(m, p) for module, m, p in routes if not roles.rapp_may_change(module, m, p)}
-    # BootstrapComplete and ReportPerformance: rApp Management's own lifecycle reports, which R1's allow-list does not open
-    # to the rApp role (smo_shared/roles.py). They are in the SDK for a deployment that calls rApp Management directly; the
-    # README says so. If the policy opens them, delete this exception and the note.
-    assert refused == {("POST", "/instances/x/bootstrap-complete"), ("POST", "/instances/x/performance")}
+    # BootstrapComplete and ReportPerformance were refused to the rApp role until PR-SEC-10 added them to the allow-list (smo_shared/roles.py)
+    assert refused == set()
 
 
 def test_the_sdk_has_no_third_party_module_and_no_go_sum_to_drift():

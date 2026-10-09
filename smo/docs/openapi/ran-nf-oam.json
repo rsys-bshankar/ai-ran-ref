@@ -1063,6 +1063,18 @@
             "title": "Protocolsupport",
             "type": "array"
           },
+          "region": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
           "supportedServices": {
             "anyOf": [
               {
@@ -1086,6 +1098,18 @@
               }
             ],
             "title": "Supportedservices"
+          },
+          "tenant": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant"
           },
           "transport": {
             "default": "http-mock",
@@ -1201,7 +1225,8 @@
                 "RAPP_KILLED",
                 "RAPP_RATE_LIMITED",
                 "RAPP_BLAST_RADIUS_EXCEEDED",
-                "RAPP_MAGNITUDE_EXCEEDED"
+                "RAPP_MAGNITUDE_EXCEEDED",
+                "SCOPE_DENIED"
               ],
               "type": "string"
             },
@@ -1232,6 +1257,38 @@
           "schemaName"
         ],
         "title": "SchemaRef",
+        "type": "object"
+      },
+      "ScopeBody": {
+        "additionalProperties": false,
+        "description": "Where an element is and whom it belongs to (PR-SEC-10.2): `null` clears it. Both keys replace the stored values.",
+        "properties": {
+          "region": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "tenant": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant"
+          }
+        },
+        "title": "ScopeBody",
         "type": "object"
       },
       "ValidationError": {
@@ -1628,7 +1685,7 @@
   "paths": {
     "/alarms": {
       "get": {
-        "description": "`severity` filter (GUI pass) \u2014 the alarm console filters by ME and\nby perceivedSeverity; `severity=cleared` isolates the cleared history.\n`managed_function_ref` (W10-alarm-cellref) narrows to the alarms raised\non one managed function, e.g. a cell's `NRCellDU=101`.",
+        "description": "`severity` filter (GUI pass) \u2014 the alarm console filters by ME and\nby perceivedSeverity; `severity=cleared` isolates the cleared history.\n`managed_function_ref` (W10-alarm-cellref) narrows to the alarms raised\non one managed function, e.g. a cell's `NRCellDU=101`.\n\nPR-SEC-10.6: a caller with a scope claim sees only the alarms of the elements inside it (the list is filtered, never refused: naming an element outside\nthe scope in `managed_element_ref` gives an empty page, the same as an element with no alarms).",
         "operationId": "query_alarms_alarms_get",
         "parameters": [
           {
@@ -2927,7 +2984,7 @@
     },
     "/cell-guards": {
       "get": {
-        "description": "The guard query any rApp uses (e.g. the EnergySaving rApp never\nsleeps an EMERGENCY cell, nor two cells of one sectorGroup at once).",
+        "description": "The guard query any rApp uses (e.g. the EnergySaving rApp never\nsleeps an EMERGENCY cell, nor two cells of one sectorGroup at once). PR-SEC-10.6: only the elements inside the caller's scope claim.",
         "operationId": "query_cell_guards_cell_guards_get",
         "parameters": [
           {
@@ -5879,7 +5936,7 @@
     },
     "/files": {
       "get": {
-        "description": "TS 28.532 `GET /files`: FileInfo for the files of a data type, selected by\nthe time they became available. Paginated like every list here.",
+        "description": "TS 28.532 `GET /files`: FileInfo for the files of a data type, selected by\nthe time they became available. Paginated like every list here. PR-SEC-10.6: a caller with a scope claim sees only the files of elements inside it.",
         "operationId": "read_file_info_files_get",
         "parameters": [
           {
@@ -7912,7 +7969,7 @@
     },
     "/kpis/{name}": {
       "get": {
-        "description": "MGT-11.3/11.4/11.5: the KPI over [from_time, to_time) (to_time: now), per cell, per element, per sector group or incident zone (the cell\nguards of the registry), or over everything asked for. A ratio is computed from the group's summed counters, not from its cells' ratios.\n`managed_element_ref` and `cell_id` narrow what is read. A group without data has a null `value` and a `reason`.",
+        "description": "MGT-11.3/11.4/11.5: the KPI over [from_time, to_time) (to_time: now), per cell, per element, per sector group or incident zone (the cell\nguards of the registry), or over everything asked for. A ratio is computed from the group's summed counters, not from its cells' ratios.\n`managed_element_ref` and `cell_id` narrow what is read. A group without data has a null `value` and a `reason`.\nPR-SEC-10.6: a caller with a scope claim gets the KPI over the performance files of the elements inside it only (so `all` is its elements, never the network's).",
         "operationId": "compute_kpi_kpis__name__get",
         "parameters": [
           {
@@ -8440,6 +8497,7 @@
     },
     "/managed-entities": {
       "get": {
+        "description": "The registered managed elements. `region` and `tenant` narrow the list (PR-SEC-10.2). A caller with a scope claim sees only the elements inside it\n(PR-SEC-10.6: the list is filtered, never refused).",
         "operationId": "list_managed_entities_managed_entities_get",
         "parameters": [
           {
@@ -8456,6 +8514,38 @@
                 }
               ],
               "title": "Vendor Name"
+            }
+          },
+          {
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant"
             }
           },
           {
@@ -9016,7 +9106,7 @@
     },
     "/managed-entities/{managed_element_ref}/config": {
       "get": {
-        "description": "Wave 10.1 (W10-20): read-after-write. Reads the managed object's\nrunning configuration from its O1 adaptor (NETCONF <get-config>, or a\nRESTCONF GET of the data resource) \u2014 the live value on the NF, not what\nthis module last asked for \u2014 so a caller can verify that a write\nactually took effect.",
+        "description": "Wave 10.1 (W10-20): read-after-write. Reads the managed object's\nrunning configuration from its O1 adaptor (NETCONF <get-config>, or a\nRESTCONF GET of the data resource) \u2014 the live value on the NF, not what\nthis module last asked for \u2014 so a caller can verify that a write\nactually took effect.\n\nPR-SEC-10.5: a caller whose scope claim does not cover the element (or that names one that is not registered) gets 403 `SCOPE_DENIED`, before anything\nis read from the NF; an unscoped caller is not asked anything.",
         "operationId": "read_configuration_managed_entities__managed_element_ref__config_get",
         "parameters": [
           {
@@ -9160,7 +9250,7 @@
     },
     "/managed-entities/{managed_element_ref}/config-history": {
       "get": {
-        "description": "MGT-1.4: what each dispatched write to this element replaced and wrote, newest first (`beforeError` says why a before\nimage is missing). Read from `cm_snapshot`; a write rejected before dispatch has no row.",
+        "description": "MGT-1.4: what each dispatched write to this element replaced and wrote, newest first (`beforeError` says why a before\nimage is missing). Read from `cm_snapshot`; a write rejected before dispatch has no row. 403 `SCOPE_DENIED` for an element outside the caller's scope (SEC-10.5).",
         "operationId": "read_configuration_history_managed_entities__managed_element_ref__config_history_get",
         "parameters": [
           {
@@ -9344,7 +9434,7 @@
     },
     "/managed-entities/{managed_element_ref}/config-history/diff": {
       "get": {
-        "description": "MGT-1.5: how the attributes two snapshots of one managed object touched differ. Each snapshot's image is `before` with `after` laid\nover it (`_image`); the diff is over the attributes either image holds. Only attributes a write named are ever known, so an attribute\nneither snapshot touched is not reported as unchanged.",
+        "description": "MGT-1.5: how the attributes two snapshots of one managed object touched differ. Each snapshot's image is `before` with `after` laid\nover it (`_image`); the diff is over the attributes either image holds. Only attributes a write named are ever known, so an attribute\nneither snapshot touched is not reported as unchanged. 403 `SCOPE_DENIED` for an element outside the caller's scope (SEC-10.5).",
         "operationId": "diff_configuration_snapshots_managed_entities__managed_element_ref__config_history_diff_get",
         "parameters": [
           {
@@ -9616,6 +9706,144 @@
           }
         },
         "summary": "Refresh Managed Objects"
+      }
+    },
+    "/managed-entities/{managed_element_ref}/scope": {
+      "put": {
+        "description": "PR-SEC-10.2: set the `region` and `tenant` of a managed element (an operator's or an SMO module's call; an rApp is refused at the gateway). Replaces both;\na key left out or `null` clears it, and an element with no region (tenant) is then for unscoped callers, and for callers whose claim does not restrict\nregions (tenants), only. Takes effect on the next request. 404 for an unknown element.",
+        "operationId": "set_managed_entity_scope_managed_entities__managed_element_ref__scope_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "managed_element_ref",
+            "required": true,
+            "schema": {
+              "title": "Managed Element Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Set Managed Entity Scope"
       }
     },
     "/managed-objects/{dn}": {
@@ -11921,6 +12149,7 @@
     },
     "/o1-adaptor-endpoints": {
       "get": {
+        "description": "The registered O1 adaptor endpoints, one per managed element, with the element's `region` and `tenant` (PR-SEC-10.2). A caller with a scope claim sees only the\nendpoints of the elements inside it (PR-SEC-10.6).",
         "operationId": "list_o1_adaptor_endpoints_o1_adaptor_endpoints_get",
         "parameters": [
           {
@@ -16369,7 +16598,7 @@
         "summary": "List Safeguard Subscriptions"
       },
       "post": {
-        "description": "AI-10.6: be told (a POST to `callbackUri`, through the outbox) each time the platform refuses an rApp: `refusals` narrows it to those codes,\nempty means all four. A destination the SSRF guard refuses is a 422 here rather than a silent drop later.",
+        "description": "AI-10.6: be told (a POST to `callbackUri`, through the outbox) each time the platform refuses an rApp (a kill switch, a limit or, PR-SEC-10, a scope): `refusals` narrows it to those codes,\nempty means all five. A destination the SSRF guard refuses is a 422 here rather than a silent drop later.",
         "operationId": "subscribe_to_safeguard_refusals_safeguard_subscriptions_post",
         "requestBody": {
           "content": {
