@@ -1,3 +1,7 @@
+// main_test.go covers the example rApp: its operator routes serve what package/manifest.yaml declares, a failed
+// heartbeat is recorded without stopping the process, and the container probe. platform() stands in for the gateway and
+// SME with httptest. Run: cd smo/sdk-go && go test -race ./... .
+
 package main
 
 import (
@@ -37,6 +41,8 @@ func platform(t *testing.T) *httptest.Server {
 	return srv
 }
 
+// TestTheOperatorRoutesServeWhatTheManifestDeclares pins that POST run beats once and GET status then returns the keys the
+// manifest's panels read (state, beats, dmeTypes, lastError, lastBeatAt).
 func TestTheOperatorRoutesServeWhatTheManifestDeclares(t *testing.T) {
 	p := platform(t)
 	c, err := smosdk.New(smosdk.Config{GatewayURL: p.URL})
@@ -67,6 +73,8 @@ func TestTheOperatorRoutesServeWhatTheManifestDeclares(t *testing.T) {
 	}
 }
 
+// TestABeatThatFailsIsRecordedNotFatal pins that an unreachable platform is recorded as lastError with the beat counted,
+// and does not panic or stop the rApp.
 func TestABeatThatFailsIsRecordedNotFatal(t *testing.T) {
 	c, _ := smosdk.New(smosdk.Config{GatewayURL: "http://127.0.0.1:1", BearerToken: "t", Retry: smosdk.RetryPolicy{MaxAttempts: 1}})
 	s := &state{}
@@ -76,6 +84,7 @@ func TestABeatThatFailsIsRecordedNotFatal(t *testing.T) {
 	}
 }
 
+// TestProbe pins the probe's exit codes: 0 against a healthy server, 1 when nothing listens.
 func TestProbe(t *testing.T) {
 	app := httptest.NewServer(newMux(nil, &state{}))
 	defer app.Close()

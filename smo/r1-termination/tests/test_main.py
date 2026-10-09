@@ -1,5 +1,8 @@
-"""Tests for R1 Termination (Foundational Platform LLD section 4).
-Run with: pytest smo/r1-termination/tests -q
+"""Tests for R1 Termination's core (Foundational Platform LLD section 4): `/bootstrap`, the route table, authentication by introspection, forwarding, timeouts, limits.
+
+Fake httpx clients stand in for SME and the backends (`FakeResponse`, `RecordingAsyncClient`, `TimeoutProbe`, `_backend_that_accepts_any_token`), so no
+service runs; every test starts with full rate buckets (`fresh_rate_limiter`) and the in-memory database of `conftest.py`. Other test files import helpers from
+here (`AUTH_HEADERS`, `_backend_that_accepts_any_token`). Run: `PYTHONPATH=.:../shared python -m pytest tests/test_main.py -q`.
 """
 
 import json
@@ -44,9 +47,7 @@ def test_bootstrap_entries_carry_a_token_endpoint():
 
 
 def test_bootstrap_needs_no_authorization_header():
-    """Section 4.1: /bootstrap is the one route _authorized never gates —
-    an rApp has no token yet the first time it calls this.
-    """
+    """Section 4.1: `/bootstrap` is answered without a token, because an rApp has no token yet the first time it calls it."""
     resp = client.get("/bootstrap")
     assert resp.status_code == 200
 
@@ -64,6 +65,7 @@ def test_route_table_covers_every_module():
 
 
 def test_unknown_route_returns_404():
+    """A path whose first segment is no module in the route table is a 404 `NO_ROUTE`, not a forward to nowhere."""
     resp = client.get("/not-a-real-module/anything")
     assert resp.status_code == 404
     assert resp.json()["title"] == "NO_ROUTE"
@@ -105,7 +107,7 @@ def test_proxy_forwards_to_correct_backend(monkeypatch):
 
     resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS)
     assert resp.status_code == 200
-    # the last call is the actual forward — the first is _authorized's own
+    # the last call is the actual forward — the first is the gateway's own token
     # introspection round trip.
     method, url = calls[-1]
     assert url.startswith(ROUTES["/sme"])
@@ -117,17 +119,20 @@ def test_proxy_forwards_to_correct_backend(monkeypatch):
 
 
 def test_proxy_rejects_a_request_with_no_authorization_header():
+    """A proxied call without credentials is a 401 `UNAUTHORIZED`."""
     resp = client.get("/sme/service-apis/v1/allServiceAPIs")
     assert resp.status_code == 401
     assert resp.json()["title"] == "UNAUTHORIZED"
 
 
 def test_proxy_rejects_a_non_bearer_authorization_header():
+    """Only `Authorization: Bearer ...` counts; Basic credentials are a 401."""
     resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers={"Authorization": "Basic dXNlcjpwYXNz"})
     assert resp.status_code == 401
 
 
 def test_proxy_rejects_a_token_sme_reports_inactive(monkeypatch):
+    """A token SME introspects as inactive is a 401, and nothing is forwarded (the fake fails the test if a second call is made)."""
     class InactiveAsyncClient:
         def __init__(self, **kwargs):
             pass
@@ -211,6 +216,7 @@ def _install_recording_client(monkeypatch, next_status=200):
 
 
 def test_proxy_forwards_method_body_and_query_params(monkeypatch):
+    """The forward keeps the method, the body and the query parameters, and strips the module prefix from the path."""
     recorder = _install_recording_client(monkeypatch)
     resp = client.post("/sme/published-apis/v1/apf/service-apis", params={"foo": "bar"}, json={"serviceName": "x"}, headers=AUTH_HEADERS)
     assert resp.status_code == 200
@@ -222,6 +228,7 @@ def test_proxy_forwards_method_body_and_query_params(monkeypatch):
 
 
 def test_proxy_strips_host_header_but_forwards_others(monkeypatch):
+    """The caller's `Host` is not forwarded (it names the gateway, not the backend), while its other headers, `Authorization` included, are."""
     recorder = _install_recording_client(monkeypatch)
     client.get("/sme/service-apis/v1/allServiceAPIs", headers={**AUTH_HEADERS, "Host": "should-not-forward"})
     call = recorder.calls[0]
@@ -237,13 +244,14 @@ def test_proxy_generates_a_correlation_id_when_the_caller_sends_none(monkeypatch
     """
     recorder = _install_recording_client(monkeypatch)
     resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS)
-    call = recorder.calls[-1]  # the actual forward, not _authorized's own introspection round trip
+    call = recorder.calls[-1]  # the actual forward, not the gateway's own introspection round trip
     generated = call["headers"]["X-Correlation-ID"]
     assert generated
     assert resp.headers["X-Correlation-ID"] == generated
 
 
 def test_proxy_forwards_the_callers_own_correlation_id_unchanged(monkeypatch):
+    """A correlation id the caller sent is the one forwarded and echoed, so one id follows the whole request."""
     recorder = _install_recording_client(monkeypatch)
     resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers={**AUTH_HEADERS, "X-Correlation-ID": "caller-supplied-id"})
     call = recorder.calls[-1]
@@ -262,6 +270,7 @@ def test_proxy_forwards_the_callers_traceparent_and_tracestate(monkeypatch):
 
 
 def test_proxy_does_not_forward_an_invalid_traceparent(monkeypatch):
+    """A `traceparent` that is not valid W3C trace context is dropped, not passed on to the backend."""
     monkeypatch.delenv("SMO_OTEL_ENDPOINT", raising=False)
     recorder = _install_recording_client(monkeypatch)
     client.get("/sme/service-apis/v1/allServiceAPIs", headers={**AUTH_HEADERS, "traceparent": "not-a-traceparent"})
@@ -367,17 +376,20 @@ class TimeoutProbe:
 
 @pytest.fixture
 def probe(monkeypatch):
+    """Fixture: installs `TimeoutProbe` as the gateway's httpx client with no forward error set; returns the class so a test can read `built` and set `forward_error`."""
     TimeoutProbe.built, TimeoutProbe.forward_error = [], None
     monkeypatch.setattr("app.main.httpx.AsyncClient", TimeoutProbe)
     return TimeoutProbe
 
 
 def test_the_proxy_uses_explicit_timeouts_for_introspection_and_for_the_backend_call(probe):
+    """The gateway builds its introspection client with a 5 s timeout (fail closed fast) and its forwarding client with 60 s, never httpx's defaults."""
     assert client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS).status_code == 200
     assert probe.built == [5.0, 60.0]     # introspection (fails closed fast), then the backend, which may be slow
 
 
 def test_the_proxy_timeouts_come_from_the_environment(probe, monkeypatch):
+    """`R1_INTROSPECT_TIMEOUT_SECONDS` and `R1_UPSTREAM_TIMEOUT_SECONDS` set those two timeouts."""
     monkeypatch.setenv("R1_INTROSPECT_TIMEOUT_SECONDS", "2")
     monkeypatch.setenv("R1_UPSTREAM_TIMEOUT_SECONDS", "90")
     client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS)
@@ -385,6 +397,7 @@ def test_the_proxy_timeouts_come_from_the_environment(probe, monkeypatch):
 
 
 def test_a_backend_that_is_too_slow_is_a_504_not_an_unhandled_error(probe):
+    """A backend timeout is a 504 `UPSTREAM_TIMEOUT` naming the module prefix, not a 500."""
     import httpx as httpx_module
     probe.forward_error = httpx_module.ReadTimeout("slow")
     resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS)
@@ -393,6 +406,7 @@ def test_a_backend_that_is_too_slow_is_a_504_not_an_unhandled_error(probe):
 
 
 def test_a_backend_that_cannot_be_reached_is_a_502(probe):
+    """A backend that refuses the connection is a 502 `UPSTREAM_UNAVAILABLE`."""
     import httpx as httpx_module
     probe.forward_error = httpx_module.ConnectError("refused")
     resp = client.get("/sme/service-apis/v1/allServiceAPIs", headers=AUTH_HEADERS)
@@ -403,6 +417,7 @@ def test_a_backend_that_cannot_be_reached_is_a_502(probe):
 # ---------------------------------------------------------------- limits (PR-SEC-8)
 
 def _backend_that_accepts_any_token(monkeypatch, client_id="caller-a", forwarded=None):
+    """Installs a fake httpx client where SME says every token is active for `client_id` and every other call succeeds; urls that reach a backend are appended to `forwarded` when given."""
     class Fake:
         def __init__(self, **kwargs):
             pass
@@ -424,6 +439,7 @@ def _backend_that_accepts_any_token(monkeypatch, client_id="caller-a", forwarded
 
 
 def test_a_caller_over_its_budget_gets_429_with_retry_after_and_is_not_forwarded(monkeypatch):
+    """Past its burst a caller gets 429 `RATE_LIMITED` with a `Retry-After`, and the refused requests never reach the backend."""
     monkeypatch.setenv("R1_RATE_BURST", "3")
     monkeypatch.setenv("R1_RATE_PER_SECOND", "1")
     forwarded: list = []
@@ -437,6 +453,7 @@ def test_a_caller_over_its_budget_gets_429_with_retry_after_and_is_not_forwarded
 
 
 def test_the_budget_is_per_caller_so_one_noisy_invoker_does_not_starve_another(monkeypatch):
+    """The bucket is per invoker id: exhausting one caller's budget leaves another caller's untouched."""
     monkeypatch.setenv("R1_RATE_BURST", "2")
     monkeypatch.setenv("R1_RATE_PER_SECOND", "0.001")
     _backend_that_accepts_any_token(monkeypatch, client_id="noisy")
@@ -446,6 +463,7 @@ def test_the_budget_is_per_caller_so_one_noisy_invoker_does_not_starve_another(m
 
 
 def test_a_rate_of_zero_turns_the_limiter_off(monkeypatch):
+    """`R1_RATE_PER_SECOND=0` disables the limit, whatever the burst."""
     monkeypatch.setenv("R1_RATE_PER_SECOND", "0")
     monkeypatch.setenv("R1_RATE_BURST", "1")
     _backend_that_accepts_any_token(monkeypatch)
@@ -453,6 +471,7 @@ def test_a_rate_of_zero_turns_the_limiter_off(monkeypatch):
 
 
 def test_a_refused_unauthenticated_request_does_not_spend_anyones_budget(monkeypatch):
+    """A request refused for a missing token spends no budget, so anonymous traffic cannot lock out a real caller."""
     monkeypatch.setenv("R1_RATE_BURST", "1")
     monkeypatch.setenv("R1_RATE_PER_SECOND", "0.001")
     _backend_that_accepts_any_token(monkeypatch)
@@ -461,6 +480,7 @@ def test_a_refused_unauthenticated_request_does_not_spend_anyones_budget(monkeyp
 
 
 def test_a_body_over_the_cap_is_413_and_never_reaches_the_backend(monkeypatch):
+    """A body over the 1 MiB default cap is a 413 `PAYLOAD_TOO_LARGE` before any forwarding; exactly 1 MiB passes."""
     forwarded: list = []
     _backend_that_accepts_any_token(monkeypatch, forwarded=forwarded)
     resp = client.post("/dme/data-jobs", headers=AUTH_HEADERS, content=b"x" * (1024 * 1024 + 1))
@@ -469,6 +489,7 @@ def test_a_body_over_the_cap_is_413_and_never_reaches_the_backend(monkeypatch):
 
 
 def test_the_model_artifact_upload_route_accepts_a_larger_body_and_only_that_route(monkeypatch):
+    """Only the MLMR model-artifact upload may carry up to 50 MiB; the same size elsewhere under `/mlmr` is a 413."""
     _backend_that_accepts_any_token(monkeypatch)
     big = b"z" * (3 * 1024 * 1024)
     assert client.post("/mlmr/models/abc/artifact", headers=AUTH_HEADERS, content=big).status_code == 200
@@ -478,6 +499,7 @@ def test_the_model_artifact_upload_route_accepts_a_larger_body_and_only_that_rou
 
 
 def test_the_cap_and_its_overrides_come_from_the_environment(monkeypatch):
+    """`R1_MAX_BODY_BYTES` sets the cap and `R1_MAX_BODY_OVERRIDES` raises it for the paths it lists."""
     _backend_that_accepts_any_token(monkeypatch)
     monkeypatch.setenv("R1_MAX_BODY_BYTES", "100")
     assert client.post("/dme/offers", headers=AUTH_HEADERS, content=b"a" * 101).status_code == 413
@@ -490,24 +512,28 @@ def test_the_cap_and_its_overrides_come_from_the_environment(monkeypatch):
 # --- PR-SEC-1.6: /bootstrap behind the TLS edge --------------------------------------------------------------------------------
 
 def _bootstrap_uris(monkeypatch, value):
+    """Sets the gateway's public base URL to `value` and returns `/bootstrap`'s entries as `{apiName: (token endpoint, api endpoint)}`."""
     import app.main as main
     monkeypatch.setattr(main, "PUBLIC_BASE_URL", value)
     return {e["apiName"]: (e["tokenEndPoint"]["uri"], e["apiEndPoint"]["uri"]) for e in client.get("/bootstrap").json()["apiEndpoints"]}
 
 
 def test_bootstrap_names_sme_on_the_compose_network_unless_a_public_base_url_is_set(monkeypatch):
+    """Without a public base URL `/bootstrap` hands out SME's own address (reachable inside the compose network)."""
     uris = _bootstrap_uris(monkeypatch, None)
     assert uris["service-apis"] == ("http://sme:8000/oauth2/token", "http://sme:8000/service-apis/v1/allServiceAPIs")
     assert uris["published-apis"] == ("http://sme:8000/oauth2/token", "http://sme:8000/published-apis/v1")
 
 
 def test_with_a_public_base_url_bootstrap_advertises_the_https_door(monkeypatch):
+    """With a public base URL every advertised address goes through the gateway (`<base>/sme/...`), so a consumer outside the network can complete the flow."""
     uris = _bootstrap_uris(monkeypatch, "https://r1.example:8443")
     assert uris["service-apis"] == ("https://r1.example:8443/sme/oauth2/token", "https://r1.example:8443/sme/service-apis/v1/allServiceAPIs")
     assert uris["published-apis"] == ("https://r1.example:8443/sme/oauth2/token", "https://r1.example:8443/sme/published-apis/v1")
 
 
 def test_the_public_base_url_comes_from_the_environment_only_never_from_request_headers(monkeypatch):
+    """`Host` and `X-Forwarded-*` headers cannot change the advertised addresses: the token endpoint is where credentials go, so only the operator decides it."""
     import app.main as main
     monkeypatch.setattr(main, "PUBLIC_BASE_URL", "https://r1.example:8443")
     resp = client.get("/bootstrap", headers={"Host": "evil.example", "X-Forwarded-Host": "evil.example", "X-Forwarded-Proto": "http"})
@@ -517,6 +543,7 @@ def test_the_public_base_url_comes_from_the_environment_only_never_from_request_
 @pytest.mark.parametrize("value,ok", [("", None), (" https://r1.example:8443/ ", "https://r1.example:8443"), ("http://localhost:8080", "http://localhost:8080"),
                                       ("r1.example", False), ("ftp://r1.example", False), ("https://r1.example/path", False), ("https://r1.example?x=1", False)])
 def test_the_public_base_url_must_be_an_origin(monkeypatch, value, ok):
+    """`R1_PUBLIC_BASE_URL` is trimmed of whitespace and a trailing slash; anything that is not a bare http(s) origin (no path, query, other scheme) raises at start."""
     import app.main as main
     monkeypatch.setenv("R1_PUBLIC_BASE_URL", value)
     if ok is False:
@@ -527,6 +554,7 @@ def test_the_public_base_url_must_be_an_origin(monkeypatch, value, ok):
 
 
 def test_a_path_the_policy_and_the_backend_could_read_differently_is_refused():
+    """`_path_problem` flags dot segments, empty segments, backslashes and NUL bytes, and accepts ordinary paths with one trailing slash."""
     from app.main import _path_problem
     for bad in (".", "..", "x/./y", "x/../y", "x//y", "/x", "x/\\y", "x\x00y", "/"):
         assert _path_problem(bad), bad

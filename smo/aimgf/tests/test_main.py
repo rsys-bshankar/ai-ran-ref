@@ -1,17 +1,12 @@
-"""Tests for AIMgF's routes (AI/ML Workflow LLD sections 1, 4; Wave 2's
-own ModelLifecycle/RuntimeLifecycle FSMs and domain model).
-Run with: pytest smo/aimgf/tests -q
+"""Tests of AIMgF's own routes in `app/main.py`: training, validation, emulation and inference jobs with their lifecycle gates, operator approvals, completion notifications and
+NFO execution runtimes; governance (`advance`) and the lifecycle history; the serving runtime (deploy, activate, scale, terminate) and end-of-life; MLMF subscriptions, reports and
+group retrain; feature groups; idempotency keys, optimistic concurrency and the outbox. The TS 28.105 NRM routes are in `test_nrm.py`, sizing and timeouts in `test_runtime.py`, step
+progress and the feature-group DME job in `test_steps_and_feature_groups.py`, the state tables in `test_statemachine.py`.
 
-AIMgF reads/writes MLMR's model-existence check and coordination-group
-listing through R1Client, and (since Wave 2) calls NFO's descriptor/
-instantiate/scale/terminate routes for its own RuntimeLifecycle — both
-faked here with small stateful in-memory doubles, the same "monkeypatch
-app.main.R1Client.<verb>" shape this build already uses for e.g.
-nfo/tests/test_main.py's own FOCOM double. AIMgF's own ModelLifecycle
-state, unlike Wave 1, is real — a genuine row in this module's own test
-DB, not faked. The real cross-service round trip (actual MLMR/NFO
-processes backing these calls) is covered by
-tests_integration/test_demo_runbook.py instead.
+Fixtures defined here and reused by the other test files: `db_session_factory` (a fresh in-memory SQLite database with every AIMgF table), `mlmr` (in-memory doubles of MLMR and NFO
+installed over `app.main.R1Client`) and `client` (a `TestClient` whose database session comes from `db_session_factory`). `_set_lifecycle` writes a model's lifecycle row directly
+so a test can start from a state without walking the pipeline. ModelLifecycle state is real, not faked; MLMR and NFO are fakes, so the real cross-service round trip is covered by
+`tests_integration/test_demo_runbook.py` instead. Run with `cd smo/aimgf && PYTHONPATH=.:../shared python -m pytest tests/test_main.py -q`; no Postgres, no network.
 """
 
 import uuid
@@ -37,6 +32,7 @@ from app.statemachine import ModelLifecycleState, RuntimeLifecycleState
 
 
 class FakeResponse:
+    """The minimum of an `httpx.Response` AIMgF reads from an R1 call: `status_code` and `json()`."""
     def __init__(self, status_code, payload):
         self.status_code = status_code
         self._payload = payload
@@ -46,10 +42,10 @@ class FakeResponse:
 
 
 class FakeMlmr:
-    """A minimal double for MLMR's own model-existence check
-    (`GET /mlmr/models/{id}`) and coordination-group listing
-    (`GET /mlmr/coordination-groups`) — AIMgF's own lifecycle state lives
-    in its own real `model_lifecycle` table now (Wave 2), not faked here.
+    """An in-memory double of MLMR's model-existence route (`GET /mlmr/models/{id}`, 200 with the model or a 404 problem) and coordination-group list (`GET /mlmr/coordination-groups`, one page).
+
+    `add_model` registers a model and returns its id; `groups` is the list the group route answers; `phase_writes` records the `PATCH .../phase-info` calls AIMgF makes back to MLMR.
+    AIMgF's own lifecycle state is not faked: it lives in the test database.
     """
 
     def __init__(self):
@@ -73,9 +69,9 @@ class FakeMlmr:
 
 
 class FakeNfo:
-    """A minimal double for NFO's own descriptor/instantiate/scale/
-    terminate routes — enough to drive AIMgF's RuntimeLifecycle exactly
-    as the real service would.
+    """An in-memory double of NFO's descriptor, deployment, scale and delete routes, enough to drive AIMgF's runtimes as the real service would.
+
+    `descriptors` and `deployments` hold what was created (a deployment starts RUNNING with a `scaled` counter); a delete removes the deployment. An unexpected POST path fails the test.
     """
 
     def __init__(self):
@@ -104,14 +100,10 @@ class FakeNfo:
 
 
 def _patch_nfo(monkeypatch) -> FakeNfo:
-    """HISTORY.md OI-6.2: request_training/request_validation/
-    request_emulation now always call NFO, so any test that reaches one
-    of those routes without the full `mlmr` fixture (e.g. the
-    coordination-group-targeted DME tests below, which only care about
-    patching R1Client.get) still needs POST/DELETE faked, or it would hit
-    a real network call. Standalone from the `mlmr` fixture since several
-    of those tests patch `.get` themselves for an unrelated reason (DME,
-    not MLMR's own model-existence check).
+    """Installs a `FakeNfo` over the R1 client's `post` and `delete` and returns it; the `get` stays whatever the test sets.
+
+    For tests that need NFO faked but patch `get` themselves for another reason (the DME checks of the coordination-group tests), so they cannot use the full `mlmr` fixture. Without it a
+    route that starts a run would attempt a real network call.
     """
     fake_nfo = FakeNfo()
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: fake_nfo.post(path, json=json, **kw))
@@ -121,6 +113,11 @@ def _patch_nfo(monkeypatch) -> FakeNfo:
 
 @pytest.fixture
 def db_session_factory():
+    """Fixture: a fresh in-memory SQLite database holding every table AIMgF's models declare (including the TS 28.105 tables the job tables reference), the idempotency table and the outbox
+    table; returns a `sessionmaker` bound to it.
+
+    Each test gets its own database. The tables are found by scanning `app.models` for `Base` subclasses, so a new model needs no change here.
+    """
     engine = make_test_engine()
     # Every table AIMgF's own models declare (Wave 4 added the TS 28.105
     # NRM tables, which the job tables now reference).
@@ -135,6 +132,11 @@ def db_session_factory():
 
 @pytest.fixture
 def mlmr(monkeypatch):
+    """Fixture: installs the MLMR and NFO doubles over `app.main.R1Client.get/post/delete/patch` and returns the `FakeMlmr` (its `.nfo` attribute is the `FakeNfo`).
+
+    `get` answers MLMR's model and group routes, `post` and `delete` answer NFO, `patch` records the phase write-back in `phase_writes` and answers 200. The patch is on the class, so it also
+    serves `app/nrm.py`, which calls through the same client.
+    """
     fake_mlmr = FakeMlmr()
     fake_nfo = FakeNfo()
 
@@ -161,6 +163,10 @@ def mlmr(monkeypatch):
 
 @pytest.fixture
 def client(db_session_factory):
+    """Fixture: a `TestClient` of the AIMgF app whose `get_session` dependency returns sessions of `db_session_factory`; the override is removed afterwards.
+
+    Each request gets its own session, closed when the request ends.
+    """
     def override_get_session():
         session = db_session_factory()
         try:
@@ -175,14 +181,10 @@ def client(db_session_factory):
 
 def _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=None, runtime_lifecycle_state=None,
                     training_approved=None, validation_approved=None) -> None:
-    """Test-only shortcut: writes AIMgF's own ModelLifecycle row directly,
-    the same role mlmr/tests' own `_make_model(..., state)` played before
-    Wave 2 — most tests care about "a model already at CERTIFIED", not
-    about walking every intermediate FSM transition to get there.
-    training_approved/validation_approved (HISTORY.md OI-6.1):
-    same shortcut role for the operator-gate flags a test doesn't care
-    about exercising via the real advance(APPROVE_TRAINING/
-    APPROVE_VALIDATION) route.
+    """Test shortcut: writes (or creates) a model's ModelLifecycle row with the given states and approval flags and commits.
+
+    Most tests need "a model already at CERTIFIED" and not every transition that leads there; `training_approved` and `validation_approved` set the operator gate flags without running
+    the APPROVE_TRAINING / APPROVE_VALIDATION route. An argument left as None leaves that column as it is.
     """
     with db_session_factory() as session:
         lifecycle = session.get(ModelLifecycle, model_id)
@@ -203,6 +205,7 @@ def _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=None, run
 # ---------------------------------------------------------------- Training
 
 def test_request_training_on_registered_model_fires_create_training(client, mlmr):
+    """Requesting training for a REGISTERED model answers 201 and moves the model to TRAINING."""
     model_id = mlmr.add_model()
     resp = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
     assert resp.status_code == 201
@@ -225,6 +228,7 @@ def test_training_writes_phase_and_lineage_back_to_mlmr(client, mlmr, db_session
 
 
 def test_a_retrain_of_a_derived_model_names_its_source_as_the_base(client, mlmr, db_session_factory):
+    """A retrain of a model that MLMR says was derived from another writes that source model as `baseModelId` in the phase write-back, not the model itself."""
     source = str(uuid.uuid4())
     model_id = mlmr.add_model()
     mlmr.models[str(model_id)]["sourceTrainedMLModelRef"] = source
@@ -234,6 +238,7 @@ def test_a_retrain_of_a_derived_model_names_its_source_as_the_base(client, mlmr,
 
 
 def test_a_failed_phase_write_never_fails_training(client, mlmr, monkeypatch):
+    """If MLMR is unreachable for the phase write-back, the training request still succeeds: the lineage record is best effort."""
     def broken(self, path, json=None, **kw):
         raise RuntimeError("MLMR unreachable")
 
@@ -243,10 +248,7 @@ def test_a_failed_phase_write_never_fails_training(client, mlmr, monkeypatch):
 
 
 def test_request_training_ml_training_type_initial_then_retrain(client, mlmr, db_session_factory):
-    """TS28.105 AI/ML NRM's own real mLTrainingType (HISTORY.md §7) —
-    INITIAL_TRAINING the very first cycle (model still REGISTERED),
-    RE_TRAINING every subsequent one.
-    """
+    """The first training of a model is INITIAL_TRAINING and a later one, once the model is PROMOTED, is RE_TRAINING, as the status view reports (TS 28.105 `mLTrainingType`)."""
     model_id = mlmr.add_model()
     first_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
     assert client.get(f"/training-jobs/{first_id}/status").json()["mlTrainingType"] == "INITIAL_TRAINING"
@@ -258,9 +260,7 @@ def test_request_training_ml_training_type_initial_then_retrain(client, mlmr, db
 
 
 def test_request_training_stores_and_exposes_extended_fields(client, mlmr):
-    """HISTORY.md §5: TrainingJob was far thinner than the
-    reference's own TrainingJob (trainingmgr/models/trainingjob.py).
-    """
+    """The run id, dataset names and consumer / producer rApp ids sent with a training request are stored and returned by the status view."""
     model_id = mlmr.add_model()
     resp = client.post("/training-jobs", json={
         "modelId": str(model_id), "producerId": "rapp-1", "runId": "run-42",
@@ -278,11 +278,8 @@ def test_request_training_stores_and_exposes_extended_fields(client, mlmr):
 
 
 def test_request_training_rejects_unknown_dme_data_job_id(client, monkeypatch):
-    """HISTORY.md OI-6.4, closed: mirrors MDAF's own
-    `_validate_input_sources_are_real_dme_artifacts` test coverage exactly
-    (`mdaf/tests/test_main.py`'s `test_publish_report_rejects_unknown_dme_input_source`).
-    Uses a coordination-group-targeted request so no MLMR model lookup is
-    involved — this test is purely about the new DME cross-check.
+    """A `dmeDataJobIds` entry that DME does not know is refused with 422 `DME_ARTIFACT_NOT_FOUND`. The request targets a coordination group so no MLMR model lookup is involved; the test is only about
+    the DME check.
     """
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeResponse(404, {}))
     resp = client.post("/training-jobs", json={
@@ -294,6 +291,7 @@ def test_request_training_rejects_unknown_dme_data_job_id(client, monkeypatch):
 
 
 def test_request_training_accepts_known_dme_data_job_ids(client, monkeypatch):
+    """When DME answers 200 for each data job id, the request is accepted and DME was asked once for the id."""
     calls = []
 
     def fake_get(self, path, **kw):
@@ -312,10 +310,7 @@ def test_request_training_accepts_known_dme_data_job_ids(client, monkeypatch):
 
 
 def test_request_training_without_dme_data_job_ids_skips_the_check_entirely(client, monkeypatch):
-    """The check is additive, not a new hard requirement on every training
-    request — an empty/omitted list (every existing caller's own shape)
-    never touches DME at all.
-    """
+    """With no `dmeDataJobIds` the DME check is skipped: the field is an optional addition, so existing callers never touch DME."""
     called = []
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: called.append(path))
     _patch_nfo(monkeypatch)
@@ -325,6 +320,7 @@ def test_request_training_without_dme_data_job_ids_skips_the_check_entirely(clie
 
 
 def test_training_job_status_exposes_dme_data_job_ids(client, monkeypatch):
+    """The status view returns the DME data job ids the request declared."""
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeResponse(200, {}))
     _patch_nfo(monkeypatch)
     data_job_id = uuid.uuid4()
@@ -338,11 +334,7 @@ def test_training_job_status_exposes_dme_data_job_ids(client, monkeypatch):
 
 
 def test_complete_training_succeeds_records_outcome_artifact_and_advances_lifecycle(client, mlmr):
-    """HISTORY.md OI-6.5, closed: unlike Validation/Emulation,
-    Training's own completion previously had no dedicated route at all —
-    only the generic /models/{id}/advance(TRAINING_COMPLETE), which has
-    no way to record what the run produced.
-    """
+    """Completing a training run successfully marks it FINISHED, stores the metrics and the outcome artifact's DME type id, and moves the model to TRAINED."""
     model_id = mlmr.add_model()
     training_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
     assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.TRAINING
@@ -359,6 +351,7 @@ def test_complete_training_succeeds_records_outcome_artifact_and_advances_lifecy
 
 
 def test_complete_training_failure_routes_the_model_to_failed(client, mlmr):
+    """Completing a training run with `succeeded: false` marks it FAILED and moves the model to FAILED, the retry point."""
     model_id = mlmr.add_model()
     training_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
 
@@ -368,6 +361,7 @@ def test_complete_training_failure_routes_the_model_to_failed(client, mlmr):
 
 
 def test_complete_training_for_unknown_job_is_a_clean_404(client):
+    """Completing an unknown training job id is 404 `TRAINING_JOB_NOT_FOUND`, not a 500."""
     resp = client.post(f"/training-jobs/{uuid.uuid4()}/complete", json={"succeeded": True})
     assert resp.status_code == 404
     assert resp.json()["detail"]["title"] == "TRAINING_JOB_NOT_FOUND"
@@ -390,6 +384,7 @@ def test_complete_training_for_coordination_group_job_never_touches_a_model_life
 
 
 def test_complete_training_notifies_the_registered_destination(client, mlmr, monkeypatch):
+    """Completing a run with a `notificationUri` sends one notification to it, carrying the job kind, id, outcome and artifact id."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     model_id = mlmr.add_model()
@@ -410,6 +405,7 @@ def test_complete_training_notifies_the_registered_destination(client, mlmr, mon
 
 
 def test_complete_training_without_notification_uri_never_calls_out(client, mlmr, monkeypatch):
+    """A run with no `notificationUri` sends nothing on completion."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     model_id = mlmr.add_model()
@@ -421,6 +417,7 @@ def test_complete_training_without_notification_uri_never_calls_out(client, mlmr
 
 
 def test_complete_training_notification_delivery_survives_an_unreachable_destination(client, mlmr, monkeypatch):
+    """If the notification destination raises on delivery, the completion call still answers 200."""
     import httpx as httpx_module
 
     def raise_error(url, json=None, timeout=None):
@@ -437,6 +434,7 @@ def test_complete_training_notification_delivery_survives_an_unreachable_destina
 
 
 def test_complete_validation_records_outcome_artifact_and_notifies(client, mlmr, db_session_factory, monkeypatch):
+    """Completing a validation run stores the outcome artifact id and notifies the requester with job kind VALIDATION."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     model_id = mlmr.add_model()
@@ -455,6 +453,7 @@ def test_complete_validation_records_outcome_artifact_and_notifies(client, mlmr,
 
 
 def test_complete_emulation_records_outcome_artifact_and_notifies(client, mlmr, db_session_factory, monkeypatch):
+    """Completing an emulation run stores the outcome artifact id and notifies the requester with job kind EMULATION."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     model_id = mlmr.add_model()
@@ -473,6 +472,7 @@ def test_complete_emulation_records_outcome_artifact_and_notifies(client, mlmr, 
 
 
 def test_update_and_get_training_job_model_metrics(client, mlmr):
+    """Metrics written to a training job can be read back, and a second write replaces the first instead of merging."""
     model_id = mlmr.add_model()
     training_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
 
@@ -489,11 +489,13 @@ def test_update_and_get_training_job_model_metrics(client, mlmr):
 
 
 def test_get_model_metrics_for_unknown_training_job_is_404(client):
+    """Reading the metrics of an unknown training job is 404."""
     resp = client.get(f"/training-jobs/{uuid.uuid4()}/model-metrics")
     assert resp.status_code == 404
 
 
 def test_update_model_metrics_for_unknown_training_job_is_404(client):
+    """Writing metrics to an unknown training job is 404."""
     resp = client.post(f"/training-jobs/{uuid.uuid4()}/model-metrics", json={"accuracy": 0.9})
     assert resp.status_code == 404
 
@@ -501,6 +503,7 @@ def test_update_model_metrics_for_unknown_training_job_is_404(client):
 # ---------------------------------------------------------------- Wave 3: suspend/resume
 
 def test_suspend_and_resume_a_running_training_job(client, mlmr):
+    """Suspend moves an IN_PROGRESS run to SUSPENDED and resume moves it back, as both the route answers and the status view show."""
     model_id = mlmr.add_model()
     job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
 
@@ -516,11 +519,7 @@ def test_suspend_and_resume_a_running_training_job(client, mlmr):
 
 
 def test_suspend_does_not_touch_model_lifecycle_state(client, mlmr):
-    """Wave 2's two real FSMs operate one level up — a job-level suspend
-    is deliberately not a third state machine and must not reach into
-    ModelLifecycleState, the same way FINISHED/FAILED/CANCELLED
-    transitions on job.status already don't either.
-    """
+    """A job-level suspend is not a third state machine: the model stays TRAINING."""
     model_id = mlmr.add_model()
     job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
     client.post(f"/training-jobs/{job_id}/suspend")
@@ -528,6 +527,7 @@ def test_suspend_does_not_touch_model_lifecycle_state(client, mlmr):
 
 
 def test_suspend_rejects_a_non_running_job(client, mlmr):
+    """Suspending a run that is not IN_PROGRESS (here, cancelled) is 409 `TRAINING_JOB_ILLEGAL_TRANSITION`."""
     model_id = mlmr.add_model()
     job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
     client.delete(f"/training-jobs/{job_id}")  # cancel it first
@@ -538,6 +538,7 @@ def test_suspend_rejects_a_non_running_job(client, mlmr):
 
 
 def test_resume_rejects_a_non_suspended_job(client, mlmr):
+    """Resuming a run that is not SUSPENDED is 409 `TRAINING_JOB_ILLEGAL_TRANSITION`."""
     model_id = mlmr.add_model()
     job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
 
@@ -547,20 +548,19 @@ def test_resume_rejects_a_non_suspended_job(client, mlmr):
 
 
 def test_suspend_unknown_training_job_is_404(client):
+    """Suspending an unknown training job is 404."""
     resp = client.post(f"/training-jobs/{uuid.uuid4()}/suspend")
     assert resp.status_code == 404
 
 
 def test_resume_unknown_training_job_is_404(client):
+    """Resuming an unknown training job is 404."""
     resp = client.post(f"/training-jobs/{uuid.uuid4()}/resume")
     assert resp.status_code == 404
 
 
 def test_request_training_on_promoted_model_fires_create_training_not_a_shortcut(client, mlmr, db_session_factory):
-    """The actual Wave 1 fix, carried over: RequestTraining must not
-    always fire the same transition regardless of the model's state —
-    CREATE_TRAINING is only legal from REGISTERED/PROMOTED/FAILED/TRAINING.
-    """
+    """Training a PROMOTED model fires CREATE_TRAINING and re-enters the pipeline at TRAINING, instead of a fixed transition that is only legal from REGISTERED."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED)
     resp = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
@@ -569,11 +569,7 @@ def test_request_training_on_promoted_model_fires_create_training_not_a_shortcut
 
 
 def test_retraining_a_promoted_model_resets_the_operator_gate_flags(client, mlmr, db_session_factory):
-    """HISTORY.md OI-6.1: a stale approval from a prior pipeline
-    cycle must never silently carry forward into a new one — retraining
-    a PROMOTED model (which necessarily passed both gates once already)
-    resets training_approved/validation_approved back to False.
-    """
+    """Retraining resets `trainingApproved` and `validationApproved` to False, so an approval from an earlier cycle never carries into the new one (HISTORY.md OI-6.1)."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED,
                     training_approved=True, validation_approved=True)
@@ -608,6 +604,7 @@ def test_request_training_while_already_training_cancels_the_orphaned_job(client
     assert lifecycle["modelLifecycleState"] == ModelLifecycleState.TRAINING  # unchanged — no FSM transition needed, it was already TRAINING
 
 
+# Table: the states from which training cannot start (TRAINED, APPROVED, PENDING_APPROVAL, DEPRECATED, RETIRED); each must answer 409 naming the state.
 @pytest.mark.parametrize("state", [ModelLifecycleState.TRAINED, ModelLifecycleState.APPROVED, ModelLifecycleState.PENDING_APPROVAL,
                                    ModelLifecycleState.DEPRECATED, ModelLifecycleState.RETIRED])
 def test_request_training_rejected_mid_pipeline_or_end_of_life_names_the_state(client, mlmr, db_session_factory, state):
@@ -637,10 +634,9 @@ def test_a_rolled_back_certified_model_can_be_retrained(client, mlmr, db_session
 
 
 def _make_group_with_subscription(mlmr, db_session_factory, member_states, retrain_propagation="ANY_MEMBER_TRIGGERS"):
-    """Builds a coordination group with one member per ModelLifecycleState
-    in member_states, plus an MLMFSubscription (with a guard_kpi_floor, so
-    a low metric breaches) on the first member — the one whose report
-    triggers group evaluation.
+    """Builds a coordination group in the MLMR double with one member per state in `member_states` (lifecycle rows set directly) and returns the member ids.
+
+    The caller adds the MLMFSubscription (with a guard floor, so a low metric breaches) on the first member, whose report starts the group evaluation.
     """
     member_ids = [mlmr.add_model() for _ in member_states]
     for member_id, state in zip(member_ids, member_states):
@@ -650,11 +646,7 @@ def _make_group_with_subscription(mlmr, db_session_factory, member_states, retra
 
 
 def test_group_retrain_trigger_fires_create_training_on_promoted_members(client, mlmr, db_session_factory):
-    """The actual fix (HISTORY.md §1's MLModelCoordinationGroup
-    x SA SMOS convergence item): report_performance used to compute
-    groupRetrainTriggered and stop — nothing ever fired a retrain on a
-    member model.
-    """
+    """A breached report from one member of a group whose policy is ANY_MEMBER_TRIGGERS starts a retrain of every PROMOTED member: each enters TRAINING with a training job."""
     member_ids = _make_group_with_subscription(mlmr, db_session_factory, [ModelLifecycleState.PROMOTED, ModelLifecycleState.PROMOTED])
     with db_session_factory() as session:
         sub = MLMFSubscription(model_id=member_ids[0], metric_types=["accuracy"], dme_type_id=uuid.uuid4(), guard_kpi_floor={"accuracy": 0.9})
@@ -675,10 +667,7 @@ def test_group_retrain_trigger_fires_create_training_on_promoted_members(client,
 
 
 def test_group_retrain_trigger_skips_non_promoted_members(client, mlmr, db_session_factory):
-    """CREATE_TRAINING is only a legal transition from PROMOTED (or
-    REGISTERED/FAILED/TRAINING) — a member mid certification (never yet
-    PROMOTED) must be skipped, not forced.
-    """
+    """Only PROMOTED members are retrained; a CERTIFIED member of the same group is skipped and left untouched."""
     member_ids = _make_group_with_subscription(mlmr, db_session_factory, [ModelLifecycleState.PROMOTED, ModelLifecycleState.CERTIFIED])
     with db_session_factory() as session:
         sub = MLMFSubscription(model_id=member_ids[0], metric_types=["accuracy"], dme_type_id=uuid.uuid4(), guard_kpi_floor={"accuracy": 0.9})
@@ -696,6 +685,7 @@ def test_group_retrain_trigger_skips_non_promoted_members(client, mlmr, db_sessi
 
 
 def test_no_group_retrain_when_not_breached(client, mlmr, db_session_factory):
+    """A report above the floor is not a breach and the answer carries no `groupRetrainTriggered`."""
     member_ids = _make_group_with_subscription(mlmr, db_session_factory, [ModelLifecycleState.PROMOTED])
     with db_session_factory() as session:
         sub = MLMFSubscription(model_id=member_ids[0], metric_types=["accuracy"], dme_type_id=uuid.uuid4(), guard_kpi_floor={"accuracy": 0.9})
@@ -712,6 +702,7 @@ def test_no_group_retrain_when_not_breached(client, mlmr, db_session_factory):
 # ---------------------------------------------------------------- Validation / Emulation
 
 def test_request_validation_requires_trained_model(client, mlmr, db_session_factory):
+    """Requesting validation for a model that is not TRAINED is 409 `LIFECYCLE_ILLEGAL_TRANSITION` naming the state."""
     model_id = mlmr.add_model()
     resp = client.post("/validation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
     assert resp.status_code == 409
@@ -720,9 +711,7 @@ def test_request_validation_requires_trained_model(client, mlmr, db_session_fact
 
 
 def test_request_validation_requires_operator_approval_of_training(client, mlmr, db_session_factory):
-    """HISTORY.md OI-6.1: the state check alone isn't the gate —
-    an operator must also fire APPROVE_TRAINING first.
-    """
+    """A TRAINED model is not enough: validation is refused (409 `TRAINING_NOT_APPROVED`) until an operator fires APPROVE_TRAINING, which keeps the state TRAINED and sets `trainingApproved` (HISTORY.md OI-6.1)."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED)
 
@@ -740,6 +729,7 @@ def test_request_validation_requires_operator_approval_of_training(client, mlmr,
 
 
 def test_request_validation_advances_to_validating_then_complete_to_validated(client, mlmr, db_session_factory):
+    """Starting validation for an approved TRAINED model moves it to VALIDATING; completing the run successfully moves it to VALIDATED and the job to COMPLETED."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
 
@@ -755,6 +745,7 @@ def test_request_validation_advances_to_validating_then_complete_to_validated(cl
 
 
 def test_validation_failure_routes_the_model_to_failed(client, mlmr, db_session_factory):
+    """A validation run completed with `succeeded: false` is FAILED and so is the model."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
     job_id = client.post("/validation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["validationJobId"]
@@ -765,6 +756,7 @@ def test_validation_failure_routes_the_model_to_failed(client, mlmr, db_session_
 
 
 def test_list_validation_jobs_filters_by_model(client, mlmr, db_session_factory):
+    """The validation job list can be filtered by `model_id`, and `total` counts the filtered rows."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
     job_id = client.post("/validation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["validationJobId"]
@@ -775,7 +767,7 @@ def test_list_validation_jobs_filters_by_model(client, mlmr, db_session_factory)
 
 
 def test_request_emulation_requires_operator_approval_of_validation(client, mlmr, db_session_factory):
-    """HISTORY.md OI-6.1: same gate shape as request_validation's own."""
+    """A VALIDATED model is not enough: emulation is refused (409 `VALIDATION_NOT_APPROVED`) until an operator fires APPROVE_VALIDATION; then it starts (HISTORY.md OI-6.1)."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED)
 
@@ -792,6 +784,7 @@ def test_request_emulation_requires_operator_approval_of_validation(client, mlmr
 
 
 def test_request_emulation_requires_validated_model_and_completes_to_emulated(client, mlmr, db_session_factory):
+    """Emulation is refused for a TRAINED model; for an approved VALIDATED one it moves the model to EMULATING and, on success, to EMULATED."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
     rejected = client.post("/emulation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"})
@@ -807,6 +800,7 @@ def test_request_emulation_requires_validated_model_and_completes_to_emulated(cl
 
 
 def test_list_emulation_jobs_filters_by_model(client, mlmr, db_session_factory):
+    """The emulation job list can be filtered by `model_id`, and `total` counts the filtered rows."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED, validation_approved=True)
     job_id = client.post("/emulation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["emulationJobId"]
@@ -819,6 +813,7 @@ def test_list_emulation_jobs_filters_by_model(client, mlmr, db_session_factory):
 # ---------------------------------------------------------------- ModelLifecycle: advance + governance
 
 def test_advance_model_lifecycle_fires_the_requested_event(client, mlmr, db_session_factory):
+    """`advance` fires the requested governance event (APPROVE_TRAINING here) and the answer shows its effect on the approval flag."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED)
     resp = client.post(f"/models/{model_id}/advance", params={"event": "APPROVE_TRAINING", "decided_by": "op"})
@@ -826,6 +821,7 @@ def test_advance_model_lifecycle_fires_the_requested_event(client, mlmr, db_sess
     assert resp.json()["trainingApproved"] is True
 
 
+# Table: the nine job-driven ModelLifecycleEvents. Each must be refused by `advance` with 422 naming the job route, leaving the model and its history unchanged.
 @pytest.mark.parametrize("event", ["CREATE_TRAINING", "TRAINING_COMPLETE", "TRAINING_FAILED", "CREATE_VALIDATION",
                                    "VALIDATION_COMPLETE", "VALIDATION_FAILED", "CREATE_EMULATION", "EMULATION_COMPLETE",
                                    "EMULATION_FAILED"])
@@ -843,8 +839,7 @@ def test_advance_refuses_job_driven_events(client, mlmr, db_session_factory, eve
 
 
 def test_advance_cannot_skip_the_operator_approval_gate(client, mlmr, db_session_factory):
-    """The HISTORY.md OI-6.1 gate: CREATE_VALIDATION from an unapproved
-    TRAINED model used to succeed through advance."""
+    """CREATE_VALIDATION cannot be fired through `advance` to get past the approval gate (422), and POST /validation-jobs still answers `TRAINING_NOT_APPROVED`."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED)
     assert client.post(f"/models/{model_id}/advance", params={"event": "CREATE_VALIDATION"}).status_code == 422
@@ -853,6 +848,7 @@ def test_advance_cannot_skip_the_operator_approval_gate(client, mlmr, db_session
 
 
 def test_advance_unknown_event_is_a_clean_422_not_a_500(client, mlmr):
+    """An event name that does not exist is 422 `SCHEMA_VALIDATION_FAILED`, not an unhandled error."""
     model_id = mlmr.add_model()
     resp = client.post(f"/models/{model_id}/advance", params={"event": "NOT_AN_EVENT"})
     assert resp.status_code == 422
@@ -860,11 +856,13 @@ def test_advance_unknown_event_is_a_clean_422_not_a_500(client, mlmr):
 
 
 def test_advance_model_lifecycle_for_unknown_model_is_404(client, mlmr):
+    """`advance` for a model MLMR does not know is 404."""
     resp = client.post(f"/models/{uuid.uuid4()}/advance", params={"event": "CERTIFY"})
     assert resp.status_code == 404
 
 
 def test_advance_model_lifecycle_illegal_transition_is_a_clean_409(client, mlmr):
+    """A governance event with no edge from the model's state (CERTIFY on a REGISTERED model) is 409 `LIFECYCLE_ILLEGAL_TRANSITION`."""
     model_id = mlmr.add_model()
     resp = client.post(f"/models/{model_id}/advance", params={"event": "CERTIFY", "decided_by": "op"})
     assert resp.status_code == 409
@@ -872,6 +870,7 @@ def test_advance_model_lifecycle_illegal_transition_is_a_clean_409(client, mlmr)
 
 
 def test_governance_decision_requires_decided_by(client, mlmr, db_session_factory):
+    """A governance event sent without `decided_by` is 422 `GOVERNANCE_DECIDER_REQUIRED`: every decision needs a named decider."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.EMULATED)
     resp = client.post(f"/models/{model_id}/advance", params={"event": "SUBMIT_FOR_APPROVAL"})
@@ -880,6 +879,7 @@ def test_governance_decision_requires_decided_by(client, mlmr, db_session_factor
 
 
 def test_full_governance_pipeline_writes_a_certification_record_per_decision(client, mlmr, db_session_factory):
+    """Submit, approve, certify and promote each move the model on and each write one CertificationRecord, in order, with the decider."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.EMULATED)
 
@@ -899,6 +899,7 @@ def test_full_governance_pipeline_writes_a_certification_record_per_decision(cli
 
 
 def test_rollback_demotes_a_promoted_model_and_is_itself_recorded(client, mlmr, db_session_factory):
+    """ROLLBACK moves a PROMOTED model to CERTIFIED and is itself recorded with its decider and rationale."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED)
 
@@ -915,6 +916,7 @@ def test_rollback_demotes_a_promoted_model_and_is_itself_recorded(client, mlmr, 
 
 
 def test_deprecate_and_retire_do_not_require_decided_by(client, mlmr, db_session_factory):
+    """DEPRECATE and RETIRE are accepted without a decider (they are not governance decisions)."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
 
@@ -923,6 +925,7 @@ def test_deprecate_and_retire_do_not_require_decided_by(client, mlmr, db_session
 
 
 def test_lifecycle_history_records_every_transition(client, mlmr, db_session_factory):
+    """The lifecycle history lists each transition of a training run, oldest first, with FSM, from and to states and the event."""
     model_id = mlmr.add_model()
     job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
     client.post(f"/training-jobs/{job_id}/complete", json={"succeeded": True})
@@ -960,6 +963,7 @@ def test_lifecycle_endpoint_lazily_creates_a_registered_row(client, mlmr):
 # ---------------------------------------------------------------- RuntimeLifecycle (jointly with NFO)
 
 def test_deploy_runtime_requires_certified_or_promoted(client, mlmr):
+    """Deploying a model's runtime before it is CERTIFIED or PROMOTED is 409 `MODEL_NOT_CERTIFIED` and NFO is never called."""
     model_id = mlmr.add_model()
     resp = client.post(f"/models/{model_id}/runtime/deploy")
     assert resp.status_code == 409
@@ -968,6 +972,7 @@ def test_deploy_runtime_requires_certified_or_promoted(client, mlmr):
 
 
 def test_deploy_runtime_calls_nfo_and_records_its_ids(client, mlmr, db_session_factory):
+    """Deploy creates one NFO descriptor (with no package) and one deployment, stores both ids and leaves the runtime DEPLOYED."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
 
@@ -985,6 +990,7 @@ def test_deploy_runtime_calls_nfo_and_records_its_ids(client, mlmr, db_session_f
 
 
 def test_deploy_runtime_twice_is_rejected_before_touching_nfo_again(client, mlmr, db_session_factory):
+    """A second deploy is 409 and NFO sees no second descriptor: the lifecycle guard fires before any NFO call."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
     client.post(f"/models/{model_id}/runtime/deploy")
@@ -995,6 +1001,7 @@ def test_deploy_runtime_twice_is_rejected_before_touching_nfo_again(client, mlmr
 
 
 def test_activate_scale_and_terminate_runtime_pipeline(client, mlmr, db_session_factory):
+    """A deployed runtime can be activated, scaled (one NFO scale call, back to ACTIVE) and terminated (NFO deployment deleted, TERMINATED)."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
     client.post(f"/models/{model_id}/runtime/deploy")
@@ -1026,6 +1033,7 @@ def test_update_node_groups_is_independent_of_deploy(client, mlmr):
 # ---------------------------------------------------------------- Inference
 
 def test_request_inference_requires_active_runtime(client, mlmr, db_session_factory):
+    """Inference is refused (409) while the model's runtime is not ACTIVE."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
     resp = client.post(f"/models/{model_id}/inference-jobs")
@@ -1033,6 +1041,7 @@ def test_request_inference_requires_active_runtime(client, mlmr, db_session_fact
 
 
 def test_request_inference_on_active_runtime_creates_a_running_job(client, mlmr, db_session_factory):
+    """With an ACTIVE runtime an inference request answers 201 and the job is RUNNING."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, runtime_lifecycle_state=RuntimeLifecycleState.ACTIVE)
     resp = client.post(f"/models/{model_id}/inference-jobs")
@@ -1044,6 +1053,7 @@ def test_request_inference_on_active_runtime_creates_a_running_job(client, mlmr,
 # ---------------------------------------------------------------- HISTORY.md OI-6.2: NFO-backed execution runtimes
 
 def test_request_training_creates_a_real_nfo_execution_runtime(client, mlmr):
+    """A training request creates an NFO deployment for the run and the status view shows its id."""
     model_id = mlmr.add_model()
     training_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
 
@@ -1053,6 +1063,7 @@ def test_request_training_creates_a_real_nfo_execution_runtime(client, mlmr):
 
 
 def test_complete_training_tears_down_the_execution_runtime(client, mlmr):
+    """Completing a training run deletes its NFO deployment and clears the id on the job."""
     model_id = mlmr.add_model()
     training_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
     deployment_id = client.get(f"/training-jobs/{training_job_id}/status").json()["nfDeploymentId"]
@@ -1064,11 +1075,7 @@ def test_complete_training_tears_down_the_execution_runtime(client, mlmr):
 
 
 def test_request_training_while_already_training_terminates_the_orphaned_jobs_runtime(client, mlmr):
-    """HISTORY.md OI-6.2: a superseded orphaned job (already
-    covered by request_training's own CANCELLED handling) doesn't just
-    stop being tracked — its own real execution runtime is abandoned
-    right alongside it, not left running indefinitely.
-    """
+    """A second training request for a model that is already TRAINING supersedes the first run: its NFO runtime is deleted along with it, and the first job's deployment id is cleared."""
     model_id = mlmr.add_model()
     first_job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
     first_deployment_id = client.get(f"/training-jobs/{first_job_id}/status").json()["nfDeploymentId"]
@@ -1096,6 +1103,7 @@ def test_coordination_group_training_job_also_gets_a_real_execution_runtime(clie
 
 
 def test_request_validation_creates_and_complete_tears_down_a_real_execution_runtime(client, mlmr, db_session_factory):
+    """A validation run has its own NFO deployment from the start and loses it when the run completes."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
     job_id = client.post("/validation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["validationJobId"]
@@ -1110,6 +1118,7 @@ def test_request_validation_creates_and_complete_tears_down_a_real_execution_run
 
 
 def test_request_emulation_creates_and_complete_tears_down_a_real_execution_runtime(client, mlmr, db_session_factory):
+    """An emulation run has its own NFO deployment from the start and loses it when the run completes."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED, validation_approved=True)
     job_id = client.post("/emulation-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["emulationJobId"]
@@ -1124,12 +1133,7 @@ def test_request_emulation_creates_and_complete_tears_down_a_real_execution_runt
 
 
 def test_request_inference_references_the_models_already_live_serving_deployment(client, mlmr, db_session_factory):
-    """HISTORY.md OI-6.2: MLIF doesn't create a new NFO deployment
-    per inference call — it references the model's own already-live
-    serving deployment (ModelLifecycle.nf_deployment_id, real since
-    deploy_model_runtime's own NFO call), closing the gap without
-    duplicating that runtime.
-    """
+    """An inference job copies the model's live serving deployment id and creates no NFO deployment of its own."""
     model_id = mlmr.add_model()
     serving_deployment_id = uuid.uuid4()
     _set_lifecycle(db_session_factory, model_id, runtime_lifecycle_state=RuntimeLifecycleState.ACTIVE)
@@ -1149,14 +1153,14 @@ def test_request_inference_references_the_models_already_live_serving_deployment
 
 
 def test_health_check_answers_the_gui_bff_liveness_probe(client):
-    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    """`GET /health` answers `{"status": "healthy"}`, which the GUI BFF's module-status probe relies on."""
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "healthy"}
 
 
 def test_list_training_jobs_filters_by_model_and_status(client, mlmr):
-    """GUI pass: only a per-id status read existed for training jobs."""
+    """The training job list can be filtered by `model_id` and by `status` (a cancelled job is found by CANCELLED)."""
     model_a = mlmr.add_model()
     model_b = mlmr.add_model()
     job_a = client.post("/training-jobs", json={"modelId": str(model_a), "producerId": "rapp-1"}).json()["trainingJobId"]
@@ -1172,6 +1176,7 @@ def test_list_training_jobs_filters_by_model_and_status(client, mlmr):
 
 
 def test_list_inference_jobs_filters_by_model(client, mlmr, db_session_factory):
+    """The inference job list can be filtered by `model_id` and `status`, and shows the job with no serving deployment id when the runtime has none."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, runtime_lifecycle_state=RuntimeLifecycleState.ACTIVE)
     job_id = client.post(f"/models/{model_id}/inference-jobs").json()["inferenceJobId"]
@@ -1183,7 +1188,7 @@ def test_list_inference_jobs_filters_by_model(client, mlmr, db_session_factory):
 
 
 def test_list_mlmf_subscriptions_and_their_reports_newest_first(client, mlmr):
-    """GUI pass: MLMF subscriptions/reports were write-only."""
+    """Subscriptions can be listed by model, their reports newest first, all reports across subscriptions, and only the breached ones with `breached_only`."""
     model_id = mlmr.add_model()
     sub_id = client.post("/mlmf/subscriptions", params={"model_id": str(model_id), "dme_type_id": str(uuid.uuid4())},
                           json={"metric_types": ["accuracy"], "guard_kpi_floor": {"accuracy": 0.9}}).json()["subscriptionId"]
@@ -1202,14 +1207,12 @@ def test_list_mlmf_subscriptions_and_their_reports_newest_first(client, mlmr):
 
 
 def test_list_mlmf_reports_404_on_an_unknown_subscription(client):
+    """Listing the reports of an unknown subscription is 404."""
     assert client.get(f"/mlmf/subscriptions/{uuid.uuid4()}/reports").status_code == 404
 
 
 def test_subscribe_performance_monitoring_round_trips_notification_destination(client, mlmr):
-    """HISTORY.md §7's `MLMFSubscription` finding, closed: every other
-    subscription-shaped resource in this build notifies a real
-    notification_destination — this one previously had no such field.
-    """
+    """A subscription's `notification_destination` is stored and listed back."""
     model_id = mlmr.add_model()
     sub_id = client.post("/mlmf/subscriptions", params={
         "model_id": str(model_id), "dme_type_id": str(uuid.uuid4()), "notification_destination": "http://consumer/mlmf-events",
@@ -1231,6 +1234,7 @@ def test_subscribe_performance_monitoring_without_notification_destination_is_st
 
 
 def test_report_performance_notifies_the_subscribers_own_destination(client, mlmr, monkeypatch):
+    """A report is pushed once to the subscription's destination, with the model id, metrics and breach flag."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
@@ -1251,6 +1255,7 @@ def test_report_performance_notifies_the_subscribers_own_destination(client, mlm
 
 
 def test_report_performance_skips_notification_when_no_destination_registered(client, mlmr, monkeypatch):
+    """A subscription without a destination sends no push when a report arrives."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
@@ -1264,6 +1269,7 @@ def test_report_performance_skips_notification_when_no_destination_registered(cl
 
 
 def test_report_performance_succeeds_even_if_the_subscriber_is_unreachable(client, mlmr, monkeypatch):
+    """An unreachable subscriber never fails the report call that triggered the push."""
     import httpx as httpx_module
 
     def raise_error(url, json=None, timeout=None):
@@ -1281,9 +1287,7 @@ def test_report_performance_succeeds_even_if_the_subscriber_is_unreachable(clien
 
 
 def test_unsubscribe_performance_monitoring(client, mlmr):
-    """HISTORY.md §7's `MLMFSubscription` finding, closed: previously
-    this subscription could only be created and read, never torn down.
-    """
+    """Deleting a subscription answers 204 and removes it from the list."""
     model_id = mlmr.add_model()
     sub_id = client.post("/mlmf/subscriptions", params={"model_id": str(model_id), "dme_type_id": str(uuid.uuid4())},
                           json={"metric_types": ["accuracy"], "guard_kpi_floor": None}).json()["subscriptionId"]
@@ -1296,21 +1300,20 @@ def test_unsubscribe_performance_monitoring(client, mlmr):
 
 
 def test_unsubscribe_unknown_performance_monitoring_is_idempotent(client):
+    """Deleting a subscription that does not exist is 204."""
     resp = client.delete(f"/mlmf/subscriptions/{uuid.uuid4()}")
     assert resp.status_code == 204
 
 
 def test_report_performance_against_unknown_subscription_is_a_clean_404(client):
-    """`docs/call-flows/13-mlmf-subscription-lifecycle.md`'s own gap,
-    closed: this used to raise an unhandled AttributeError (a bare 500)
-    reading `sub.guard_kpi_floor` with no null-check.
-    """
+    """A report for a subscription that never existed is 404 `MLMF_SUBSCRIPTION_NOT_FOUND`, not a 500."""
     resp = client.post(f"/mlmf/subscriptions/{uuid.uuid4()}/reports", json={"accuracy": 0.5})
     assert resp.status_code == 404
     assert resp.json()["detail"]["title"] == "MLMF_SUBSCRIPTION_NOT_FOUND"
 
 
 def test_report_performance_after_unsubscribe_is_a_clean_404(client, mlmr):
+    """A report for a subscription that was deleted is 404 `MLMF_SUBSCRIPTION_NOT_FOUND`."""
     model_id = mlmr.add_model()
     sub_id = client.post("/mlmf/subscriptions", params={"model_id": str(model_id), "dme_type_id": str(uuid.uuid4())},
                           json={"metric_types": ["accuracy"], "guard_kpi_floor": None}).json()["subscriptionId"]
@@ -1322,6 +1325,7 @@ def test_report_performance_after_unsubscribe_is_a_clean_404(client, mlmr):
 
 
 def _feature_group_body(feature_group_name="cellCounters", **extra):
+    """Returns a valid POST /feature-groups body (name `cellCounters` unless overridden); `extra` keyword arguments override or add fields."""
     return {
         "featureGroupName": feature_group_name, "featureList": "throughput,latency", "datalakeSource": "influxdb",
         "host": "influxdb.smo", "port": "8086", "bucket": "ran-metrics", "token": "secret-token",
@@ -1330,10 +1334,7 @@ def _feature_group_body(feature_group_name="cellCounters", **extra):
 
 
 def test_create_feature_group_returns_its_fields(client):
-    """HISTORY.md §5: no feature-group/feature-store concept
-    existed at all — the reference's own FeatureGroup
-    (aiml-fw-awmf-tm's featuregroup.py/featuregroup_controller.py).
-    """
+    """Creating a feature group answers 201 with its name, feature list, `enableDme` false and an id."""
     resp = client.post("/feature-groups", json=_feature_group_body())
     assert resp.status_code == 201
     body = resp.json()
@@ -1344,7 +1345,7 @@ def test_create_feature_group_returns_its_fields(client):
 
 
 def test_create_feature_group_rejects_a_duplicate_name(client):
-    """CreateFeatureGroup's own DBException("already exist") path, 409."""
+    """A second group with the same name is 409 `FEATURE_GROUP_ALREADY_REGISTERED`."""
     first = client.post("/feature-groups", json=_feature_group_body())
     assert first.status_code == 201
 
@@ -1368,6 +1369,7 @@ def test_create_feature_group_rejects_a_name_with_non_word_characters(client):
 
 
 def test_list_feature_groups_returns_registered_groups(client):
+    """The list returns every registered group."""
     client.post("/feature-groups", json=_feature_group_body(feature_group_name="cellCounters"))
     client.post("/feature-groups", json=_feature_group_body(feature_group_name="handoverCounters"))
 
@@ -1378,6 +1380,7 @@ def test_list_feature_groups_returns_registered_groups(client):
 
 
 def test_list_feature_groups_returns_empty_list_when_none_registered(client):
+    """With no groups the list is the empty envelope `{items: [], total: 0, limit: 100, offset: 0}`."""
     resp = client.get("/feature-groups")
     assert resp.json() == {"items": [], "total": 0, "limit": 100, "offset": 0}
 
@@ -1397,6 +1400,7 @@ def test_create_feature_group_with_enable_dme_needs_a_dme_type(client):
 # ---------------------------------------------------------------- OI-2-training-lifecycle-edges: cancel
 
 def test_cancel_training_releases_the_model_and_tears_down_its_runtime(client, mlmr, db_session_factory):
+    """Cancelling a run marks it CANCELLED, deletes its NFO runtime and fails the model's TRAINING stage (TRAINING_FAILED) so it is not stuck; FAILED is the retry point, and a new request is accepted."""
     model_id = mlmr.add_model()
     job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
     assert len(mlmr.nfo.deployments) == 1
@@ -1413,6 +1417,7 @@ def test_cancel_training_releases_the_model_and_tears_down_its_runtime(client, m
 
 
 def test_cancel_a_suspended_training_job_also_releases_the_model(client, mlmr):
+    """A SUSPENDED run can be cancelled too, and it also releases the model."""
     model_id = mlmr.add_model()
     job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
     client.post(f"/training-jobs/{job_id}/suspend")
@@ -1420,8 +1425,11 @@ def test_cancel_a_suspended_training_job_also_releases_the_model(client, mlmr):
     assert client.get(f"/models/{model_id}/lifecycle").json()["modelLifecycleState"] == ModelLifecycleState.FAILED
 
 
+# Table: `succeeded` True and False, the job statuses FINISHED and FAILED. A run that has already ended must refuse the cancel (409) and keep its status and the
+# model's state.
 @pytest.mark.parametrize("succeeded,status", [(True, "FINISHED"), (False, "FAILED")])
 def test_cancel_refuses_a_finished_job_and_leaves_it_untouched(client, mlmr, succeeded, status):
+    """Cancelling a FINISHED or FAILED run is 409 `TRAINING_JOB_ILLEGAL_TRANSITION`; the job and the model's state are not rewritten."""
     model_id = mlmr.add_model()
     job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
     client.post(f"/training-jobs/{job_id}/complete", json={"succeeded": succeeded})
@@ -1435,6 +1443,7 @@ def test_cancel_refuses_a_finished_job_and_leaves_it_untouched(client, mlmr, suc
 
 
 def test_cancel_is_idempotent_for_unknown_or_already_cancelled_jobs(client, mlmr):
+    """Cancelling an unknown job or an already CANCELLED one is 204, and the lifecycle event fires only once."""
     assert client.delete(f"/training-jobs/{uuid.uuid4()}").status_code == 204
     model_id = mlmr.add_model()
     job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "rapp-1"}).json()["trainingJobId"]
@@ -1458,6 +1467,7 @@ def test_cancelling_a_superseded_job_never_fails_the_newer_run(client, mlmr, db_
 # ---------------------------------------------------------------- OI-2-model-eol-serving
 
 def _serving_model(client, mlmr, db_session_factory, state=ModelLifecycleState.PROMOTED):
+    """Registers a model, deploys and activates its runtime through the routes, and then sets the lifecycle state to `state` (default PROMOTED); returns the model id."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
     client.post(f"/models/{model_id}/runtime/deploy")
@@ -1467,6 +1477,7 @@ def _serving_model(client, mlmr, db_session_factory, state=ModelLifecycleState.P
 
 
 def test_deprecated_model_keeps_serving_but_its_runtime_cannot_be_activated_or_scaled(client, mlmr, db_session_factory):
+    """Deprecating a model leaves its ACTIVE runtime serving inference, but scaling is refused (409 naming DEPRECATED, NFO untouched) and so is a new deploy."""
     model_id = _serving_model(client, mlmr, db_session_factory)
     assert client.post(f"/models/{model_id}/advance", params={"event": "DEPRECATE"}).status_code == 200
     # still serving existing consumers
@@ -1484,6 +1495,7 @@ def test_deprecated_model_keeps_serving_but_its_runtime_cannot_be_activated_or_s
 
 
 def test_deprecated_model_runtime_cannot_be_activated(client, mlmr, db_session_factory):
+    """A DEPRECATED model's DEPLOYED runtime cannot be activated (409) and stays DEPLOYED."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
     client.post(f"/models/{model_id}/runtime/deploy")
@@ -1495,6 +1507,7 @@ def test_deprecated_model_runtime_cannot_be_activated(client, mlmr, db_session_f
 
 
 def test_retire_terminates_the_runtime_through_nfo_and_records_it(client, mlmr, db_session_factory):
+    """RETIRE terminates the model's runtime through NFO, records REQUEST_TERMINATION and TERMINATION_COMPLETE, and afterwards inference, activate and scale are all refused."""
     model_id = _serving_model(client, mlmr, db_session_factory)
     deployment_id = client.get(f"/models/{model_id}/lifecycle").json()["nfDeploymentId"]
     client.post(f"/models/{model_id}/advance", params={"event": "DEPRECATE"})
@@ -1515,6 +1528,7 @@ def test_retire_terminates_the_runtime_through_nfo_and_records_it(client, mlmr, 
 
 
 def test_retire_without_a_runtime_touches_no_runtime(client, mlmr, db_session_factory):
+    """RETIRE of a model that never had a runtime retires the model and leaves the runtime NOT_DEPLOYED."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.FAILED)
     retired = client.post(f"/models/{model_id}/advance", params={"event": "RETIRE"}).json()
@@ -1522,8 +1536,7 @@ def test_retire_without_a_runtime_touches_no_runtime(client, mlmr, db_session_fa
 
 
 def test_retire_of_a_failed_model_still_serving_from_before_its_retrain_terminates_it(client, mlmr, db_session_factory):
-    """PROMOTED -> retrain -> TRAINING_FAILED keeps the old runtime (the two
-    FSMs are decoupled); RETIRE from FAILED must still tear it down."""
+    """RETIRE from FAILED terminates a runtime left over from before the failed retrain (the two FSMs are independent), so no serving capacity is orphaned."""
     model_id = _serving_model(client, mlmr, db_session_factory, state=ModelLifecycleState.FAILED)
     retired = client.post(f"/models/{model_id}/advance", params={"event": "RETIRE"}).json()
     assert retired["runtimeLifecycleState"] == RuntimeLifecycleState.TERMINATED
@@ -1531,6 +1544,7 @@ def test_retire_of_a_failed_model_still_serving_from_before_its_retrain_terminat
 
 
 def test_retired_model_with_a_stale_active_runtime_refuses_inference(client, mlmr, db_session_factory):
+    """A RETIRED model refuses inference even if its runtime row still says ACTIVE."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.RETIRED,
                    runtime_lifecycle_state=RuntimeLifecycleState.ACTIVE)
@@ -1571,6 +1585,7 @@ def test_a_job_start_with_an_idempotency_key_creates_one_job(client, mlmr, db_se
 
 
 def test_a_started_validation_job_is_replayed_by_key(client, mlmr, db_session_factory):
+    """A repeat of POST /validation-jobs with the same `Idempotency-Key` returns the first answer and starts no second job."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
     body = {"modelId": str(model_id), "producerId": "rapp-1"}
@@ -1584,6 +1599,7 @@ def test_a_started_validation_job_is_replayed_by_key(client, mlmr, db_session_fa
 # ---------------------------------------------------------------- notifications through the outbox (PR-MSG-1.7)
 
 def _outbox_rows(db_session_factory):
+    """Returns every outbox row in the test database, oldest first."""
     with db_session_factory() as db:
         return db.query(NotificationOutbox).order_by(NotificationOutbox.created_at).all()
 
@@ -1614,6 +1630,7 @@ def test_a_job_completion_notification_survives_a_crash_between_commit_and_send(
 
 
 def test_a_performance_report_is_committed_with_its_subscriber_push(client, mlmr, db_session_factory, monkeypatch):
+    """With the inline send off, a report call leaves one PENDING outbox row for the subscriber, committed with the report."""
     monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
     model_id = mlmr.add_model()
     sub_id = client.post("/mlmf/subscriptions", params={
@@ -1628,6 +1645,7 @@ def test_a_performance_report_is_committed_with_its_subscriber_push(client, mlmr
 
 
 def test_nothing_is_announced_when_the_completion_does_not_commit(client, mlmr, db_session_factory, monkeypatch):
+    """If the commit of a completion fails, no notification is sent, no outbox row exists and the job is not FINISHED: the announcement and the change stand or fall together."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     model_id = mlmr.add_model()

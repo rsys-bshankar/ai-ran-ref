@@ -1,12 +1,9 @@
-"""sdk.platform — a thin client over SME (`sme/`)'s own generic,
-domain-independent surface: provider enrolment, service publish/
-discovery, and CAPIF event subscriptions.
+"""sdk.platform: a thin client over SME (`sme/`)'s generic, domain-independent surface (provider enrolment, service publish and discovery, CAPIF event subscriptions) and over the DME
+O1-action route with its approval read-back.
 
-Deliberately narrow: SME's own OAuth2 token/introspection and Trusted
-Invokers routes are R1Client's own concern (invoker onboarding and token
-acquisition already happen transparently on every cross-module call —
-see shared/smo_shared/r1_client.py's own module docstring), not
-something an rApp author using this SDK ever needs to touch directly.
+Deliberately narrow: SME's OAuth2 token and introspection routes and its Trusted Invokers routes are `R1Client`'s concern (invoker onboarding and token acquisition happen transparently on every
+call; see `shared/smo_shared/r1_client.py`), not something an rApp author touches. Part of the SDK (`sdk/README.md`); one method per route, no validation of its own. Every change the methods
+make has to be one the gateway lets an rApp make (`smo_shared/roles.py`, `RAPP_MAY_CHANGE`), which `tests/conftest.py` asserts on each recorded call.
 """
 
 import uuid
@@ -15,6 +12,7 @@ from ._common import BaseClient, ensure_ok
 
 
 class PlatformClient(BaseClient):
+    """The `sdk.platform` namespace: provider registration, service publish and discovery and event subscriptions at SME, and `execute_action` / `get_approval` for O1 actions."""
     def register_provider(self, apf_id: str, provider_domain_info: str | None = None) -> dict:
         return ensure_ok(self._r1.post("/sme/provider-registrations", json={
             "apfId": apf_id, "providerDomainInfo": provider_domain_info,
@@ -28,6 +26,11 @@ class PlatformClient(BaseClient):
                          selection_criteria: dict | None = None, module_scope: str = "", allowed_consumers: list[str] | None = None,
                          aef_profiles: list[dict] | None = None, api_supp_feats: str | None = None,
                          shareable_info: dict | None = None) -> dict:
+        """Publish a service API under the provider `apf_id` at SME (`POST /sme/published-apis/v1/{apf_id}/service-apis`).
+
+        Returns the stored service record. The optional lists and dicts default to empty (never None) in the body, while `api_supp_feats` and `shareable_info` are sent as null when unset.
+        Raises `SdkError` with the route's status (for example a name conflict is a final 409, not retried).
+        """
         return ensure_ok(self._r1.post(f"/sme/published-apis/v1/{apf_id}/service-apis", json={
             "serviceName": service_name, "producerId": producer_id, "endpoint": endpoint, "version": version,
             "fullApiVersions": full_api_versions or [], "serviceCapabilities": service_capabilities or {},
@@ -45,6 +48,7 @@ class PlatformClient(BaseClient):
     def discover_services(self, api_invoker_id: str | None = None, api_name: str | None = None,
                            api_version: str | None = None, aef_id: str | None = None, protocol: str | None = None,
                            data_format: str | None = None, comm_type: str | None = None) -> list[dict]:
+        """Discover published service APIs (`GET /sme/service-apis/v1/allServiceAPIs`); each filter that is set narrows the result and an unset one is left out of the query by `httpx`."""
         return ensure_ok(self._r1.get("/sme/service-apis/v1/allServiceAPIs", params={
             "api_invoker_id": api_invoker_id, "api_name": api_name, "api_version": api_version, "aef_id": aef_id,
             "protocol": protocol, "data_format": data_format, "comm_type": comm_type,
@@ -69,15 +73,12 @@ class PlatformClient(BaseClient):
     def execute_action(self, requested_by: str, changes: list[dict], action_id: uuid.UUID | str | None = None,
                        source_context: dict | None = None, scope: str = "single-ME", msac_role: str | None = None,
                        decision: dict | None = None) -> dict:
-        """W10-03 (decision D-4): an O1 configuration action, mediated by DME
-        (`POST /dme/actions` → RAN NF OAM → NETCONF). `action_id` is an
-        idempotency key: re-sending it is IGNORED, never applied twice.
+        """Submit an O1 configuration action, mediated by DME (`POST /dme/actions`, then RAN NF OAM and NETCONF).
 
-        `decision` (PR-AI-13) is why the rApp acts, kept by RAN NF OAM as the decision record of the job:
-        `{"inputsRef": ..., "modelVersion": ..., "rationale": ...}`, each optional (a reference to the inputs, never the data).
-
-        When the operator holds this rApp's writes for approval (PR-AI-11) the answer has `status` `PENDING_APPROVAL`, no `forwardedJobId`, and an
-        `approvalId`: follow it with `get_approval`."""
+        `action_id` is an idempotency key: DME ignores a re-sent id and never applies the action twice. `decision` (PR-AI-13) is why the rApp acts, kept by RAN NF OAM as the decision record of
+        the job: `{"inputsRef": ..., "modelVersion": ..., "rationale": ...}`, each optional (a reference to the inputs, never the data). When the operator holds this rApp's writes for approval
+        (PR-AI-11) the answer has `status` `PENDING_APPROVAL`, no `forwardedJobId` and an `approvalId`; follow it with `get_approval`. Design record: `HISTORY.md` W10-03 (decision D-4).
+        """
         payload = {"requestedBy": requested_by, "changes": changes, "scope": scope, "msacRole": msac_role,
                    "sourceContext": source_context, "actionId": str(action_id) if action_id else None}
         if decision is not None:
@@ -85,5 +86,5 @@ class PlatformClient(BaseClient):
         return ensure_ok(self._r1.post("/dme/actions", json=payload))
 
     def get_approval(self, approval_id: uuid.UUID | str) -> dict:
-        """PR-AI-11: the state of an action held for a human: `status` PENDING, APPROVED (then `jobId` is the config job), REJECTED, EXPIRED or REFUSED."""
+        """PR-AI-11: the state of an action held for a human: `status` is PENDING, APPROVED (then `jobId` is the config job), REJECTED, EXPIRED or REFUSED."""
         return ensure_ok(self._r1.get(f"/ran-nf-oam/rapp-approvals/{approval_id}"))

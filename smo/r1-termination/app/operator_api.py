@@ -43,6 +43,7 @@ class Unresolvable(RuntimeError):
 
 
 def ttl() -> float:
+    """How long a looked-up operator API base is reused, in seconds: `R1_OPERATOR_API_CACHE_SECONDS`, default 5, read on every call; 0 (or a negative value) means every call asks rApp Management. A value that is not a number gives the default."""
     try:
         return max(0.0, float(os.environ.get("R1_OPERATOR_API_CACHE_SECONDS", "5")))
     except ValueError:
@@ -50,6 +51,7 @@ def ttl() -> float:
 
 
 def clear_cache() -> None:
+    """Forgets every cached lookup. Used by tests; the gateway itself relies on the TTL and on the size cap in `resolve`."""
     with _lock:
         _cache.clear()
 
@@ -87,6 +89,7 @@ async def resolve(instance_id: str, rapp_mgmt_url: str, now=time.monotonic) -> s
             base = normalise_base_url(resp.json().get("operatorApiBase"))
         else:
             raise Unresolvable(f"rApp Management answered {resp.status_code}")
+    # Any failure to get a usable answer falls back to a cached one up to STALE_SECONDS old (ValueError: the body was not JSON; AttributeError: it was not an object).
     except (httpx.HTTPError, ValueError, AttributeError) as exc:
         if cached is not None and moment - cached[0] < STALE_SECONDS:
             return cached[1]
@@ -97,6 +100,6 @@ async def resolve(instance_id: str, rapp_mgmt_url: str, now=time.monotonic) -> s
         raise
     with _lock:
         if len(_cache) >= MAX_CACHED:
-            _cache.clear()
+            _cache.clear()                   # a crude bound: instance ids are caller-chosen, so the table must not grow without limit; a clear costs one extra lookup each
         _cache[instance_id] = (moment, base)
     return base

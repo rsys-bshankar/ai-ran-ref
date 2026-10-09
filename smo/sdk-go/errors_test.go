@@ -1,3 +1,7 @@
+// errors_test.go covers newError and the status helpers of errors.go: the body shapes the platform answers with, the
+// 4 KiB cut of the kept body, and the errors.As lookup through wrapping. Pure functions, no server. Run:
+// cd smo/sdk-go && go test -race ./... .
+
 package smosdk
 
 import (
@@ -7,6 +11,8 @@ import (
 	"testing"
 )
 
+// TestErrorMapping is a table of response bodies (ProblemDetails, plain and list details, OAuth errors, the gateway's flat
+// problem, non-JSON, empty) and the status, title and detail each must map to; it also checks the shape of Error().
 func TestErrorMapping(t *testing.T) {
 	for _, tc := range []struct {
 		name, body    string
@@ -35,6 +41,8 @@ func TestErrorMapping(t *testing.T) {
 	}
 }
 
+// TestErrorKeepsOnlyTheStartOfALargeBody
+// pins the 4 KiB bound on the body an *Error keeps.
 func TestErrorKeepsOnlyTheStartOfALargeBody(t *testing.T) {
 	e := newError("GET", "/x", 500, []byte(strings.Repeat("a", 10000)))
 	if len(e.Body) != maxBodyInError {
@@ -42,6 +50,8 @@ func TestErrorKeepsOnlyTheStartOfALargeBody(t *testing.T) {
 	}
 }
 
+// TestStatusHelpersLookThroughWrapping
+// pins that StatusOf and the Is* helpers find an *Error inside a wrapped error, and that other errors have status 0.
 func TestStatusHelpersLookThroughWrapping(t *testing.T) {
 	wrapped := fmt.Errorf("outer: %w", newError("POST", "/x", 404, nil))
 	if !IsNotFound(wrapped) || IsConflict(wrapped) || IsForbidden(wrapped) || StatusOf(wrapped) != 404 {

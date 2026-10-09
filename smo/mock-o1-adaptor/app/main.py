@@ -1,21 +1,20 @@
-"""Mock O1 Adaptor — the isolated NETCONF- and RESTCONF-shaped test double
-RAN NF OAM's own CM write path needs to prove a real HTTP round trip. The RESTCONF side
-(RFC 8040, OI-1-cm-sync-restconf) is further down, over the same state.
+"""Mock O1 Adaptor: an isolated NETCONF- and RESTCONF-shaped test double for RAN NF OAM's southbound O1 adaptor, with an emitting side and test-only controls.
 
-RAN NF OAM LLD section 5.1's PATCH step (ran-nf-oam/app/netconf_client.py)
-dispatches a real RFC 6241 <edit-config> RPC — as XML over plain HTTP, not
-a real SSH/NETCONF transport, matching this build's all-HTTP-JSON
-pragmatism everywhere else (e.g. R1Client) — to a ManagedElement's
-registered adaptor_uri. Before this module existed, nothing in this
-build's own docker-compose topology ever answered that URL for real: the
-real O-RAN-SC reference (sim-o1-interface's ntsim-ng) is a full
-YANG-model-validated NETCONF/SSH network simulator, out of proportion
-with this build's single-Python/FastAPI-stack consolidation (the same
-"ADOPT repos stay pattern references only" boundary already documented
-elsewhere, HISTORY.md §2). This is the honest, minimal
-substitute: just enough real NETCONF-shaped XML parsing to close the loop
-RAN NF OAM's own dispatch client was already built to reach: "give the real caller
-something real to call, not a full protocol implementation".
+What it is: one FastAPI app that answers, over plain HTTP, what RAN NF OAM sends a managed element's registered `adaptor_uri`: an RFC 6241 `<edit-config>` /
+`<get-config>` RPC as XML (`POST /edit-config`, RAN NF OAM LLD section 5.1, client `ran-nf-oam/app/netconf_client.py`) and the RFC 8040 RESTCONF data resources
+(`/restconf/data/...`, OI-1-cm-sync-restconf, client `ran-nf-oam/app/restconf_client.py`), both over one in-memory running configuration. It also declares itself
+(`GET /capabilities`, read by RAN NF OAM's vendor onboarding), can emit alarms, PM, software-phase results and heartbeats towards RAN NF OAM on request (`/emit/*`,
+PR-SB-9b, SB-9.8; the target of the conformance kit in `conformance/o1`), and can become a vendor from a profile (`profile.py`, SB-10).
+It stands in for the O-RAN-SC reference simulator (ntsim-ng), which is a YANG-validated NETCONF/SSH simulator out of proportion with this build's single-stack
+design (HISTORY.md section 2: ADOPT repositories stay pattern references); it is deliberately minimal, "give the real caller something real to call", not a protocol
+implementation.
+
+What it owns: module-level dictionaries (`_applied_changes`, `_object_state`, `_faults`), so the state is per process, not thread-safe, and lost on restart or
+`DELETE /state`. What it does not do: authenticate (nothing here is behind R1 Termination; it is a test double on the compose network), validate against YANG, or
+speak SSH.
+
+Before editing: the routes are mirrored by tests in `tests/` and by the conformance kit (`conformance/o1`, whose README lists each check), and the OpenAPI document
+in `docs/openapi` is generated from the routes and models, so a change to a route or model needs the specs regenerated (`scripts/generate_openapi_specs.py`).
 """
 
 import logging
@@ -48,6 +47,7 @@ NETCONF_BASE_NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
 
 DEFAULT_SERVICES = "PROV,FM,PM,FILE,STREAM,SWM,SUBSCRIPTION,HEARTBEAT"
 
+# Module-level state, per process: written by the route handlers (a plain `def` route runs in a worker thread) without a lock, which is fine for a single-client test double.
 _applied_changes: dict[str, dict] = {}  # managed-object ref -> last applied attribute_changes, for real test assertions
 
 # Wave 10.1 (W10-17): the running configuration of each managed function
@@ -88,15 +88,17 @@ def _profile() -> dict | None:
     return vendor_profile.load(name) if name else None
 
 
-_profile()      # a typo in MOCK_O1_PROFILE stops the container from starting
+_profile()      # a typo in MOCK_O1_PROFILE stops the container from starting (the call raises at import, so uvicorn never serves)
 
 
 def _defaults(function_ref: str | None) -> dict:
+    """The attribute defaults of the class named by `function_ref` (`<IOC>=<id>`): the built-in `IOC_DEFAULTS` for that class, overridden attribute by attribute by the active vendor profile's `iocDefaults`. Empty for an unknown class."""
     ioc = (function_ref or "").split("=", 1)[0]
     return {**IOC_DEFAULTS.get(ioc, {}), **((_profile() or {}).get("iocDefaults", {}).get(ioc, {}))}
 
 
 def _vendor_modes() -> list[str]:
+    """The O1 transports this adaptor declares: `MOCK_O1_VENDOR_MODES` (comma separated) when set, else the profile's, else both NETCONF and RESTCONF."""
     profile = _profile()
     return os.environ.get("MOCK_O1_VENDOR_MODES", "").split(",") if os.environ.get("MOCK_O1_VENDOR_MODES") else (
         list(profile["supportedVendorModes"]) if profile else ["O1_NETCONF", "O1_RESTCONF"])
@@ -110,10 +112,15 @@ def _restconf_unavailable() -> JSONResponse | None:
 
 
 def _current(ref: str, function_ref: str | None) -> dict:
+    """The running configuration of one managed function (or element, when `function_ref` is None): its class defaults with whatever has been written over them."""
     return {**_defaults(function_ref), **_object_state.get((ref, function_ref), {})}
 
 
 def _take_fault(ref: str, function_ref: str | None) -> str | None:
+    """Consumes one use of the first injected fault that matches `ref` and `function_ref` and returns its mode, or None when none matches.
+
+    A fault with no `managedObjectRef` matches everything; otherwise it must equal `<ref>` or `<ref>/<function-ref>`. A fault is removed once its `count` reaches zero. Shared by the NETCONF and RESTCONF write paths.
+    """
     for fault in _faults:
         target = fault.get("managedObjectRef")
         if target in (None, ref, f"{ref}/{function_ref}"):
@@ -137,6 +144,10 @@ async def edit_config(request: Request) -> Response:
     would be wrong. Non-delete/remove emptiness rejection is the same
     "empty payload is a real, testable rejection trigger" pattern.
     """
+    # Maintainer note (not published). Always HTTP 200 with an `<rpc-reply>`, except an injected TIMEOUT fault, which is a 504 with a plain-text body. Order:
+    # parse (defusedxml; malformed or entity-expanding XML is `malformed-message`) -> `<get-config>` is a read of the running configuration (`invalid-value` without
+    # a ref) -> an edit with no ref, or with no attribute elements for an operation other than delete/remove, is `invalid-value` -> an injected fault is consumed
+    # (TIMEOUT, RPC_ERROR) -> the change is applied, or only acknowledged under IGNORE_WRITE. `delete`/`remove` forget the object, which then reads as its class defaults.
     body = await request.body()
     try:
         # defusedxml (not stdlib ET) — this body is attacker-reachable over
@@ -209,6 +220,7 @@ RESTCONF_ERROR_STATUS = {"invalid-value": 400, "malformed-message": 400, "data-e
 @app.get("/.well-known/host-meta")
 def restconf_root_discovery():
     """RFC 8040 section 3.1: where the RESTCONF root is."""
+    # Maintainer note (not published). 404 (problem body) when the adaptor does not declare O1_RESTCONF, so a NETCONF-only vendor has no RESTCONF root at all.
     if (absent := _restconf_unavailable()) is not None:
         return absent
     return Response(content='<XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">'
@@ -217,6 +229,7 @@ def restconf_root_discovery():
 
 
 def _restconf_error(tag: str, message: str | None = None) -> JSONResponse:
+    """An RFC 8040 section 7 error response (`ietf-restconf:errors` body, `application/yang-data+json`) for the error tag `tag`, with the status `RESTCONF_ERROR_STATUS` maps it to."""
     error = {"error-type": "application", "error-tag": tag}
     if message:
         error["error-message"] = message
@@ -224,6 +237,7 @@ def _restconf_error(tag: str, message: str | None = None) -> JSONResponse:
                         media_type=YANG_JSON)
 
 
+# The RESTCONF routes below share one rule for "where": `_restconf_target` reads the raw (still percent-encoded) path, so a `/` or `=` inside a key stays inside it.
 def _restconf_target(request: Request) -> tuple[str | None, str | None] | None:
     """(ref, function-ref) addressed by the request's data-resource path, or
     None if it is not one this mock models. Parsed from the raw path, so a
@@ -259,6 +273,7 @@ async def _restconf_entry(request: Request, list_name: str, key: str) -> tuple[s
 
 
 def _restconf_fault(ref: str, function_ref: str | None):
+    """Applies an injected fault to a RESTCONF write: a `Response` (504 for TIMEOUT, a 500 `operation-failed` error for RPC_ERROR) to return at once, else the fault mode (e.g. IGNORE_WRITE, for `_restconf_apply`) or None."""
     fault = _take_fault(ref, function_ref)
     if fault == "TIMEOUT":
         return Response(status_code=504, content="agent did not answer in time")
@@ -268,6 +283,10 @@ def _restconf_fault(ref: str, function_ref: str | None):
 
 
 def _restconf_apply(ref: str, function_ref: str | None, attributes: dict, replace: bool, fault) -> None:
+    """Writes `attributes` to the running configuration of `(ref, function_ref)`: merged into what is there, or replacing it when `replace` is true.
+
+    Always records the change in `_applied_changes`, and keeps `energySavingState` consistent with `energySavingControl`. Does nothing when `fault` is IGNORE_WRITE (the write is acknowledged by the caller but never applied: a lying agent).
+    """
     if fault == "IGNORE_WRITE":  # acknowledged but never applied (a lying agent)
         return
     _applied_changes[ref] = attributes
@@ -286,6 +305,11 @@ def _restconf_apply(ref: str, function_ref: str | None, attributes: dict, replac
 @app.put("/restconf/data/{path:path}")
 @app.delete("/restconf/data/{path:path}")
 async def restconf_data(path: str, request: Request) -> Response:
+    # Maintainer note (not published; this route has no docstring so the OpenAPI document stays without one). GET, PATCH, PUT and DELETE of one managed-element or
+    # managed-function data resource (RFC 8040 sections 4.3 to 4.7). 404 when the adaptor declares no O1_RESTCONF; 400 `invalid-value` for a path this mock does not
+    # model, a body key that differs from the path's key, or an empty PATCH; 400 `malformed-message` for a body that is not a single list entry; 404 `data-missing` for
+    # a DELETE of an object never written; injected faults apply as for NETCONF. PATCH merges (and creates an object not yet written, which RFC 8040 would answer
+    # 404 to), PUT replaces and answers 201 when it created the object, else 204. A GET of an unwritten object answers its class defaults.
     if (absent := _restconf_unavailable()) is not None:
         return absent
     ref, function_ref = _restconf_target(request) or (None, None)
@@ -326,6 +350,9 @@ async def restconf_create(request: Request, path: str = "") -> Response:
     """POST creates a child of the target (RFC 8040 section 4.4.1): a
     managed element under the datastore, or a managed function under its
     element. 409 data-exists if the child is already there."""
+    # Maintainer note (not published). Besides the 409: 404 when the adaptor declares no O1_RESTCONF; 400 `invalid-value` for a parent that is not `/data` or a
+    # managed-element; 400 `malformed-message` for a body that is not one list entry with its key; injected faults apply before the existence check, so a TIMEOUT
+    # fault fires even for a child that exists.
     if (absent := _restconf_unavailable()) is not None:
         return absent
     parent = _restconf_target(request) if path else (None, None)
@@ -356,6 +383,8 @@ def declare_capabilities():
     services it implements and which O1 transports it speaks. Configurable
     per deployment so one image can stand in for several vendors.
     """
+    # Maintainer note (not published). Read on every request from the environment (`MOCK_O1_VENDOR_NAME`, `MOCK_O1_SUPPORTED_SERVICES`, `MOCK_O1_VENDOR_MODES`),
+    # which win over the active profile; the same values gate the transports (`_restconf_unavailable`) and the `/emit/*` triggers (`_declared_services`).
     return {
         "vendorName": os.environ.get("MOCK_O1_VENDOR_NAME") or (_profile() or {}).get("vendorName", "mock-vendor"),
         "supportedServices": _declared_services(),
@@ -370,15 +399,20 @@ def query_last_applied(managed_object_ref: str):
     elsewhere) so a real integration test can assert what was actually
     applied, not just that the call returned 200.
     """
+    # Maintainer note (not published). Always 200; `attributeChanges` is the attribute set of the last applied write for the ref, or null (never written, or deleted).
+    # It does not see the per-function running configuration; `GET /objects/{ref}` does.
     return {"managedObjectRef": managed_object_ref, "attributeChanges": _applied_changes.get(managed_object_ref)}
 
 
+# Request body of POST /faults (published in the OpenAPI document, so no docstring). `mode` is one of TIMEOUT, IGNORE_WRITE, RPC_ERROR (the route answers 422 for
+# any other); `count` is how many matching writes misbehave before the fault is spent.
 class FaultBody(BaseModel):
     mode: str  # TIMEOUT (HTTP 504) | RPC_ERROR (<rpc-error>) | IGNORE_WRITE (<ok/> but not applied)
     count: int = 1
     managedObjectRef: str | None = None  # "<ref>" or "<ref>/<function-ref>"; omitted = any
 
 
+# The error body FastAPI answers for a body that is not JSON or the wrong shape (`{"detail": ...}`), declared so the OpenAPI document lists those responses.
 class MockError(BaseModel):
     detail: str | list[dict]
 
@@ -388,6 +422,8 @@ def inject_fault(body: FaultBody):
     """Test-only (like GET /edit-config/{ref}): make the next `count`
     matching edit-configs misbehave, so the SMO's retry, verification and
     rollback paths can be exercised against a real round trip."""
+    # Maintainer note (not published). 201 with the pending faults; 422 for a mode other than TIMEOUT, RPC_ERROR or IGNORE_WRITE. Faults are consumed in the order
+    # they were added by the first write that matches them (`_take_fault`); `DELETE /state` drops any that are left.
     if body.mode not in ("TIMEOUT", "RPC_ERROR", "IGNORE_WRITE"):
         return JSONResponse(status_code=422, content={"detail": f"unknown fault mode {body.mode}"})
     _faults.append(body.model_dump())
@@ -397,6 +433,7 @@ def inject_fault(body: FaultBody):
 @app.delete("/state", status_code=204)
 def reset_state():
     """Test-only: forget every applied change and pending fault."""
+    # Maintainer note (not published). 204; clears the running configuration of every function as well, so everything reads as class defaults again.
     _applied_changes.clear()
     _object_state.clear()
     _faults.clear()
@@ -405,6 +442,7 @@ def reset_state():
 @app.get("/objects/{managed_object_ref}")
 def query_object(managed_object_ref: str, function_ref: str | None = None):
     """Test-only introspection of one managed function's running config."""
+    # Maintainer note (not published). Always 200: the class defaults with the written attributes over them, the same view `<get-config>` and RESTCONF GET return.
     return {"managedObjectRef": managed_object_ref, "functionRef": function_ref,
             "attributes": _current(managed_object_ref, function_ref)}
 
@@ -423,6 +461,7 @@ log = logging.getLogger(__name__)
 EMIT_SERVICES = {"alarm": "FM", "pm-report": "PM", "pm-file": "FILE", "heartbeat": "HEARTBEAT", "software-phase": "SWM"}
 
 
+# RFC 7807 problem body of the emit routes' error responses (409, 422, 502), declared in `EMIT_RESPONSES`; a model of the published OpenAPI document, so no docstring.
 class Problem(BaseModel):
     type: str = "about:blank"
     title: str | None = None
@@ -430,6 +469,7 @@ class Problem(BaseModel):
     detail: str | list[dict]
 
 
+# Response of every `/emit/*` route: the outcome of the POST to RAN NF OAM, whatever RAN NF OAM answered (a published model, so no docstring).
 class EmitResult(BaseModel):
     emitted: bool         # RAN NF OAM accepted it (a 2xx)
     status: int           # the HTTP status RAN NF OAM answered
@@ -437,10 +477,12 @@ class EmitResult(BaseModel):
     target: str           # the RAN NF OAM origin it was sent to
 
 
+# Base of the emit request bodies: the optional per-call RAN NF OAM origin. It is caller-supplied, so `_emit` checks it with `is_safe_webhook_destination` and sends through `post_webhook`.
 class EmitTarget(BaseModel):
     target: str | None = None  # RAN NF OAM origin for this call, instead of MOCK_O1_OAM_URL (http/https, not a loopback or link-local literal)
 
 
+# Request body of POST /emit/alarm; the fields become the query parameters of RAN NF OAM's `POST /alarms/ingest` (renamed to snake_case in `emit_alarm`).
 class EmitAlarm(EmitTarget):
     managedElementRef: str
     severity: str  # a PerceivedSeverity: CRITICAL, MAJOR, MINOR, WARNING, INDETERMINATE or CLEARED, any case
@@ -452,6 +494,7 @@ class EmitAlarm(EmitTarget):
     correlationGroup: str | None = None
 
 
+# One measurement of a PM report or file, in the shape RAN NF OAM's `POST /pm-reports` takes: `value` for a plain counter, or `values` (name -> number), plus the optional `relation`.
 class EmitMeasurement(BaseModel):
     cellId: str
     timestamp: str  # ISO 8601
@@ -460,12 +503,14 @@ class EmitMeasurement(BaseModel):
     relation: str | None = None
 
 
+# Request body of POST /emit/pm-report; forwarded as the JSON body of `POST /pm-reports` without `target` and without unset fields.
 class EmitPmReport(EmitTarget):
     managedElementRef: str
     counterType: str
     measurements: list[EmitMeasurement]
 
 
+# Request body of POST /emit/pm-file: a PM report plus the file's metadata, forwarded as the JSON body of `POST /pm-files`.
 class EmitPmFile(EmitPmReport):
     fileDataType: str = "Performance"
     fileFormat: str = "json"
@@ -474,29 +519,38 @@ class EmitPmFile(EmitPmReport):
     fileExpirationTime: str | None = None
 
 
+# Request body of POST /emit/heartbeat: the id of the O1 adaptor endpoint registered at RAN NF OAM whose heartbeat is sent.
 class EmitHeartbeat(EmitTarget):
     endpointId: str
 
 
+# Request body of POST /emit/software-phase: the software-management job and whether its current phase succeeded (sent as the `succeeded` query parameter).
 class EmitSoftwarePhase(EmitTarget):
     jobId: str
     succeeded: bool = True
 
 
 def _problem(status: int, title: str, detail: str) -> JSONResponse:
+    """An RFC 7807 problem response (`application/problem+json`) with `status`, `title` and `detail`."""
     return JSONResponse(status_code=status, content={"type": "about:blank", "title": title, "status": status, "detail": detail},
                         media_type="application/problem+json")
 
 
 def _declared_services() -> list[str]:
+    """The MnS services this adaptor declares: `MOCK_O1_SUPPORTED_SERVICES` (comma separated, whitespace trimmed) when set, else the profile's, else `DEFAULT_SERVICES`. `/emit/*` refuses a service that is not in this list."""
     profile = _profile()
     fallback = ",".join(profile["supportedServices"]) if profile else DEFAULT_SERVICES
     return [s.strip() for s in os.environ.get("MOCK_O1_SUPPORTED_SERVICES", fallback).split(",") if s.strip()]
 
 
 def _emit(kind: str, path: str, target: str | None, *, params: dict | None = None, body: dict | None = None) -> JSONResponse:
-    """POST `path` on RAN NF OAM. 409 if this adaptor does not declare the service or no target is configured, 422 for an unusable `target`,
-    502 if RAN NF OAM cannot be reached; any answer from it (a refusal included) is relayed, `emitted` saying whether it was a 2xx."""
+    """POSTs `path` (with `params` as the query string and `body` as JSON) to RAN NF OAM for the trigger `kind` and returns the outcome as a JSON response.
+
+    Answers 409 when this adaptor does not declare the service for `kind` or no target is configured, 422 for an unusable `target`, 502 when RAN NF OAM cannot be
+    reached; any answer from RAN NF OAM, a refusal included, is relayed with `emitted` saying whether it was a 2xx and the body (JSON, or the first 500 characters
+    of text). The request's own `target` is caller-supplied, so it goes through the guarded sender `post_webhook` (no loopback, link-local or unspecified address); the
+    operator-set `MOCK_O1_OAM_URL` is trusted and called with plain `httpx`. Side effect: one outbound HTTP POST.
+    """
     service = EMIT_SERVICES[kind]
     if service not in _declared_services():
         return _problem(409, "service not declared", f"this adaptor does not declare {service} in supportedServices (MOCK_O1_SUPPORTED_SERVICES), so it does not emit {kind}")
@@ -539,6 +593,7 @@ EMIT_RESPONSES: dict[int | str, dict[str, Any]] = {
 @app.post("/emit/alarm", response_model=EmitResult, responses=EMIT_RESPONSES)
 def emit_alarm(body: EmitAlarm):
     """FM: raise an alarm at RAN NF OAM (`POST /alarms/ingest`; its fields are query parameters there). `sourceAlarmId` defaults to a new UUID."""
+    # Maintainer note (not published). Fields left unset are not sent. Errors: see `_emit` (409, 422, 502); a body of the wrong shape is FastAPI's 422.
     params = {"source_alarm_id": body.sourceAlarmId or str(uuid.uuid4()), "managed_element_ref": body.managedElementRef, "severity": body.severity,
               "probable_cause": body.probableCause, "specific_problem": body.specificProblem, "managed_function_ref": body.managedFunctionRef,
               "alarm_type": body.alarmType, "correlation_group": body.correlationGroup}
@@ -571,7 +626,8 @@ def emit_software_phase(body: EmitSoftwarePhase):
 
 
 def _data_reply(message_id: str, ref: str, function_ref: str | None, attributes: dict) -> Response:
-    # every value echoed back is escaped — it came from the request
+    """The `<rpc-reply>` of a `<get-config>`: the attributes of one managed object as XML, with every value taken from the request escaped."""
+    # every value echoed back is escaped — it came from the request (attribute names are not: they are element names)
     function = f" function-ref={quoteattr(function_ref)}" if function_ref else ""
     body = "".join(f"<{k}>{escape(str(v))}</{k}>" for k, v in attributes.items())
     return Response(content=(f"<rpc-reply message-id={quoteattr(message_id)} xmlns=\"{NETCONF_BASE_NS}\"><data>"
@@ -580,6 +636,7 @@ def _data_reply(message_id: str, ref: str, function_ref: str | None, attributes:
 
 
 def _reply(message_id: str, *, ok: bool, error_tag: str | None = None) -> Response:
+    """The `<rpc-reply>` of an `<edit-config>`: `<ok/>`, or an `<rpc-error>` with `error_tag` (RFC 6241 section 4.3), always HTTP 200 because an rpc-error is a protocol-level outcome."""
     if ok:
         body = f'<rpc-reply message-id="{message_id}" xmlns="{NETCONF_BASE_NS}"><ok/></rpc-reply>'
     else:

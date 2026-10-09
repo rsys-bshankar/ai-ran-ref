@@ -1,4 +1,10 @@
-"""python -m conformance.rapp package|runtime: run the rApp conformance checks and write a report."""
+"""python -m conformance.rapp package|runtime: run the rApp conformance checks and write a report.
+
+The command line of the rApp conformance pack. `package` checks .csar files offline; `runtime` takes a package through its life on a running stack, reaching the modules through the R1 gateway (`--r1`) or by name
+(`--direct`). It builds the contexts of kit.py, runs the registered checks and prints and optionally writes the report. Exit status: 0 when no check failed (warnings and
+skips do not fail), 1 when a check failed, 2 when the command could not run (bad options, no .csar file, an unreadable file or trust store: nothing was checked).
+The first line of this docstring is also the `--help` description, so edit it as user-facing text. Importing `package_checks` and `runtime_checks` is what registers the checks. Described in `conformance/rapp/README.md`.
+"""
 
 import argparse
 import sys
@@ -6,12 +12,13 @@ from pathlib import Path
 
 import httpx
 
+# Both modules are imported for their side effect: loading them fills the check registry.
 from . import package_checks, runtime_checks  # noqa: F401  (registers the checks)
 from .kit import FAIL, PACKAGE, REGISTRY, RUNTIME, PackageContext, Result, RuntimeContext, run, summary, to_json, to_markdown
 
 
 class _Services(dict):
-    """`services[name]` -> an httpx client on that module, made when first asked for (see RuntimeContext)."""
+    """A dict of module name to an `httpx.Client` for that module, built on first use, so a run opens a client only for the modules its checks call."""
 
     def __init__(self, make):
         super().__init__()
@@ -23,10 +30,12 @@ class _Services(dict):
 
 
 def _headers(values: list[str]) -> dict[str, str]:
+    """Parse `NAME:VALUE` strings into a header dict; an entry with an empty value (or no colon) is dropped."""
     return {k.strip(): v.strip() for k, _, v in (h.partition(":") for h in values) if v}
 
 
 def _package_files(paths: list[str]) -> list[Path]:
+    """The .csar files to check: each argument that is a directory contributes its `*.csar` files in name order, any other argument is taken as a file."""
     files: list[Path] = []
     for raw in paths:
         path = Path(raw)
@@ -35,6 +44,7 @@ def _package_files(paths: list[str]) -> list[Path]:
 
 
 def _write(out: str | None, title: str, results: list[Result], intro: str, extra: dict) -> str:
+    """Render the Markdown report and, when `out` is given, write `<out>.json` and `<out>.md`; returns the Markdown to print."""
     text = to_markdown(title, results, intro)
     if out:
         Path(out + ".json").write_text(to_json(title, results, extra), encoding="utf-8")
@@ -43,6 +53,10 @@ def _write(out: str | None, title: str, results: list[Result], intro: str, extra
 
 
 def run_package(args: argparse.Namespace) -> int:
+    """Run the offline checks on each package file and return the exit status (0, 1 or 2).
+
+    Returns 2, before any check, when the trust store cannot be loaded, no .csar file is found or a file cannot be read, so that a usage mistake is never reported as a pass.
+    """
     from smo_shared import csar_signing
 
     trust = None
@@ -70,6 +84,11 @@ def run_package(args: argparse.Namespace) -> int:
 
 
 def run_runtime(args: argparse.Namespace, services=None) -> int:
+    """Run the runtime checks against a stack and return the exit status.
+
+    `services` is injectable (the tests pass the in-process mesh's clients); otherwise exactly one of `--r1` and `--direct` is required (2 if neither or both). The run removes
+    what it created before it returns (kit.run's clean-up), also after a failed check.
+    """
     headers = _headers(args.header)
     if services is None:
         if args.direct and args.r1:
@@ -90,7 +109,7 @@ def run_runtime(args: argparse.Namespace, services=None) -> int:
 
 
 def main(argv: list[str] | None = None, services=None) -> int:
-    """`services` is injectable (the tests give the in-process mesh's clients); by default they are built from --r1 or --direct."""
+    """Parse the command line and dispatch to `run_package` or `run_runtime`; `--list` prints the check registry and returns 0; no sub-command prints the usage and returns 2."""
     ap = argparse.ArgumentParser(prog="python -m conformance.rapp", description=__doc__.splitlines()[0])
     ap.add_argument("--list", action="store_true", help="list the checks and exit")
     commands = ap.add_subparsers(dest="command")

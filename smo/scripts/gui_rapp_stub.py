@@ -49,7 +49,11 @@ INSTANCE = {"managedElementRef": "gnb-du-e2e-01", "autonomyMode": "AUTONOMOUS", 
 
 
 def read_only_package(csar: bytes) -> bytes:
-    """The sample package with another name and a read-only page: its manifest is cut where `operatorUi:` starts (the last block) and the small page appended."""
+    """Returns the sample CSAR with the name `EnergySaving_rApp_ReadOnly` and a small `readOnly: true` page in place of its `operatorUi` block.
+
+        Rewrites only `manifest.yaml` (cut at the `operatorUi:` line, which must be the last block; the comment block above it is dropped) and the
+        `application_name` of `Definitions/asd.yaml`; every other member is copied as it is. Raises `ValueError` if the manifest has no `operatorUi:` line.
+    """
     out = io.BytesIO()
     with zipfile.ZipFile(io.BytesIO(csar)) as source, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as target:
         for info in source.infolist():
@@ -67,7 +71,7 @@ def read_only_package(csar: bytes) -> bytes:
 
 
 class Rapp:
-    """The cells and the calls received; one lock, because the server answers in threads."""
+    """The state of the stub rApp: which cells are overridden and by whom, and every call received. `lock` guards both, because the HTTP server answers in threads."""
 
     def __init__(self) -> None:
         self.lock = threading.Lock()
@@ -75,6 +79,7 @@ class Rapp:
         self.calls: list[dict] = []
 
     def cells(self) -> list[dict]:
+        """The two canned cells (101 and 102) for the dashboard route, each with a 12-point PRB trend and its latest decision; `overrideBy` shows the current override."""
         out = []
         for cell in ("101", "102"):
             trend = [{"t": f"2026-01-01T00:{m:02d}:00Z", "v": 30 + (m * 7 + int(cell)) % 40} for m in range(12)]
@@ -88,6 +93,7 @@ RAPP = Rapp()
 
 
 class Handler(BaseHTTPRequestHandler):
+    """The stub's request handler: serves the two packages, `GET /_calls`, and the rApp's operator routes under `/instances/<id>`."""
     server_version = "gui-rapp-stub"
     csar: bytes = b""
 
@@ -95,6 +101,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _send(self, status: int, body: bytes, kind: str = "application/json") -> None:
+        """Writes a complete response (status, `Content-Type`, `Content-Length`, body)."""
         self.send_response(status)
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(body)))
@@ -105,6 +112,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(status, json.dumps(value).encode())
 
     def _body(self):
+        """The request body: parsed JSON, the decoded text when it is not JSON, or None when there is none."""
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else b""
         try:
@@ -113,6 +121,12 @@ class Handler(BaseHTTPRequestHandler):
             return raw.decode("utf-8", "replace")
 
     def _route(self, method: str) -> None:
+        """Answers one request. The package and `/_calls` routes are not logged; every other request is appended to `RAPP.calls` (with the invoker id and the user
+            header the platform forwarded) before it is answered, so the check sees the calls that were refused with 404 too.
+
+            The operator routes are `GET /instances/<id>`, `/dashboard`, `/decisions`, `POST .../evaluate` and `.../reconcile`, and `POST`/`DELETE .../cells/<cell>/override`;
+            the override is kept in memory so the next read shows it. Anything else is `404 {"title": "not found"}`.
+        """
         url = urlsplit(self.path)
         path, query = url.path, parse_qs(url.query)
         if method == "GET" and path == "/writable.csar":
@@ -163,6 +177,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def call(method: str, url: str, body: dict | None = None) -> dict:
+    """One JSON request to a platform service; returns the parsed answer ({} for an empty one). Ends the script with the status and the first 300 bytes on an HTTP error."""
     request = urllib.request.Request(url, method=method, data=json.dumps(body).encode() if body is not None else None, headers={"Content-Type": "application/json"})  # noqa: S310 (a URL on the compose network, given by the check)
     try:
         with urllib.request.urlopen(request, timeout=30) as response:      # noqa: S310 (a URL on the compose network, given by the check)
@@ -172,6 +187,10 @@ def call(method: str, url: str, body: dict | None = None) -> dict:
 
 
 def onboard(onboarding: str, location: str) -> str:
+    """Asks Onboarding to onboard the package at `location` and polls its status for up to about a minute; returns the package id once it is AVAILABLE or PRIMED.
+
+        Ends the script with a message when the state is FAILED or the polling runs out.
+    """
     package = call("POST", f"{onboarding}/packages", {"location": location})["packageId"]
     for _ in range(60):
         status = call("GET", f"{onboarding}/packages/{package}/onboarding-status")
@@ -184,6 +203,11 @@ def onboard(onboarding: str, location: str) -> str:
 
 
 def setup(public: str, onboarding: str, rapp_mgmt: str) -> dict:
+    """Onboards the writable and the read-only package from the stub's `public` address and creates one instance of each through rApp Management.
+
+        Returns `{"writable": <instanceId>, "readOnly": <instanceId>}`. Each instance's `operatorApiBase` is `public`, which is how the platform reaches the stub.
+        Creates real packages and instances on the stack; it does not clean up.
+    """
     ids = {}
     for key, name in (("writable", "writable.csar"), ("readOnly", "readonly.csar")):
         package = onboard(onboarding, f"{public}/{name}")
@@ -195,6 +219,7 @@ def setup(public: str, onboarding: str, rapp_mgmt: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command-line entry: `serve` runs the stub until it is killed; `setup` prints the instance ids as JSON. Returns 0."""
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="command", required=True)
     serve = sub.add_parser("serve")

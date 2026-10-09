@@ -49,6 +49,7 @@ elapsed() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.1f", b - a }'; }
 python="${PYTHON:-python3}"
 work="$(mktemp -d)"
 drill_db="smo_drill_$(date -u +%Y%m%dT%H%M%S)"
+# cleanup (EXIT trap): drop the drill database (unless --keep) and remove the work directory. A failure to drop is ignored.
 cleanup() {
   if [ "$keep" != yes ]; then
     ( SMO_DATABASE_URL="$admin_url"; export SMO_DATABASE_URL; . "$here/pg_env.sh"; smo_pg_env
@@ -58,6 +59,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# url_for_db NAME: the admin URL with its database part replaced by NAME (the drill database).
 url_for_db() {
   ADMIN_URL="$admin_url" DB="$1" "$python" -c '
 import os

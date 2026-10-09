@@ -17,6 +17,7 @@ FLOORS = Path(__file__).resolve().parent.parent / "coverage_floors.json"
 
 
 def measured(directory: Path) -> dict[str, float]:
+    """The coverage percentage of each module from the `coverage json` files in `directory`, keyed by file name without the extension."""
     result = {}
     for path in sorted(directory.glob("*.json")):
         data = json.loads(path.read_text())
@@ -25,6 +26,11 @@ def measured(directory: Path) -> dict[str, float]:
 
 
 def main(argv: list[str]) -> int:
+    """Compares the measured coverage with `coverage_floors.json` and prints the table; with `--write` it instead sets every floor to the measured percentage rounded down.
+
+        Returns 1 when a module is below its floor, more than `SLACK` points above it, has no floor, or has a floor but no measurement; each is also printed as a GitHub
+        `::error::` line. Appends the table to `GITHUB_STEP_SUMMARY` when that is set.
+    """
     directory = Path(argv[1])
     numbers = measured(directory)
     if "--write" in argv:

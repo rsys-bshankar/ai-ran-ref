@@ -25,13 +25,16 @@ TABLES = ("application_package", "artifact", "package_usage_registration")
 
 
 def upgrade() -> None:
+    """Move Onboarding's three tables into the schema `onboarding` and leave an updatable view of the same name in `public` for each."""
     op.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
     for table in TABLES:
         op.execute(f"ALTER TABLE public.{table} SET SCHEMA {SCHEMA}")
+        # The compatibility view: one table and no join, so it is updatable and the previous release's unqualified reads and writes keep working. Dropped by 0029.
         op.execute(f"CREATE VIEW public.{table} AS SELECT * FROM {SCHEMA}.{table}")
 
 
 def downgrade() -> None:
+    """Drop the views and move the tables back to `public`, then drop the schema (which fails if anything else is left in it)."""
     for table in TABLES:
         op.execute(f"DROP VIEW IF EXISTS public.{table}")
         op.execute(f"ALTER TABLE {SCHEMA}.{table} SET SCHEMA public")

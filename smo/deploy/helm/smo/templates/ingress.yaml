@@ -1,3 +1,10 @@
+{{- /*
+  Renders the chart's Ingress objects (ingress-nginx annotations): `gui` for the operator GUI (service gui, port 8080) and `r1` for
+  the R1 gateway (service r1-termination, port 8000), each only when its `ingress.<name>.host` is set, with a TLS section when
+  `tlsSecretName` is set; and `r1-bootstrap`, a second Ingress for the exact path /bootstrap that carries a source-range whitelist.
+  Nothing is rendered unless `ingress.enabled`. Driven by `ingress.*` (className, annotations, the two hosts, r1.bootstrapAllowedSourceRanges)
+  and, for the HTTPS-with-client-certificate backend setting, `mtls.enabled` with `mtls.ingressClientSecret`.
+*/ -}}
 {{- if .Values.ingress.enabled }}
 {{- $labels := include "smo.labels" (dict "root" .) }}
 {{- /* PR-SEC-2: with mutual TLS the gateway speaks HTTPS and wants a client certificate: ingress-nginx is told to, when `mtls.ingressClientSecret` names one */}}
@@ -15,6 +22,8 @@ metadata:
   name: {{ $key }}
   labels:
     {{- $labels | nindent 4 }}
+  {{- /* For `r1` the chart's mutual-TLS annotations are merged with the user's `ingress.annotations`; in `merge` the first dictionary wins a clash, so the
+     backend-protocol and proxy-ssl keys cannot be overridden from `ingress.annotations`. `gui` gets the user's annotations only. */}}
   {{- $annotations := ternary (merge (dict) $r1Mtls $.Values.ingress.annotations) $.Values.ingress.annotations (eq $key "r1") }}
   {{- with $annotations }}
   annotations:

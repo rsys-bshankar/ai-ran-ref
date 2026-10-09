@@ -14,6 +14,11 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Covers {@link R1Client}: the bearer token and its refresh on a 401, retries and backoff, the Idempotency-Key of a POST,
+ * the one repeat of a lost write race, query encoding and offboarding on close. It uses {@link FakePlatform} for the platform
+ * and injects the clock and the sleeper, so no test waits. No network beyond loopback. Run: cd smo/sdk-java && ./mvnw -B -ntp -C verify (JDK 21; CI job sdk-java).
+ */
 class R1ClientTest {
     private final List<Duration> sleeps = new ArrayList<>();
     private final FakePlatform.TestClock clock = new FakePlatform.TestClock();
@@ -23,6 +28,9 @@ class R1ClientTest {
         return new R1Client(config, HttpClient.newHttpClient(), clock, sleeps::add);
     }
 
+    /**
+     * Pins that the token is sent as a bearer and a {items, ...} answer is returned as its list.
+     */
     @Test
     void sendsTheBearerTokenAndDecodesTheBody() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
@@ -36,6 +44,9 @@ class R1ClientTest {
         }
     }
 
+    /**
+     * Pins that an object whose {@code items} is not a list is not unwrapped.
+     */
     @Test
     void anObjectWithoutItemsIsReturnedAsIs() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
@@ -44,6 +55,9 @@ class R1ClientTest {
         }
     }
 
+    /**
+     * Pins that a token SME has stopped accepting is replaced and the call sent again with the new one.
+     */
     @Test
     void a401RefreshesTheTokenOnceAndRepeatsTheCall() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("old", 3600)) {
@@ -60,6 +74,9 @@ class R1ClientTest {
         }
     }
 
+    /**
+     * Pins that only one fresh token is tried: a 401 that persists is thrown, not looped on.
+     */
     @Test
     void aSecond401IsFinal() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 3600)) {
@@ -70,6 +87,9 @@ class R1ClientTest {
         }
     }
 
+    /**
+     * Pins the waits between repeats: the backoff doubles, and a Retry-After replaces the computed wait.
+     */
     @Test
     void transientStatusesAreRetriedWithBackoffAndRetryAfter() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
@@ -85,6 +105,9 @@ class R1ClientTest {
         }
     }
 
+    /**
+     * Pins that after the last attempt the final answer's status is thrown, with one wait fewer than attempts.
+     */
     @Test
     void whenTheAttemptsRunOutTheLastAnswerIsTheError() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
@@ -96,6 +119,9 @@ class R1ClientTest {
         }
     }
 
+    /**
+     * Pins that a 4xx is final after one try and the exception carries the status and the body.
+     */
     @Test
     void aClientErrorIsNotRetriedAndIsMappedWithItsBody() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
@@ -109,6 +135,9 @@ class R1ClientTest {
         }
     }
 
+    /**
+     * Pins that a transport failure is repeated, then thrown with status 0 and no body.
+     */
     @Test
     void unreachableGatewayIsRetriedThenSurfacesAsAnSdkExceptionWithStatusZero() throws Exception {
         String dead;
@@ -123,6 +152,9 @@ class R1ClientTest {
         assertEquals(2, sleeps.size(), "three attempts, two waits");
     }
 
+    /**
+     * Pins that a POST has a generated key that its repeat reuses, so the platform can recognise the repeat, and that the JSON body is sent.
+     */
     @Test
     void everyPostCarriesAnIdempotencyKeyThatItsRepeatsReuse() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
@@ -143,6 +175,9 @@ class R1ClientTest {
         }
     }
 
+    /**
+     * Pins that a key the caller supplies is sent instead of a generated one.
+     */
     @Test
     void aCallersOwnIdempotencyKeyWins() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
@@ -152,6 +187,9 @@ class R1ClientTest {
         }
     }
 
+    /**
+     * Pins that only a 409 CONCURRENT_MODIFICATION is repeated, once, with the same key; another 409 is final.
+     */
     @Test
     void aLostWriteRaceIsSentOnceMoreWithTheSameKeyButOtherConflictsAreFinal() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
@@ -171,6 +209,9 @@ class R1ClientTest {
         }
     }
 
+    /**
+     * Pins that a GET answered with CONCURRENT_MODIFICATION is thrown at once.
+     */
     @Test
     void aReadIsNeverRepeatedForAConflict() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
@@ -180,6 +221,9 @@ class R1ClientTest {
         }
     }
 
+    /**
+     * Pins that a 204 reads as a missing JSON node and that query values are URL-encoded.
+     */
     @Test
     void a204IsAMissingNodeAndQueryValuesAreEncodedWithNullsLeftOut() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
@@ -193,6 +237,9 @@ class R1ClientTest {
         }
     }
 
+    /**
+     * Pins the query string of a null or empty map, a repeated key for a collection, and a null value left out.
+     */
     @Test
     void queryStringHandlesCollectionsAndEmpty() {
         assertEquals("", R1Client.queryString(null));
@@ -203,6 +250,9 @@ class R1ClientTest {
         assertEquals("?x=1&x=2", R1Client.queryString(q));
     }
 
+    /**
+     * Pins that closing the client deregisters the invoker the SDK enrolled.
+     */
     @Test
     void closeOffboardsTheSelfEnrolledInvoker() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {

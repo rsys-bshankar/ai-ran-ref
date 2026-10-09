@@ -25,12 +25,19 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 final class FakePlatform implements AutoCloseable {
 
+    /**
+     * One scripted answer: the status, the body (null for none) and extra response headers.
+     */
     record Reply(int status, String body, Map<String, String> headers) {
         static Reply of(int status, String body) {
             return new Reply(status, body, Map.of());
         }
     }
 
+    /**
+     * One request as the fake received it. Header names are lower-cased; {@code path} and {@code query} are the raw, still
+     * percent-encoded forms.
+     */
     record Seen(String method, String path, String query, Map<String, String> headers, String body) {
         String header(String name) {
             return headers.get(name.toLowerCase());
@@ -70,6 +77,9 @@ final class FakePlatform implements AutoCloseable {
         return this;
     }
 
+    /**
+     * The recorded requests with exactly this method and path, in arrival order.
+     */
     List<Seen> requests(String method, String path) {
         List<Seen> out = new ArrayList<>();
         for (Seen s : seen) {
@@ -80,6 +90,10 @@ final class FakePlatform implements AutoCloseable {
         return out;
     }
 
+    /**
+     * Records the request, then answers with the next scripted reply for "METHOD path" (the last one repeats), or 404 when the
+     * route has no script. Runs on the server's thread.
+     */
     private void handle(HttpExchange exchange) throws IOException {
         String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
         Map<String, String> headers = new HashMap<>();

@@ -42,6 +42,7 @@ READ_ONLY_NAME = "EnergySaving_rApp_ReadOnly"
 
 
 def _load(name: str):
+    """Loads a sibling script (`scripts/<name>.py`) by file path and returns it as a module; the scripts directory is not a package, so it cannot be imported by name."""
     spec = importlib.util.spec_from_file_location(name, SMO / "scripts" / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -49,10 +50,12 @@ def _load(name: str):
 
 
 class Check:
+    """Collects the failed expectations of one run. A passed expectation is printed as `ok: ...`; a failed one is only recorded, so the run goes on and reports every problem at the end."""
     def __init__(self) -> None:
         self.problems: list[str] = []
 
     def expect(self, condition: bool, message: str) -> None:
+        """Records `message` as a problem when `condition` is false, otherwise prints it as `ok: <message>`. Never raises."""
         if not condition:
             self.problems.append(message)
         else:
@@ -71,6 +74,7 @@ def wait_for_count(page, selector: str, accept, seconds: float = 15.0) -> None:
 
 
 def sign_in(page, base_url: str, user: str, password: str) -> None:
+    """Signs in through the login form and waits for the dashboard's "Modules healthy" tile, which is what proves the session works."""
     page.goto(f"{base_url}/login")
     page.get_by_label("Username").fill(user)
     page.get_by_label("Password").fill(password)
@@ -79,10 +83,15 @@ def sign_in(page, base_url: str, user: str, password: str) -> None:
 
 
 def csrf_of(context) -> str:
+    """The value of the `smo_csrf` cookie of a browser context, or "" when there is none (the GUI wants it echoed in `X-CSRF-Token` on every write)."""
     return {c["name"]: c["value"] for c in context.cookies()}.get("smo_csrf", "")
 
 
 def by_hand(context, base_url: str, method: str, path: str, body: dict | None = None):
+    """Calls `/api<path>` of the GUI with the context's session cookies and no page involved: a GET, or any other method with a JSON body and the CSRF header.
+
+        Used to prove what the backend refuses whatever the page shows; returns Playwright's response without raising on a 4xx or 5xx.
+    """
     headers = {"X-CSRF-Token": csrf_of(context)}
     url = f"{base_url}/api{path}"
     if method == "GET":
@@ -91,6 +100,10 @@ def by_hand(context, base_url: str, method: str, path: str, body: dict | None = 
 
 
 def stub_calls(command: str) -> list[dict]:
+    """Runs `command` in a shell and returns the stub rApp's call log (the JSON it prints). Exits the whole check with a message when the command fails or takes over 60 s.
+
+        The command comes from the person running the check (`--calls-command`), which is why the `shell=True` is accepted.
+    """
     done = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=60)      # noqa: S602 (a command the person running the check gave)
     if done.returncode:
         raise SystemExit(f"--calls-command failed: {done.stderr[-300:]}")
@@ -98,6 +111,10 @@ def stub_calls(command: str) -> list[dict]:
 
 
 def open_page(page, base_url: str, instance: str, answers: list[str]) -> None:
+    """Opens `/rapps/<instance>` and waits until the declared page has drawn ("Platform overview" is its first panel); then empties `answers`.
+
+        The clearing means the caller's list of rApp-bound response URLs holds only what the page does afterwards, not what loading it fetched.
+    """
     page.goto(f"{base_url}/rapps/{instance}")
     page.get_by_role("heading", name=re.compile("EnergySaving_rApp")).first.wait_for()
     page.get_by_text("Platform overview").wait_for()
@@ -109,6 +126,12 @@ def open_page(page, base_url: str, instance: str, answers: list[str]) -> None:
 
 
 def operator_run(browser, base_url: str, user: str, password: str, ids: dict, calls_command: str, check: Check, out: Path, axe_source: str, accessibility: dict) -> None:
+    """The operator's half of the check: the rApp directory, the declared page, the row drawer, the button and row-action clicks, what the browser was never told,
+        the pin, and the read-only declaration. Failed expectations go to `check`, axe findings to `accessibility`; screenshots go to `out`.
+
+        `calls_command` prints the stub's call log, which is how a click is proved to have reached the rApp with the signed-in user filled in. Backend answers in
+        `BAD_API_STATUS` for the calls these pages make (`OWN_API`) are added to the problems at the end. The browser context is closed on a normal return only.
+    """
     context = browser.new_context(viewport={"width": 1440, "height": 900})
     page = context.new_page()
     page.set_default_timeout(30_000)
@@ -213,6 +236,7 @@ def operator_run(browser, base_url: str, user: str, password: str, ids: dict, ca
 
 
 def viewer_run(browser, base_url: str, password: str, ids: dict, check: Check, out: Path) -> None:
+    """The viewer's half of the check: the same panels with no change button and a reason, a change made by hand refused `FORBIDDEN`, a read allowed, an undeclared route refused."""
     context = browser.new_context(viewport={"width": 1440, "height": 900})
     page = context.new_page()
     page.set_default_timeout(30_000)
@@ -233,6 +257,11 @@ def viewer_run(browser, base_url: str, password: str, ids: dict, check: Check, o
 
 
 def run(args) -> int:
+    """Runs the operator and viewer checks in one Chromium and returns the exit code (0 when no problem and no NEW accessibility finding).
+
+        Needs `GUI_E2E_OPERATOR_PASSWORD` and `GUI_E2E_VIEWER_PASSWORD` in the environment (`main` checks). Accessibility findings are compared with the baseline
+        through `dast_baseline.compare`; a STALE entry is counted but does not fail the run.
+    """
     ids = json.loads(Path(args.instances).read_text())
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -261,6 +290,7 @@ def run(args) -> int:
 
 
 def main() -> int:
+    """Command-line entry: exit 2 when a password variable is unset, otherwise `run`'s exit code."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--base-url", default="http://localhost:3000")
     ap.add_argument("--instances", required=True, help="the JSON that `gui_rapp_stub.py setup` printed")

@@ -9,12 +9,12 @@
       "tests_without_docstring": 0
     },
     "aimgf": {
-      "files_without_description": 1,
-      "functions_without_description": 163,
-      "items_requiring_description": 244,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 258,
       "source_files": 10,
       "tests": 186,
-      "tests_without_docstring": 135
+      "tests_without_docstring": 0
     },
     "backup": {
       "files_without_description": 0,
@@ -26,14 +26,14 @@
     },
     "conformance": {
       "files_without_description": 0,
-      "functions_without_description": 83,
-      "items_requiring_description": 99,
+      "functions_without_description": 0,
+      "items_requiring_description": 103,
       "source_files": 11,
       "tests": 0,
       "tests_without_docstring": 0
     },
     "deploy": {
-      "files_without_description": 6,
+      "files_without_description": 0,
       "functions_without_description": 0,
       "items_requiring_description": 0,
       "source_files": 42,
@@ -58,7 +58,7 @@
     },
     "fuzz": {
       "files_without_description": 0,
-      "functions_without_description": 4,
+      "functions_without_description": 0,
       "items_requiring_description": 4,
       "source_files": 2,
       "tests": 0,
@@ -106,8 +106,8 @@
     },
     "migrations": {
       "files_without_description": 0,
-      "functions_without_description": 46,
-      "items_requiring_description": 46,
+      "functions_without_description": 0,
+      "items_requiring_description": 48,
       "source_files": 35,
       "tests": 0,
       "tests_without_docstring": 0
@@ -130,15 +130,15 @@
     },
     "mock-o1-adaptor": {
       "files_without_description": 0,
-      "functions_without_description": 25,
-      "items_requiring_description": 45,
+      "functions_without_description": 0,
+      "items_requiring_description": 46,
       "source_files": 6,
       "tests": 71,
-      "tests_without_docstring": 64
+      "tests_without_docstring": 0
     },
     "netconf-lab": {
       "files_without_description": 0,
-      "functions_without_description": 1,
+      "functions_without_description": 0,
       "items_requiring_description": 1,
       "source_files": 3,
       "tests": 0,
@@ -170,11 +170,11 @@
     },
     "r1-termination": {
       "files_without_description": 0,
-      "functions_without_description": 25,
-      "items_requiring_description": 45,
+      "functions_without_description": 0,
+      "items_requiring_description": 47,
       "source_files": 13,
       "tests": 142,
-      "tests_without_docstring": 120
+      "tests_without_docstring": 0
     },
     "ran-analytics": {
       "files_without_description": 0,
@@ -250,35 +250,35 @@
     },
     "scripts": {
       "files_without_description": 0,
-      "functions_without_description": 221,
-      "items_requiring_description": 349,
+      "functions_without_description": 2,
+      "items_requiring_description": 353,
       "source_files": 78,
       "tests": 0,
       "tests_without_docstring": 0
     },
     "sdk": {
-      "files_without_description": 6,
-      "functions_without_description": 30,
-      "items_requiring_description": 67,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 65,
       "source_files": 23,
       "tests": 139,
-      "tests_without_docstring": 133
+      "tests_without_docstring": 0
     },
     "sdk-go": {
-      "files_without_description": 14,
-      "functions_without_description": 18,
+      "files_without_description": 0,
+      "functions_without_description": 0,
       "items_requiring_description": 65,
       "source_files": 19,
       "tests": 60,
-      "tests_without_docstring": 59
+      "tests_without_docstring": 0
     },
     "sdk-java": {
-      "files_without_description": 4,
-      "functions_without_description": 36,
-      "items_requiring_description": 79,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 80,
       "source_files": 28,
       "tests": 48,
-      "tests_without_docstring": 48
+      "tests_without_docstring": 0
     },
     "shared": {
       "files_without_description": 2,
@@ -289,12 +289,12 @@
       "tests_without_docstring": 497
     },
     "sme": {
-      "files_without_description": 2,
-      "functions_without_description": 29,
-      "items_requiring_description": 68,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 76,
       "source_files": 7,
       "tests": 116,
-      "tests_without_docstring": 92
+      "tests_without_docstring": 0
     },
     "so-smos": {
       "files_without_description": 0,

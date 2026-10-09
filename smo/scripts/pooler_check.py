@@ -11,7 +11,7 @@ Runs inside the SME container (which holds the password of its own role) on the 
   - prepared statements, switched on at the driver (prepare_threshold=0, every statement prepared at once), also work through this
     PgBouncer (max_prepared_statements), so SMO_DB_PREPARE_THRESHOLD can turn them back on.
 
-Exits 1 on the first failure.
+Every check runs; the script exits 1 at the end if any of them failed.
 """
 import os
 import sys
@@ -30,12 +30,14 @@ failures: list[str] = []
 
 
 def check(name: str, ok: bool, detail: object = "") -> None:
+    """Prints one `ok` / `FAIL` line and remembers a failure; the script goes on and reports all failures at the end."""
     print(f"{'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f"  ({detail})"))
     if not ok:
         failures.append(name)
 
 
 def connect(**kw) -> psycopg.Connection:
+    """A connection to the pooler as `smo_sme` (autocommit, so each statement is its own transaction); extra driver options go in `kw`."""
     return psycopg.connect(host=HOST, port=PORT, dbname="smo", user="smo_sme", password=PASSWORD, autocommit=True, **kw)
 
 
@@ -45,6 +47,7 @@ for c in clients:
     c.execute("SELECT 1")
 direct = psycopg.connect(host="postgres", port=5432, dbname="smo", user="smo_sme", password=PASSWORD, autocommit=True)
 servers = direct.execute("SELECT count(*) FROM pg_stat_activity WHERE usename = 'smo_sme' AND state IS NOT NULL AND pid <> pg_backend_pid()").fetchone()[0]
+# the pool size plus a margin of two is accepted; the direct connection used for this count is excluded from it by pid
 check(f"60 clients through the pooler use at most {POOL} server connections (saw {servers})", servers <= POOL + 2, servers)
 for c in clients:
     c.close()
@@ -55,6 +58,10 @@ errors: list[str] = []
 
 
 def hammer(engine, n: int) -> None:
+    """Runs `n` rounds of a parameterised arithmetic query and a catalogue query on `engine`, each on a fresh pooled connection; the error that ends the loop, if any, is appended to `errors`.
+
+        Run from many threads at once, this is what would trip "prepared statement does not exist" if the engine used server-side prepared statements through the pooler.
+    """
     try:
         for i in range(n):
             with engine.connect() as conn:
@@ -77,6 +84,7 @@ errors.clear()
 
 
 def prepared(n: int) -> None:
+    """Opens one connection with driver-side prepared statements switched on (`prepare_threshold=0`) and runs `n` parameterised queries on it; any error is appended to `errors`."""
     try:
         with connect(prepare_threshold=0) as conn:
             for i in range(n):

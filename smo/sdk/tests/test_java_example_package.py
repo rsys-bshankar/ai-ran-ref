@@ -1,7 +1,8 @@
 """The Java SDK's example rApp package (`sdk-java/examples/hello-rapp/package/`) builds into a CSAR that passes the checks Onboarding makes.
 
-The Java side (`sdk-java/`) has its own tests; this one holds the half that needs the platform's Python code: the package is built with
-`samples/build_csar.py --source-dir` and its `operatorUi` goes through `smo_sdk.operator_ui` (the code Onboarding runs).
+The Java side (`sdk-java/`) has its own tests; this file holds the half that needs the platform's Python code: the package is built with `samples/build_csar.py --source-dir` and its `operatorUi`
+goes through `smo_sdk.operator_ui` (the code Onboarding runs). Run with `cd sdk && PYTHONPATH=.:../shared python -m pytest tests/test_java_example_package.py -q`; needs the repository checkout
+(`sdk-java/` and `samples/`), no network.
 """
 
 import importlib.util
@@ -18,6 +19,7 @@ PACKAGE = SMO / "sdk-java" / "examples" / "hello-rapp" / "package"
 
 
 def _builder():
+    """`samples/build_csar.py` loaded by path (it is a script, not a package)."""
     spec = importlib.util.spec_from_file_location("build_csar", SMO / "samples" / "build_csar.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -30,6 +32,7 @@ def _csar() -> bytes:
 
 
 def test_the_package_has_the_files_onboarding_reads_and_rebuilds_byte_identically():
+    """The CSAR has exactly the files Onboarding reads, the ASD names the rApp, and two builds of the same sources are byte-identical."""
     with zipfile.ZipFile(io.BytesIO(_csar())) as z:
         assert sorted(z.namelist()) == ["Definitions/asd.yaml", "TOSCA-Metadata/DIGESTS.sha256", "TOSCA-Metadata/DIGESTS.sha256.sig", "TOSCA-Metadata/TOSCA.meta", "manifest.yaml"]
         assert "Entry-Definitions: Definitions/asd.yaml" in z.read("TOSCA-Metadata/TOSCA.meta").decode()
@@ -40,6 +43,7 @@ def test_the_package_has_the_files_onboarding_reads_and_rebuilds_byte_identicall
 
 
 def test_the_manifest_declares_valid_modes_profiles_and_an_operator_page_the_java_rapp_serves():
+    """Every runtime profile belongs to a declared execution mode and the operator page passes Onboarding's check with exactly the three routes the Java example serves."""
     with zipfile.ZipFile(io.BytesIO(_csar())) as z:
         manifest = yaml.safe_load(z.read("manifest.yaml"))
     assert manifest["rappManifest"]["manifestVersion"] == "1.0"
@@ -51,5 +55,6 @@ def test_the_manifest_declares_valid_modes_profiles_and_an_operator_page_the_jav
 
 
 def test_the_samples_own_build_is_unchanged_by_the_source_dir_option():
+    """Adding the `source` option to `build_bytes` did not change how a sample is built: the energy-saving sample still equals its committed CSAR."""
     builder = _builder()
     assert builder.build_bytes("energy-saving-rapp") == (SMO / "samples" / "energy-saving-rapp.csar").read_bytes()

@@ -4,7 +4,7 @@
     scripts/stress_run.py limiter                    a burst past the per-caller budget: 429 with Retry-After, never a 5xx, and the caller is served again after the wait
     scripts/stress_run.py limiter-shared --budget shared|per-replica
                                                      one burst through several gateway replicas (docker-compose.stress-shared.yml, a budget of --rate-burst and --rate-per-second): with `shared`
-                                                     (R1_RATE_STORE=postgres) about one budget is let through; with `per-replica` (the default store, the control that shows the check can tell) more
+                                                     (R1_RATE_STORE=postgres) about one budget is let through; with `per-replica` (the default store, the control that shows the check can tell) more than one budget is let through
     scripts/stress_run.py oversize                   a body over the 1 MiB cap: 413 before the service reads it, and the gateway keeps answering
     scripts/stress_run.py saturate [--levels 20,50,100,200] [--seconds 15]
                                                      ramp the callers in flight (run with the rate limiter off): every answer is 200, or 503/429 with Retry-After; no hang, no other 5xx
@@ -56,11 +56,17 @@ def shared_verdict(allowed: int, elapsed: float, rate_burst: int, rate_per_secon
 
 
 def fail(msg: str) -> int:
+    """Prints `FAIL: <msg>` and returns 1, so a scenario can `return fail(...)`."""
     print(f"FAIL: {msg}")
     return 1
 
 
 async def limiter(client, args, headers) -> int:
+    """Scenario `limiter`: sends `--burst` GETs at once; passes when none is a 5xx or unanswered, at least one is a 429, every 429 has a `Retry-After` of 1 s or more,
+        and a call after waiting the longest `Retry-After` plus a second is 200 again.
+
+        Needs the gateway started with the small rate budget of `docker-compose.stress-limiter.yml`; against the default budget no call is limited and the scenario fails.
+    """
     results = await asyncio.gather(*[client.get(f"{args.gateway}{LIST}", headers=headers) for _ in range(args.burst)], return_exceptions=True)
     codes: dict[int, int] = {}
     for r in results:
@@ -84,6 +90,10 @@ async def limiter(client, args, headers) -> int:
 
 
 async def limiter_shared(client, args, headers) -> int:
+    """Scenario `limiter-shared`: one burst through the gateway replicas, judged by `shared_verdict` on how many calls were let through (status 200).
+
+        A 5xx or an unanswered call fails it first. `--budget shared` expects about one budget; `--budget per-replica` is the control that must let more through.
+    """
     started = time.monotonic()
     results = await asyncio.gather(*[client.get(f"{args.gateway}{LIST}", headers=headers) for _ in range(args.burst)], return_exceptions=True)
     elapsed = time.monotonic() - started
@@ -102,6 +112,9 @@ async def limiter_shared(client, args, headers) -> int:
 
 
 async def oversize(client, args, headers) -> int:
+    """Scenario `oversize`: posts a 3 MiB body (the cap is 1 MiB); passes when the answer is 413, or the connection is ended during the upload (an early 413 can reach a client
+        that is still sending that way), and the next ordinary call is served with 200.
+    """
     body = b"x" * (3 * 1024 * 1024)
     try:
         resp = await client.post(f"{args.gateway}/ran-nf-oam/config-jobs", content=body, headers={**headers, "Content-Type": "application/json"})
@@ -119,6 +132,10 @@ async def oversize(client, args, headers) -> int:
 
 
 async def hammer(client, url: str, headers: dict, deadline: float, codes: dict[int, int], problems: list[str]) -> None:
+    """One caller of the `saturate` scenario: GETs `url` back to back until `deadline`, counting each status in `codes` (0 for a transport error).
+
+        A 429 or 503 without `Retry-After`, and every transport error, add a line to `problems`.
+    """
     while time.monotonic() < deadline:
         try:
             r = await client.get(url, headers=headers)
@@ -132,6 +149,12 @@ async def hammer(client, url: str, headers: dict, deadline: float, codes: dict[i
 
 
 async def saturate(client, args, headers) -> int:
+    """Scenario `saturate`: for each level in `--levels`, holds that many callers in flight for `--seconds` and checks the answers.
+
+        Only 200, 429 and 503 are acceptable statuses, a 429 or 503 must carry `Retry-After`, and nothing may hang. Connection resets (status 0) are counted apart: a few are
+        tolerated, up to `--max-reset-rate` of the calls, because a kept-alive connection closed by the server as it is reused shows as a reset; the two reset error classes are
+        taken out of `problems` and judged by that rate instead. Returns 1 if any level had a violation.
+    """
     bad = 0
     for level in [int(x) for x in args.levels.split(",")]:
         codes: dict[int, int] = {}
@@ -156,6 +179,11 @@ async def saturate(client, args, headers) -> int:
 
 
 async def probe(client, args, headers) -> int:
+    """Scenario `probe`: `--expect down` makes three calls to a database-backed route while the dependency is stopped, each of which must be answered within `--deadline` s
+        with a 5xx (exactly `--down-status` when given; a 503 needs `Retry-After`), not a hang or a success.
+
+        `--expect up` polls every 2 s for up to `--wait` s until the route answers 200 again. The workflow stops and starts the containers between the probes.
+    """
     started = time.monotonic()
     if args.expect == "down":
         for _ in range(3):
@@ -191,6 +219,7 @@ async def main_async(args) -> int:
 
 
 def main() -> None:
+    """Command-line entry: parses the options, runs the chosen scenario and exits with its status (0 passed, 1 broke the invariant)."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("scenario", choices=["limiter", "limiter-shared", "oversize", "saturate", "probe"])
     ap.add_argument("--gateway", default="http://r1-termination:8000")

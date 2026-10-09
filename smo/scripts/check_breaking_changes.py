@@ -46,6 +46,7 @@ def resolve(spec: dict, node, depth: int = 0):
 
 
 def type_of(spec: dict, schema) -> str:
+    """A comparable type name for a schema: its `type`, or the sorted `|`-joined types of its `anyOf`/`oneOf`, or `enum`, or `any` when nothing is said (and `any` never counts as a change)."""
     schema = resolve(spec, schema)
     if "type" in schema:
         return str(schema["type"])
@@ -58,6 +59,7 @@ def type_of(spec: dict, schema) -> str:
 
 
 def bounds_change(old: dict, new: dict) -> list[str]:
+    """The ways `new` is stricter than `old` for what a client sends: a lower maximum, a higher minimum, a bound that was not there before, an enum that lost a value, or an enum that was added. Returns one text per change."""
     out = []
     for key in ("maximum", "maxLength", "maxItems", "exclusiveMaximum"):
         if key in new and (key not in old or new[key] < old[key]):
@@ -107,6 +109,7 @@ def compare_schema(old_spec, old, new_spec, new, where: str, request: bool, find
 
 
 def parameters(spec: dict, path_item: dict, operation: dict) -> dict:
+    """The operation's parameters, with the path-level ones included, as `{(location, name): parameter}`; `$ref`s are resolved. An operation-level parameter replaces a path-level one of the same key."""
     out = {}
     for p in list(path_item.get("parameters", [])) + list(operation.get("parameters", [])):
         p = resolve(spec, p)
@@ -115,6 +118,7 @@ def parameters(spec: dict, path_item: dict, operation: dict) -> dict:
 
 
 def body_schema(spec: dict, operation: dict):
+    """`(request body object, its JSON schema)` of an operation; the schema comes from `application/json`, else from the first media type listed, else None."""
     body = resolve(spec, operation.get("requestBody", {}))
     content = body.get("content", {})
     media = content.get("application/json") or next(iter(content.values()), {})
@@ -164,11 +168,13 @@ def compare_specs(module: str, old: dict, new: dict) -> list[tuple[str, str, str
 
 
 def key_of(module: str, finding: tuple[str, str, str, str]) -> str:
+    """The waiver key of a finding: `<module> <rule> <METHOD path> <where>`, with trailing space removed when `where` is empty."""
     rule, op_id, where, detail = finding
     return f"{module} {rule} {op_id} {where}".rstrip()
 
 
 def base_tag() -> str:
+    """The newest `smo-v*` release tag that is not a release candidate. Ends the script with a message when there is none (typically a checkout without tags)."""
     tags = subprocess.run(["git", "-C", str(REPO), "tag", "--list", "smo-v*", "--sort=-version:refname"], capture_output=True, text=True, check=True).stdout.split()
     tags = [t for t in tags if "-rc." not in t]
     if not tags:
@@ -177,16 +183,23 @@ def base_tag() -> str:
 
 
 def spec_at(ref: str, name: str) -> dict | None:
+    """The OpenAPI document `smo/docs/openapi/<name>` as committed at git `ref`, or None when the file does not exist there (a module the older release did not have)."""
     result = subprocess.run(["git", "-C", str(REPO), "show", f"{ref}:smo/docs/openapi/{name}"], capture_output=True, text=True)
     return json.loads(result.stdout) if result.returncode == 0 else None
 
 
 def specs_at(ref: str) -> list[str]:
+    """The names of the OpenAPI JSON files committed at git `ref`. A ref that git cannot resolve gives an empty list rather than an error."""
     result = subprocess.run(["git", "-C", str(REPO), "ls-tree", "--name-only", f"{ref}:smo/docs/openapi/"], capture_output=True, text=True)
     return [line for line in result.stdout.split() if line.endswith(".json")]
 
 
 def main() -> int:
+    """Compares the committed specs at the base (`--base`, default the newest release tag) with the working tree and prints every unwaived break and stale waiver.
+
+        Returns 1 when there is an unwaived break or a stale waiver, unless `--list` (print and return 0). A waiver key is matched with shell wildcards against the break key;
+        every waiver that matched nothing is stale and fails the run, so the waiver file cannot outlive the release it was written for.
+    """
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base", help="git ref to compare with (default: the newest smo-v* tag that is not a release candidate)")
     parser.add_argument("--list", action="store_true", help="print every break with its waiver key and exit 0")

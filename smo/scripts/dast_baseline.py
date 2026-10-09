@@ -22,6 +22,7 @@ REPORTED = {"low", "medium", "high", "critical", "warn"}
 
 
 def testssl_findings(text: str) -> dict[str, str]:
+    """`{"<id> <severity>": finding text}` from a `testssl.sh --jsonfile` document, for severities low and above and WARN (case-insensitive). The first finding of a key wins."""
     out = {}
     for item in json.loads(text):
         severity = str(item.get("severity", "")).lower()
@@ -31,6 +32,7 @@ def testssl_findings(text: str) -> dict[str, str]:
 
 
 def nuclei_findings(text: str) -> dict[str, str]:
+    """`{"<template-id> <severity>": "<name> at <matched-at>"}` from nuclei's JSON-lines output; lines that do not start with `{` are skipped, severities below low are left out."""
     out = {}
     for line in text.splitlines():
         line = line.strip()
@@ -45,6 +47,7 @@ def nuclei_findings(text: str) -> dict[str, str]:
 
 
 def zap_findings(text: str) -> dict[str, str]:
+    """`{"<plugin id> <risk>": "<name> at <first uri>"}` from a ZAP `-J` report; risk codes 1 to 3 (low, medium, high) are kept and informational alerts (0) are left out."""
     out = {}
     labels = {"1": "low", "2": "medium", "3": "high"}
     for site in json.loads(text).get("site", []):
@@ -73,6 +76,10 @@ def compare(findings: dict[str, str], baseline: dict[str, str]) -> tuple[dict[st
 
 
 def main(argv: list[str]) -> int:
+    """Reads the baseline (keys starting with `_` are comments) and the tool's report, prints the counts, every NEW key with its detail and every STALE entry.
+
+        Returns 1 only when there is a NEW finding; a stale baseline entry never fails the run. Returns 2 and prints the usage when the arguments are wrong.
+    """
     if len(argv) != 3 or argv[0] not in PARSERS:
         print(__doc__)
         return 2

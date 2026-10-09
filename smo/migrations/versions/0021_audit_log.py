@@ -15,6 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Create `audit_log` (hash-chained, one row per audited change, with indexes on time, actor and correlation id) and `audit_head`, and seed the head with sequence 0 and a hash of 64 zeros."""
     op.execute("""
         CREATE TABLE audit_log (
             seq            BIGINT PRIMARY KEY,
@@ -41,9 +42,11 @@ def upgrade() -> None:
             last_hash VARCHAR(64) NOT NULL
         )
     """)
+    # The chain's starting point: the writers lock this single row to number the next audit row and take its last hash as `prev_hash`; the first row therefore chains to 64 zeros.
     op.execute(f"INSERT INTO audit_head (head_id, last_seq, last_hash) VALUES (1, 0, '{'0' * 64}')")
 
 
 def downgrade() -> None:
+    """Drop `audit_head` and `audit_log`; the audit trail is lost with them."""
     op.execute("DROP TABLE audit_head")
     op.execute("DROP TABLE audit_log")

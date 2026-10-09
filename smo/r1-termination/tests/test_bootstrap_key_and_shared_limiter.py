@@ -1,4 +1,10 @@
-"""PR-SEC-9.3 (the optional bootstrap key) and PR-SEC-8.5 (the limiter's shared store) at the gateway."""
+"""PR-SEC-9.3 (the optional bootstrap key) and PR-SEC-8.5 (the limiter's shared store) at the gateway.
+
+Covers `GET /bootstrap` with and without `R1_BOOTSTRAP_KEY[_FILE]` (the 401, the constant-time comparison, where the key is read from), and the choice between
+the in-process and the shared (`R1_RATE_STORE=postgres`) limiter, including two replicas sharing one budget and failing open on a database error. Some tests
+reload `app.main` to re-read the environment and restore it afterwards. Uses `test_main.py`'s fake backend and the `gateway_database` fixture of `conftest.py`.
+Run: `PYTHONPATH=.:../shared python -m pytest tests/test_bootstrap_key_and_shared_limiter.py -q`.
+"""
 
 import importlib
 import logging
@@ -20,12 +26,14 @@ client = TestClient(app)
 # ---------------------------------------------------------------- the bootstrap key (PR-SEC-9.3)
 
 def test_without_a_configured_key_bootstrap_is_open_and_a_sent_key_is_ignored():
+    """By default `/bootstrap` answers 200 to anyone, and a key header sent anyway is ignored."""
     assert gateway.BOOTSTRAP_KEY is None                                    # the default
     assert client.get("/bootstrap").status_code == 200
     assert client.get("/bootstrap", headers={BOOTSTRAP_KEY_HEADER: "anything"}).status_code == 200
 
 
 def test_with_a_key_bootstrap_needs_the_header_and_nothing_is_revealed_without_it(monkeypatch):
+    """With a key configured, a missing, wrong, empty or longer-than-right key is a 401 whose body names no address; the right key gets the two endpoint entries."""
     monkeypatch.setattr(gateway, "BOOTSTRAP_KEY", "s3cret-key")
     refused = [client.get("/bootstrap"), client.get("/bootstrap", headers={BOOTSTRAP_KEY_HEADER: "wrong"}),
                client.get("/bootstrap", headers={BOOTSTRAP_KEY_HEADER: ""}), client.get("/bootstrap", headers={BOOTSTRAP_KEY_HEADER: "s3cret-key-and-more"})]
@@ -37,6 +45,7 @@ def test_with_a_key_bootstrap_needs_the_header_and_nothing_is_revealed_without_i
 
 
 def test_the_key_is_compared_in_constant_time_and_a_non_ascii_header_is_just_wrong(monkeypatch):
+    """The key goes through `hmac.compare_digest` as bytes, so timing does not reveal it and a non-ASCII header is a plain 401, not a server error."""
     seen = []
     real = gateway.hmac.compare_digest
     monkeypatch.setattr(gateway.hmac, "compare_digest", lambda a, b: seen.append((a, b)) or real(a, b))
@@ -47,6 +56,7 @@ def test_the_key_is_compared_in_constant_time_and_a_non_ascii_header_is_just_wro
 
 
 def test_the_key_comes_from_the_environment_or_a_file_and_never_both(monkeypatch, tmp_path):
+    """The key is read once at start from `R1_BOOTSTRAP_KEY` or from the file named by `R1_BOOTSTRAP_KEY_FILE` (trailing newline dropped); setting both stops the service."""
     monkeypatch.setenv("R1_BOOTSTRAP_KEY", "from-env")
     importlib.reload(gateway)
     try:
@@ -66,6 +76,7 @@ def test_the_key_comes_from_the_environment_or_a_file_and_never_both(monkeypatch
 
 
 def test_the_declared_contract_has_an_optional_key_header_and_the_401():
+    """The OpenAPI operation for `/bootstrap` declares the optional `x-bootstrap-key` header and the 401, and stays open (`security: []`)."""
     operation = app.openapi()["paths"]["/bootstrap"]["get"]
     header = next(p for p in operation["parameters"] if p["name"] == "x-bootstrap-key")
     assert header["in"] == "header" and header["required"] is False
@@ -76,6 +87,10 @@ def test_the_declared_contract_has_an_optional_key_header_and_the_401():
 
 @pytest.fixture
 def shared_limiter(monkeypatch, gateway_database):
+    """Fixture: a `SharedTokenBuckets` over the test database installed as the gateway's limiter; returns `(limiter, session_factory)`.
+
+    Its rate and burst follow `R1_RATE_PER_SECOND` and `R1_RATE_BURST` at each call, as the real one does.
+    """
     from sqlalchemy.orm import sessionmaker
     factory = sessionmaker(bind=gateway_database, autoflush=False, future=True)
     limiter = SharedTokenBuckets(lambda: float(gateway.os.environ.get("R1_RATE_PER_SECOND", "100")),
@@ -85,10 +100,12 @@ def shared_limiter(monkeypatch, gateway_database):
 
 
 def test_the_default_store_is_the_in_process_limiter():
+    """Without `R1_RATE_STORE` the limiter is the in-process `TokenBuckets`, which never blocks the event loop."""
     assert gateway.RATE_STORE == "memory" and isinstance(gateway._limiter, ratelimit.TokenBuckets) and gateway._limiter.blocking is False
 
 
 def test_postgres_store_builds_the_shared_limiter_and_a_bad_value_stops_the_service(monkeypatch):
+    """`R1_RATE_STORE=postgres` builds the shared limiter; an unknown value stops the service at start with an error naming the setting."""
     monkeypatch.setenv("R1_RATE_STORE", "postgres")
     try:
         importlib.reload(gateway)
@@ -102,6 +119,7 @@ def test_postgres_store_builds_the_shared_limiter_and_a_bad_value_stops_the_serv
 
 
 def test_with_the_shared_store_a_caller_over_its_budget_gets_429_and_the_budget_is_in_the_database(monkeypatch, shared_limiter):
+    """With the shared store a caller over its burst gets 429 `RATE_LIMITED` with a `Retry-After`, the backend is not called, and the bucket is a database row keyed by invoker id."""
     _, factory = shared_limiter
     monkeypatch.setenv("R1_RATE_BURST", "3")
     monkeypatch.setenv("R1_RATE_PER_SECOND", "0.001")
@@ -116,6 +134,7 @@ def test_with_the_shared_store_a_caller_over_its_budget_gets_429_and_the_budget_
 
 
 def test_a_second_gateway_replica_over_the_same_database_sees_the_spent_budget(monkeypatch, shared_limiter):
+    """Two replicas over one database share a caller's budget: tokens spent on one are gone on the other (the point of the shared store)."""
     first, factory = shared_limiter
     second = SharedTokenBuckets(first._rate, first._burst, session_factory=factory)
     monkeypatch.setenv("R1_RATE_BURST", "2")
@@ -127,6 +146,7 @@ def test_a_second_gateway_replica_over_the_same_database_sees_the_spent_budget(m
 
 
 def test_a_database_error_does_not_refuse_the_request_and_is_logged(monkeypatch, caplog):
+    """When the shared store errs the limiter falls back to the replica's own bucket and logs a warning, so an outage bounds the rate instead of refusing every call."""
     def broken():
         raise ConnectionError("database down")
     monkeypatch.setattr(gateway, "_limiter", SharedTokenBuckets(lambda: 1.0, lambda: 2.0, session_factory=broken))
@@ -139,6 +159,7 @@ def test_a_database_error_does_not_refuse_the_request_and_is_logged(monkeypatch,
 
 
 def test_a_refused_unauthenticated_request_spends_nothing_in_the_shared_store(monkeypatch, shared_limiter):
+    """A request refused for a missing token never reaches the limiter, so it writes no bucket row."""
     _, factory = shared_limiter
     _backend_that_accepts_any_token(monkeypatch)
     assert client.get("/sme/x").status_code == 401

@@ -36,11 +36,16 @@ sys.path.insert(0, str(SMO_ROOT / "sdk"))
 
 
 def generate(module_dir: str) -> dict:
+    """The module's OpenAPI document as its FastAPI app would serve it now (the app is imported by `tests_integration/loader.py`, which does not start it)."""
     main = load_app_module(module_dir)
     return main.app.openapi()
 
 
 def main() -> None:
+    """Writes `docs/openapi/<module>.json` (sorted keys, two-space indent) for every module in `ALL_MODULES`, replacing the existing file, and prints each path.
+
+        Run it after changing a route or a request/response model, then commit the result; `tests_integration/test_openapi_specs.py` fails when the committed files differ.
+    """
     out_dir = SMO_ROOT / "docs" / "openapi"
     out_dir.mkdir(parents=True, exist_ok=True)
     for module_dir in ALL_MODULES:

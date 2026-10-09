@@ -55,12 +55,14 @@ DRY_RUN = {"requestedBy": "load", "scope": "cell", "dryRun": True, "changes": []
 
 @dataclass
 class Series:
+    """What a run recorded for one route: every latency in ms, the number of errors and a count per status code (0 is a transport error)."""
     latencies_ms: list[float] = field(default_factory=list)
     errors: int = 0
     statuses: dict[int, int] = field(default_factory=dict)
 
 
 def percentile(values: list[float], q: float) -> float:
+    """The q-quantile (0..1) of `values` taken at the sorted list index `round(q * (n - 1))`, with no interpolation; 0.0 for an empty list."""
     if not values:
         return 0.0
     ordered = sorted(values)
@@ -68,6 +70,10 @@ def percentile(values: list[float], q: float) -> float:
 
 
 async def register(client: httpx.AsyncClient, sme: str) -> dict:
+    """Registers one API invoker with SME using the enrollment secret (`SMO_ENROLLMENT_SECRET_FILE`, default `/run/secrets/enrollment_secret`) and returns SME's answer.
+
+        Raises `httpx.HTTPStatusError` on a non-2xx answer. The invoker is not removed afterwards.
+    """
     secret = Path(os.environ.get("SMO_ENROLLMENT_SECRET_FILE", "/run/secrets/enrollment_secret")).read_text(encoding="utf-8").strip()
     resp = await client.post(f"{sme}/invoker-registrations", json={"apiInvokerPublicKey": "load"}, headers={"X-SMO-Enrollment": secret})
     resp.raise_for_status()
@@ -85,6 +91,7 @@ class Outcome(int):
 
 
 def outcome(resp: httpx.Response) -> Outcome:
+    """The status code of a response as an `Outcome`, with the first 200 characters of the body attached when the status is 400 or above."""
     result = Outcome(resp.status_code)
     if resp.status_code >= 400:
         result.detail = resp.text[:200]
@@ -92,6 +99,11 @@ def outcome(resp: httpx.Response) -> Outcome:
 
 
 async def one_call(client: httpx.AsyncClient, gateway: str, sme: str, reg: dict, access: str, route) -> int:
+    """Makes one call of `route` and returns its status as an `Outcome`.
+
+        A `TOKEN` route asks SME for a new token; a `POST` is the dry-run config job with a fresh `Idempotency-Key`; anything else is a GET through the gateway with the
+        bearer token. `{invoker}` in the path is replaced by the registered invoker id. Transport errors propagate (the worker turns them into status 0).
+    """
     name, method, path, _, _ = route
     if method == "TOKEN":
         return outcome(await get_token(client, sme, reg))
@@ -103,6 +115,7 @@ async def one_call(client: httpx.AsyncClient, gateway: str, sme: str, reg: dict,
     return outcome(await client.get(f"{gateway}{path}", headers=headers))
 
 
+# one `name="value"` pair of a Prometheus sample's label set; a backslash escape inside the value is allowed
 LABEL = re.compile(r'(\w+)="((?:[^"\\]|\\.)*)"')
 
 
@@ -201,6 +214,7 @@ def timeline_rows(timeline: dict[int, list[int]]) -> list[dict]:
 
 
 def summarise(series: dict[str, Series], seconds: float) -> dict:
+    """Per-route and overall request count, requests a second (over `seconds`), p50/p95/p99/max latency in ms, error count and status counts, plus the mean latency."""
     rows, all_latencies, all_errors = [], [], 0
     for route in ROUTES:
         s = series[route[0]]
@@ -217,6 +231,7 @@ def summarise(series: dict[str, Series], seconds: float) -> dict:
 
 
 def markdown(result: dict, args) -> str:
+    """The report as markdown: the header line, the per-route table, the token-check line when the introspection counters were read, and the error timeline (or "No errors")."""
     paced = f", paced to about {args.rate:g} calls a second" if getattr(args, "rate", 0) else ""
     measured = result.get("seconds", args.duration)
     lines = [f"Load: {args.concurrency} callers in flight for {measured:g} s after a {args.warmup:g} s warm-up{paced}, through the gateway as an SMO module.", "",
@@ -235,6 +250,11 @@ def markdown(result: dict, args) -> str:
 
 
 async def main_async(args) -> int:
+    """Runs the load and writes `load-results.json` and `load-results.md` into `--out`. Returns 1 when the error share of all measured calls is over `--max-error-rate`, else 0.
+
+        Registers an invoker and takes a token (a failure there raises), starts `--concurrency` workers, and reads the metrics counters once at the end of the warm-up and once
+        after the last worker; the measured time is `min(--duration, actual)` so a run ended by `--stop-file` is not credited with the full duration.
+    """
     limits = httpx.Limits(max_connections=args.concurrency + 5, max_keepalive_connections=args.concurrency + 5)
     async with httpx.AsyncClient(limits=limits, timeout=args.timeout) as client:
         reg = await register(client, args.sme)
@@ -282,6 +302,7 @@ async def main_async(args) -> int:
 
 
 def main() -> int:
+    """Command-line entry; `--sme-metrics` and `--gateway-metrics` default to `<url>/metrics`. Returns `main_async`'s exit code."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--gateway", default="http://r1-termination:8000")
     ap.add_argument("--sme", default="http://sme:8000")

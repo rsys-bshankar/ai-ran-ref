@@ -1,13 +1,8 @@
-"""sdk.analytics — a thin client over MDAF (`mdaf/`) and RAN Analytics'
-own producer-registration route (`ran-analytics/`), TS 28.104 MDA NRM.
+"""sdk.analytics: a thin client over MDAF (`mdaf/`) and over RAN Analytics' producer registration route (`ran-analytics/`), TS 28.104 MDA NRM.
 
-Wave 1's split (docs/ARCHITECTURE.md (MDAF)) moved report/
-subscription ownership to `mdaf/`; `ran-analytics/` kept only producer
-registration and became an MDAF consumer. This client's namespace
-mirrors that: producer registration is still the analytics-production
-side of the same domain an rApp author thinks of as "analytics", even
-though it's a different backend service than the one reports/
-subscriptions live on.
+MDAF owns reports and subscriptions; `ran-analytics/` keeps only producer registration and is itself an MDAF consumer. The namespace mirrors the domain an rApp author thinks of as
+"analytics", so producer registration is here even though it is a different backend service from the one reports and subscriptions live on (`docs/ARCHITECTURE.md`, MDAF).
+Part of the SDK (`sdk/README.md`); one method per route, no validation of its own.
 """
 
 import uuid
@@ -16,12 +11,13 @@ from ._common import BaseClient, ensure_ok
 
 
 class AnalyticsClient(BaseClient):
+    """The `sdk.analytics` namespace: analytics producers, reports and subscriptions, and the TS 28.104 MDARequest / MDAReport calls."""
     def register_producer(self, producer_id: str, analytics_type: str, dme_input_types: list[uuid.UUID | str],
                            output_schema: dict, mda_type: str | None = None) -> dict:
-        """`mda_type` (HISTORY.md §7): TS28104's own real, closed MDAType
-        enum — optional; omit it to let the route derive one for this
-        build's own known-unambiguous shorthand values, or pass one of
-        the 24 real spec values directly for genuine conformance.
+        """Register an analytics producer at RAN Analytics (`POST /ran-analytics/producers`).
+
+        `mda_type` is TS 28.104's closed MDAType enum, optional: omit it to let the route derive one for this build's unambiguous shorthand values (HISTORY.md section 7), or pass one of the 24 spec
+        values for genuine conformance. The query parameters carry the ids and the JSON body carries the input types and the output schema.
         """
         return ensure_ok(self._r1.post(
             "/ran-analytics/producers",
@@ -34,6 +30,7 @@ class AnalyticsClient(BaseClient):
 
     def publish_report(self, analytics_type: str, output: dict, input_sources: list[uuid.UUID | str] | None = None,
                         scope: dict | None = None) -> dict:
+        """Publish an analytics report of `analytics_type` to MDAF (`POST /mdaf/reports`); the body is `{output, input_sources, scope}` and `analytics_type` goes in the query."""
         return ensure_ok(self._r1.post(
             "/mdaf/reports", params={"analytics_type": analytics_type},
             json={"output": output, "input_sources": [str(s) for s in (input_sources or [])], "scope": scope},
@@ -44,19 +41,19 @@ class AnalyticsClient(BaseClient):
 
     def subscribe(self, analytics_type: str, requested_by: str, notification_destination: str | None = None,
                   scope: dict | None = None, threshold_info: list[dict] | None = None) -> dict:
-        # Wave 3: `scope` used to be the route's only body-eligible
-        # parameter (bare, unwrapped JSON body) until `thresholdInfo`
-        # (TS28.104 ThresholdInfo, HISTORY.md §7's MDAF section) needed a
-        # body field alongside it — FastAPI can't leave a single field
-        # unwrapped once a second body-eligible field exists, so the
-        # route now takes an explicit {"scope": ..., "thresholdInfo": ...}
-        # body. Confirmed against the route's own live OpenAPI schema
-        # before writing this, not assumed. Each threshold_info dict:
+        """Subscribe to reports of `analytics_type` at MDAF (`POST /mdaf/subscriptions`).
+
+        `analytics_type` and `requested_by` go in the query; `notification_destination`, `scope` and `threshold_info` go in the JSON body. Each `threshold_info` entry is TS 28.104
+        ThresholdInfo: `{monitoredMDAOutputIE, thresholdDirection, thresholdValue, hysteresis?}`.
+        """
+        # The route takes an explicit body {"scope": ..., "thresholdInfo": ..., "notificationDestination": ...}:
+        # FastAPI embeds body fields under their names once there is more than one,
+        # so none of them is sent as a bare, unwrapped JSON value. `analytics_type`
+        # and `requested_by` are plain strings and stay query parameters. Each
+        # threshold_info dict is a TS 28.104 ThresholdInfo:
         # {monitoredMDAOutputIE, thresholdDirection, thresholdValue, hysteresis?}.
-        # notification_destination moved from a query param into this
-        # same body (cross-cutting standardization, Subscriptions) —
-        # unified with every other subscription-shaped resource's own
-        # notificationDestination body field.
+        # The notification destination is a body field, like the
+        # notificationDestination of every other subscription-shaped resource.
         return ensure_ok(self._r1.post("/mdaf/subscriptions", params={
             "analytics_type": analytics_type, "requested_by": requested_by,
         }, json={"notificationDestination": notification_destination, "scope": scope, "thresholdInfo": threshold_info}))
@@ -73,9 +70,7 @@ class AnalyticsClient(BaseClient):
                            reporting_target: str | None = None, analytics_scope: dict | None = None,
                            mda_function_ref: uuid.UUID | str | None = None, requested_by: str | None = None,
                            start_time: str | None = None, stop_time: str | None = None) -> dict:
-        """TS 28.104 MDARequest. `requested_mda_outputs` is a list of
-        MDAOutputPerMDAType ({mDAType, mDAOutputIEFilters?}); delivery is
-        per `reporting_method` (NOTIFICATION | FILE | STREAMING)."""
+        """TS 28.104 MDARequest (`POST /mdaf/mda-requests`): `requested_mda_outputs` is a list of MDAOutputPerMDAType (`{mDAType, mDAOutputIEFilters?}`) and delivery is per `reporting_method` (NOTIFICATION, FILE or STREAMING); unset fields are left out of the body."""
         body = {"requestedMDAOutputs": requested_mda_outputs, "reportingMethod": reporting_method,
                 "reportingTarget": reporting_target, "analyticsScope": analytics_scope,
                 "mDAFunctionRef": str(mda_function_ref) if mda_function_ref else None, "requestedBy": requested_by,
@@ -88,8 +83,7 @@ class AnalyticsClient(BaseClient):
     def publish_mda_report(self, mda_outputs: list[dict], managed_entities: list[str] | None = None,
                            report_kind: str | None = None, mda_request_ref: uuid.UUID | str | None = None,
                            input_sources: list[uuid.UUID | str] | None = None) -> dict:
-        """TS 28.104 MDAReport with typed mDAOutputs; report_kind is
-        ANALYTICS | PREDICTION | DRIFT (inferred when omitted)."""
+        """TS 28.104 MDAReport with typed mDAOutputs (`POST /mdaf/mda-reports`); `report_kind` is ANALYTICS, PREDICTION or DRIFT and is inferred by MDAF when omitted; unset fields are left out of the body."""
         body = {"mDAOutputs": mda_outputs, "managedEntitiesScope": managed_entities, "reportKind": report_kind,
                 "mDARequestRef": str(mda_request_ref) if mda_request_ref else None,
                 "inputSources": [str(s) for s in (input_sources or [])]}
@@ -97,6 +91,10 @@ class AnalyticsClient(BaseClient):
 
     def query_mda_reports(self, mda_type: str | None = None, report_kind: str | None = None,
                           managed_entity: str | None = None, mda_request_id: uuid.UUID | str | None = None) -> list[dict]:
+        """MDA reports, newest first, narrowed by the filters that are set (`GET /mdaf/mda-reports`).
+
+        Unset filters are left out of the query because `httpx` would send None as an empty string, which the UUID-typed `mda_request_id` filter rejects with 422.
+        """
         # unset filters are left out: httpx would send None as an empty
         # string, which the UUID-typed mda_request_id filter rejects (422)
         params = {"mda_type": mda_type, "report_kind": report_kind, "managed_entity": managed_entity,
@@ -104,11 +102,11 @@ class AnalyticsClient(BaseClient):
         return ensure_ok(self._r1.get("/mdaf/mda-reports", params={k: v for k, v in params.items() if v is not None}))
 
     def get_prediction(self, managed_entity: str, pm_name: str | None = None) -> dict | None:
-        """The latest PREDICTION report (W5-03's TrafficTrendReport: a
-        TS 28.104 PREDICTIONS_PM_DATA report) for one managed entity, e.g.
-        a cell's predicted PRB utilisation. With `pm_name`, returns just
-        that PmPrediction ({pmName, pmPredictedValue, ...}); None if no
-        report exists yet."""
+        """The latest PREDICTION report (the TrafficTrendReport of HISTORY.md W5-03, a TS 28.104 PREDICTIONS_PM_DATA report) for one managed entity, such as a cell's predicted PRB utilisation.
+
+        With `pm_name`, returns just that PmPrediction (`{pmName, pmPredictedValue, ...}`) from the newest report, or None when that report has no such prediction; None as well when no report exists yet.
+        Only the newest report is searched.
+        """
         reports = self.query_mda_reports(report_kind="PREDICTION", managed_entity=managed_entity)
         if not reports:
             return None

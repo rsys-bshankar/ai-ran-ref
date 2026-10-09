@@ -1,9 +1,9 @@
-"""Tests for AIMgF's TS 28.105 AI/ML NRM resources (Wave 4, app/nrm.py).
-Run with: pytest smo/aimgf/tests -q
+"""Tests of the TS 28.105 NRM resources in `app/nrm.py`: training, testing and update requests with their functions, processes and reports; the inference function and its
+loading policy, request and process; inference and emulation reports; and the `nrm-refs` view MLMR reads.
 
-Same doubles as test_main.py (MLMR model existence, NFO runtimes); the
-NRM resources ride on the real job/lifecycle rows, so most assertions
-check both the spec-shaped view and the underlying job/lifecycle state.
+An NRM request is the same row as the job it starts, so most assertions check both the spec-shaped view (`{id, attributes}`) and the job or lifecycle state behind it.
+Fixtures and `_set_lifecycle` come from `test_main.py` (`client`, `mlmr`, `db_session_factory`): MLMR model existence and NFO are in-memory doubles, the database is
+SQLite, nothing is sent over the network. Run with `cd smo/aimgf && PYTHONPATH=.:../shared python -m pytest tests/test_nrm.py -q`.
 """
 
 import uuid
@@ -14,6 +14,7 @@ from app.statemachine import ModelLifecycleState, RuntimeLifecycleState
 
 
 def _attrs(resp):
+    """Asserts the response is 200 or 201 and returns its `attributes` object."""
     assert resp.status_code in (200, 201), resp.text
     return resp.json()["attributes"]
 
@@ -21,6 +22,9 @@ def _attrs(resp):
 # ---------------------------------------------------------------- MLTrainingFunction / Request / Process / Report
 
 def test_training_request_is_a_real_training_job_with_spec_attributes(client, mlmr):
+    """An MLTrainingRequest starts a real training job: the spec attributes round-trip, the same row answers `/training-jobs/{id}/status`, the model enters TRAINING, the function records the
+    training type, and a process exists for it.
+    """
     model_id = mlmr.add_model()
     function = client.post("/ml-training-functions", json={
         "userLabel": "mltf-1",
@@ -55,6 +59,7 @@ def test_training_request_is_a_real_training_job_with_spec_attributes(client, ml
 
 
 def test_training_request_rejects_values_outside_spec_enums(client, mlmr):
+    """A value outside a closed spec enum, and an attribute the spec does not define, are both 422 rather than stored."""
     model_id = mlmr.add_model()
     resp = client.post("/ml-training-requests", json={
         "mLModelRef": str(model_id), "trainingRequestSource": "x",
@@ -68,6 +73,7 @@ def test_training_request_rejects_values_outside_spec_enums(client, mlmr):
 
 
 def test_initial_training_only_for_a_never_trained_model(client, mlmr, db_session_factory):
+    """INITIAL_TRAINING is refused (409) for a model that has been trained before, while another type such as PRE_SPECIALISED_TRAINING is accepted and echoed."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.PROMOTED)
     resp = client.post("/ml-training-requests", json={
@@ -79,6 +85,7 @@ def test_initial_training_only_for_a_never_trained_model(client, mlmr, db_sessio
 
 
 def test_suspend_resume_cancel_flags_drive_job_and_process(client, mlmr):
+    """The request and process flags suspend, resume and cancel the one run: both views follow, `priority` is written alongside, and cancelling twice is 409."""
     model_id = mlmr.add_model()
     request_id = client.post("/ml-training-requests", json={"mLModelRef": str(model_id), "trainingRequestSource": "x"}).json()["id"]
     process_id = client.get("/ml-training-processes").json()["items"][0]["id"]
@@ -97,6 +104,9 @@ def test_suspend_resume_cancel_flags_drive_job_and_process(client, mlmr):
 
 
 def test_progress_then_completion_writes_a_chained_training_report(client, mlmr, db_session_factory):
+    """A progress write-back shows in the process; completion finishes it at 100 % and writes an MLTrainingReport that references the model and the process; a retrain's report points at the
+    previous one through `lastTrainingRef`; and progress on a finished process is 409.
+    """
     model_id = mlmr.add_model()
     request_id = client.post("/ml-training-requests", json={"mLModelRef": str(model_id), "trainingRequestSource": "x"}).json()["id"]
     process_id = client.get("/ml-training-processes").json()["items"][0]["id"]
@@ -129,6 +139,7 @@ def test_progress_then_completion_writes_a_chained_training_report(client, mlmr,
 
 
 def test_legacy_training_route_also_gets_a_process(client, mlmr):
+    """A run started through POST /training-jobs also gets an MLTrainingProcess, so the request/process split exists for every run."""
     model_id = mlmr.add_model()
     job_id = client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "p"}).json()["trainingJobId"]
     processes = client.get("/ml-training-processes").json()["items"]
@@ -138,6 +149,7 @@ def test_legacy_training_route_also_gets_a_process(client, mlmr):
 # ---------------------------------------------------------------- MLTestingFunction / Request / Report
 
 def test_testing_request_drives_validation_and_writes_testing_report(client, mlmr, db_session_factory):
+    """An MLTestingRequest starts a real validation (the model enters VALIDATING); completing it writes a PASSED MLTestingReport and the function lists the model."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
     function_id = client.post("/ml-testing-functions", json={"userLabel": "mlvf"}).json()["id"]
@@ -157,12 +169,14 @@ def test_testing_request_drives_validation_and_writes_testing_report(client, mlm
 
 
 def test_testing_request_still_honours_the_operator_gate(client, mlmr, db_session_factory):
+    """The NRM testing request cannot skip the APPROVE_TRAINING gate: an unapproved TRAINED model is refused with 409."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED)
     assert client.post("/ml-testing-requests", json={"mLModelRef": str(model_id)}).status_code == 409
 
 
 def test_group_targeted_testing_request(client, mlmr):
+    """A testing request can target a coordination group instead of a model, and a body with neither target is 422."""
     group_id = uuid.uuid4()
     attrs = _attrs(client.post("/ml-testing-requests", json={"mLModelCoordinationGroupRef": str(group_id)}))
     assert attrs["mLModelCoordinationGroupRef"] == str(group_id) and attrs["mLModelRef"] is None
@@ -170,6 +184,7 @@ def test_group_targeted_testing_request(client, mlmr):
 
 
 def test_cancelled_testing_request_fails_the_model_and_suspend_resumes(client, mlmr, db_session_factory):
+    """Suspend and resume move a testing request SUSPENDED and back to IN_PROGRESS; cancel marks it CANCELLED, fails the model's VALIDATING stage and makes the run uncompletable (409)."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.TRAINED, training_approved=True)
     request_id = client.post("/ml-testing-requests", json={"mLModelRef": str(model_id)}).json()["id"]
@@ -184,12 +199,16 @@ def test_cancelled_testing_request_fails_the_model_and_suspend_resumes(client, m
 # ---------------------------------------------------------------- AIMLInferenceFunction / loading / reports
 
 def _certified_model(mlmr, db_session_factory):
+    """Registers a model in the MLMR double and puts its lifecycle row at CERTIFIED, the state loading and deploying require."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
     return model_id
 
 
 def test_loading_request_brings_runtime_up_and_gates_inference(client, mlmr, db_session_factory):
+    """A loading request deploys and activates the model's runtime, records the model on the function and the process, and inference on that function is then gated by `activationStatus`
+    (refused while DEACTIVATED, accepted once ACTIVATED); the inference report, the function's consumers and `nrm-refs` all show the result.
+    """
     model_id = _certified_model(mlmr, db_session_factory)
     function_id = client.post("/aiml-inference-functions", json={
         "aIMLInferenceName": "NG_RAN_NETWORK_ENERGY_SAVING", "managedActivationScope": {"dNList": ["cell-101"]}}).json()["id"]
@@ -225,6 +244,7 @@ def test_loading_request_brings_runtime_up_and_gates_inference(client, mlmr, db_
 
 
 def test_inference_on_a_function_without_the_model_loaded(client, mlmr, db_session_factory):
+    """Inference that names an ACTIVATED function which has not loaded the model is refused with 409 `MODEL_NOT_LOADED`."""
     model_id = _certified_model(mlmr, db_session_factory)
     _set_lifecycle(db_session_factory, model_id, runtime_lifecycle_state=RuntimeLifecycleState.ACTIVE)
     function_id = client.post("/aiml-inference-functions", json={"activationStatus": "ACTIVATED"}).json()["id"]
@@ -233,6 +253,7 @@ def test_inference_on_a_function_without_the_model_loaded(client, mlmr, db_sessi
 
 
 def test_loading_rejects_uncertified_model_and_supports_suspend(client, mlmr, db_session_factory):
+    """Loading an uncertified model is 409; a request created with `suspendRequest` waits SUSPENDED and deploys nothing until PATCHed back, which runs the load and activates the runtime."""
     function_id = client.post("/aiml-inference-functions", json={}).json()["id"]
     trained = mlmr.add_model()
     _set_lifecycle(db_session_factory, trained, model_lifecycle_state=ModelLifecycleState.TRAINED)
@@ -250,6 +271,7 @@ def test_loading_rejects_uncertified_model_and_supports_suspend(client, mlmr, db
 
 
 def test_loading_policy_trigger(client, mlmr, db_session_factory):
+    """Triggering a loading policy runs a loading process that names the policy and finishes, with no loading request behind it."""
     model_id = _certified_model(mlmr, db_session_factory)
     function_id = client.post("/aiml-inference-functions", json={}).json()["id"]
     policy = client.post("/ml-model-loading-policies", json={
@@ -261,6 +283,7 @@ def test_loading_policy_trigger(client, mlmr, db_session_factory):
 
 
 def test_emulation_on_emulation_function_writes_inference_report(client, mlmr, db_session_factory):
+    """Completing an emulation run that named an emulation function writes an AIMLInferenceReport under it, carrying the outputs and the job reference."""
     model_id = mlmr.add_model()
     _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.VALIDATED, validation_approved=True)
     emu_fn = client.post("/aiml-inference-emulation-functions", json={"userLabel": "mlef"}).json()["id"]
@@ -274,6 +297,7 @@ def test_emulation_on_emulation_function_writes_inference_report(client, mlmr, d
 
 
 def test_direct_inference_report_needs_exactly_one_function(client, mlmr):
+    """A report posted directly needs exactly one function reference (none is 422); one with a function is stored and found by its model id."""
     function_id = client.post("/aiml-inference-functions", json={}).json()["id"]
     model_id = str(uuid.uuid4())
     assert client.post("/aiml-inference-reports", json={"mLModelRefList": [model_id]}).status_code == 422
@@ -285,6 +309,7 @@ def test_direct_inference_report_needs_exactly_one_function(client, mlmr):
 # ---------------------------------------------------------------- MLUpdateFunction / Request / Process / Report
 
 def _promoted_models(mlmr, db_session_factory, n=2):
+    """Registers `n` models in the MLMR double and puts each at PROMOTED, the state an update request can fine-tune from; returns their ids."""
     ids = []
     for _ in range(n):
         model_id = mlmr.add_model()
@@ -294,6 +319,9 @@ def _promoted_models(mlmr, db_session_factory, n=2):
 
 
 def test_update_request_fine_tunes_every_model_and_reports_when_all_done(client, mlmr, db_session_factory):
+    """An update request starts one FINE_TUNING run per model under one process; progress is 50 % after the first run completes and the report appears only after the second; the process
+    and request are then FINISHED and the update function takes on the capability version.
+    """
     models = _promoted_models(mlmr, db_session_factory)
     function_id = client.post("/ml-update-functions", json={"userLabel": "mluf"}).json()["id"]
     request = client.post("/ml-update-requests", json={
@@ -321,6 +349,7 @@ def test_update_request_fine_tunes_every_model_and_reports_when_all_done(client,
 
 
 def test_update_request_rejects_untrainable_model_and_cancel_stops_runs(client, mlmr, db_session_factory):
+    """An update naming a DEPRECATED model is refused (409 naming the state); cancelling a running update cancels its runs and releases the model from TRAINING."""
     deprecated = mlmr.add_model()
     _set_lifecycle(db_session_factory, deprecated, model_lifecycle_state=ModelLifecycleState.DEPRECATED)
     resp = client.post("/ml-update-requests", json={"mLModelRefList": [str(deprecated)]})
@@ -339,6 +368,7 @@ def test_update_request_rejects_untrainable_model_and_cancel_stops_runs(client, 
 
 
 def test_update_request_accepts_a_certified_model(client, mlmr, db_session_factory):
+    """A CERTIFIED (rolled-back) model can be updated: its run starts and the model enters TRAINING."""
     certified = mlmr.add_model()
     _set_lifecycle(db_session_factory, certified, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
     assert client.post("/ml-update-requests", json={"mLModelRefList": [str(certified)]}).status_code == 201
@@ -346,6 +376,7 @@ def test_update_request_accepts_a_certified_model(client, mlmr, db_session_facto
 
 
 def test_unknown_nrm_object_is_a_clean_404(client):
+    """GET by an unknown id on each of the 17 NRM collections answers 404 `NRM_OBJECT_NOT_FOUND`, never a 500."""
     for path in ("ml-training-functions", "ml-training-requests", "ml-training-processes", "ml-training-reports",
                  "ml-testing-functions", "ml-testing-requests", "ml-testing-reports", "aiml-inference-functions",
                  "aiml-inference-emulation-functions", "aiml-inference-reports", "ml-model-loading-policies",
@@ -357,8 +388,7 @@ def test_unknown_nrm_object_is_a_clean_404(client):
 
 
 def test_nrm_cancel_of_a_training_request_releases_the_model(client, mlmr):
-    """OI-2-training-lifecycle-edges: the NRM cancel flags share DELETE
-    /training-jobs/{id}'s cancel path."""
+    """Cancelling a training request through its flag, or through the process flag, uses the same cancel path as DELETE /training-jobs/{id} (the model leaves TRAINING), and DELETE of an ended request is a no-op 204."""
     model_id = mlmr.add_model()
     request_id = client.post("/ml-training-requests", json={"mLModelRef": str(model_id), "trainingRequestSource": "x"}).json()["id"]
     assert _attrs(client.patch(f"/ml-training-requests/{request_id}", json={"cancelRequest": True}))["requestStatus"] == "CANCELLED"
@@ -375,6 +405,7 @@ def test_nrm_cancel_of_a_training_request_releases_the_model(client, mlmr):
 
 
 def test_a_list_route_accepts_total_false(client):
+    """A list route honours `total=false`: no `total` key, one item for `limit=1`, and `hasMore`; this also holds for the in-memory inference-report list."""
     client.post("/aiml-inference-emulation-functions", json={"userLabel": "a"})
     client.post("/aiml-inference-emulation-functions", json={"userLabel": "b"})
     assert client.get("/aiml-inference-emulation-functions", params={"limit": 1}).json()["total"] == 2

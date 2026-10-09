@@ -32,6 +32,8 @@ project="upgrade"
 made_env=""
 compose_prev() { (cd "$prev_smo" && GUI_COOKIE_SECURE=false docker compose -p "$project" "$@"); }
 compose_new() { (cd "$here" && GUI_COOKIE_SECURE=false docker compose -p "$project" "$@"); }
+# cleanup (EXIT trap): tear down both stacks and their volumes, remove the previous release's worktree and the scratch directory, and delete the .env this script made;
+# the exit status of the run is kept. Teardown failures are ignored on purpose: cleanup must never decide the result.
 cleanup() {
   status=$?
   compose_new down -v --remove-orphans >/dev/null 2>&1 || true
