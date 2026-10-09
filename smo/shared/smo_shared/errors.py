@@ -135,6 +135,9 @@ class FrameworkError:
     ENROLLMENT_NOT_CONFIGURED = ("ENROLLMENT_NOT_CONFIGURED", 503)
     ENROLLMENT_REFUSED = ("ENROLLMENT_REFUSED", 403)
     ROLE_NOT_PERMITTED = ("ROLE_NOT_PERMITTED", 403)
+    # PR-SEC-10: a caller whose scope claim does not cover a target (or a claim an operator or a registration sent that is not valid)
+    SCOPE_DENIED = ("SCOPE_DENIED", 403)
+    AUTHZ_SCOPE_INVALID = ("AUTHZ_SCOPE_INVALID", 422)
     ROLLBACK_NOT_POSSIBLE = ("ROLLBACK_NOT_POSSIBLE", 422)
     CONFIG_CHANGED_SINCE = ("CONFIG_CHANGED_SINCE", 409)
     # MGT-5: staged rollout of a CM job

@@ -23,8 +23,9 @@ from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error, illegal_transition_error
 from smo_shared import roles
 from smo_shared.errors import problem
-from smo_shared.invoker import INVOKER_ID_HEADER
+from smo_shared.invoker import INVOKER_ID_HEADER, on_own_account
 from smo_shared.webhook import normalise_base_url
+from smo_shared import scope as authz_scope
 from smo_shared.r1_client import R1Client  # noqa: F401 — the class every R1 call here uses (tests patch it as app.main.R1Client)
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
@@ -75,6 +76,10 @@ class CreateInstanceRequest(BaseModel):
     # PR-AI-11.4: hold this instance's config jobs for a human to approve (RAN NF OAM's approval queue). Only for ASSIST, the mode in which a person
     # decides: AUTONOMOUS means no one is asked, and a SHADOW instance writes nothing. Without it an instance of any mode behaves as before.
     approvalPolicy: ApprovalPolicy | None = None
+    # PR-SEC-10.3 (docs/adr/0005-tenant-region-authorization.md): which managed elements the instance may touch, `{"regions": [...], "tenants": [...]}` (either key
+    # optional). Put on the instance's invoker at SME, so every module that owns a target enforces it for this rApp. Absent: unscoped, as before. Not `regionScope`
+    # (where an AUTONOMOUS instance's intents go). Checked in the route (422 AUTHZ_SCOPE_INVALID, a fixed message), not by the model, which would repeat the input.
+    authzScope: dict | None = None
 
 
 class UpgradeRequest(BaseModel):
@@ -148,8 +153,13 @@ def create_instance(body: CreateInstanceRequest, request: Request, db: Session =
     base = _checked_operator_api_base(body.operatorApiBase) if body.operatorApiBase is not None else None
     if body.approvalPolicy is not None and body.autonomyMode != "ASSIST":
         raise problem(422, "APPROVAL_POLICY_NEEDS_ASSIST", "approvalPolicy applies to an ASSIST instance: AUTONOMOUS asks no one and SHADOW writes nothing")
+    try:
+        claim = authz_scope.to_claim(authz_scope.from_claim(body.authzScope))
+    except ValueError as exc:
+        raise framework_error(FrameworkError.AUTHZ_SCOPE_INVALID, detail=str(exc)) from None
     inst = provision_instance(db, body.packageId, configuration=body.config, autonomy_mode=body.autonomyMode,
-                              region_scope=body.regionScope, approval_policy=body.approvalPolicy.model_dump() if body.approvalPolicy else None)
+                              region_scope=body.regionScope, approval_policy=body.approvalPolicy.model_dump() if body.approvalPolicy else None,
+                              authz_scope=claim)
     inst.operator_api_base = base
     db.commit()
     return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id}
@@ -168,10 +178,13 @@ def _checked_operator_api_base(value: str) -> str:
 def _on_bootstrap(inst) -> None:
     """What happens when an instance's bootstrap is accepted: the limits its manifest declares are put in force (fail-closed: AI-10.2), then
     its approval policy, if it was created with one (AI-11.4, fail-closed as well), then its SME declarations are registered (best-effort)."""
-    status = onboarding_status(inst)
-    apply_rapp_limits(inst, status)
-    apply_approval_policy(inst)
-    register_sme_declarations(inst, status)
+    with on_own_account():
+        # the platform's act about the rApp, not the rApp's: when the rApp itself reports that it is up (it may, for its own instance) a call made "for" it would be
+        # refused by RAN NF OAM, which does not let a caller change its own limit or approval policy
+        status = onboarding_status(inst)
+        apply_rapp_limits(inst, status)
+        apply_approval_policy(inst)
+        register_sme_declarations(inst, status)
 
 
 @app.post("/instances/{instance_id}/credentials")
@@ -270,12 +283,14 @@ def instance_safeguards(instance_id: uuid.UUID, db: Session = Depends(get_sessio
 
 
 @app.post("/instances/{instance_id}/bootstrap-complete")
-def bootstrap_complete(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+def bootstrap_complete(instance_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """Called once the rApp container has bootstrapped via R1 Termination
     and registered with SME/DME — closes DEPLOYING -> RUNNING. 409 if the
-    instance is not DEPLOYING.
+    instance is not DEPLOYING. The rApp may call it for its own instance only
+    (403 `NOT_THIS_INSTANCE` for another rApp's); an operator may call it for any.
     """
     inst = _load_instance(db, instance_id)
+    _own_instance_or_operator(request, inst)
     if InstanceState(inst.state) != InstanceState.DEPLOYING:
         raise illegal_transition_error(IllegalTransition(InstanceState(inst.state), InstanceEvent.BOOTSTRAP_OK),
                                        f"RAppInstance {instance_id}")
@@ -509,8 +524,9 @@ def set_config(instance_id: uuid.UUID, config: dict, db: Session = Depends(get_s
 
 
 @app.post("/instances/{instance_id}/performance")
-def report_performance(instance_id: uuid.UUID, metrics: dict, db: Session = Depends(get_session)):
-    _get_or_404(db, instance_id)
+def report_performance(instance_id: uuid.UUID, metrics: dict, request: Request, db: Session = Depends(get_session)):
+    """Record a metrics object for the instance. The rApp may report for its own instance only (403 `NOT_THIS_INSTANCE` for another rApp's); an operator may for any."""
+    _own_instance_or_operator(request, _get_or_404(db, instance_id))
     db.add(RAppPerformanceReport(instance_id=instance_id, metrics=metrics))
     db.commit()
     return {"status": "recorded"}
@@ -589,7 +605,7 @@ def list_instances(state: str | None = None, limit: int = PageLimit, offset: int
         stmt = stmt.where(RAppInstance.state == state)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"instanceId": str(i.instance_id), "packageId": str(i.package_id), "state": i.state,
-             "autonomyMode": i.autonomy_mode, "operatorApiBase": i.operator_api_base} for i in page["items"]]}
+             "autonomyMode": i.autonomy_mode, "operatorApiBase": i.operator_api_base, "authzScope": i.authz_scope} for i in page["items"]]}
 
 
 @app.get("/instances/{instance_id}")
@@ -621,7 +637,7 @@ def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
         "pendingUpgradeInstanceId": str(inst.pending_upgrade_instance_id) if inst.pending_upgrade_instance_id else None,
         "smeServiceIds": inst.sme_service_ids,
         "autonomyMode": inst.autonomy_mode, "regionScope": inst.region_scope, "approvalPolicy": inst.approval_policy,
-        "lastTeardown": inst.last_teardown, "operatorApiBase": inst.operator_api_base,
+        "authzScope": inst.authz_scope, "lastTeardown": inst.last_teardown, "operatorApiBase": inst.operator_api_base,
     }
 
 

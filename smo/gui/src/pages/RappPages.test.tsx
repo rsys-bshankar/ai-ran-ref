@@ -148,6 +148,28 @@ describe("RappDetail", () => {
     expect(container.textContent).toContain("No faults reported.");
   });
 
+  it("shows the access scope of the instance: the regions and tenants it may touch, or that it is unscoped", async () => {
+    detail(DECLARED);
+    const unscoped = await open();
+    await settle(8);
+    expect(unscoped.container.textContent).toContain("Access scope");
+    expect(unscoped.container.textContent).toContain("Unscoped (every managed element)");
+    cleanup();
+    fakeBff({
+      [`GET /rapps/${IID}`]: DECLARED, "GET /me/pins": { max: 5, items: [] },
+      "GET /me": { username: "ana", role: "operator", csrfToken: "c", local: true, totpEnrolled: true, mfaEnrolmentRequired: false }, "GET /permissions": { role: "operator", rules: [] },
+      [`GET /smo/rapp-mgmt/instances/${IID}`]: { instanceId: IID, packageId: "p", state: "RUNNING", autonomyMode: "SHADOW", workloadRef: "w-1", regionScope: null, configuration: {},
+        authzScope: { regions: ["eu-west"], tenants: ["acme"] } },
+      [`GET /smo/rapp-mgmt/instances/${IID}/performance`]: { items: [] }, [`GET /smo/rapp-mgmt/instances/${IID}/faults`]: { items: [] },
+      [`GET /smo/rapp-mgmt/instances/${IID}/safeguards`]: { instanceId: IID, invokerId: "inv", killed: false, kill: null, limits: null },
+      [`GET /smo/rapp-mgmt/instances/${IID}/versions`]: { versions: [], rollbackTarget: null },
+    });
+    const scoped = await open();
+    await settle(8);
+    expect(scoped.container.textContent).toContain("regions eu-west · tenants acme");
+    expect(scoped.container.textContent).not.toContain("Unscoped (every managed element)");
+  });
+
   it("a viewer's page has no change button", async () => {
     detail({ ...DECLARED, canChange: false });
     const { container } = await open();

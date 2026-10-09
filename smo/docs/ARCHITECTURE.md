@@ -21,6 +21,7 @@ reached this shape see [HISTORY.md](../HISTORY.md).
 - [Service map](#service-map)
 - [Repository layout](#repository-layout)
 - [R1 API conventions](#r1-api-conventions)
+- [Caller roles and scope](#caller-roles-and-scope)
 - [Mutual TLS between services](#mutual-tls-between-services)
 - [Service ownership](#service-ownership)
 - [Reference rApps](#reference-rapps)
@@ -243,6 +244,28 @@ Every R1-facing service applies the same conventions, implemented once in
 | Trace context | W3C `traceparent` / `tracestate` (`tracing.py`): a valid inbound header is passed on by `R1Client` and the gateway, so one request's fan-out shares a trace id (`traceId` in the logs); with `SMO_OTEL_ENDPOINT` and the optional OpenTelemetry packages each request is a server span and each R1 call a client span, exported to Tempo. Off by default. `docs/OBSERVABILITY.md`. |
 | Cross-module calls | Always `R1Client` through R1 Termination, never a direct service URL. |
 
+## Caller roles and scope
+
+R1 Termination introspects every bearer token and **vouches** for who is calling to the module behind it. Three things travel as headers it sets itself (any value a caller sent is dropped first, so a module can believe them; `r1-termination/tests/` proves it for each):
+
+| Header | What | Set from |
+|---|---|---|
+| `X-R1-Invoker-Id` | The caller's invoker id | the token's `client_id` |
+| `X-R1-Role` | `internal` (an SMO module or the operator's GUI backend, registered with the enrollment secret) or `rapp` (every other invoker) | SME's `role` (`PR-SEC-14`) |
+| `X-R1-Scope` | The caller's **scope claim**, `{"regions": [...], "tenants": [...]}` in compact JSON; absent: unscoped | SME's `authz_scope` (`PR-SEC-10`) |
+
+An SMO module that acts for an rApp (DME writes a config job for it) says so in `X-R1-On-Behalf-Of`, with the rApp's claim in `X-R1-On-Behalf-Scope`; `R1Client` adds both by itself, and the gateway forwards them only from an `internal` caller. A module reads the effective caller with `invoker_id(request)` and `scope_of(request.headers)`.
+
+**What each layer decides.**
+
+| Layer | Decides | Where |
+|---|---|---|
+| The GUI backend | What a signed-in person (viewer / operator / admin) may call | `gui-bff/app/rbac.py` |
+| R1 Termination | Whether the token is good; what an `rapp` may call at all (`INTERNAL_ONLY`, `RAPP_MAY_CHANGE`); whether the rApp is stopped (kill switch); the rate | `smo_shared/roles.py`, `killswitch.py` |
+| The module that owns the data | Whether *this caller* may touch *this target*: for rApps, the scope claim against a managed element's `region` and `tenant` (`PR-SEC-10`); the per-rApp limits; MSAC | `smo_shared/scope.py`, `ran-nf-oam/app/scoping.py` |
+
+**Scope in one paragraph** (the table and the failure modes: `docs/adr/0005-tenant-region-authorization.md`). A caller with **no claim** is unscoped and is never asked anything: an upgrade changes nothing until an operator sets a claim. A caller **with a claim** may touch a managed element only if every axis the claim names matches the element's value exactly; an element with no region (tenant), or not registered, is outside a claim that restricts that axis. A write that names elements is refused whole with 403 `SCOPE_DENIED` when any of them is outside (a request waiting for approval is checked again when approved); a read by reference is 403; an item behind an id the system minted is a 404; a list is filtered. The claim is a property of the rApp's invoker (set at `POST /rapp-mgmt/instances`, or `PUT /sme/invoker-registrations/{id}/authz-scope`), the place is a property of the managed element (`PUT /ran-nf-oam/managed-entities/{ref}/scope`). The decision is the module's, not the gateway's, because only the module knows the target; the gateway cannot filter a list, hide an id, re-check an approval or follow a call DME makes for an rApp. Not scoped yet: DME and MLMR reads, the managed-object tree and topology (`OPEN_ITEMS.md`, `SEC-10.7`, `SEC-10.9`); the operator's own console (`GUI-5.1`).
+
 ## Mutual TLS between services
 
 `PR-SEC-2`, opt in, default off: with `SMO_MTLS` unset nothing below applies and every call is plain HTTP on the private network, as before. The native mTLS path is the decision for the service-mesh question (`PR-SEC-3`): no sidecar mesh is built or documented; a deployment that already runs one is free to, and then leaves `SMO_MTLS` off.
@@ -335,7 +358,7 @@ Two things the platform does between an rApp's decision and the network, both at
 |---|---|
 | Module READMEs (`<module>/README.md`) | HLD, LLD and unit tests of each module |
 | [RAPP_PACKAGING.md](RAPP_PACKAGING.md) | rApp CSAR layout, manifest and capabilities (including `operatorUi`, the page a rApp declares), per-sample parameter tables |
-| [adr/](adr/) | Architecture decision records, `0004`: the operator page a rApp declares |
+| [adr/](adr/) | Architecture decision records, `0004`: the operator page a rApp declares; `0005`: tenant and region authorization (where scope is enforced) |
 | [STANDARDS.md](STANDARDS.md) | Frozen decisions, standards compliance matrices, runtime realization |
 | [HISTORY.md](../HISTORY.md) | How the platform got here: decisions, audits, exit reviews (the code cites its IDs) |
 | [call-flows/](call-flows/) | Sequence diagrams 01–27 (02 and 17: AI/ML lifecycle; 09: intents; 12: DME eligibility; 14: correlation id; 21: vendor onboarding; 22–25: reference rApps; 26: model governance and end of life; 27: TS 28.105 provisioning resources) |

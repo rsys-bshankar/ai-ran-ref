@@ -344,6 +344,8 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [Mobility: relation drawer](docs/screenshots/pages/rapp-drawer-mobility.png) | The drawer of a row: trend chart, the latest execution as JSON, the history fetched for that row |
 | [Pinned rApp in the sidebar](docs/screenshots/pages/rapp-sidebar-pinned.png) | A pinned rApp under the one rApps entry |
 
+**Tenant and region scope (`SEC-10`).** The O1 endpoints table shows where each managed element is and whom it belongs to (`region / tenant`, a dash for what is not set), and the rApp page (Platform overview, Lifecycle) shows the instance's *Access scope*: the regions and tenants it may touch, or "Unscoped (every managed element)". The Safeguards page lists a refusal for a scope (`SCOPE_DENIED`) with the other refusals. The claim and an element's place are set through the API for now (`OPEN_ITEMS.md`, `SEC-10.10`); the console itself is not scoped (`GUI-5.1`).
+
 #### Infrastructure (NFO, FOCOM, RAN NF OAM, SO SMOS)
 
 | Screen | What it shows |
@@ -351,7 +353,7 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | [NF deployments (tab)](docs/screenshots/pages/infra-nfo.png) | Deployments with state, heal / scale / terminate, and descriptors |
 | [O-Cloud inventory (tab)](docs/screenshots/pages/infra-ocloud.png) | Pool resources, deployment managers, inventory subscriptions, resource types |
 | [Topology (tab)](docs/screenshots/pages/infra-topology.png) | TEIV entities and relationships exported from FOCOM |
-| [O1 endpoints & jobs (tab)](docs/screenshots/pages/infra-o1.png) | Managed elements, CM write jobs and software management jobs |
+| [O1 endpoints & jobs (tab)](docs/screenshots/pages/infra-o1.png) | Managed elements (with their region and tenant, `SEC-10.2`; the register form takes both), CM write jobs and software management jobs |
 | [Service orders (tab)](docs/screenshots/pages/infra-orders.png) | Orders: completed, and a failed one whose pending step was cancelled |
 | [NF deployment: RUNNING](docs/screenshots/lcm/nfo-deployment-running.png) | LCM operations and linked O-Cloud resources |
 | [NF deployment: heal and scale](docs/screenshots/lcm/nfo-heal-and-scale-operations.png) | HEAL and SCALE operations recorded |

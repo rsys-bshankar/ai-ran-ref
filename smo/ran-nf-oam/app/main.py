@@ -48,10 +48,12 @@ from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
 from smo_shared.invoker import ON_BEHALF_OF_HEADER, invoker_id
 from smo_shared.roles import ROLE_INTERNAL, ROLE_RAPP, role_of
+from smo_shared import scope as authz_scope
 from smo_shared import audit
 
 from .models import Alarm, ApprovalSubscription, RAppActionApproval, RAppApprovalPolicy, RAppDecisionRecord, RAppKill, RAppLimit, SafeguardRefusal, SafeguardSubscription, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, KpiSchedule, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from . import msac
+from . import scoping
 from .ldn import check_ref, leaf_class, leaf_id
 from . import mo_tree
 from . import topology
@@ -339,6 +341,17 @@ class RegisterO1AdaptorEndpointRequest(BaseModel):
     # PR-SB-2.1: the name of the credential to use (never the secret); only for transport ssh, and it must be one this service has been given.
     # Checked in the route, not here: a validation error of the body model repeats the input, and a pasted secret must not be echoed.
     credentialRef: str | None = None
+    # PR-SEC-10.2: where the element is and whom it belongs to (docs/adr/0005-tenant-region-authorization.md). Optional; a caller whose scope claim restricts regions
+    # (tenants) may touch only elements whose region (tenant) it names, so an element registered without them is for unscoped callers only.
+    region: str | None = Field(default=None, max_length=100)
+    tenant: str | None = Field(default=None, max_length=100)
+
+    @field_validator("region", "tenant")
+    @classmethod
+    def _valid_scope_value(cls, value: str | None) -> str | None:
+        if value is not None and not authz_scope.valid_value(value):
+            raise ValueError("must be 1 to 100 characters of letters, digits and . _ : / @ + -, starting with a letter or digit")
+        return value
 
     @model_validator(mode="after")
     def _transport_matches(self):
@@ -413,7 +426,7 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
     db.flush()
     me = ManagedEntity(managed_element_ref=body.managedElementRef, managed_function_ref=body.managedFunctionRef,
                         entity_type=body.entityType, vendor_name=body.vendorName, o1_protocol=body.o1Protocol,
-                        o1_adaptor_endpoint_id=endpoint.endpoint_id)
+                        o1_adaptor_endpoint_id=endpoint.endpoint_id, region=body.region, tenant=body.tenant)
     db.add(me)
     db.flush()
     try:
@@ -421,7 +434,8 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
     except ValueError as exc:                  # a ref that is not a distinguished name
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=str(exc)) from None
     db.commit()
-    return {"endpointId": str(endpoint.endpoint_id), "managedElementRef": me.managed_element_ref, "healthStatus": endpoint.health_status}
+    return {"endpointId": str(endpoint.endpoint_id), "managedElementRef": me.managed_element_ref, "healthStatus": endpoint.health_status,
+            "region": me.region, "tenant": me.tenant}
 
 
 class PinHostKeyRequest(BaseModel):
@@ -625,10 +639,24 @@ def write_configuration_changes(body: WriteConfigRequest, request: Request, db: 
     sub_changes, PATCH each independently, aggregate.
     """
     caller = invoker_id(request)
+    scope = scoping.request_scope(request)
     _refuse_if_killed(db, caller, body.requestedBy)
+    _enforce_scope(db, scope, caller, body.requestedBy, [c["managedElementRef"] for c in body.changes])
     _enforce_rapp_limit(db, caller, body.requestedBy)
     _enforce_change_limits(db, body, caller)
-    return _execute_write(body, db, invoker=caller, actor=_acting_rapp(request), park=True)
+    return _execute_write(body, db, invoker=caller, actor=_acting_rapp(request), park=True, requester_scope=scope)
+
+
+def _enforce_scope(db: Session, scope: authz_scope.Scope | None, caller: str | None, requested_by: str | None, refs: list[str]) -> None:
+    """PR-SEC-10.4: 403 `SCOPE_DENIED` when any element a request names is outside the caller's scope claim (or not registered: it has no region or tenant), before
+    anything is checked, recorded or sent: one element out of scope refuses the whole request, a dry run too. An unscoped caller (no claim) is not asked anything.
+    The refusal is recorded like the other safeguard refusals (`GET /safeguard-refusals`, `RAPP_SAFEGUARD_REFUSAL` to subscribers) when the caller is known."""
+    try:
+        scoping.require_elements(db, scope, refs)
+    except HTTPException as error:
+        if caller:
+            _refuse(db, caller, requested_by, error)
+        raise
 
 
 def _acting_rapp(request: Request) -> str | None:
@@ -747,7 +775,8 @@ def _enforce_change_limits(db: Session, body: WriteConfigRequest, caller: str | 
 
 
 def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID | None = None, rollback_forced: bool = False,
-                   invoker: str | None = None, actor: str | None = None, park: bool = False, approval: RAppActionApproval | None = None):
+                   invoker: str | None = None, actor: str | None = None, park: bool = False, approval: RAppActionApproval | None = None,
+                   requester_scope: authz_scope.Scope | None = None):
     """The body of `POST /config-jobs`, shared with the rollback route (MGT-1.6), which builds the same request from a recorded job and so
     goes through the same MSAC, schema, dispatch and snapshot steps as any other write.
 
@@ -803,7 +832,7 @@ def _execute_write(body: WriteConfigRequest, db: Session, rollback_of: uuid.UUID
     if park and invoker:
         policy = db.get(RAppApprovalPolicy, invoker)
         if policy is not None:
-            return _park_for_approval(db, body, invoker, policy)
+            return _park_for_approval(db, body, invoker, policy, requester_scope)
 
     job = WriteConfigJob(requested_by=body.requestedBy, scope=body.accessScope, msac_role=body.msacRole, rollback_of=rollback_of,
                          rollback_forced=rollback_forced, wave_size=body.waveSize, wave_pause_seconds=body.wavePauseSeconds,
@@ -979,12 +1008,16 @@ def _auto_revert(db: Session, job: WriteConfigJob, failure: str) -> None:
 
 
 @app.get("/managed-entities/{managed_element_ref}/config")
-def read_configuration(managed_element_ref: str, managed_function_ref: str | None = None, db: Session = Depends(get_session)):
+def read_configuration(managed_element_ref: str, request: Request, managed_function_ref: str | None = None, db: Session = Depends(get_session)):
     """Wave 10.1 (W10-20): read-after-write. Reads the managed object's
     running configuration from its O1 adaptor (NETCONF <get-config>, or a
     RESTCONF GET of the data resource) — the live value on the NF, not what
     this module last asked for — so a caller can verify that a write
-    actually took effect."""
+    actually took effect.
+
+    PR-SEC-10.5: a caller whose scope claim does not cover the element (or that names one that is not registered) gets 403 `SCOPE_DENIED`, before anything
+    is read from the NF; an unscoped caller is not asked anything."""
+    scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])
     me = db.get(ManagedEntity, managed_element_ref)
     if me is None:      # an element that does not exist is a 404; 503 is for one that is known and cannot be reached (found by the authenticated DAST scan, V-7d)
         raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
@@ -1004,10 +1037,11 @@ def read_configuration(managed_element_ref: str, managed_function_ref: str | Non
 
 
 @app.get("/managed-entities/{managed_element_ref}/config-history")
-def read_configuration_history(managed_element_ref: str, managed_function_ref: str | None = None, limit: int = PageLimit,
+def read_configuration_history(managed_element_ref: str, request: Request, managed_function_ref: str | None = None, limit: int = PageLimit,
                                offset: int = PageOffset, db: Session = Depends(get_session)):
     """MGT-1.4: what each dispatched write to this element replaced and wrote, newest first (`beforeError` says why a before
-    image is missing). Read from `cm_snapshot`; a write rejected before dispatch has no row."""
+    image is missing). Read from `cm_snapshot`; a write rejected before dispatch has no row. 403 `SCOPE_DENIED` for an element outside the caller's scope (SEC-10.5)."""
+    scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])
     stmt = select(CMSnapshot).where(CMSnapshot.managed_element_ref == managed_element_ref)
     if managed_function_ref:
         stmt = stmt.where(CMSnapshot.managed_function_ref == managed_function_ref)
@@ -1038,10 +1072,11 @@ def _image(row: CMSnapshot) -> dict:
 
 
 @app.get("/managed-entities/{managed_element_ref}/config-history/diff")
-def diff_configuration_snapshots(managed_element_ref: str, from_snapshot: uuid.UUID, to_snapshot: uuid.UUID, db: Session = Depends(get_session)):
+def diff_configuration_snapshots(managed_element_ref: str, from_snapshot: uuid.UUID, to_snapshot: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """MGT-1.5: how the attributes two snapshots of one managed object touched differ. Each snapshot's image is `before` with `after` laid
     over it (`_image`); the diff is over the attributes either image holds. Only attributes a write named are ever known, so an attribute
-    neither snapshot touched is not reported as unchanged."""
+    neither snapshot touched is not reported as unchanged. 403 `SCOPE_DENIED` for an element outside the caller's scope (SEC-10.5)."""
+    scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])
     first, second = (_snapshot_or_404(db, managed_element_ref, from_snapshot), _snapshot_or_404(db, managed_element_ref, to_snapshot))
     if first.managed_function_ref != second.managed_function_ref:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
@@ -1076,6 +1111,10 @@ class RollbackRequest(BaseModel):
     msacRole: str | None = None
     force: bool = False                       # MGT-1.7: go ahead although values changed since the job wrote them
     dryRun: bool = False
+
+
+def _job_elements(db: Session, job_id: uuid.UUID) -> list[str]:
+    return list(db.scalars(select(WriteConfigSubChange.managed_element_ref).where(WriteConfigSubChange.job_id == job_id).distinct()).all())
 
 
 def _rollback_plan(db: Session, job: WriteConfigJob, elements: set[str] | None = None) -> tuple[list[dict], dict, list[str]]:
@@ -1158,6 +1197,14 @@ def rollback_configuration_job(job_id: uuid.UUID, body: RollbackRequest, request
     job = db.get(WriteConfigJob, job_id)
     if job is None:
         raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"no configuration job {job_id}")
+    # PR-SEC-10.4: undoing a job writes to every element it wrote to, so every one of them must be inside the caller's scope (a dry run too). The detail names none
+    # of them: the caller did not send them.
+    if scoping.denied_refs(db, scoping.request_scope(request), _job_elements(db, job_id)):
+        error = scoping.scope_denied("the job wrote to managed elements outside the caller's scope")
+        caller = invoker_id(request)
+        if caller:
+            _refuse(db, caller, body.requestedBy, error)
+        raise error
     changes, expected, problems = _rollback_plan(db, job)
     if problems:
         raise framework_error(FrameworkError.ROLLBACK_NOT_POSSIBLE, detail="; ".join(problems))
@@ -1563,7 +1610,7 @@ def lift_rapp_kill(invoker_id_: str, db: Session = Depends(get_session)):
 
 class SafeguardSubscriptionRequest(BaseModel):
     callbackUri: str = Field(min_length=1, max_length=2000)
-    refusals: list[Literal["RAPP_KILLED", "RAPP_RATE_LIMITED", "RAPP_BLAST_RADIUS_EXCEEDED", "RAPP_MAGNITUDE_EXCEEDED"]] = []
+    refusals: list[Literal["RAPP_KILLED", "RAPP_RATE_LIMITED", "RAPP_BLAST_RADIUS_EXCEEDED", "RAPP_MAGNITUDE_EXCEEDED", "SCOPE_DENIED"]] = []
 
 
 def _subscription_view(sub: SafeguardSubscription) -> dict:
@@ -1572,8 +1619,8 @@ def _subscription_view(sub: SafeguardSubscription) -> dict:
 
 @app.post("/safeguard-subscriptions", status_code=201)
 def subscribe_to_safeguard_refusals(body: SafeguardSubscriptionRequest, db: Session = Depends(get_session)):
-    """AI-10.6: be told (a POST to `callbackUri`, through the outbox) each time the platform refuses an rApp: `refusals` narrows it to those codes,
-    empty means all four. A destination the SSRF guard refuses is a 422 here rather than a silent drop later."""
+    """AI-10.6: be told (a POST to `callbackUri`, through the outbox) each time the platform refuses an rApp (a kill switch, a limit or, PR-SEC-10, a scope): `refusals` narrows it to those codes,
+    empty means all five. A destination the SSRF guard refuses is a 422 here rather than a silent drop later."""
     if not is_safe_webhook_destination(body.callbackUri):
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="callbackUri is not an acceptable destination")
     sub = SafeguardSubscription(callback_uri=body.callbackUri, refusals=sorted(set(body.refusals)))
@@ -1738,14 +1785,14 @@ def _notify_approvers(db: Session, event_type: str, row: RAppActionApproval) -> 
         enqueue(db, sub.callback_uri, event)
 
 
-def _park_for_approval(db: Session, body: WriteConfigRequest, invoker: str, policy: RAppApprovalPolicy) -> dict:
+def _park_for_approval(db: Session, body: WriteConfigRequest, invoker: str, policy: RAppApprovalPolicy, requester_scope: authz_scope.Scope | None = None) -> dict:
     """AI-11.4: keep a write that passed every check as a request for a human, and tell the approvers. Nothing is dispatched and no job exists yet."""
     now = datetime.datetime.now(datetime.UTC)
     elements = list(dict.fromkeys(c["managedElementRef"] for c in body.changes))
     row = RAppActionApproval(invoker_id=invoker, requested_by=body.requestedBy, status="PENDING", request=body.model_dump(mode="json"),
                              managed_elements=elements, change_count=len(body.changes), created_at=now,
                              expires_at=now + datetime.timedelta(seconds=policy.timeout_seconds), on_timeout=policy.on_timeout,
-                             correlation_id=get_correlation_id())
+                             correlation_id=get_correlation_id(), requester_scope=authz_scope.to_claim(requester_scope))
     db.add(row)
     db.flush()
     _notify_approvers(db, "RAPP_APPROVAL_REQUESTED", row)
@@ -1878,6 +1925,9 @@ def approve_action(approval_id: uuid.UUID, body: ApprovalDecisionRequest, reques
         _refuse_if_killed(db, row.invoker_id, row.requested_by)
         _enforce_rapp_limit(db, row.invoker_id, row.requested_by)
         replay = WriteConfigRequest.model_validate(row.request)
+        # PR-SEC-10.4: the requester's claim as it was when the request was parked, against the targets as they are now (an element moved to another region or
+        # tenant while the request waited is refused: the request is closed REFUSED with code SCOPE_DENIED)
+        _enforce_scope(db, authz_scope.from_introspection(row.requester_scope), row.invoker_id, row.requested_by, [c["managedElementRef"] for c in replay.changes])
         _enforce_change_limits(db, replay, row.invoker_id)
         row.decided_by, row.decided_at, row.decision_reason = body.decidedBy, datetime.datetime.now(datetime.UTC), body.reason
         result = _execute_write(replay, db, invoker=row.invoker_id, actor=row.invoker_id, approval=row)
@@ -2034,15 +2084,16 @@ def read_decision_record(decision_id: uuid.UUID, db: Session = Depends(get_sessi
 
 
 @app.get("/kpis/{name}")
-def compute_kpi(name: str, from_time: datetime.datetime, to_time: datetime.datetime | None = None, group_by: Literal[
+def compute_kpi(name: str, from_time: datetime.datetime, request: Request, to_time: datetime.datetime | None = None, group_by: Literal[
                 "cell", "element", "sectorGroup", "incidentZone", "all"] = "cell", managed_element_ref: str | None = None,
                 cell_id: str | None = None, db: Session = Depends(get_session)):
     """MGT-11.3/11.4/11.5: the KPI over [from_time, to_time) (to_time: now), per cell, per element, per sector group or incident zone (the cell
     guards of the registry), or over everything asked for. A ratio is computed from the group's summed counters, not from its cells' ratios.
-    `managed_element_ref` and `cell_id` narrow what is read. A group without data has a null `value` and a `reason`."""
+    `managed_element_ref` and `cell_id` narrow what is read. A group without data has a null `value` and a `reason`.
+    PR-SEC-10.6: a caller with a scope claim gets the KPI over the performance files of the elements inside it only (so `all` is its elements, never the network's)."""
     definition = _kpi_or_404(db, name)
     start, end = _kpi_window(from_time, to_time)
-    return kpi.compute(db, definition, start, end, group_by, managed_element_ref, cell_id)
+    return kpi.compute(db, definition, start, end, group_by, managed_element_ref, cell_id, scoping.request_scope(request))
 
 
 def _kpi_window(from_time: datetime.datetime, to_time: datetime.datetime | None) -> tuple[datetime.datetime, datetime.datetime]:
@@ -2186,9 +2237,10 @@ def run_due_kpi_schedules(db: Session, now: datetime.datetime | None = None) -> 
 
 
 @app.get("/config-jobs/{job_id}")
-def query_write_config_job_status(job_id: uuid.UUID, db: Session = Depends(get_session)):
+def query_write_config_job_status(job_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     job = db.get(WriteConfigJob, job_id)
-    if job is None:
+    # PR-SEC-10: a job that touched an element outside the caller's scope is not shown to it: 404, as if it did not exist
+    if job is None or scoping.denied_refs(db, scoping.request_scope(request), _job_elements(db, job_id)):
         raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"unknown jobId {job_id}")
     sub_changes = db.scalars(select(WriteConfigSubChange).where(WriteConfigSubChange.job_id == job_id).order_by(WriteConfigSubChange.position)).all()
     return {"jobId": str(job.job_id), "status": job.status, "requestedBy": job.requested_by,
@@ -2205,15 +2257,18 @@ def query_write_config_job_status(job_id: uuid.UUID, db: Session = Depends(get_s
 
 
 @app.get("/alarms")
-def query_alarms(managed_element_ref: str | None = None, severity: str | None = None,
+def query_alarms(request: Request, managed_element_ref: str | None = None, severity: str | None = None,
                   managed_function_ref: str | None = None, limit: int = PageLimit,
                   offset: int = PageOffset, db: Session = Depends(get_session)):
     """`severity` filter (GUI pass) — the alarm console filters by ME and
     by perceivedSeverity; `severity=cleared` isolates the cleared history.
     `managed_function_ref` (W10-alarm-cellref) narrows to the alarms raised
     on one managed function, e.g. a cell's `NRCellDU=101`.
+
+    PR-SEC-10.6: a caller with a scope claim sees only the alarms of the elements inside it (the list is filtered, never refused: naming an element outside
+    the scope in `managed_element_ref` gives an empty page, the same as an element with no alarms).
     """
-    stmt = select(Alarm)
+    stmt = scoping.scoped_to_elements(select(Alarm), scoping.request_scope(request), Alarm.managed_element_ref)
     if managed_element_ref:
         stmt = stmt.where(Alarm.managed_element_ref == managed_element_ref)
     if managed_function_ref:
@@ -2260,23 +2315,23 @@ def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, 
     return {"alarmId": str(alarm.alarm_id)}
 
 
-def _get_alarm(db: Session, alarm_id: uuid.UUID) -> Alarm:
-    """MGT-8.1: an unknown alarm is a 404, not a 500 from `None.ack_state`."""
+def _get_alarm(db: Session, alarm_id: uuid.UUID, request: Request) -> Alarm:
+    """MGT-8.1: an unknown alarm is a 404, not a 500 from `None.ack_state`. So is an alarm of an element outside the caller's scope (PR-SEC-10.6): it is not shown to it."""
     alarm = db.get(Alarm, alarm_id)
-    if alarm is None:
+    if alarm is None or not scoping.element_permitted(db, scoping.request_scope(request), alarm.managed_element_ref):
         raise framework_error(FrameworkError.ALARM_NOT_FOUND, detail=f"no such alarm {alarm_id}")
     return alarm
 
 
 @app.patch("/alarms/{alarm_id}/ack")
-def change_alarm_ack_state(alarm_id: uuid.UUID, new_state: Literal["ACKNOWLEDGED", "UNACKNOWLEDGED"], ack_user_id: str | None = None, db: Session = Depends(get_session)):
+def change_alarm_ack_state(alarm_id: uuid.UUID, new_state: Literal["ACKNOWLEDGED", "UNACKNOWLEDGED"], request: Request, ack_user_id: str | None = None, db: Session = Depends(get_session)):
     """ackUserId (HISTORY.md §7, TS28111_FaultNrm.yaml's AlarmRecord) —
     who acknowledged it, never recorded before. alarmChangedTime (the
     spec's own "last mutated" timestamp, distinct from raised_at/
     cleared_at) updates here and in clear_alarm below, the two places
     this build actually mutates an existing alarm.
     """
-    alarm = _get_alarm(db, alarm_id)
+    alarm = _get_alarm(db, alarm_id, request)
     alarm.ack_state = new_state
     alarm.ack_user_id = ack_user_id
     alarm.changed_at = datetime.datetime.now(datetime.UTC)
@@ -2285,7 +2340,7 @@ def change_alarm_ack_state(alarm_id: uuid.UUID, new_state: Literal["ACKNOWLEDGED
 
 
 @app.patch("/alarms/{alarm_id}/clear")
-def clear_alarm(alarm_id: uuid.UUID, clear_user_id: str | None = None, db: Session = Depends(get_session)):
+def clear_alarm(alarm_id: uuid.UUID, request: Request, clear_user_id: str | None = None, db: Session = Depends(get_session)):
     """HISTORY.md §5: no alarm-cleared lifecycle existed at
     all — `/alarms/{id}/ack` only ever toggled ack_state, so an alarm
     that stopped recurring on the NF had no way to ever be marked
@@ -2293,7 +2348,7 @@ def clear_alarm(alarm_id: uuid.UUID, clear_user_id: str | None = None, db: Sessi
     setting severity to 'cleared' (already a valid value in this
     build's own CHECK constraint) rather than a separate state field.
     """
-    alarm = _get_alarm(db, alarm_id)
+    alarm = _get_alarm(db, alarm_id, request)
     alarm.severity = "cleared"
     alarm.cleared_at = datetime.datetime.now(datetime.UTC)
     alarm.clear_user_id = clear_user_id
@@ -2303,7 +2358,7 @@ def clear_alarm(alarm_id: uuid.UUID, clear_user_id: str | None = None, db: Sessi
 
 
 @app.post("/pm-subscriptions")
-def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: str, granularity_period: int | None = None,
+def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: str, request: Request, granularity_period: int | None = None,
                   db: Session = Depends(get_session)):
     """SubscribePM — RAN NF OAM LLD section 3.5: this is a DME-producer
     registration wrapper, NOT a clause-8 API call. No R1AP endpoint exists
@@ -2314,6 +2369,7 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
     carrying despite the wrapper scope cut; everything else on that
     schema (schedule/priority/multi-instance/reportingPeriod) stays out.
     """
+    scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])        # PR-SEC-10.6: 403 SCOPE_DENIED outside the caller's scope
     if db.get(ManagedEntity, managed_element_ref) is None:      # the subscription refers to the element: no element, no subscription (a 404, not the foreign key's 500)
         raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
     require_service(db, managed_element_ref, "PM")  # Wave 9 (W9-01)
@@ -2473,11 +2529,11 @@ def report_pm_file(body: PmFileRequest, db: Session = Depends(get_session)):
 
 
 @app.get("/files")
-def read_file_info(fileDataType: FileDataType, beginTime: datetime.datetime | None = None, endTime: datetime.datetime | None = None,
+def read_file_info(fileDataType: FileDataType, request: Request, beginTime: datetime.datetime | None = None, endTime: datetime.datetime | None = None,
                    limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """TS 28.532 `GET /files`: FileInfo for the files of a data type, selected by
-    the time they became available. Paginated like every list here."""
-    stmt = select(PMFile).where(PMFile.file_data_type == fileDataType)
+    the time they became available. Paginated like every list here. PR-SEC-10.6: a caller with a scope claim sees only the files of elements inside it."""
+    stmt = scoping.scoped_to_elements(select(PMFile), scoping.request_scope(request), PMFile.managed_element_ref).where(PMFile.file_data_type == fileDataType)
     if beginTime:
         stmt = stmt.where(PMFile.file_ready_time >= beginTime)
     if endTime:
@@ -2487,9 +2543,9 @@ def read_file_info(fileDataType: FileDataType, beginTime: datetime.datetime | No
 
 
 @app.get("/pm-files/{file_id}/file")
-def download_pm_file(file_id: uuid.UUID, db: Session = Depends(get_session)):
+def download_pm_file(file_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     f = db.get(PMFile, file_id)
-    if f is None:
+    if f is None or not scoping.element_permitted(db, scoping.request_scope(request), f.managed_element_ref):      # PR-SEC-10.6: outside the scope is a 404
         raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such file {file_id}")
     if f.file_expiration_time and as_utc(f.file_expiration_time) < datetime.datetime.now(datetime.UTC):
         raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"file {file_id} has expired")
@@ -2627,9 +2683,9 @@ def _alarm_view(a: Alarm) -> dict:
 # registered without already holding every id.
 
 @app.get("/pm-subscriptions")
-def list_pm_subscriptions(managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+def list_pm_subscriptions(request: Request, managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                            db: Session = Depends(get_session)):
-    stmt = select(PMSubscription)
+    stmt = scoping.scoped_to_elements(select(PMSubscription), scoping.request_scope(request), PMSubscription.managed_element_ref)      # PR-SEC-10.6
     if managed_element_ref:
         stmt = stmt.where(PMSubscription.managed_element_ref == managed_element_ref)
     page = paginate(db, stmt, limit, offset)
@@ -2640,7 +2696,7 @@ def list_pm_subscriptions(managed_element_ref: str | None = None, limit: int = P
 
 
 @app.delete("/pm-subscriptions/{subscription_id}", status_code=204)
-def unsubscribe_pm(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+def unsubscribe_pm(subscription_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """`docs/call-flows/20-alarm-pm-subscription-lifecycle.md`'s own
     gap, closed: every other subscription-shaped resource in this build
     (DME's type subscriptions, MDAF's, Intent
@@ -2650,13 +2706,13 @@ def unsubscribe_pm(subscription_id: uuid.UUID, db: Session = Depends(get_session
     those.
     """
     sub = db.get(PMSubscription, subscription_id)
-    if sub is not None:
+    if sub is not None and scoping.element_permitted(db, scoping.request_scope(request), sub.managed_element_ref):       # PR-SEC-10.6: one outside the scope is left alone, and 204 says nothing
         db.delete(sub)
         db.commit()
 
 
 @app.post("/fm-subscriptions")
-def subscribe_fm(managed_element_ref: str, delivery_method: str, db: Session = Depends(get_session)):
+def subscribe_fm(managed_element_ref: str, delivery_method: str, request: Request, db: Session = Depends(get_session)):
     """SubscribeFM — HISTORY.md OI-6.7, closed: mirrors
     subscribe_pm's own DME-producer registration wrapper shape exactly
     (RAN NF OAM LLD section 3.5's SubscribePM pattern), for alarms
@@ -2671,6 +2727,7 @@ def subscribe_fm(managed_element_ref: str, delivery_method: str, db: Session = D
     PATCH /alarms/{alarm_id}/clear, called by the source NF or an
     operator, unaffected by whether FM is DME-registered.
     """
+    scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])        # PR-SEC-10.6: 403 SCOPE_DENIED outside the caller's scope
     if db.get(ManagedEntity, managed_element_ref) is None:      # the subscription refers to the element: no element, no subscription (a 404, not the foreign key's 500)
         raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
     require_service(db, managed_element_ref, "FM")  # Wave 9 (W9-01)
@@ -2690,9 +2747,9 @@ def subscribe_fm(managed_element_ref: str, delivery_method: str, db: Session = D
 
 
 @app.get("/fm-subscriptions")
-def list_fm_subscriptions(managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+def list_fm_subscriptions(request: Request, managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                            db: Session = Depends(get_session)):
-    stmt = select(FMSubscription)
+    stmt = scoping.scoped_to_elements(select(FMSubscription), scoping.request_scope(request), FMSubscription.managed_element_ref)      # PR-SEC-10.6
     if managed_element_ref:
         stmt = stmt.where(FMSubscription.managed_element_ref == managed_element_ref)
     page = paginate(db, stmt, limit, offset)
@@ -2702,34 +2759,47 @@ def list_fm_subscriptions(managed_element_ref: str | None = None, limit: int = P
 
 
 @app.delete("/fm-subscriptions/{subscription_id}", status_code=204)
-def unsubscribe_fm(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+def unsubscribe_fm(subscription_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
     """Idempotent, matching pm-subscriptions' own unsubscribe route and
     every other subscription-shaped resource in this build.
     """
     sub = db.get(FMSubscription, subscription_id)
-    if sub is not None:
+    if sub is not None and scoping.element_permitted(db, scoping.request_scope(request), sub.managed_element_ref):       # PR-SEC-10.6: one outside the scope is left alone
         db.delete(sub)
         db.commit()
 
 
 @app.get("/o1-adaptor-endpoints")
-def list_o1_adaptor_endpoints(health_status: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+def list_o1_adaptor_endpoints(request: Request, health_status: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                                db: Session = Depends(get_session)):
-    stmt = select(O1AdaptorEndpoint)
+    """The registered O1 adaptor endpoints, one per managed element, with the element's `region` and `tenant` (PR-SEC-10.2). A caller with a scope claim sees only the
+    endpoints of the elements inside it (PR-SEC-10.6)."""
+    stmt = scoping.scoped_to_elements(select(O1AdaptorEndpoint), scoping.request_scope(request), O1AdaptorEndpoint.managed_element_ref)
     if health_status:
         stmt = stmt.where(O1AdaptorEndpoint.health_status == health_status)
     page = paginate(db, stmt, limit, offset)
+    places = {row.managed_element_ref: (row.region, row.tenant) for row in db.execute(          # column select: not a possibly stale entity
+        select(ManagedEntity.managed_element_ref, ManagedEntity.region, ManagedEntity.tenant)
+        .where(ManagedEntity.managed_element_ref.in_([ep.managed_element_ref for ep in page["items"]])))} if page["items"] else {}
     return {**page, "items": [{"endpointId": str(ep.endpoint_id), "managedElementRef": ep.managed_element_ref, "adaptorUri": ep.adaptor_uri,
              "protocolSupport": ep.protocol_support, "registeredVia": ep.registered_via, "transport": ep.transport, "credentialRef": ep.credential_ref, "healthStatus": ep.health_status,
              "lastHeartbeatAt": ep.last_heartbeat_at.isoformat() if ep.last_heartbeat_at else None,
-             "supportedServices": ep.supported_services}
+             "supportedServices": ep.supported_services,
+             "region": places.get(ep.managed_element_ref, (None, None))[0], "tenant": places.get(ep.managed_element_ref, (None, None))[1]}
             for ep in page["items"]]}
 
 
 @app.get("/config-jobs")
-def list_write_config_jobs(status: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+def list_write_config_jobs(request: Request, status: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                             db: Session = Depends(get_session)):
     stmt = select(WriteConfigJob)
+    scope = scoping.request_scope(request)
+    if scope is not None:
+        # PR-SEC-10: only the jobs all of whose elements are inside the caller's scope (an element not registered counts as outside it)
+        outside = (select(WriteConfigSubChange.id).outerjoin(ManagedEntity, ManagedEntity.managed_element_ref == WriteConfigSubChange.managed_element_ref)
+                   .where(WriteConfigSubChange.job_id == WriteConfigJob.job_id,
+                          ManagedEntity.managed_element_ref.is_(None) | authz_scope.denied_condition(scope, ManagedEntity.region, ManagedEntity.tenant)))
+        stmt = stmt.where(~outside.exists())
     if status:
         stmt = stmt.where(WriteConfigJob.status == status)
     page = paginate(db, stmt, limit, offset)
@@ -2738,9 +2808,9 @@ def list_write_config_jobs(status: str | None = None, limit: int = PageLimit, of
 
 
 @app.get("/software-management-jobs")
-def list_software_management_jobs(managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+def list_software_management_jobs(request: Request, managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                                    db: Session = Depends(get_session)):
-    stmt = select(SoftwareManagementJob)
+    stmt = scoping.scoped_to_elements(select(SoftwareManagementJob), scoping.request_scope(request), SoftwareManagementJob.managed_element_ref)     # PR-SEC-10.6
     if managed_element_ref:
         stmt = stmt.where(SoftwareManagementJob.managed_element_ref == managed_element_ref)
     page = paginate(db, stmt, limit, offset)

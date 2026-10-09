@@ -90,7 +90,7 @@ Idempotency: none needed beyond `seed_users` (first boot only, never touches a n
 | File | Responsibility |
 |---|---|
 | `app/main.py` | `create_app()`: lifespan (DB, seeding, gateway), session/CSRF dependencies (and the admin-MFA gate), login (both steps)/token/logout/me/password, one-time-code enrolment, `/api/auth/config`, `/api/oidc/login` and `/callback` (user provisioning), `GET /api/permissions`, health aggregation, the RBAC proxy, admin user CRUD, audit listing; `seed_users`, `_write_initial_password` |
-| `app/rbac.py` | `Role`, `RANK`, `MODULES`, `Rule`, `RULES` (127 rules), `decide()`, `GUI_RMIO_ID` |
+| `app/rbac.py` | `Role`, `RANK`, `MODULES`, `Rule`, `RULES` (129 rules), `decide()`, `GUI_RMIO_ID` |
 | `app/rapps.py` | PR-GUI-8: `install(app, ...)` adds the rApp directory (`GET /api/rapps`), one rApp with its declaration (`GET /api/rapps/{instance}`), the proxy for the declared routes (`/api/rapps/{instance}/operator/{route}`) and the pins (`/api/me/pins`); the package index and declaration caches; the audit of every change before and after |
 | `app/operator_ui.py` | PR-GUI-8: what the BFF lets through to a rApp's operator API. A **vendored copy** of `declared_routes`, `required_role` and `route_allowed` of `shared/smo_shared/operator_ui.py` (this image does not install `smo_shared`; `tests_integration/test_gui_bff_operator_ui_parity.py` fails when a definition differs), and `decide`: the instance binding, the role, the query of a read, the body of a change, `"{user}"` |
 | `app/oidc.py` | `OidcConfig` (validates the settings), `OidcClient` (discovery and JWKS with caching and rotation, authorization URL, code exchange, ID-token validation, group-to-role, end-session URL), `OidcError` and its reason codes |
@@ -210,6 +210,7 @@ Override rules (`Rule.query_overrides` / `json_overrides`), applied before forwa
 | `POST /intent-service/autonomy-dispatches/{id}/reject` | body `rejectedBy` = `smo-gui:<user>` |
 | `POST /ran-nf-oam/rapp-approvals/{id}/approve` and `.../reject` | body `decidedBy` = `smo-gui:<user>` (`AI-11`: operator; the sweep `rapp-approvals/expire-due` is not exposed) |
 | `PUT /ran-nf-oam/rapp-approval-policy/{id}` | body `requestedBy` = `smo-gui:<user>` (admin; so is `DELETE` and the approval subscriptions) |
+| `PUT /ran-nf-oam/managed-entities/{id}/scope`, `PUT /sme/invoker-registrations/{id}/authz-scope` | nothing forced (admin only): the `region` and `tenant` of a managed element, and the scope claim of an invoker (`PR-SEC-10`). The BFF itself is an unscoped `internal` caller; scoping the console's users is `GUI-5.1` |
 | `POST /sa-smos/monitors/{id}/remedial-actions` | query `requester_is_admin` = `true` for admins else `false` |
 
 Forced values replace whatever the browser sent. The role split for `POST /aimgf/models/{id}/advance` is by `event` query value: DEPRECATE, RETIRE, SUBMIT_FOR_APPROVAL, APPROVE, REJECT, CERTIFY, PROMOTE, ROLLBACK are admin; any other event is operator.

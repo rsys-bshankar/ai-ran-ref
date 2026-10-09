@@ -166,7 +166,10 @@ jobs:
           kubectl -n smo wait --for=condition=available deploy --all --timeout=180s
           [ "$(kubectl -n smo get pods --no-headers | grep -vE 'Running|Completed|Terminating|Error' | wc -l)" = "0" ]
           kubectl -n smo exec -i deploy/r1-termination -- python3 - < ../../prev/smo/scripts/compose_e2e.py
-          kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
+          # the verifier is the previous release's here, and it has the read race that 0.5.0 fixed (smo_shared/audit.py verify reads the head before and after the rows,
+          # as columns): beside the load, which keeps writing audit rows, it can report a break that is only a row committed between its reads. A real break stays
+          # on the second look; a race does not. The checkout's own verifier (below) does not race and runs once.
+          kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify || { sleep 5; kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify; }
 
       - name: Upgrade to this checkout
         working-directory: cur/smo
@@ -204,7 +207,8 @@ jobs:
           kubectl -n smo get deploy r1-termination -o jsonpath='{.spec.template.spec.containers[0].image}'; echo
           [ "$(kubectl -n smo get deploy r1-termination -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')" = "prev" ]
           kubectl -n smo exec -i deploy/r1-termination -- python3 - < scripts/compose_e2e.py
-          kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify
+          # the previous release's verifier again (see the step above): once more on a break, to tell a real one from the read race it had
+          kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify || { sleep 5; kubectl -n smo exec deploy/r1-termination -- python -m smo_shared.audit verify; }
 
       - name: Stop the load and judge it (V-10)
         if: ${{ !cancelled() }}

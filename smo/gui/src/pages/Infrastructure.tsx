@@ -8,7 +8,7 @@ import type {
 import { useAuth } from "../auth/AuthContext";
 import { ConfigJobDrawer } from "../components/ConfigJobDrawer";
 import { ActionButton, Can, Card, DataTable, Drawer, ErrorBox, Field, Id, Json, KeyValue, Modal, PageHeader, StateBadge, Tabs, useHashTab } from "../components/ui";
-import { formatTime, parseJsonObject, splitList, stagedPayload, type GuardForm, type StagedForm } from "../lib/domain";
+import { describePlace, formatTime, parseJsonObject, splitList, stagedPayload, type GuardForm, type StagedForm } from "../lib/domain";
 
 const TABS = ["nfo", "ocloud", "topology", "o1", "orders"] as const;
 
@@ -248,6 +248,7 @@ function O1() {
           { header: "Managed element", render: (e) => <strong>{e.managedElementRef}</strong> },
           { header: "Adaptor", render: (e) => <code className="small">{e.adaptorUri}</code> },
           { header: "Protocols", render: (e) => e.protocolSupport.join(", ") },
+          { header: "Region / tenant", render: (e) => <span title="Set when the element is registered; a caller scoped to other regions or tenants cannot touch it">{describePlace(e)}</span> },
           { header: "Health", render: (e) => <StateBadge state={e.healthStatus} /> },
           { header: "Last heartbeat", render: (e) => formatTime(e.lastHeartbeatAt) },
           { header: "", className: "actions", render: (e) => <ActionButton label="Heartbeat" title="Simulates the ME's O1 adaptor heartbeat (DISCOVERED/DEGRADED → ACTIVE)"
@@ -284,7 +285,7 @@ function O1() {
 }
 
 function RegisterEndpoint({ onClose }: { onClose: () => void }) {
-  const [f, setF] = useState({ managedElementRef: "", adaptorUri: "http://mock-o1-adaptor:8000/edit-config", protocolSupport: "NETCONF", o1Protocol: "NETCONF", entityType: "O-DU", vendorName: "", managedFunctionRef: "" });
+  const [f, setF] = useState({ managedElementRef: "", adaptorUri: "http://mock-o1-adaptor:8000/edit-config", protocolSupport: "NETCONF", o1Protocol: "NETCONF", entityType: "O-DU", vendorName: "", managedFunctionRef: "", region: "", tenant: "" });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const action = useSmoAction();
   return (
@@ -292,7 +293,7 @@ function RegisterEndpoint({ onClose }: { onClose: () => void }) {
       <form className="form grid cols-2 tight" onSubmit={(e) => {
         e.preventDefault();
         action.mutate({ method: "POST", path: "/ran-nf-oam/o1-adaptor-endpoints", success: "Endpoint registered",
-          json: { ...f, protocolSupport: splitList(f.protocolSupport), vendorName: f.vendorName || null, managedFunctionRef: f.managedFunctionRef || null } }, { onSuccess: onClose });
+          json: { ...f, protocolSupport: splitList(f.protocolSupport), vendorName: f.vendorName || null, managedFunctionRef: f.managedFunctionRef || null, region: f.region.trim() || null, tenant: f.tenant.trim() || null } }, { onSuccess: onClose });
       }}>
         <Field label="Managed element ref"><input value={f.managedElementRef} onChange={set("managedElementRef")} required placeholder="ME-1" /></Field>
         <Field label="Entity type"><select value={f.entityType} onChange={set("entityType")}>{["O-DU", "O-CU-CP", "O-CU-UP", "O-RU"].map((t) => <option key={t}>{t}</option>)}</select></Field>
@@ -301,6 +302,8 @@ function RegisterEndpoint({ onClose }: { onClose: () => void }) {
         <Field label="Protocols supported"><input value={f.protocolSupport} onChange={set("protocolSupport")} /></Field>
         <Field label="Vendor"><input value={f.vendorName} onChange={set("vendorName")} /></Field>
         <Field label="Managed function ref"><input value={f.managedFunctionRef} onChange={set("managedFunctionRef")} /></Field>
+        <Field label="Region" hint="Optional. A caller scoped to regions may touch only elements whose region it names"><input value={f.region} onChange={set("region")} placeholder="eu-west" maxLength={100} /></Field>
+        <Field label="Tenant" hint="Optional. Likewise for tenants"><input value={f.tenant} onChange={set("tenant")} placeholder="acme" maxLength={100} /></Field>
         <div className="row gap end span-2"><button type="button" className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={action.isPending}>Register</button></div>
       </form>
     </Modal>

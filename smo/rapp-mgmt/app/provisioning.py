@@ -34,7 +34,7 @@ DEPLOYABLE_PACKAGE_STATES = ("AVAILABLE", "PRIMED")
 
 
 def provision_instance(db: Session, package_id: uuid.UUID, configuration: dict | None,
-                       autonomy_mode: str, region_scope: dict | None, approval_policy: dict | None = None) -> RAppInstance:
+                       autonomy_mode: str, region_scope: dict | None, approval_policy: dict | None = None, authz_scope: dict | None = None) -> RAppInstance:
     """Requires a validated package: AVAILABLE, or PRIMED (AVAILABLE plus
     pre-provisioned resources; D-SEC-RAPP-1) — 404 PACKAGE_NOT_FOUND for an
     unknown package, 409 MODEL_NOT_CERTIFIED for any other state. NFO handoff
@@ -56,7 +56,8 @@ def provision_instance(db: Session, package_id: uuid.UUID, configuration: dict |
         raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail="package has no nfDeploymentDescriptorId")
 
     inst = RAppInstance(package_id=package_id, configuration=configuration, state=InstanceState.DEPLOYING,
-                        oauth_client_id=str(uuid.uuid4()), autonomy_mode=autonomy_mode, region_scope=region_scope, approval_policy=approval_policy)
+                        oauth_client_id=str(uuid.uuid4()), autonomy_mode=autonomy_mode, region_scope=region_scope, approval_policy=approval_policy,
+                        authz_scope=authz_scope)
     db.add(inst)
     db.flush()
     deliver_credentials(inst, register_instance_invoker(inst))   # replaces the placeholder identity; the secret goes to the workload's Secret (or nowhere: see there)
@@ -176,14 +177,22 @@ def register_instance_invoker(inst: RAppInstance) -> str:
     refused on the internal-only routes). Its id is the instance's `oauth_client_id`, which is therefore what R1 Termination vouches for as the
     caller (`X-R1-Invoker-Id`) when the workload calls with these credentials: the limits, the kill switch and the audit trail key on it. Returns the
     onboarding secret, which SME keeps only as a hash: it is handed to the workload once (`POST /instances/{id}/credentials`), never stored here."""
+    request: dict = {"apiInvokerPublicKey": f"rapp-instance:{inst.instance_id}"}
+    if inst.authz_scope:
+        request["authzScope"] = inst.authz_scope              # PR-SEC-10.3: the instance's scope claim is part of its identity, put on the invoker when it is made
     try:
-        resp = R1Client().post("/sme/invoker-registrations", json={"apiInvokerPublicKey": f"rapp-instance:{inst.instance_id}"})
+        resp = R1Client().post("/sme/invoker-registrations", json=request)
         created = resp.status_code == 201
     except httpx.HTTPError:
         created = False
     if not created:
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="SME did not register an invoker identity for the rApp instance")
     body = resp.json()
+    if inst.authz_scope and body.get("authzScope") != inst.authz_scope:
+        # An SME that does not know the field (the release before this one) would have made an UNSCOPED invoker: fail closed, take it away again
+        with suppress(httpx.HTTPError):
+            R1Client().delete(f"/sme/invoker-registrations/{body['apiInvokerId']}")
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="SME did not record the scope claim of the rApp instance; no identity was kept")
     inst.oauth_client_id = body["apiInvokerId"]
     return body["onboardingSecret"]
 

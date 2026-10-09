@@ -93,3 +93,43 @@ def test_one_request_does_not_leak_its_originator_into_the_next(service):
     client.get("/inside", headers=RAPP)
     client.get("/inside", headers=MODULE)
     assert sent["originator"] is None and invoker.get_originator() is None
+
+
+def test_a_module_can_act_on_its_own_account_for_a_while_inside_a_request():
+    """What the platform does about an rApp (not for it): R1Client adds neither the id nor the claim, and the request goes on as the rApp's afterwards."""
+    app = FastAPI()
+    apply_correlation_id(app)
+    seen = {}
+
+    @app.get("/inside")
+    def inside():
+        seen["before"] = get_originator()
+        with invoker.on_own_account():
+            seen["during"] = get_originator()
+            seen["headers_during"] = r1_client.R1Client(bearer_token="t")._headers()
+        seen["after"] = get_originator()
+        seen["headers_after"] = r1_client.R1Client(bearer_token="t")._headers()
+        return {}
+
+    TestClient(app).get("/inside", headers={**RAPP, "X-R1-Scope": '{"regions":["eu"]}'})
+    assert (seen["before"], seen["during"], seen["after"]) == ("es-client", None, "es-client")
+    assert ON_BEHALF_OF_HEADER not in seen["headers_during"] and "X-R1-On-Behalf-Scope" not in seen["headers_during"]
+    assert seen["headers_after"][ON_BEHALF_OF_HEADER] == "es-client" and seen["headers_after"]["X-R1-On-Behalf-Scope"] == '{"regions":["eu"]}'
+
+
+def test_leaving_the_own_account_block_by_an_error_restores_the_originator():
+    app = FastAPI()
+    apply_correlation_id(app)
+    seen = {}
+
+    @app.get("/inside")
+    def inside():
+        try:
+            with invoker.on_own_account():
+                raise RuntimeError("boom")
+        except RuntimeError:
+            seen["after"] = get_originator()
+        return {}
+
+    TestClient(app).get("/inside", headers=RAPP)
+    assert seen["after"] == "es-client"
