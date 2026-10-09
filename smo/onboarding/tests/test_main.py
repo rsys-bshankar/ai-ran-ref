@@ -679,6 +679,9 @@ def test_onboard_parses_execution_modes_and_runtime_profiles(client, monkeypatch
     "runtimeProfiles:\n  COMPILING: {cpu: 1}\n",                                   # unknown mode
     "executionModes: [INFERENCE]\nruntimeProfiles:\n  TRAINING: {cpu: 1}\n",       # undeclared mode
     "runtimeProfiles: [1, 2]\n",                                                   # not a mapping
+    "runtimeProfiles:\n  TRAINING: {cpu: 1, memory: 16 GB}\n",                     # PR-RAPP-2.1: memory is a Kubernetes quantity
+    "runtimeProfiles:\n  TRAINING: {cpu: 1, memory: true}\n",
+    "runtimeProfiles:\n  TRAINING: {cpu: 1, memory: -4Gi}\n",
 ])
 def test_onboard_fails_on_an_invalid_runtime_profile(client, monkeypatch, profiles):
     pkg = _onboard_with_manifest(client, monkeypatch, profiles)
@@ -1054,3 +1057,38 @@ def test_the_row_detail_is_stored_and_its_per_row_source_is_a_declared_read(clie
     stored = pkg["aiCapabilities"]["operatorUi"]
     assert [b["kind"] for b in stored["panels"][2]["rowDetail"]["blocks"]] == ["chart", "json", "table"]
     assert ("GET", "/instances/{instanceId}/decisions") in declared_routes(stored)
+
+
+# ---------------------------------------------------------------- PR-RAPP-2.1: the profile as container resources in the NFO descriptor
+
+def test_the_descriptor_carries_the_manifest_cpu_and_memory_as_requests_and_limits_per_mode(client, monkeypatch):
+    sent = []
+
+    def post(self, path, json=None, **kw):
+        sent.append((path, json))
+        return FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())})
+    manifest = "executionModes: [TRAINING, INFERENCE]\nruntimeProfiles:\n  TRAINING: {cpu: 8, memory: 16Gi, gpu: 1}\n  INFERENCE: {cpu: 0.5, memory: 512Mi}\n"
+    _mock_fetch(monkeypatch, _real_package_bytes(manifest_yaml=manifest))
+    monkeypatch.setattr("app.main.R1Client.post", post)
+    assert client.post("/packages", json={"location": "http://example/pkg.csar"}).status_code == 202
+    [(path, body)] = sent
+    assert path == "/nfo/descriptors" and body["workloadTemplate"]["toscaEntryDefinitions"] == "Definitions/main.yaml"
+    assert body["workloadTemplate"]["containerResourcesByMode"] == {
+        "TRAINING": {"requests": {"cpu": "8", "memory": "16Gi"}, "limits": {"cpu": "8", "memory": "16Gi"}},
+        "INFERENCE": {"requests": {"cpu": "500m", "memory": "512Mi"}, "limits": {"cpu": "500m", "memory": "512Mi"}}}
+
+
+def test_a_package_without_runtime_profiles_gets_the_descriptor_it_always_got(client, monkeypatch):
+    sent = []
+    _mock_fetch(monkeypatch, _real_package_bytes(manifest_yaml="rappManifest:\n  manifestVersion: \"1.0\"\n"))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: sent.append(json) or FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+    client.post("/packages", json={"location": "http://example/pkg.csar"})
+    assert sent[0]["workloadTemplate"] == {"toscaEntryDefinitions": "Definitions/main.yaml"}
+
+
+def test_a_mode_with_only_a_gpu_adds_no_resources_for_that_mode(client, monkeypatch):
+    sent = []
+    _mock_fetch(monkeypatch, _real_package_bytes(manifest_yaml="runtimeProfiles:\n  INFERENCE: {gpu: 1}\n  TRAINING: {cpu: 2}\n"))
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: sent.append(json) or FakeR1Response(201, {"nfDeploymentDescriptorId": str(uuid.uuid4())}))
+    client.post("/packages", json={"location": "http://example/pkg.csar"})
+    assert list(sent[0]["workloadTemplate"]["containerResourcesByMode"]) == ["TRAINING"]

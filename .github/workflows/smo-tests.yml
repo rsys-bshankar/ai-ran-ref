@@ -190,6 +190,36 @@ jobs:
         working-directory: smo/gui
         run: npm run validate:diagrams
 
+  # PR-RAPP-4: the Java AI Runtime SDK (smo/sdk-java) and its example rApp. JDK 21, Maven through the checked-in wrapper (the Maven
+  # distribution is pinned by SHA-256), every dependency pinned by version and by jar hash (dependencies.sha256).
+  sdk-java:
+    name: Java SDK (build, tests, pinned dependencies, example image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: smo/sdk-java/**/pom.xml
+
+      # -C: a checksum Maven Central publishes that does not match the download fails the build instead of warning.
+      # The SDK's contract test compares its routes with smo/docs/openapi/*.json.
+      - name: Build and test (SDK, example rApp)
+        working-directory: smo/sdk-java
+        run: ./mvnw -B -ntp -C verify
+
+      - name: The resolved jars are the pinned ones
+        working-directory: smo/sdk-java
+        run: scripts/verify-dependencies.sh
+
+      - name: The example rApp's image builds
+        working-directory: smo/sdk-java
+        run: docker build -f examples/hello-rapp/Dockerfile -t hello-java-rapp:ci .
+
   compose-e2e:
     name: Full docker-compose stack runs end to end
     runs-on: ubuntu-latest
@@ -275,6 +305,27 @@ jobs:
               pip install -q --no-deps -e shared &&
               python -m conformance.o1 --adaptor http://mock-o1-adaptor:8000 --oam-url http://ran-nf-oam:8000 --protocol both --out /tmp/kit &&
               grep -q "0 failed, 0 skipped" /tmp/kit.md'
+
+      # PR-RAPP-3: the rApp conformance pack. Offline first: every sample package against Onboarding's validation, with its signature checked against the demo
+      # publisher's key and signing required. Then the runtime checks against the stack, modules addressed by name (--direct, as the runbook replay does): the
+      # kit serves a signed copy of the energy-saving package that is new to the stack (scripts/unique_sample_csar.py: the runbook replay above already onboarded the
+      # committed one, and Onboarding refuses identical bytes), Onboarding fetches it, and the kit takes it through register, heartbeat, R1 usage and terminate and removes
+      # what it made. Every check must run: none failed, no warning, none skipped. Not run locally (no docker in the session that wrote it): this step is the
+      # first run against the real stack.
+      - name: rApp conformance pack, offline and against the stack (PR-RAPP-3)
+        working-directory: smo
+        run: |
+          docker run --rm --network smo_default --network-alias rapp-packages \
+            -e PYTHONPATH=/work/smo/shared -v "$PWD/..:/work" -w /work/smo python:3.11-slim@sha256:9f6ef439f51f4b36dc5c6bb265c2d3dd810bde94c5bbec77ae86b6650c488cf9 sh -c '
+              pip install -q --require-hashes -r requirements/runtime.txt &&
+              pip install -q --no-deps -e shared &&
+              python -m conformance.rapp package samples --trust samples/demo-signing --require-signed --out /work/rapp-conformance-package &&
+              grep -q "0 failed, 0 warnings" /work/rapp-conformance-package.md &&
+              mkdir -p /tmp/pkg && python scripts/unique_sample_csar.py energy-saving-rapp /tmp/pkg/conformance-rapp.csar &&
+              (python -m http.server 9100 --directory /tmp/pkg > /dev/null 2>&1 &) && sleep 2 &&
+              python -m conformance.rapp runtime --package-url http://rapp-packages:9100/conformance-rapp.csar --direct --out /work/rapp-conformance-runtime &&
+              grep -q "0 failed, 0 warnings, 0 skipped" /work/rapp-conformance-runtime.md'
+          { echo "### rApp conformance pack, offline"; echo; cat ../rapp-conformance-package.md; echo; echo "### rApp conformance pack, against the stack"; echo; cat ../rapp-conformance-runtime.md; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Every module with a role runs as it, and each role can use its schema and nothing else (PR-DB-2.6, 2.7)
         working-directory: smo

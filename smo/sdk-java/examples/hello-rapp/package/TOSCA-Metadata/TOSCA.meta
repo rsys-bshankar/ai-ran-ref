@@ -1,0 +1,4 @@
+TOSCA-Meta-File-Version: 1.0
+CSAR-Version: 1.0
+Created-By: ai-ran-ref smo sdk-java
+Entry-Definitions: Definitions/asd.yaml

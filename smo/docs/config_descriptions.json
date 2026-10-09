@@ -86,7 +86,12 @@
   "NETCONF_TLS_CERT_FILE": "Path of the client certificate presented to a NETCONF-over-TLS server, for endpoints without a `credentialRef`.",
   "NETCONF_TLS_KEY_FILE": "Path of the private key of `NETCONF_TLS_CERT_FILE`. Mount it as a secret file with mode 0400.",
   "NFO_URL": "Base URL R1 Termination forwards `/nfo/...` to (network function orchestration, O2dms).",
-  "ONBOARDING_URL": "Base URL R1 Termination forwards `/onboarding/...` to (rApp package store).",
+  "ONBOARDING_REQUIRE_SIGNED_PACKAGES": "`true`, `1`, `yes` or `on`: Onboarding refuses a package that is not signed by a publisher in `ONBOARDING_TRUST_STORE` (the package fails with `package signature: the package is not signed ...`). Needs `ONBOARDING_TRUST_STORE`: without it every package is refused, with a message that says so. Default `false`: an unsigned package onboards as before. A package that carries a signature is checked against the trust store whenever one is configured, whatever this flag says. See docs/RAPP_PACKAGING.md \"Signing\".",
+  "ONBOARDING_TRUST_STORE": {
+    "description": "Path of the accepted rApp publishers' public keys: one PEM ed25519 public key file, or a directory of `<publisher>.pub` / `<publisher>.pem` files (the file name is the publisher's name; dot-files are skipped, so a mounted ConfigMap works). Read for each package, so a changed key needs no restart. With it set, a package that carries a signature must verify against these keys (tampered, added or removed file, unknown publisher and wrong key are refused with the reason); an unusable store (missing, empty, not an ed25519 key) fails the package. Empty (the default): no signature is checked. Public keys are not secrets, so this is a path and not a `*_FILE` secret. The chart: `rappSigning.trustStoreConfigMap`. See docs/RAPP_PACKAGING.md \"Signing\".",
+    "secret": false
+  },
+  "ONBOARDING_URL":"Base URL R1 Termination forwards `/onboarding/...` to (rApp package store).",
   "PGBOUNCER_MAX_CLIENT_CONN": "Compose `pooler` profile: how many client connections PgBouncer accepts in total (default 1000). Above it, new clients are refused.",
   "PGBOUNCER_POOL_SIZE": "Compose `pooler` profile: server connections PgBouncer keeps per database and user (default 20). Raise it with the modules' replica count; it must stay below Postgres's `max_connections`.",
   "POSTGRES_SLOW_QUERY_MS": "Compose: Postgres logs every statement slower than this many milliseconds with its text (default 500). `-1` turns it off, `0` logs all. Read it with `docker compose logs postgres`.",

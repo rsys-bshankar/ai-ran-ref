@@ -80,6 +80,38 @@ def test_validation_emulation_and_inference_runtimes_use_their_own_modes(client,
     assert deployed["runtimeProfile"] == PROFILES["INFERENCE"]
 
 
+def _descriptor_container_resources(mlmr):
+    return [d["workloadTemplate"].get("containerResources") for d in mlmr.nfo.descriptors.values()]
+
+
+def test_the_descriptor_gets_the_profile_as_container_requests_and_limits_beside_the_raw_profile(client, mlmr, package):
+    """PR-RAPP-2.1: `resources` stays what it was; `containerResources` is the Kubernetes block a deployment manager applies."""
+    model_id = mlmr.add_model()
+    client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "es-rapp", "packageId": str(package)})
+    assert _descriptor_resources(mlmr) == [PROFILES["TRAINING"]]
+    assert _descriptor_container_resources(mlmr) == [{"requests": {"cpu": "8", "memory": "16Gi"}, "limits": {"cpu": "8", "memory": "16Gi"}}]
+
+
+def test_an_unsized_runtime_has_no_container_resources_and_an_explicit_profile_is_mapped(client, mlmr, package):
+    model_id = mlmr.add_model()
+    client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "p"})
+    client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "p", "runtimeProfile": {"cpu": 0.25, "memory": "256Mi", "gpu": 1}})
+    assert _descriptor_container_resources(mlmr) == [None, {"requests": {"cpu": "250m", "memory": "256Mi"}, "limits": {"cpu": "250m", "memory": "256Mi"}}]
+
+
+def test_the_inference_runtime_gets_container_resources_too(client, mlmr, package, db_session_factory):
+    model_id = mlmr.add_model()
+    _set_lifecycle(db_session_factory, model_id, model_lifecycle_state=ModelLifecycleState.CERTIFIED)
+    client.post(f"/models/{model_id}/runtime/deploy", params={"package_id": str(package)})
+    assert _descriptor_container_resources(mlmr) == [{"requests": {"cpu": "2", "memory": "4Gi"}, "limits": {"cpu": "2", "memory": "4Gi"}}]
+
+
+@pytest.mark.parametrize("memory", ["lots", "16 GB", "-1Gi", "1GiB"])
+def test_an_explicit_profile_whose_memory_is_not_a_kubernetes_quantity_is_refused(client, mlmr, memory):
+    model_id = mlmr.add_model()
+    assert client.post("/training-jobs", json={"modelId": str(model_id), "producerId": "p", "runtimeProfile": {"memory": memory}}).status_code == 422
+
+
 # ---------------------------------------------------------------- W7-04 timeouts
 
 def _backdate(db_session_factory, cls, job_id, seconds):

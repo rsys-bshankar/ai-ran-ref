@@ -201,6 +201,13 @@ compose and the chart use the file form (`docs/SECRETS.md` lists each secret, it
 | `MOCK_O1_VENDOR_MODES` | `O1_NETCONF,O1_RESTCONF` |  | `mock-o1-adaptor/app/main.py` | Comma-separated vendor modes (`O1_NETCONF`, `O1_RESTCONF`) the mock adaptor reports. Only for tests and demos with the mock. |
 | `MOCK_O1_VENDOR_NAME` | `mock-vendor` |  | `mock-o1-adaptor/app/main.py` | Vendor name the mock O1 adaptor reports. Only for tests and demos with the mock. |
 
+### `onboarding`
+
+| Variable | Default | Secret | Read in | What it does |
+|---|---|---|---|---|
+| `ONBOARDING_REQUIRE_SIGNED_PACKAGES` | `false` |  | `docker-compose.yml`, `onboarding/app/main.py` | `true`, `1`, `yes` or `on`: Onboarding refuses a package that is not signed by a publisher in `ONBOARDING_TRUST_STORE` (the package fails with `package signature: the package is not signed ...`). Needs `ONBOARDING_TRUST_STORE`: without it every package is refused, with a message that says so. Default `false`: an unsigned package onboards as before. A package that carries a signature is checked against the trust store whenever one is configured, whatever this flag says. See docs/RAPP_PACKAGING.md "Signing". |
+| `ONBOARDING_TRUST_STORE` | `"" (empty)` |  | `docker-compose.yml`, `onboarding/app/main.py` | Path of the accepted rApp publishers' public keys: one PEM ed25519 public key file, or a directory of `<publisher>.pub` / `<publisher>.pem` files (the file name is the publisher's name; dot-files are skipped, so a mounted ConfigMap works). Read for each package, so a changed key needs no restart. With it set, a package that carries a signature must verify against these keys (tampered, added or removed file, unknown publisher and wrong key are refused with the reason); an unusable store (missing, empty, not an ed25519 key) fails the package. Empty (the default): no signature is checked. Public keys are not secrets, so this is a path and not a `*_FILE` secret. The chart: `rappSigning.trustStoreConfigMap`. See docs/RAPP_PACKAGING.md "Signing". |
+
 ### `r1-termination`
 
 | Variable | Default | Secret | Read in | What it does |

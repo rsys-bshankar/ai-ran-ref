@@ -76,6 +76,7 @@ Layout and field semantics: [RAPP_PACKAGING.md](../../docs/RAPP_PACKAGING.md).
 - Capabilities: consumes `data`, `analytics`, `models`, `lifecycle`, `intent`, `platform`; provides `data` (`PRB_UTILIZATION_SIM`). Produced model `EnergySavingPredictor`; supported actions `LOCK_CELL`, `UNLOCK_CELL`; vendor modes `O1_NETCONF`, `O1_RESTCONF`; supported analytics `TRAFFIC_FORECAST`.
 - Deliberately absent: no deployment item (Helm chart) in the ASD, because the service runs as a compose service reached through R1 Termination; no `Files/Sme`, `Files/Dme` or `Files/Acm`, because the rApp registers its DME type from code (`app/producer.py`).
 - `build_csar.py` leaves out `tests/` and this README. Rebuild only after editing the package files.
+- The committed `energy-saving-rapp.csar` is **signed** with the demo publisher's key (`TOSCA-Metadata/DIGESTS.sha256` and `.sig`, `../README.md`): a rebuild with the demo key is byte-identical. The key is public on purpose; never trust it in production.
 
 ## Service API
 

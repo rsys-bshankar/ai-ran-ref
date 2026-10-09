@@ -10,7 +10,7 @@
 | Called by | rApps through the SDK (`sdk/smo_sdk/lifecycle.py`), MLLF (lifecycle read + node-group write), MLMR (`nrm-refs` join), MDAF (MLMF subscriptions and reports), SA SMOS and SO SMOS (training / validation / emulation / deploy / inference steps), GUI via the BFF |
 | Database tables | `model_lifecycle` (versioned), `training_job`, `validation_job`, `emulation_job`, `inference_job`, `certification_record`, `lifecycle_transition`, `mlmf_subscription`, `performance_report`, `feature_group`, `ml_training_function`, `ml_training_process`, `ml_training_report`, `ml_testing_function`, `ml_testing_report`, `aiml_inference_function`, `aiml_inference_emulation_function`, `aiml_inference_report`, `ml_model_loading_policy`, `ml_model_loading_request`, `ml_model_loading_process`, `ml_update_function`, `ml_update_request`, `ml_update_process`, `ml_update_report` |
 | Idempotency | `POST /training-jobs`, `/validation-jobs`, `/emulation-jobs`, `/models/{id}/inference-jobs` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
-| Unit tests | 195 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 206 passed (`tests/`, SQLite, standalone) |
 | Status | Done. Open: `OI-1-weighted-triggers` (group-retrain `WEIGHTED_TRIGGERS` raises `NotImplementedError`), `OI-6.1-runtime-gate` (no operator gate on RuntimeLifecycle transitions); runtime scale takes no target size (NFO's scale has no argument) |
 
 ## 1. High-level design (HLD)
@@ -244,7 +244,7 @@ Paths are relative to `/aimgf`. Lists are `{items, total, limit, offset}` with `
 
 | Method | Path | Purpose / notable errors |
 |---|---|---|
-| POST | `/training-jobs` | RequestTraining: exactly one of `modelId` / `modelCoordinationGroupId` (422 `COORDINATION_GROUP_MISMATCH`); optional `dmeDataJobIds` (422 `DME_ARTIFACT_NOT_FOUND`), `packageId` or `runtimeProfile`, `timeoutSeconds`, `notificationUri`. 409 `LIFECYCLE_ILLEGAL_TRANSITION` |
+| POST | `/training-jobs` | RequestTraining: exactly one of `modelId` / `modelCoordinationGroupId` (422 `COORDINATION_GROUP_MISMATCH`); optional `dmeDataJobIds` (422 `DME_ARTIFACT_NOT_FOUND`), `packageId` or `runtimeProfile` (`{cpu, memory, gpu}`; `memory` a Kubernetes quantity such as `8Gi`, 422 otherwise), `timeoutSeconds`, `notificationUri`. 409 `LIFECYCLE_ILLEGAL_TRANSITION` |
 | GET | `/training-jobs`, `/training-jobs/{id}/status` | List (filters `model_id`, `status`) / status. Reads sweep overdue runs |
 | POST | `/training-jobs/{id}/complete` | Body `succeeded`, `metrics`, `outcomeArtifactDmeTypeId`, spec report fields. Tears down the runtime, fires `TRAINING_COMPLETE` / `TRAINING_FAILED` (model-targeted only), writes MLTrainingReport, notifies. 409 if not `IN_PROGRESS` / `SUSPENDED` |
 | DELETE | `/training-jobs/{id}` | Cancel. 204; no-op for unknown / already `CANCELLED`; 409 for `FINISHED` / `FAILED` |
@@ -310,7 +310,7 @@ Paths are relative to `/aimgf`. Lists are `{items, total, limit, offset}` with `
 |---|---|---|
 | MLMR `GET /mlmr/models/{id}` | every model-targeted route | 404 from MLMR → `404 MODEL_NOT_FOUND` |
 | MLMR `GET /mlmr/coordination-groups` | breached MLMF report | non-200 is treated as "no groups" |
-| NFO `POST /nfo/descriptors`, `POST /nfo/deployments` | training / validation / emulation start (`workloadTemplate` = `{jobKind, jobId, resources?}`); runtime deploy (`{modelId, jobKind: INFERENCE, resources?}`) | response body is read without a status check; an NFO error becomes an unhandled 500 and nothing is committed |
+| NFO `POST /nfo/descriptors`, `POST /nfo/deployments` | training / validation / emulation start (`workloadTemplate` = `{jobKind, jobId, resources?, containerResources?}`: `resources` is the runtime profile as written, `containerResources` the same as Kubernetes `requests` and `limits` for CPU and memory, `PR-RAPP-2.1`, `docs/RAPP_PACKAGING.md` §3.2); runtime deploy (`{modelId, jobKind: INFERENCE, resources?, containerResources?}`) | response body is read without a status check; an NFO error becomes an unhandled 500 and nothing is committed |
 | NFO `DELETE /nfo/deployments/{id}` | completion, cancel, supersede, timeout, terminate, `RETIRE` | the response is not checked |
 | NFO `POST /nfo/deployments/{id}/scale` | runtime scale | no target size argument exists |
 | DME `GET /dme/data-jobs/{id}` | training request with `dmeDataJobIds` | non-200 → 422 `DME_ARTIFACT_NOT_FOUND`; empty list skips the check |
@@ -394,7 +394,7 @@ NFO, MLMR and the webhook are faked in-process; the database is SQLite.
 |---|---|---|
 | `tests/test_main.py` | training / validation / emulation request, complete, cancel, suspend / resume, supersede, DME check, completion notifications; advance, governance records, operator gates, lifecycle history; runtime deploy / activate / scale / terminate and end-of-life; inference gating; NFO execution runtime create / teardown per job kind; MLMF subscribe / report / notify / unsubscribe and group retrain; feature groups; health | 100 |
 | `tests/test_nrm.py` | TS 28.105 requests as real jobs, spec enum rejection, process flags and progress, chained training reports, testing requests, loading request / policy / process, inference-function gating, emulation reports, update request / report, 404 for unknown NRM objects | 21 `?total=false` on an NRM list and on the in-memory inference-report list. |
-| `tests/test_runtime.py` | runtime profile sizing (package, explicit, unknown package), per-mode profiles, stage timeouts, lazy expiry, suspended runs pausing, timeouts never forcing an illegal transition, 5 s inference default, clock restart on NRM resume | 13 |
+| `tests/test_runtime.py` | `containerResources` beside the raw profile (package, explicit, inference, unsized has none, memory that is not a quantity is 422); runtime profile sizing (package, explicit, unknown package), per-mode profiles, stage timeouts, lazy expiry, suspended runs pausing, timeouts never forcing an illegal transition, 5 s inference default, clock restart on NRM resume | 13 |
 | `tests/test_steps_and_feature_groups.py` | training steps (start, forward progress, no going back, suspended and ended runs, how a run ended, a finished run, validation); feature-group DME job (created with the group, none without `enableDme`, a refusal means no group, duplicate name first, delete terminates it, delete without a job) | 13 |
 | `tests/test_statemachine.py` | both FSMs (full pipeline, no shortcuts, retrain re-entry, rollback, reject, terminal states, state counts), inference FSM, retrain propagation policies, `ADVANCEABLE_EVENTS`, `TRAINABLE_STATES` | 25 |
 

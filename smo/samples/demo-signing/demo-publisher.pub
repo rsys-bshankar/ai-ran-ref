@@ -1,0 +1,4 @@
+# DEMO PUBLISHER KEY. Its private half is public (demo-publisher.seed). Trust it in a demo or a test; NEVER in a production trust store.
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAMSTCJ/6CRt5n7FaxqVLyYiyn1iNHkt8NJ+BKkm0nuCQ=
+-----END PUBLIC KEY-----
