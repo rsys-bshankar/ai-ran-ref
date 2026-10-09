@@ -334,6 +334,16 @@ def test_assist_rejection_is_attributed_to_the_gui_user(app, smo):
     assert login(app, "viewer").post("/api/smo/intent-service/autonomy-dispatches/d-1/reject", json={}).status_code == 403
 
 
+def test_an_approval_is_attributed_to_the_signed_in_user_and_not_to_what_the_browser_sent(app, smo):
+    """AI-11: who approved or rejected an rApp's action is the GUI user; a viewer cannot decide; the sweep and a hand-made path are not exposed."""
+    login(app, "operator").post("/api/smo/ran-nf-oam/rapp-approvals/a-1/approve", json={"decidedBy": "smo-gui:admin", "reason": "ok"})
+    login(app, "operator").post("/api/smo/ran-nf-oam/rapp-approvals/a-2/reject", json={"decidedBy": "someone-else", "reason": "no"})
+    assert [json.loads(r.content) for r in smo.proxied] == [{"decidedBy": "smo-gui:operator", "reason": "ok"}, {"decidedBy": "smo-gui:operator", "reason": "no"}]
+    assert login(app, "viewer").post("/api/smo/ran-nf-oam/rapp-approvals/a-1/approve", json={}).status_code == 403
+    assert login(app, "admin").post("/api/smo/ran-nf-oam/rapp-approvals/expire-due").status_code == 403         # the sweep is for a scheduler, not the GUI
+    assert len(smo.proxied) == 2
+
+
 def test_a_rapps_own_api_is_no_longer_a_module_of_the_proxy(app, smo):
     """PR-GUI-8: the four sample rApps' static rules are gone; their routes are reached through /api/rapps/<instance>/operator/..., allowed by the declaration."""
     for who in ("viewer", "operator", "admin"):

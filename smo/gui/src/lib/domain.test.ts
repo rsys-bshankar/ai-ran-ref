@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ModuleStatus } from "../api/types";
 
-import { completionRoute, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describeSeconds, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, waveProgress, metricSeries, moduleRows, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
+import { APPROVAL_MEANING, DISPOSITION_MEANING, approvalPolicyForm, approvalPolicyPayload, describeApprovalPolicy, INTEGRITY_MEANING, completionRoute, decisionQuery, describeChange, describeElements, timeLeft, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describeSeconds, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, waveProgress, metricSeries, moduleRows, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
 
 describe("model lifecycle", () => {
   it("maps each state to the FSM's next legal action", () => {
@@ -251,5 +251,59 @@ describe("module status table (PR-OBS-8.3)", () => {
   it("flags the modules that run a different commit than most (a rolling upgrade in progress)", () => {
     const rows = moduleRows([up("a"), up("b"), up("c", { buildSha: "fedcba9876543210" })]);
     expect(rows.map((r) => r.skewed)).toEqual([false, false, true]);
+  });
+});
+
+
+describe("approvals and decision records (AI-11, AI-13)", () => {
+  const now = Date.parse("2026-10-09T10:00:00Z");
+  const at = (minutes: number) => new Date(now + minutes * 60_000).toISOString();
+
+  it("says how long a request has before it lapses", () => {
+    expect(timeLeft(at(-1), now)).toBe("overdue");
+    expect(timeLeft(at(0.5), now)).toBe("under a minute");
+    expect(timeLeft(at(25), now)).toBe("in 25 min");
+    expect(timeLeft(at(125), now)).toBe("in 2 h 5 min");
+    expect(timeLeft(at(180), now)).toBe("in 3 h");
+    expect(timeLeft(at(60 * 24 * 5), now)).toBe("in 5 days");
+    expect(timeLeft(null, now)).toBe("—");
+    expect(timeLeft("not a date", now)).toBe("not a date");
+  });
+
+  it("lists the first three elements and counts the rest", () => {
+    expect(describeElements([])).toBe("—");
+    expect(describeElements(null)).toBe("—");
+    expect(describeElements(["A", "B", "C"])).toBe("A, B, C");
+    expect(describeElements(["A", "B", "C", "D", "E"])).toBe("A, B, C +2");
+  });
+
+  it("describes a change as the element or function, the operation and the values", () => {
+    expect(describeChange({ managedElementRef: "ME-1", managedFunctionRef: "NRCellDU=101", operation: "merge", attributeChanges: { txPower: 20, tilt: 3 } })).toBe("ME-1 / NRCellDU=101 merge txPower=20, tilt=3");
+    expect(describeChange({ managedElementRef: "ME-2" })).toBe("ME-2 merge");
+    expect(describeChange({ managedElementRef: "ME-2", operation: "delete" })).toBe("ME-2 delete");
+    expect(describeChange({ managedElementRef: "ME-3", attributeChanges: { list: [1, 2] } })).toBe("ME-3 merge list=[1,2]");
+  });
+
+  it("builds the decision query from the filters, leaving blanks out and never asking for a count", () => {
+    expect(decisionQuery({ invoker: " ", disposition: "", model: "" }, 0, 25)).toEqual({ limit: 25, offset: 0, total: false });
+    expect(decisionQuery({ invoker: " rapp-1 ", disposition: "APPROVED", model: "m 1.0", job: "j-1", approval: "a-1" }, 50, 25)).toEqual({
+      limit: 25, offset: 50, total: false, invoker_id: "rapp-1", disposition: "APPROVED", model_version: "m 1.0", job_id: "j-1", approval_id: "a-1" });
+  });
+
+  it("explains every status, outcome and integrity result the API can return", () => {
+    for (const status of ["PENDING", "APPROVED", "REJECTED", "EXPIRED", "REFUSED"]) expect(APPROVAL_MEANING[status]).toBeTruthy();
+    for (const outcome of ["DIRECT", "APPROVED", "ROLLBACK", "REJECTED", "EXPIRED", "REFUSED"]) expect(DISPOSITION_MEANING[outcome]).toBeTruthy();
+    for (const result of ["VERIFIED", "UNCHAINED", "MISMATCH"]) expect(INTEGRITY_MEANING[result]).toBeTruthy();
+  });
+
+  it("describes an approval policy and builds the form and the request body from it", () => {
+    expect(describeApprovalPolicy(null)).toBe("Writes at once");
+    expect(describeApprovalPolicy({ timeoutSeconds: 3600, onTimeout: "EXPIRE" })).toBe("Held for approval · lapses after 1 h (expires)");
+    expect(describeApprovalPolicy({ timeoutSeconds: 5400, onTimeout: "REJECT" })).toBe("Held for approval · lapses after 90 min (rejected)");
+    expect(approvalPolicyForm(null)).toEqual({ minutes: "60", onTimeout: "EXPIRE" });          // the conservative default
+    expect(approvalPolicyForm({ timeoutSeconds: 1800, onTimeout: "REJECT" })).toEqual({ minutes: "30", onTimeout: "REJECT" });
+    expect(approvalPolicyPayload({ minutes: " 30 ", onTimeout: "REJECT" })).toEqual({ ok: true, body: { timeoutSeconds: 1800, onTimeout: "REJECT" } });
+    expect(approvalPolicyPayload({ minutes: "10080", onTimeout: "EXPIRE" }).ok).toBe(true);
+    for (const bad of ["", " ", "0", "-5", "1.5", "10081", "soon"]) expect(approvalPolicyPayload({ minutes: bad, onTimeout: "EXPIRE" }).ok).toBe(false);
   });
 });

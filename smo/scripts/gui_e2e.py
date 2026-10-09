@@ -24,7 +24,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
 SMO = Path(__file__).resolve().parent.parent
-PAGES = ["/", "/flows", "/rapps", "/safeguards", "/aiml", "/alarms", "/kpis", "/policy",
+PAGES = ["/", "/flows", "/rapps", "/safeguards", "/approvals", "/decisions", "/aiml", "/alarms", "/kpis", "/policy",
          "/infrastructure", "/data", "/security", "/admin"]
 LOGIN = "/login"
 BAD_API_STATUS = (401, 500, 501, 502, 503, 504)

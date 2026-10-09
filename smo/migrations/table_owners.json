@@ -44,6 +44,7 @@
  ],
  "ran-nf-oam": [
   "alarm",
+  "approval_subscription",
   "cm_schema_cache",
   "cm_snapshot",
   "file_subscription",
@@ -59,6 +60,9 @@
   "o1_adaptor_host_key",
   "pm_file",
   "pm_subscription",
+  "rapp_action_approval",
+  "rapp_approval_policy",
+  "rapp_decision_record",
   "rapp_kill",
   "rapp_limit",
   "safeguard_refusal",

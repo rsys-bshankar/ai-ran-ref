@@ -24,6 +24,18 @@
             "title": "Changes",
             "type": "array"
           },
+          "decision": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
           "msacRole": {
             "anyOf": [
               {

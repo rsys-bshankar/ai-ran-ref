@@ -1093,15 +1093,11 @@ Current state, checked: AIMgF training, validation, emulation and inference jobs
 
 #### PR-AI-11 — Human approval of rApp actions
 
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| AI-11.1 | Approval request object | Migration | – |
-| AI-11.2 | Queue routes: list, approve, reject | Route tests | AI-11.1 |
-| AI-11.3 | Timeout policy: expire or auto-reject | Test | AI-11.2 |
-| AI-11.4 | Hook into the autonomy-mode dispatch | Action waits for approval | AI-11.2 |
-| AI-11.5 | Notification to approvers | Event delivered | AI-11.4, MSG-1.4 |
+Built (`HISTORY.md` PR-AI-11, PR-AI-13): the approval request object, the queue routes, the timeout policy, the hook for an `ASSIST` instance with an approval policy and the notice to approvers. What it does not do, and may want a decision: approval of changes other than config jobs, a second approver or approver groups, per-region approvers (tenant and region authorisation, a later change), and a notice of a decision to the rApp or the approver.
 
 #### PR-AI-12 — Shadow mode
+
+Not started in the change that built AI-11 and AI-13 (`HISTORY.md` PR-AI-11, PR-AI-13): what it would reuse is listed there, and the decisions it needs (a policy row like the approval one or a flag on the instance, where the recording lives, what the compare report compares).
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
@@ -1111,12 +1107,7 @@ Current state, checked: AIMgF training, validation, emulation and inference jobs
 
 #### PR-AI-13 — Decision audit
 
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| AI-13.1 | Action record: inputs reference, model version, rationale, job id | Migration | – |
-| AI-13.2 | Write it on every rApp config job | Row per job | AI-13.1 |
-| AI-13.3 | Query route | Route test | AI-13.2 |
-| AI-13.4 | GUI detail view | Component test | AI-13.3 |
+Built (`HISTORY.md` PR-AI-11, PR-AI-13): the record, one per config job an rApp makes, hashed into the audit chain, the query route and the GUI view. Open: the four sample rApps do not send `decision` yet (the record is made with those fields empty), no filter by managed element, and no purge (a record is kept like the chain).
 
 ### 5.12 rApp ecosystem (`PR-RAPP`)
 
@@ -1235,10 +1226,11 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 
 #### PR-GUI-7 — Approval inbox
 
+Step 7.2 is built (the Approvals page lists pending rApp actions and decides them: `HISTORY.md` PR-AI-11, PR-AI-13); 7.1 and 7.3 are not, and the page says so.
+
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | GUI-7.1 | Inbox page listing pending change-window approvals | Component test | MGT-4.3 |
-| GUI-7.2 | Add pending rApp action approvals | Component test | AI-11.2 |
 | GUI-7.3 | Add model gate approvals | Component test | – |
 
 #### PR-GUI-8 — rApp directory and declared pages (0.6.0)

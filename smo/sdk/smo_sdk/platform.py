@@ -67,11 +67,23 @@ class PlatformClient(BaseClient):
 
     # ---------------------------------------------------------------- Wave 10.1: O1 actions
     def execute_action(self, requested_by: str, changes: list[dict], action_id: uuid.UUID | str | None = None,
-                       source_context: dict | None = None, scope: str = "single-ME", msac_role: str | None = None) -> dict:
+                       source_context: dict | None = None, scope: str = "single-ME", msac_role: str | None = None,
+                       decision: dict | None = None) -> dict:
         """W10-03 (decision D-4): an O1 configuration action, mediated by DME
         (`POST /dme/actions` → RAN NF OAM → NETCONF). `action_id` is an
-        idempotency key: re-sending it is IGNORED, never applied twice."""
-        return ensure_ok(self._r1.post("/dme/actions", json={
-            "requestedBy": requested_by, "changes": changes, "scope": scope, "msacRole": msac_role,
-            "sourceContext": source_context, "actionId": str(action_id) if action_id else None,
-        }))
+        idempotency key: re-sending it is IGNORED, never applied twice.
+
+        `decision` (PR-AI-13) is why the rApp acts, kept by RAN NF OAM as the decision record of the job:
+        `{"inputsRef": ..., "modelVersion": ..., "rationale": ...}`, each optional (a reference to the inputs, never the data).
+
+        When the operator holds this rApp's writes for approval (PR-AI-11) the answer has `status` `PENDING_APPROVAL`, no `forwardedJobId`, and an
+        `approvalId`: follow it with `get_approval`."""
+        payload = {"requestedBy": requested_by, "changes": changes, "scope": scope, "msacRole": msac_role,
+                   "sourceContext": source_context, "actionId": str(action_id) if action_id else None}
+        if decision is not None:
+            payload["decision"] = decision
+        return ensure_ok(self._r1.post("/dme/actions", json=payload))
+
+    def get_approval(self, approval_id: uuid.UUID | str) -> dict:
+        """PR-AI-11: the state of an action held for a human: `status` PENDING, APPROVED (then `jobId` is the config job), REJECTED, EXPIRED or REFUSED."""
+        return ensure_ok(self._r1.get(f"/ran-nf-oam/rapp-approvals/{approval_id}"))
