@@ -151,6 +151,8 @@ import httpx
 print(httpx.post('http://rapp-mgmt:8000/instances/<instanceId>/credentials').json())"
 ```
 
+Like the samples, the package is signed with the demo publisher key by default (`--key my.pem` signs with yours, `--unsigned` writes no signature; `docs/RAPP_PACKAGING.md` §8).
+
 Put the values in `smo/.env` (not committed) and start the rApp:
 
 ```bash

@@ -74,6 +74,7 @@ Package layout and field meanings are in [RAPP_PACKAGING.md](../../docs/RAPP_PAC
 - No `analytics` namespace. The rApp derives its features from the DME datasets and calls no MDAF prediction or report.
 - Nothing else is provided: there is no SDK surface for an rApp to serve to others.
 - `README.md` is not part of the CSAR (`../build_csar.py` excludes it).
+- The committed `coverage-optimization-rapp.csar` is **signed** with the demo publisher's key (`../README.md`); the key is public on purpose, never trust it in production.
 
 ## Service API
 

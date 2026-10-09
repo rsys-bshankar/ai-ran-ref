@@ -61,7 +61,7 @@ sequenceDiagram
     Onb->>Onb: insert ApplicationPackage, state=ONBOARDING, commit
     Onb->>Onb: _validate_package — location ends in .csar, fetch it,<br/>read TOSCA-Metadata/TOSCA.meta and Entry-Definitions,<br/>read ASD identity, manifest.yaml, capabilities.yaml, Files/Sme
     Onb->>Onb: reject a byte-identical duplicate — same integrity_hash on a package<br/>that is not DELETING or FAILED
-    Onb->>Onb: register Artifacts/ entries, signature_verified=true
+    Onb->>Onb: register Artifacts/ entries, signature_verified (true when validated, and with ONBOARDING_TRUST_STORE only when the signature verified)
     Onb->>NFO: POST /nfo/descriptors (packageId, toscaEntryDefinitions)
     NFO-->>Onb: 201 nfDeploymentDescriptorId
     Onb->>Onb: state: ONBOARDING -> AVAILABLE (VALIDATE_OK)

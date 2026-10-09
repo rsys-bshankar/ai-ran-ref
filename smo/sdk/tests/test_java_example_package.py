@@ -26,12 +26,12 @@ def _builder():
 
 
 def _csar() -> bytes:
-    return _builder().build_bytes("hello-java-rapp", PACKAGE)
+    return _builder().build_bytes("hello-java-rapp", source=PACKAGE)
 
 
 def test_the_package_has_the_files_onboarding_reads_and_rebuilds_byte_identically():
     with zipfile.ZipFile(io.BytesIO(_csar())) as z:
-        assert sorted(z.namelist()) == ["Definitions/asd.yaml", "TOSCA-Metadata/TOSCA.meta", "manifest.yaml"]
+        assert sorted(z.namelist()) == ["Definitions/asd.yaml", "TOSCA-Metadata/DIGESTS.sha256", "TOSCA-Metadata/DIGESTS.sha256.sig", "TOSCA-Metadata/TOSCA.meta", "manifest.yaml"]
         assert "Entry-Definitions: Definitions/asd.yaml" in z.read("TOSCA-Metadata/TOSCA.meta").decode()
         asd = z.read("Definitions/asd.yaml").decode()
     for key in ("application_name: HelloJava_rApp", "application_version: \"1.0.0\"", "provider:", "descriptor_id:", "descriptor_invariant_id:", "schema_version"):

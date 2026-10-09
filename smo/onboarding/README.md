@@ -9,8 +9,8 @@
 | Depends on (over R1) | NFO (`POST /nfo/descriptors`); the package location itself (plain HTTP GET, not over R1) |
 | Called by | rApp Management (`onboarding-status`, `usage/start`, `usage/stop`); AIMgF (`onboarding-status`, for `aiCapabilities.runtimeProfiles`); GUI BFF (operator and admin actions); operators |
 | Database tables | `application_package` (versioned), `artifact`, `package_usage_registration` |
-| Unit tests | 132 passed (`tests/`, SQLite, standalone) |
-| Status | Done. Package signature verification is not performed (see 1.5, 2.8) |
+| Unit tests | 161 passed (`tests/`, SQLite, standalone) |
+| Status | Done. Package signatures are verified against an operator-held trust store when one is configured (`PR-RAPP-1`; off by default, see 1.5, 2.6, 2.8) |
 
 ## 1. High-level design (HLD)
 
@@ -79,7 +79,9 @@ Onboarding never calls rApp Management, AIMgF or SME. The FK from NFO's descript
 | Any known validation failure (bad zip, missing entry, unreachable location, NFO not answering 201, duplicate, malformed YAML or JSON, invalid runtime profile) lands the package in `FAILED` with a normal `202`, not an HTTP error. | Failing to validate is an expected outcome of onboarding. |
 | `FAILED` is terminal and is deleted directly, skipping the cascade check. | Nothing can depend on a package that never became `AVAILABLE`. |
 | A byte-identical package already onboarded is rejected, but one whose earlier package is `DELETING` or `FAILED` does not count. | Identity is the content hash; a deleted package may be onboarded again. |
-| `signature_verified` is set to true once validation passes. It records that the package was internally consistent, not that a signature was checked. | Real signature verification is not implemented. |
+| Signatures (`PR-RAPP-1`, `docs/RAPP_PACKAGING.md` §8). A signed package carries `TOSCA-Metadata/DIGESTS.sha256` (the sha-256 of every other file) and `….sig` (an ed25519 signature over it). With `ONBOARDING_TRUST_STORE` set (a PEM key file or a directory of `<publisher>.pub`, read for each package) a package that carries either must verify: a changed, added or removed file, an unknown publisher and a wrong key are each refused with the rule broken, as `package signature: …` in `failureReason`; `ONBOARDING_REQUIRE_SIGNED_PACKAGES=true` refuses an unsigned package too, and with no trust store refuses every package (a misconfiguration is not "accept all"). The check runs on the fetched bytes before anything is parsed. With neither setting, nothing is checked and a signed package is an unsigned one. | An operator chooses whom to trust, in a file it owns, with no CA to run; the default changes nothing for anyone who sets nothing. cosign and X.509 are not used (`docs/RAPP_PACKAGING.md` §8.4). |
+| `signature_verified`: with no trust store it is set true once validation passes, as always (it records "validated"); with one it is true only for a package whose signature verified, false for an unsigned one the policy lets through. The publisher is logged, not stored. | Flipping the default to the truthful value would change what every operator sees (the GUI shows it) for no setting; the publisher would need a column (a migration). |
+| `runtimeProfiles.<MODE>.memory` must be a Kubernetes quantity, and the descriptor created for NFO carries `containerResourcesByMode` (requests and limits per mode, `PR-RAPP-2.1`). | The memory becomes a container limit; a value like `16 GB` would be an invalid pod spec the day a deployment manager applies it. |
 | Delete from `AVAILABLE` or `DEPRECATED` is blocked while a child package is `AVAILABLE` / `DEPRECATED` or a usage registration has no `stopped_at`; deprime is blocked while a usage registration is open. | Cascade-delete guard; the reference's own deprime guard. |
 | `DELETING` is terminal and keeps the row. | Nothing re-enters; the row remains as the record. |
 | Instances may be created from `AVAILABLE` or `PRIMED` packages only. Enforced by rApp Management, not here. | Priming is optional. |
@@ -94,7 +96,10 @@ Security: the package location is fetched with a direct `httpx.get` (30 s timeou
 
 | File | Responsibility |
 |---|---|
-| `app/main.py` | Routes; `_validate_package` (fetch, zip, TOSCA.meta, identity, artifacts, hash); `_asd_identity`; `_parse_ai_capabilities` (which calls `smo_shared.operator_ui.validate_operator_ui` for the `operatorUi` page declaration) and `_validate_runtime_profiles`; `_parse_sme_declarations`; `_create_nf_deployment_descriptor` (NFO call); `_fire` (maps FSM refusals to 409). |
+| `app/main.py` | Routes; `_validate_package` (the `.csar` and SSRF checks, the fetch, then `validate_package_bytes`); `_signing_policy` (`ONBOARDING_TRUST_STORE`, `ONBOARDING_REQUIRE_SIGNED_PACKAGES`); `_create_nf_deployment_descriptor` (NFO call, with `containerResourcesByMode`); `_fire` (maps FSM refusals to 409). Re-exports the validation names below, which the tests and `fuzz/fuzz_csar_parsers.py` import from here. |
+| `app/package_validation.py` | What needs neither the database nor the web framework, so the offline conformance validator (`conformance/rapp`, PK-V) runs the same code: `validate_package_bytes` (naming, signature, zip, TOSCA.meta, identity, artifacts, hash), `verify_signature`, `_asd_identity`, `_parse_ai_capabilities` (which calls `smo_shared.operator_ui.validate_operator_ui` for the `operatorUi` page declaration), `_validate_runtime_profiles`, `_validate_limits`, `_parse_sme_declarations`, `PackageValidationFailed`, `PARSE_FAILURES`. |
+| `../shared/smo_shared/csar_signing.py` | The digest list, the ed25519 signature, the trust store and `verify_csar`; also what `scripts/csar_sign.py` and `samples/build_csar.py` sign with. |
+| `../shared/smo_shared/runtime_resources.py` | A runtime profile as Kubernetes requests and limits; the quantity check. |
 | `app/statemachine.py` | `PackageState`, `PackageEvent`, `ONBOARDING_FSM`, the two guards `_no_blocking_dependents` and `_no_active_instances`. |
 | `app/models.py` | The three tables; `PACKAGE_STATES`. |
 | `../shared/smo_shared/statemachine.py` | Generic FSM (`fire`, `legal_events`, `IllegalTransition`). |
@@ -170,11 +175,12 @@ The onboarding pipeline, in order, inside `POST /packages`:
 | Step | Action | On failure |
 |---|---|---|
 | 1 | Insert the row in `ONBOARDING`, commit | |
-| 2 | Reject a location not ending in `.csar` | `FAILED` |
-| 3 | `GET {location}` (30 s), open as zip, read `TOSCA-Metadata/TOSCA.meta` and `Entry-Definitions`, read that file, scan it line by line for the ASD identity keys | `FAILED` (unreachable, bad zip, missing file) |
+| 2 | Reject a location not ending in `.csar` or not an allowed destination | `FAILED` |
+| 2b | `GET {location}` (30 s); read the trust store and the policy; with a trust store (or the policy on) verify the signature of the bytes (`PR-RAPP-1`) | `FAILED` (`package signature: …`, `the trust store cannot be used`) |
+| 3 | Open as zip, read `TOSCA-Metadata/TOSCA.meta` and `Entry-Definitions`, read that file, scan it line by line for the ASD identity keys | `FAILED` (unreachable, bad zip, missing file) |
 | 4 | Collect `Artifacts/*`; parse `manifest.yaml` / `capabilities.yaml` (YAML) and validate `runtimeProfiles`; collect `Files/Sme/providers/*.json` and `serviceapis/*.json` | `FAILED` (malformed YAML or JSON, invalid profile) |
 | 5 | Duplicate check on the SHA-256 against packages not `DELETING` / `FAILED` | `FAILED` |
-| 6 | `POST /nfo/descriptors` `{packageId, name: <entry definitions>, workloadTemplate: {toscaEntryDefinitions}}`; needs `201` and `nfDeploymentDescriptorId` | `FAILED` (any other status) |
+| 6 | `POST /nfo/descriptors` `{packageId, name: <entry definitions>, workloadTemplate: {toscaEntryDefinitions, containerResourcesByMode?}}`; needs `201` and `nfDeploymentDescriptorId` | `FAILED` (any other status) |
 | 7 | Fire `VALIDATE_OK`, commit | |
 
 A `FAILED` package keeps whatever identity fields and artifact rows steps 3 to 5 had already set. The descriptor's `workloadTemplate` is a thin reference to the entry definitions, not a parsed TOSCA node template. An NFO transport failure (as opposed to a non-201 reply) is an `httpx` error and is also treated as a validation failure.
@@ -183,7 +189,12 @@ Inbound: rApp Management calls `onboarding-status` on every create, upgrade and 
 
 ### 2.6 Configuration
 
-Onboarding reads no environment variable of its own. Through `smo_shared`: `SMO_DATABASE_URL` (required, no default) and `R1_GATEWAY_URL` (default `http://r1-termination:8000`, for the NFO call). Constant: package fetch timeout 30 s.
+| Variable | Default | Effect |
+|---|---|---|
+| `ONBOARDING_TRUST_STORE` | empty | Path of the accepted publishers' public keys: a PEM file, or a directory of `<publisher>.pub` / `.pem` (the file name is the publisher; dot-files skipped, so a mounted ConfigMap works). Read for each package. Empty: no signature is checked. A store that cannot be used fails the package. Chart: `rappSigning.trustStoreConfigMap` |
+| `ONBOARDING_REQUIRE_SIGNED_PACKAGES` | `false` | `true`: an unsigned package is refused (and, with no trust store, every package). Chart: `rappSigning.requireSigned` |
+
+Through `smo_shared`: `SMO_DATABASE_URL` (required, no default) and `R1_GATEWAY_URL` (default `http://r1-termination:8000`, for the NFO call). Constant: package fetch timeout 30 s. The signing settings are paths and flags, not secrets: public keys are not secret, so there is no `*_FILE` form. The generated reference is `docs/CONFIGURATION.md`.
 
 **Metrics (PR-OBS-4).** Besides the shared series, `GET /metrics` has `smo_rapp_packages{state}`: the `application_package` rows by `PackageState` (every state present, 0 when empty; `AVAILABLE`, `PRIMED` and so on are the rApps onboarded), read from the database at scrape time (cached 15 s). Aggregate replicas with `max`.
 
@@ -200,7 +211,7 @@ The reasons a package becomes `FAILED` are not HTTP errors; they are listed in 2
 
 ### 2.8 Limits and open items
 
-- No signature verification (`signature_verified` means "validated", see 1.5).
+- Signatures are optional and operator-held (`PR-RAPP-1`): no certificate chain, expiry, revocation list or timestamp; the check is at fetch time only; the publisher is logged, not stored (`signature_verified` means "validated" until a trust store is set, see 1.5; `docs/RAPP_PACKAGING.md` §8.3).
 - Package location is fetched as given (suffix check only); no allowlist, no size limit.
 - Priming performs no resource pre-provisioning; `PRIMING` and `DEPRIMING` are instantaneous.
 - `parent_package_id` is read by the delete guard but nothing sets it, so the child-package guard is only reachable through direct database writes.
@@ -235,7 +246,10 @@ cd smo/onboarding && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Package row committed before the NFO call | 1 |
 | `tests/test_statemachine.py` | The FSM alone: success and failure onboarding, deprecate round trip, delete guards (child, usage, after stop), no transition from `FAILED`, prime / deprime round trip and guard, no `ONBOARDING → PRIME`, no `PRIMED → DELETE` | 11 |
 | `tests/test_business_metrics.py` | `smo_rapp_packages` counts packages by state with every state of `PackageState` present | 1 |
-| | Total (the listed rows do not add up to the whole: the file also holds the limits and other manifest tests) | 132 |
+| `tests/test_signing.py` | `PR-RAPP-1` on the real route, real CSAR bytes, a trust store directory: nothing set (signed and unsigned package both onboard, `signatureVerified` true); the policy flag alone refuses every package and says why; a trusted publisher; unsigned accepted but unverified, refused when required; tampered, added and removed file each refused whatever the policy; unknown publisher; wrong key under a trusted key id; digest list without a signature; a refused package does not block the next attempt; a key added to the store is seen without a restart; a missing or empty store fails the package with a reason that does not show the path; the four committed samples verify against the demo publisher | 20 |
+| `tests/test_package_validation.py` | The validation module alone: the result of a good package, a `TOSCA.meta` without `Entry-Definitions:` (a validation failure, not a `StopIteration`), the `.csar` name check | 3 |
+| `tests/test_main.py` (`PR-RAPP-2.1`) | `memory` that is not a Kubernetes quantity refuses the package (3 cases); the NFO descriptor carries `containerResourcesByMode` (requests = limits, millicores, a GPU-only mode left out) and a package without profiles gets the descriptor it always got | 6 |
+| | Total (the listed rows do not add up to the whole: the file also holds the limits and other manifest tests) | 161 |
 
 
 ### 3.3 What is not covered here
