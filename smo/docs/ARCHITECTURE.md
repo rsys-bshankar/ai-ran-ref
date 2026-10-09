@@ -94,7 +94,7 @@ reached this shape see [HISTORY.md](../HISTORY.md).
    emulate, infer or store anything itself.
 6. **R1 owns service exposure.** Every platform service is reached through
    R1 Termination's gateway (`r1-termination/`). Nothing bypasses it; the AI
-   Runtime SDKs (`sdk/smo_sdk/` in Python, `sdk-go/` in Go) are thin clients over that same path, not a
+   Runtime SDKs (`sdk/smo_sdk/` in Python, `sdk-go/` in Go, `sdk-java/` in Java) are thin clients over that same path, not a
    second one.
 7. **Service code is stateless.** A module keeps its state in Postgres, never
    in the process, and starts no background work, so any number of identical
@@ -190,7 +190,7 @@ interval across any number of workers. RAN NF OAM is the first user
 |---|---|
 | AI platform services | `aimgf/`, `mlmr/`, `mllf/`, `mdaf/`, `intent-service/`, `dme/` |
 | Other platform services | `sme/`, `nfo/`, `focom/`, `ran-nf-oam/`, `onboarding/`, `rapp-mgmt/`, `sa-smos/`, `so-smos/`, `ran-analytics/` |
-| Exposure | `r1-termination/` (R1 gateway), `sdk/` and `sdk-go/` (AI Runtime SDKs, Python and Go), `gui/` + `gui-bff/` |
+| Exposure | `r1-termination/` (R1 gateway), `sdk/`, `sdk-go/` and `sdk-java/` (AI Runtime SDKs: Python, Go and Java), `gui/` + `gui-bff/` |
 | Southbound simulators | `mock-o1-adaptor/` |
 | Shared library | `shared/smo_shared/` (DB, errors, pagination, correlation, webhook, R1 client, OpenAPI security) |
 | rApps | `samples/` (four reference rApps) |
@@ -202,6 +202,15 @@ module's HLD, LLD and unit-test document.
 
 **rApp packaging** (the CSAR layout, `manifest.yaml`, `capabilities.yaml`, and
 what Onboarding validates) is documented in [RAPP_PACKAGING.md](RAPP_PACKAGING.md).
+
+**The supply chain of a rApp package** (`PR-RAPP-1`, `PR-RAPP-2.1`, `PR-RAPP-2.3`, `PR-RAPP-3`). A package can carry a digest list of every file and a detached ed25519 signature
+(`smo_shared/csar_signing.py`); Onboarding verifies it against an operator-held list of publisher keys (`ONBOARDING_TRUST_STORE`, a file or a directory read for each package) before it
+parses anything, and `ONBOARDING_REQUIRE_SIGNED_PACKAGES` makes a signature mandatory. Both are off by default. The check is Onboarding's alone: the other modules never see a package,
+only the descriptor and the `aiCapabilities` record Onboarding derives from a verified one. A manifest's runtime profile reaches the NFO descriptor as Kubernetes requests and limits
+(`workloadTemplate.containerResources`, `containerResourcesByMode`), which a deployment manager would apply; nothing applies them yet because there is none. The chart can restrict the egress of
+the rApp pods to R1 Termination (`rappNetworkPolicy`, off by default), which is the network half of "an rApp reaches the platform through R1 only" (golden rule: cross-module calls go
+through R1). The rApp conformance pack (`conformance/rapp`) runs Onboarding's validation code offline against a package file and takes a package through register, heartbeat, R1 usage and
+terminate on a running stack. See [RAPP_PACKAGING.md](RAPP_PACKAGING.md) section 8 for the signing format, the trust rules and what is not taken.
 
 **The operator surface of a rApp** (`PR-GUI-8`, [adr/0004-operator-ui-declaration.md](adr/0004-operator-ui-declaration.md)). The GUI has one
 rApps entry and a directory of every rApp; what a rApp's page shows is not coded in the GUI but declared by the rApp's package

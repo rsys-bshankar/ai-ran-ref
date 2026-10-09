@@ -1,3 +1,12 @@
+# Conformance kits (`conformance/`)
+
+| Kit | For | Run |
+|---|---|---|
+| `conformance/o1` | a vendor or integrator with an O1 adaptor | `python -m conformance.o1 --adaptor URL`; below |
+| `conformance/rapp` | a rApp developer with a package (CSAR), and an operator who wants to know a platform treats a rApp's lifecycle as it should | `python -m conformance.rapp package my-rapp.csar`, `python -m conformance.rapp runtime --package-url URL --direct`; [`rapp/README.md`](rapp/README.md) |
+
+Both write `report.json` and `report.md` with `--out`, exit 1 when a check fails, and run in CI against this repository's own mock adaptor and sample packages.
+
 # O1 adaptor conformance kit (`conformance/o1`)
 
 What RAN NF OAM relies on when it talks to an O1 adaptor, as checks you run against one. Written for a vendor or an integrator who has an adaptor and wants to know, before registering it, whether RAN NF OAM can use it; and for this repository, which runs it against its own mock adaptor on every pull request (CI job `o1-conformance`).

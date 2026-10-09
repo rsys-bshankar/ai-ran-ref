@@ -1,0 +1,35 @@
+# The Java example rApp beside the SMO stack. An override file, not part of the stack: from smo/
+#
+#   docker compose -f docker-compose.yml -f sdk-java/examples/hello-rapp/docker-compose.java-rapp.yml up -d --build hello-java-rapp
+#
+# SMO_INSTANCE_ID is the id of an rApp instance created at rApp Management for the onboarded HelloJava_rApp package, and
+# SMO_INVOKER_ID / SMO_INVOKER_SECRET (optional) the pair `POST /rapp-mgmt/instances/{id}/credentials` issued for it; see
+# sdk-java/README.md, "Run the example against docker compose". Put them in smo/.env, not in this file.
+services:
+  hello-java-rapp:
+    build:
+      context: ./sdk-java
+      dockerfile: examples/hello-rapp/Dockerfile
+    stop_grace_period: 30s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    depends_on:
+      r1-termination: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8000 && printf \"GET /ready HTTP/1.0\\r\\n\\r\\n\" >&3 && head -n1 <&3 | grep -q \" 200 \"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    environment:
+      R1_GATEWAY_URL: http://r1-termination:8000
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}
+      SMO_IDENTITY_KIND: rapp
+      MODULE: hello-java-rapp
+      SMO_INSTANCE_ID: ${HELLO_JAVA_INSTANCE_ID:?set HELLO_JAVA_INSTANCE_ID to the rApp instance id}
+      SMO_INVOKER_ID: ${HELLO_JAVA_INVOKER_ID:-}
+      SMO_INVOKER_SECRET: ${HELLO_JAVA_INVOKER_SECRET:-}
+      HELLO_OPERATOR_API_BASE: http://hello-java-rapp:8000
+      HELLO_HEARTBEAT_SECONDS: ${HELLO_HEARTBEAT_SECONDS:-30}

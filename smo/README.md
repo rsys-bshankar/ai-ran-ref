@@ -69,6 +69,7 @@ records. It has no port; run more than one if you like, a task still runs once p
 | [Mock O1 Adaptor](mock-o1-adaptor/README.md) | Test double of an O1 adaptor (NETCONF and RESTCONF) | `mock-o1-adaptor/` | O1 test double that answers RAN NF OAM's NETCONF RPCs (`/edit-config`) and RESTCONF requests (`/restconf`), and on request emits alarms, PM, software phases and heartbeats to RAN NF OAM (`/emit/...`) | none (`mock-o1-adaptor:8000`) |
 | [AI Runtime SDK](sdk/README.md) | Internal (thin client over R1) | `sdk/smo_sdk/` | Python clients for the six rApp-facing namespaces: data, analytics, models, lifecycle, intent, platform | library |
 | [Go AI Runtime SDK](sdk-go/README.md) | Internal (thin client over R1) | `sdk-go/` | Go client for an rApp written in Go: SME token acquisition and renewal, retry with backoff, error mapping, helpers for `data`, `models`, `platform` and the rApp's own instance, plus an example rApp (`examples/hello-rapp`) | library |
+| [Java AI Runtime SDK](sdk-java/README.md) | Internal (thin client over R1) | `sdk-java/smo-sdk/` | Java 21 client for the R1 routes a rApp uses: SME token acquisition and refresh, invoker enrolment, retry and backoff, data / models / platform / instance clients; one example rApp (`sdk-java/examples/hello-rapp/`) | library |
 | [Shared library](shared/README.md) | Internal (implements the RFC 7807 / RFC 7662 conventions) | `shared/smo_shared/` | DB session, FSM base, errors, pagination, correlation ids, webhook helper, `R1Client` | library |
 | [GUI BFF](gui-bff/README.md) | Internal | `gui-bff/` | GUI users, roles, sessions, audit log; forwards allowed calls to R1 | none (reached via `gui` at `/api`) |
 | [GUI](gui/README.md) | Internal | `gui/` | React operator console behind nginx | host `3000` → `8080` |
@@ -192,7 +193,11 @@ brings the full stack up (`compose-e2e`: the whole runbook, §2–§27, replayed
 
 After editing a sample rApp, rebuild its package with
 `python3 samples/build_csar.py <name>`. The integration suite fails if a
-committed `.csar` no longer matches its sources. After changing a route's
+committed `.csar` no longer matches its sources. The committed packages are **signed** with a
+demo publisher key whose private half is public on purpose (`samples/README.md`,
+`samples/demo-signing/`): never trust it in production. Onboarding checks signatures only when
+`ONBOARDING_TRUST_STORE` is set; `scripts/csar_sign.py` signs and verifies your own package
+(`docs/RAPP_PACKAGING.md` section 8). After changing a route's
 request or response shape, regenerate the specs with
 `PYTHONPATH=shared python scripts/generate_openapi_specs.py`.
 
@@ -245,13 +250,17 @@ smo/
   <module>/tests/           that module's unit tests (standalone, SQLite)
   mock-o1-adaptor/          NETCONF / RESTCONF O1 test double (RAN NF OAM's southbound), also an FM / PM / SW / heartbeat source
   conformance/o1/           O1 adaptor conformance kit: `python -m conformance.o1 --adaptor URL [--oam-url URL]`, CM checks and, with RAN NF OAM, FM, PM, SW and heartbeat checks (conformance/README.md)
+  conformance/rapp/         rApp conformance pack: `python -m conformance.rapp package my-rapp.csar` (Onboarding's validation, offline, signatures checked against a trust store) and `python -m conformance.rapp runtime` (onboard, register, heartbeat, R1 usage, terminate on a running stack) (conformance/rapp/README.md)
   sdk/smo_sdk/              AI Runtime SDK: data, analytics, models, lifecycle, intent, platform clients; operator_ui (writes a rApp's declared operator page)
   sdk/examples/             the smallest package that declares an operator page
   sdk-go/                   Go AI Runtime SDK (standard library only): `smosdk` package, tests, and `examples/hello-rapp` (a rApp in Go with its package, Dockerfile and compose service)
+  sdk-java/                 the Java AI Runtime SDK (Maven, JDK 21): `smo-sdk/` the library, `examples/hello-rapp/` an example rApp with its package, Dockerfile and compose override (sdk-java/README.md)
   gui/                      React + TypeScript operator console (nginx): the rApp directory and the generic renderer of declared pages
   gui-bff/                  GUI backend-for-frontend: auth, RBAC (app/rbac.py), audit, R1 proxy, the rApp directory, declared-route proxy and pins (app/rapps.py)
   samples/
-    build_csar.py           builds samples/<name>.csar from samples/<name>/
+    build_csar.py           builds samples/<name>.csar from samples/<name>/, signed with the demo key (--key, --unsigned)
+    demo-signing/           the DEMO publisher key: its private half is public on purpose, never trust it in production (README.md)
+    README.md               the four samples, how the packages are built and signed
     <name>-rapp/README.md   each sample's README: what it does, design, package, API, tests
     energy-saving-rapp/     Wave 10.1 rApp: service, model, decision engine, demo.py (§24); also the package used by DEMO_RUNBOOK.md §0–§23
     mobility-optimization-rapp/  Wave 10.2 rApp: service, model, MRO engine, demo.py (§25)

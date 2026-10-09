@@ -1,6 +1,7 @@
 # AI Runtime SDK (`sdk/`)
 
 > A thin, typed Python client over the R1 interface, in six namespaces (`data`, `analytics`, `models`, `lifecycle`, `intent`, `platform`), so an rApp calls `sdk.models.register_model(...)` instead of hand-building an HTTP request. An rApp in Go uses the [Go SDK](../sdk-go/README.md) (`../sdk-go/`), which follows the same R1 conventions but covers fewer routes with typed helpers.
+> For a rApp written in Java there is [`../sdk-java/`](../sdk-java/README.md): the token, enrolment and retry behaviour of this SDK's `R1Client`, and the routes an rApp needs most, not all six namespaces.
 
 | | |
 |---|---|
@@ -10,7 +11,7 @@
 | Called by | The four sample rApps (`../samples/{energy-saving,mobility-optimization,coverage-optimization,traffic-steering}-rapp/app/main.py`); any rApp author. No SMO module imports it |
 | Database tables | None |
 | Retries and idempotency | Every POST carries a generated `Idempotency-Key`; a mutating call that lost a write race (`409 CONCURRENT_MODIFICATION`) is sent once more with the same key (`smo_sdk/_common.py`) |
-| Unit tests | 148 passed (`tests/`, no network: a recording fake `R1Client`) |
+| Unit tests | 151 passed (`tests/`, no network: a recording fake `R1Client`) |
 | Status | Done. No OPEN_ITEMS ids |
 
 ## 1. High-level design (HLD)
@@ -79,6 +80,7 @@ It never calls a module directly and never touches a database.
 | `smo_sdk/platform.py` | `PlatformClient` |
 | `smo_sdk/operator_ui.py` | Authoring helper for a rApp's operator page (§2.9); not one of the six namespaces, no R1 call |
 | `examples/hello_operator_ui.py` | The smallest package that declares an operator page |
+| `tests/test_java_example_package.py` | Builds the Java SDK's example package (`../sdk-java/examples/hello-rapp/package/`) with `samples/build_csar.py --source-dir` and checks its manifest and `operatorUi` with the code Onboarding runs |
 | `tests/conftest.py` | `RecordingR1Client` / `FakeResponse` fixtures (`client`, `r1`) |
 | `pyproject.toml` | Package metadata |
 

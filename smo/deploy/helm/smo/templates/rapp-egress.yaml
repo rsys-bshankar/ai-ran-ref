@@ -1,0 +1,75 @@
+{{- /* PR-RAPP-2.3: a rApp may reach R1 and nothing else. Off by default (`rappNetworkPolicy.enabled`): the objects below are not rendered, so an upgrade changes nothing.
+       Egress only; what may reach a rApp is not touched. It selects the reference rApps of this release (the modules whose env says SMO_IDENTITY_KIND: rapp) by
+       their `app.kubernetes.io/name` and the release instance label, never by a new pod label: a label is part of the pod template, and a changed template restarts the pod
+       (smo.podLabels). `extraPodSelectors` adds one policy for each label selector of rApp workloads of your own in this namespace; a rApp in another namespace needs
+       the same object in that namespace. The rules: R1 Termination's port; DNS (`dns`, `dnsTo`); the bundled database (`database`: the reference rApps keep their own
+       tables, set it false for a workload that does not); the bundled Tempo's OTLP port when traces go there; and `extraEgress`, verbatim, for anything else you decide
+       (an external database, an external collector). Everything else is refused, the Kubernetes API and the other modules included. A NetworkPolicy selects pods
+       and ports, not hostnames or URL paths: "R1 only" means the R1 Termination pods on their port, and a module reached through R1 is reached through that rule.
+       Needs a CNI that enforces NetworkPolicy; with none, the object is accepted and does nothing. */}}
+{{- if .Values.rappNetworkPolicy.enabled }}
+{{- $rapps := list }}
+{{- range $name, $_ := .Values.modules }}
+{{- $m := include "smo.module" (dict "root" $ "name" $name) | fromYaml }}
+{{- if and $m.enabled (eq (toString (get $m.env "SMO_IDENTITY_KIND")) "rapp") }}
+{{- $rapps = append $rapps $name }}
+{{- end }}
+{{- end }}
+{{- $r1 := include "smo.module" (dict "root" . "name" "r1-termination") | fromYaml }}
+{{- $selectors := list }}
+{{- if $rapps }}
+{{- $selectors = append $selectors (dict "matchLabels" (dict "app.kubernetes.io/instance" .Release.Name) "matchExpressions" (list (dict "key" "app.kubernetes.io/name" "operator" "In" "values" $rapps))) }}
+{{- end }}
+{{- range .Values.rappNetworkPolicy.extraPodSelectors }}
+{{- $selectors = append $selectors . }}
+{{- end }}
+{{- range $i, $selector := $selectors }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "rapp-egress-%d" $i }}
+  labels:
+    {{- include "smo.labels" (dict "root" $) | nindent 4 }}
+spec:
+  podSelector:
+    {{- toYaml $selector | nindent 4 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $.Release.Name }}
+              app.kubernetes.io/name: r1-termination
+      ports:
+        - { protocol: TCP, port: {{ $r1.port }} }
+    {{- if $.Values.rappNetworkPolicy.dns }}
+    - to:
+        {{- toYaml $.Values.rappNetworkPolicy.dnsTo | nindent 8 }}
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    {{- end }}
+    {{- if and $.Values.rappNetworkPolicy.database $.Values.postgres.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $.Release.Name }}
+              app.kubernetes.io/name: postgres
+      ports:
+        - { protocol: TCP, port: 5432 }
+    {{- end }}
+    {{- if and $.Values.observability.tempo.enabled (not $.Values.tracing.endpoint) }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $.Release.Name }}
+              app.kubernetes.io/name: tempo
+      ports:
+        - { protocol: TCP, port: 4318 }
+    {{- end }}
+    {{- with $.Values.rappNetworkPolicy.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- end }}

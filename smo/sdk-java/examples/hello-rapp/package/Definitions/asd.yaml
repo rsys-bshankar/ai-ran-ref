@@ -1,0 +1,21 @@
+tosca_definitions_version: tosca_simple_yaml_1_3
+
+description: >
+  HelloJava_rApp, the example rApp of the Java SDK (smo/sdk-java). It enrols at SME, registers its operator
+  API, reports a heartbeat, reads a data route (DME types) and an AI route (MLMR models), and deregisters when it stops.
+  It takes no action on the network.
+
+topology_template:
+  node_templates:
+    applicationServiceDescriptor:
+      type: tosca.nodes.asd
+      description: "hello-java-rapp"
+      properties:
+        descriptor_id: 5c0a7e1e-3d52-4f0b-8f6e-7a1d0c9b2e11
+        descriptor_invariant_id: 5c0a7e1e-3d52-4f0b-8f6e-7a1d0c9b0001
+        descriptor_version: "1.0.0"
+        schema_version: "2.0"
+        function_description: "HelloJava_rApp, Java SDK example"
+        provider: "Radisys"
+        application_name: HelloJava_rApp
+        application_version: "1.0.0"
