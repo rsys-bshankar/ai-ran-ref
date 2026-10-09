@@ -1537,6 +1537,104 @@
         "title": "VersionReport",
         "type": "object"
       },
+      "VesAnswer": {
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "integer"
+          },
+          "events": {
+            "title": "Events",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/VesResult"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "events",
+          "applied",
+          "results"
+        ],
+        "title": "VesAnswer",
+        "type": "object"
+      },
+      "VesEnvelope": {
+        "additionalProperties": true,
+        "description": "The body of a post: one `event`, or an `eventList`.",
+        "properties": {
+          "event": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event"
+          },
+          "eventList": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eventlist"
+          }
+        },
+        "title": "VesEnvelope",
+        "type": "object"
+      },
+      "VesResult": {
+        "properties": {
+          "codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Codes",
+            "type": "array"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "outcome": {
+            "enum": [
+              "APPLIED",
+              "PARTIAL",
+              "IGNORED",
+              "REJECTED"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "domain",
+          "outcome",
+          "codes"
+        ],
+        "title": "VesResult",
+        "type": "object"
+      },
       "WaveActionRequest": {
         "properties": {
           "force": {
@@ -1673,6 +1771,10 @@
       "r1BearerAuth": {
         "bearerFormat": "JWT",
         "scheme": "bearer",
+        "type": "http"
+      },
+      "vesBasicAuth": {
+        "scheme": "basic",
         "type": "http"
       }
     }
@@ -18513,6 +18615,122 @@
         "summary": "Version",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/ves/eventListener/v7": {
+      "post": {
+        "description": "SB-7.1: a VES event (`{\"event\": {...}}`) or a batch (`{\"eventList\": [...]}`) from an O1 adaptor, HTTP Basic (SB-7.5). The whole post is checked first (a header that\nis not a VES `commonEventHeader` is a 400 and nothing is applied); then each event is applied on its own and the 202 says what became of it: `APPLIED`,\n`PARTIAL` (a measurement event with several reports, some refused), `IGNORED` (a domain this receiver does not map) or `REJECTED` (an unknown element, a PM report\nwith no PM subscription, a service the element does not offer), each with fixed codes. A refused event does not stop the others, and is not a 4xx: the sender\nwould send it again for ever. Not behind the R1 gateway; see `ves.py`.",
+        "operationId": "receive_ves_events_ves_eventListener_v7_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VesEnvelope"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VesAnswer"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "the body is not a VES post: no event or eventList, a header member missing or of the wrong type"
+          },
+          "401": {
+            "description": "no valid Basic credentials"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "description": "the listener is not enabled (no password configured)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "vesBasicAuth": []
+          }
+        ],
+        "summary": "Receive Ves Events",
+        "tags": [
+          "ves"
         ]
       }
     }

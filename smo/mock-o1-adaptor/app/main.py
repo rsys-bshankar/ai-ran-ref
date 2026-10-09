@@ -37,6 +37,8 @@ from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
 from smo_shared.health import install_health
 
+from . import profile as vendor_profile
+
 app = FastAPI(title="Mock O1 Adaptor (NETCONF and RESTCONF test double)")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
 install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
@@ -79,8 +81,32 @@ ENERGY_SAVING_STATE = {"TO_BE_ENERGY_SAVING": "IS_ENERGY_SAVING", "TO_BE_NOT_ENE
 _faults: list[dict] = []
 
 
+def _profile() -> dict | None:
+    """SB-10: the vendor profile `MOCK_O1_PROFILE` names (app/profile.py), read on every request like the other settings; None without the variable. A name that
+    cannot be loaded is an error at the request (and at start-up, below), not a silent fall back to the generic stub."""
+    name = os.environ.get("MOCK_O1_PROFILE", "").strip()
+    return vendor_profile.load(name) if name else None
+
+
+_profile()      # a typo in MOCK_O1_PROFILE stops the container from starting
+
+
 def _defaults(function_ref: str | None) -> dict:
-    return dict(IOC_DEFAULTS.get((function_ref or "").split("=", 1)[0], {}))
+    ioc = (function_ref or "").split("=", 1)[0]
+    return {**IOC_DEFAULTS.get(ioc, {}), **((_profile() or {}).get("iocDefaults", {}).get(ioc, {}))}
+
+
+def _vendor_modes() -> list[str]:
+    profile = _profile()
+    return os.environ.get("MOCK_O1_VENDOR_MODES", "").split(",") if os.environ.get("MOCK_O1_VENDOR_MODES") else (
+        list(profile["supportedVendorModes"]) if profile else ["O1_NETCONF", "O1_RESTCONF"])
+
+
+def _restconf_unavailable() -> JSONResponse | None:
+    """A vendor that declares no O1_RESTCONF has no RESTCONF root: its RESTCONF routes answer 404, as a real NETCONF-only adaptor's would (SB-10)."""
+    if "O1_RESTCONF" in _vendor_modes():
+        return None
+    return _problem(404, "no RESTCONF", "this adaptor does not declare O1_RESTCONF in supportedVendorModes, so it has no RESTCONF root")
 
 
 def _current(ref: str, function_ref: str | None) -> dict:
@@ -183,6 +209,8 @@ RESTCONF_ERROR_STATUS = {"invalid-value": 400, "malformed-message": 400, "data-e
 @app.get("/.well-known/host-meta")
 def restconf_root_discovery():
     """RFC 8040 section 3.1: where the RESTCONF root is."""
+    if (absent := _restconf_unavailable()) is not None:
+        return absent
     return Response(content='<XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">'
                             '<Link rel="restconf" href="/restconf"/></XRD>',
                     media_type="application/xrd+xml")
@@ -258,6 +286,8 @@ def _restconf_apply(ref: str, function_ref: str | None, attributes: dict, replac
 @app.put("/restconf/data/{path:path}")
 @app.delete("/restconf/data/{path:path}")
 async def restconf_data(path: str, request: Request) -> Response:
+    if (absent := _restconf_unavailable()) is not None:
+        return absent
     ref, function_ref = _restconf_target(request) or (None, None)
     if ref is None:
         return _restconf_error("invalid-value", "not a managed-element / managed-function data resource")
@@ -296,6 +326,8 @@ async def restconf_create(request: Request, path: str = "") -> Response:
     """POST creates a child of the target (RFC 8040 section 4.4.1): a
     managed element under the datastore, or a managed function under its
     element. 409 data-exists if the child is already there."""
+    if (absent := _restconf_unavailable()) is not None:
+        return absent
     parent = _restconf_target(request) if path else (None, None)
     if parent is None or parent[1] is not None:
         return _restconf_error("invalid-value", "a child can be created under /data or a managed-element only")
@@ -325,9 +357,9 @@ def declare_capabilities():
     per deployment so one image can stand in for several vendors.
     """
     return {
-        "vendorName": os.environ.get("MOCK_O1_VENDOR_NAME", "mock-vendor"),
+        "vendorName": os.environ.get("MOCK_O1_VENDOR_NAME") or (_profile() or {}).get("vendorName", "mock-vendor"),
         "supportedServices": _declared_services(),
-        "supportedVendorModes": os.environ.get("MOCK_O1_VENDOR_MODES", "O1_NETCONF,O1_RESTCONF").split(","),
+        "supportedVendorModes": _vendor_modes(),
     }
 
 
@@ -457,7 +489,9 @@ def _problem(status: int, title: str, detail: str) -> JSONResponse:
 
 
 def _declared_services() -> list[str]:
-    return [s.strip() for s in os.environ.get("MOCK_O1_SUPPORTED_SERVICES", DEFAULT_SERVICES).split(",") if s.strip()]
+    profile = _profile()
+    fallback = ",".join(profile["supportedServices"]) if profile else DEFAULT_SERVICES
+    return [s.strip() for s in os.environ.get("MOCK_O1_SUPPORTED_SERVICES", fallback).split(",") if s.strip()]
 
 
 def _emit(kind: str, path: str, target: str | None, *, params: dict | None = None, body: dict | None = None) -> JSONResponse:

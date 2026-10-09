@@ -52,7 +52,7 @@ Theme: rApps that could be handed to another party. Core (1 to 3) first, then th
 | 3 | Tenant and region authorization | `SEC-10`: `region` and `tenant` on managed elements, a scope claim on the caller, enforced first on `POST /config-jobs` (the pilot, `SEC-10.1` to `10.4`), then config reads, alarms, PM, DME and MLMR reads | The main security gap left before 1.0.0. Scoping axes: both region and tenant. **Built** (`HISTORY.md` PR-SEC-10): `SEC-10.1` to `10.6`, the pilot, config reads, alarms and PM, with both axes. **Open:** `SEC-10.7` (DME and MLMR have nothing to match on, see below), `10.8` (OPA), and the rest of RAN NF OAM's reads (`10.9`) |
 | 4 | rApp SDK in two more languages | `RAPP-4` (Java and Go, decided): a Java SDK and a Go SDK generated from `docs/openapi/` with token acquisition and refresh, one example rApp in each, and a CI build for each | Python SDK stays. Each example runs against the stack |
 | 5 | Life-cycle flows (stretch) | `MGT-14` zero-touch onboarding (templates, discovery triggers a template, status FSM); `MGT-15` software campaigns (waves with a health gate, rollback, report) | The wave machinery is `MGT-5`, done |
-| 6 | Spec and stub realism (stretch) | `MGT-2` MSAC beyond writes; `SB-7` VES event receiver; `SB-10` first vendor profile on the O1 stub | |
+| 6 | Spec and stub realism (stretch) | `MGT-2` MSAC beyond writes; `SB-7` VES event receiver; `SB-10` first vendor profile on the O1 stub | **Built** (`HISTORY.md` PR-SB-7, PR-SB-10, PR-MGT-2): the VES listener (off until it has a password), MSAC reach (off until `RAN_NF_OAM_MSAC_REACH`), and a vendor profile mechanism with a first profile that is **a stand-in, not a real vendor**. **Open:** `SB-7.6` (needs `MSG-3.4`), the first real vendor profile (`SB-10.5`), and the parts of `MGT-2` named under PR-MGT-2 |
 | 7 | Carry-overs from 0.6.0 | `GUI-8.7` compose browser check; `SEC-5.4` load test and the cache default (`SEC-5.5`); `SEC-2.4` Postgres `verify-full` | Closed here rather than carried into 1.0.0 |
 
 Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard node loss, a network partition, PgBouncer failover, zones and the external penetration test (they need a host we control and are criteria for 1.0.0); northbound adaptors (`NB-1` to `NB-7`); the developer portal (`RAPP-5`); streaming PM (`SB-8`). Customer-driven requests: none yet.
@@ -90,8 +90,7 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   taken from the last RDN, and the registry now has a containment tree (`managed_object`, `GET /managed-objects/{dn}/children`, PR-SB-6.1).
   `managedElementRef` is still a flat registry key (its root DN is `ManagedElement=<ref>`), and a model-based server fills the tree through
   `POST /managed-entities/{ref}/managed-objects/refresh` (PR-SB-6.2); a server without a model reports no objects.
-- **SA-RANOAM-1 (reach)** — MSAC guards CM writes only. Reads (`GET .../config`) and the other write
-  routes are not evaluated. Approach: reuse `msac.authorize` per route.
+- **SA-RANOAM-1 (reach)** — MSAC reach is built (`MGT-2`, `HISTORY.md` PR-MGT-2) and off by default; what it does not cover is under PR-MGT-2 below.
 
 Closed in this wave: SA-RANOAM-1 (TS 28.319 Identity / Role / AccessRule, per-sub-change evaluation),
 SA-RANOAM-2 (`accessScope`, `scope` kept as an alias), SA-RANOAM-6-severity (`PerceivedSeverity`,
@@ -683,16 +682,13 @@ A CM write's values are checked against the leaf's YANG type, range, length, pat
 | Step | What | Done when | Needs |
 |---|---|---|---|
 
-#### PR-SB-7 — VES event receiver
+#### PR-SB-7 — VES event receiver (SB-7.1 to 7.5 done: `HISTORY.md` PR-SB-7)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SB-7.1 | `POST /ves/eventListener/v7` accepting the batch and single-event schemas | Schema test | – |
-| SB-7.2 ★ | Map the fault domain to the existing `/alarms/ingest` path | Alarm row created | SB-7.1 |
-| SB-7.3 | Map `heartbeat` to the adaptor heartbeat | Health updated | SB-7.1 |
-| SB-7.4 | Map `measurement` and `stndDefined` PM to the `/pm-reports` path | PM record created | SB-7.1 |
-| SB-7.5 | Basic auth for the listener, credentials through the `*_FILE` helper (`smo_shared/secretfile.py`) | 401 without it | SB-7.1 |
 | SB-7.6 | Kafka consumer variant | Same events via a topic | SB-7.1, MSG-3.4 |
+| SB-7.8 | A chart setting that mounts a Secret for `RAN_NF_OAM_VES_PASSWORD_FILE` on RAN NF OAM (and a Service or NetworkPolicy note for the adaptors' network), so the password need not be an environment value | `helm template` shows the mount; `deploy/helm/smo/README.md` says how | – |
+| SB-7.7 | Try the receiver against a real VES sender (an ONAP-style one, `NB-6.2`'s other half) and fix the mapping where it differs from what was written from the schema | Events of a real sender become alarms, heartbeats and PM reports | – |
 
 #### PR-SB-8 — Streaming PM (`SA-RANOAM-8`)
 
@@ -704,16 +700,13 @@ A CM write's values are checked against the leaf's YANG type, range, length, pat
 | SB-8.4 | MDAF `STREAMING` subscription consumes it (closes `SA-MDA-5`'s recorded-only gap) | End-to-end test | SB-8.3 |
 | SB-8.5 | Backpressure and drop policy | Slow consumer test | SB-8.3 |
 
-#### PR-SB-10 — First vendor profile
+#### PR-SB-10 — First vendor profile (the mechanism and a stand-in profile done: `HISTORY.md` PR-SB-10)
 
-Needs access to a vendor simulator or lab.
+The mechanism (profile directory, loader, onboarding body, report check) is built and `example-du` exercises it, but **`example-du` is a stand-in: no vendor simulator or lab was available**, so SB-10.1 to 10.4 are done for an invented vendor. The real ones need access to a vendor simulator or lab.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SB-10.1 | Collect the vendor's YANG set | Files in a profile directory | – |
-| SB-10.2 | Add a capability registry entry | Registry test | SB-10.1 |
-| SB-10.3 | List deviations from the standard models | List in the profile README | SB-10.1 |
-| SB-10.4 | Conformance pack run against the vendor | Report attached | SB-9.6, SB-1.9 |
+| SB-10.5 | Replace the stand-in with the first real vendor: collect its YANG set (SB-10.1), its capability entry (10.2), its deviations (10.3; a vendor's `deviation` statements are not evaluated by `scripts/ingest_yang_schema.py`, so read them into the leaves or extend the reader), and run the conformance pack against its simulator or lab (10.4, with `SB-1.9`'s path for NETCONF over SSH) | A profile directory for a real vendor with a report from the vendor's own adaptor | **A vendor simulator or lab, and the owner's choice of vendor** |
 
 #### A1 / Near-RT RIC / E2 (future work, out of scope)
 
@@ -783,15 +776,12 @@ ack and clear routes.
 
 #### Configuration management
 
-#### PR-MGT-2 — MSAC beyond writes (`SA-RANOAM-1` reach)
+#### PR-MGT-2 — MSAC beyond writes (`SA-RANOAM-1` reach; MGT-2.1 to 2.5 done: `HISTORY.md` PR-MGT-2)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-2.1 | `authorize(..., "read")` on `GET .../config` | Denied read is 403 | – |
-| MGT-2.2 | Same on PM and FM subscription create | Test | – |
-| MGT-2.3 | Same on alarm ack and clear | Test | – |
-| MGT-2.4 | Same on software-management jobs | Test | – |
-| MGT-2.5 | Same on file routes | Test | – |
+| MGT-2.6 | Decide whether the list routes (alarms, subscriptions, jobs, endpoints, KPIs, the registries) and subscription deletes are in MSAC's reach, and with what target (a list has none; the scope filter of `PR-SEC-10` is the model) | A decision, then tests | The owner |
+| MGT-2.7 | Make the switch the default (`RAN_NF_OAM_MSAC_REACH`), once operators have had a release to add `read` rules to the Identities they made for writes | Default on, a note under `### Changed` | A release after 0.7.0 |
 
 #### PR-MGT-3 — Dry run (done: `HISTORY.md` §10)
 

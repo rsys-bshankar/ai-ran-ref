@@ -89,10 +89,14 @@ Each run uses managed-object references that are new to it (`conf-<run>-<n>`), s
 
 ## Not covered yet
 
-* **Anything the adaptor emits that RAN NF OAM does not take in**: streaming data, VES, file notifications to a subscriber, clearing and acknowledging alarms. The emitting groups cover the five routes above.
+* **Anything the adaptor emits that RAN NF OAM does not take in**: streaming data, file notifications to a subscriber, clearing and acknowledging alarms. The emitting groups cover the five routes above. RAN NF OAM does take in VES (`POST /ves/eventListener/v7`, `PR-SB-7`), and the kit does not check an adaptor's VES: there is no trigger for it in the stub, and its tests (`ran-nf-oam/tests/test_ves.py`) are the receiver's, not a sender's.
 * **A real vendor's trigger API.** The kit's emit side is the contract `mock-o1-adaptor` implements; a vendor adaptor needs a test hook of the same shape (or a thin shim in front of it) to be run through FM, PM, SW and HB. Without one, give no `--oam-url` and run the CM checks only.
 * **NETCONF over SSH or TLS** (the transports RAN NF OAM also speaks, `PR-SB-1`): tested against a real server (netopeer2) in CI job `netconf-lab`, not by this kit, which speaks the HTTP-carried form the mock and a vendor's HTTP front end use.
 * **YANG validation** of what an adaptor accepts (`PR-SB-5`).
+
+## A vendor profile (`SB-10`)
+
+The stub can be made one vendor's adaptor: `MOCK_O1_PROFILE=<name>` reads `mock-o1-adaptor/app/profiles/<name>/` (the vendor's name, services, transports, YANG, the descriptor generated from it, the class defaults). The kit run against the stub in a profile, with RAN NF OAM read back, is the profile's `conformance-report.md`, and `tests_integration/test_vendor_profile.py` fails when the committed report and a fresh run differ. The one shipped, `example-du`, is a stand-in, not a real vendor (no vendor lab was available): 23 checks pass, RESTCONF and the software checks are skipped because the profile does not declare them. A real vendor's run replaces it, and needs the vendor's simulator or lab for what the stub cannot show. `mock-o1-adaptor/app/profiles/example-du/README.md` lists the deviations.
 
 ## The stub
 
