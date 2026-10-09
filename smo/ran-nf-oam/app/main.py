@@ -20,6 +20,7 @@ import json
 import os
 import time
 import uuid
+import sys
 from typing import Any, Literal, NoReturn, cast
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -3030,3 +3031,4 @@ def list_software_management_jobs(request: Request, managed_element_ref: str | N
 # Wave 9 — multi-vendor capability registry, CM schemas, cell guards (vendors.py)
 app.include_router(vendors_router)
 app.include_router(lifecycle.router)      # MGT-14, MGT-15: onboarding templates, element onboarding, software campaigns
+lifecycle.bind_main(sys.modules[__name__])
