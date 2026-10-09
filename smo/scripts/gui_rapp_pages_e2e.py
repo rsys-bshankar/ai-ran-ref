@@ -27,6 +27,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from playwright.sync_api import Error as PlaywrightError
@@ -56,6 +57,17 @@ class Check:
             self.problems.append(message)
         else:
             print(f"ok: {message}")
+
+
+def wait_for_count(page, selector: str, accept, seconds: float = 15.0) -> None:
+    """Poll a locator's count from Python. `page.wait_for_function` evaluates a string in the page, which the GUI's Content-Security-Policy
+    (no `unsafe-eval`) forbids; counting through the locator does not need the page to evaluate anything."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if accept(page.locator(selector).count()):
+            return
+        page.wait_for_timeout(100)
+    raise AssertionError(f"{selector!r}: the count never became what the page needed (last {page.locator(selector).count()})")
 
 
 def sign_in(page, base_url: str, user: str, password: str) -> None:
@@ -110,13 +122,13 @@ def operator_run(browser, base_url: str, user: str, password: str, ids: dict, ca
 
     page.goto(f"{base_url}/rapps")
     page.get_by_text("rApp directory").wait_for()
-    page.wait_for_function("document.querySelectorAll('table tbody tr').length >= 2")
+    wait_for_count(page, "table tbody tr", lambda n: n >= 2)
     names = page.locator("table tbody tr td:first-child a").all_inner_texts()
     check.expect(any(n.startswith(READ_ONLY_NAME) for n in names) and any(n.startswith(WRITABLE_NAME) and READ_ONLY_NAME not in n for n in names),
                  f"the directory lists the package onboarded at run time and the read-only one ({names})")
     check.expect(page.get_by_text("declared", exact=True).count() >= 2, "the directory marks both rApps as declaring a page")
     page.get_by_label("Search rApps").fill("ReadOnly")
-    page.wait_for_function("document.querySelectorAll('table tbody tr td:first-child a').length === 1")
+    wait_for_count(page, "table tbody tr td:first-child a", lambda n: n == 1)
     check.expect(page.locator("table tbody tr td:first-child a").all_inner_texts() == [READ_ONLY_NAME], "a search narrows the directory to the one rApp it names")
     page.screenshot(path=str(out / "directory-search.png"))
     page.get_by_label("Search rApps").fill("")

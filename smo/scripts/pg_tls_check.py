@@ -135,7 +135,6 @@ class LocalServer:
 
     def start(self) -> None:
         data = self.base / "data"
-        (self.base / "pw").write_text(self.password)
         ssl_dir = self.base / "ssl"
         ssl_dir.mkdir()
         for name, mode in (("tls.crt", 0o644), ("tls.key", 0o600)):
@@ -146,7 +145,9 @@ class LocalServer:
             for path in (self.base, *self.base.rglob("*")):
                 os.chown(path, self._uid, self._uid)
             os.chmod(self.base, 0o755)  # noqa: S103 (the unprivileged server user must traverse it; a throwaway directory)
-        self._run(str(self.pg_bin / "initdb"), "-D", str(data), "-U", "smo", "--auth-host=scram-sha-256", "--auth-local=trust", f"--pwfile={self.base / 'pw'}", "-E", "UTF8")
+        self._run(str(self.pg_bin / "initdb"), "-D", str(data), "-U", "smo", "--auth-host=scram-sha-256", "--auth-local=trust", "-E", "UTF8")
+        # the password goes to the single-user backend on its standard input, never to a file
+        self._run(str(self.pg_bin / "postgres"), "--single", "-D", str(data), "postgres", input="ALTER ROLE smo PASSWORD '" + self.password.replace("'", "''") + "'\n")
         self.process = subprocess.Popen(                                                     # noqa: S603
             [str(self.pg_bin / "postgres"), "-D", str(data), "-p", str(self.port), "-c", "listen_addresses=127.0.0.1", "-c", f"unix_socket_directories={self.base}",
              "-c", "ssl=on", "-c", f"ssl_cert_file={ssl_dir / 'tls.crt'}", "-c", f"ssl_key_file={ssl_dir / 'tls.key'}", "-c", f"hba_file={self.base / 'pg_hba.conf'}"],
