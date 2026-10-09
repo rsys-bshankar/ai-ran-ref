@@ -147,6 +147,8 @@ func (c *Client) Do(ctx context.Context, r Request, out any) error {
 	renewed, repeated := false, false
 	for {
 		hdr.Set("Authorization", "Bearer "+token)
+		// safe is true for every method: a POST carries an Idempotency-Key, so repeating it after a transport error or a 502/504 is
+		// answered from the platform's stored first answer instead of acting twice.
 		resp, err := c.roundTrip(ctx, method, target, hdr, body, true)
 		if err != nil {
 			return err
@@ -161,6 +163,8 @@ func (c *Client) Do(ctx context.Context, r Request, out any) error {
 		}
 		if resp.status >= 400 {
 			e := newError(method, r.Path, resp.status, resp.body)
+			// A write that lost a race is sent once more with the same headers, so with the same Idempotency-Key. Reads, other
+			// conflicts and a second CONCURRENT_MODIFICATION are final.
 			if mutating && !repeated && isConcurrentModification(e) {
 				repeated = true
 				continue
@@ -177,6 +181,7 @@ func (c *Client) Do(ctx context.Context, r Request, out any) error {
 	}
 }
 
+// response is one HTTP answer, fully read (at most maxResponseBytes of body).
 type response struct {
 	status int
 	header http.Header
@@ -229,6 +234,8 @@ func (c *Client) roundTrip(ctx context.Context, method, target string, hdr http.
 	}
 }
 
+// randomHex returns n bytes from crypto/rand as 2n hex characters; Do uses it for the Idempotency-Key of a POST. It fails
+// only when the system's random source does.
 func randomHex(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {

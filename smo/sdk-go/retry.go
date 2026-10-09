@@ -1,3 +1,9 @@
+// retry.go is the retry policy of the SDK: RetryPolicy (the Config.Retry value), the wait between attempts, which
+// statuses are worth repeating and which of those leave it unknown whether the server acted, and the Retry-After header.
+//
+// Client.roundTrip (client.go) is the only caller; this file does no I/O except sleep, which waits on the context. The
+// defaults (4 attempts, 200 ms, 5 s) are repeated in sdk-go/README.md and in the tests: change them together.
+
 package smosdk
 
 import (
@@ -29,6 +35,7 @@ type RetryPolicy struct {
 	NoJitter    bool          // deterministic waits (tests)
 }
 
+// attempts returns the total number of tries including the first: MaxAttempts, or 4 when it is not positive.
 func (p RetryPolicy) attempts() int {
 	if p.MaxAttempts <= 0 {
 		return 4

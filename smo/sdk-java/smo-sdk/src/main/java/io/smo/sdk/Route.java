@@ -48,6 +48,11 @@ public record Route(String method, String template, Set<String> bodyFields, Set<
         return out.append(template.substring(from)).toString();
     }
 
+    /**
+     * Encodes {@code value} as one path segment: {@code /} becomes {@code %2F} and a space {@code %20} (not {@code +}).
+     *
+     * @throws IllegalArgumentException when {@code value} is empty
+     */
     private static String segment(String value) {
         if (value.isEmpty()) {
             throw new IllegalArgumentException("a path argument is empty");

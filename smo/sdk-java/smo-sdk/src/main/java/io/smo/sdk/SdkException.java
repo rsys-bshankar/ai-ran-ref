@@ -11,18 +11,27 @@ public class SdkException extends RuntimeException {
     private final int status;
     private final String body;
 
+    /**
+     * An answer with an error status: {@link #status()} and {@link #body()} are what the platform sent.
+     */
     public SdkException(int status, String body) {
         super(status + ": " + body);
         this.status = status;
         this.body = body;
     }
 
+    /**
+     * A failure with no answer (the transport failed, or the thread was interrupted): status 0, no body.
+     */
     public SdkException(String message, Throwable cause) {
         super(message, cause);
         this.status = 0;
         this.body = null;
     }
 
+    /**
+     * A failure of the SDK itself, for instance a token answer without an access token: status 0, no body.
+     */
     public SdkException(String message) {
         super(message);
         this.status = 0;

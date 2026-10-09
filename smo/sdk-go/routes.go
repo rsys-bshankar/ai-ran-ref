@@ -1,3 +1,10 @@
+// routes.go lists every platform route the SDK calls, as data: the OpenAPI document, the gateway prefix, the method and
+// the path template of each. namespaces.go and auth.go call routes by these values and never spell a path.
+//
+// routes_test.go checks allRoutes against the committed docs/openapi/*.json, so a route renamed or removed in the platform
+// fails this module's tests. Adding a helper for a new route means adding it here and to allRoutes, or that check does not
+// see it.
+
 package smosdk
 
 import (
@@ -32,6 +39,8 @@ func (r route) path(args ...string) string {
 	return out
 }
 
+// gw builds a route served through the gateway: the prefix is the module's name, "/" + spec, as R1 Termination's routing
+// table serves it.
 func gw(spec, method, tmpl string) route {
 	return route{spec: spec, prefix: "/" + spec, method: method, tmpl: tmpl}
 }

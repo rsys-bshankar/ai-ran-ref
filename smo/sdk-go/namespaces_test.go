@@ -1,3 +1,7 @@
+// namespaces_test.go covers the typed helpers of namespaces.go and the Page and Object types: for each helper the
+// method, path, query and body that reach the server, and how the answer is decoded. It uses fakeStack (stack_test.go)
+// and the record helper below. Run: cd smo/sdk-go && go test -race ./... .
+
 package smosdk
 
 import (
@@ -9,6 +13,9 @@ import (
 	"testing"
 )
 
+// TestPageAcceptsTheEnvelopeAndABareArray
+// pins that Page decodes the list envelope with its counts, an envelope without total, a bare array (the CAPIF routes)
+// and rejects anything else.
 func TestPageAcceptsTheEnvelopeAndABareArray(t *testing.T) {
 	var p Page[Object]
 	if err := json.Unmarshal([]byte(`{"items":[{"a":1},{"a":2}],"total":7,"limit":2,"offset":4}`), &p); err != nil {
@@ -31,6 +38,8 @@ func TestPageAcceptsTheEnvelopeAndABareArray(t *testing.T) {
 	}
 }
 
+// TestObjectAs
+// pins that ObjectAs decodes an Object into a struct.
 func TestObjectAs(t *testing.T) {
 	var v struct {
 		State string `json:"state"`
@@ -40,6 +49,7 @@ func TestObjectAs(t *testing.T) {
 	}
 }
 
+// seen is what the fake API received for one call.
 type seen struct {
 	method, path, query, body string
 }
@@ -56,6 +66,8 @@ func record(s *fakeStack, status int, answer any, into *seen) {
 	}
 }
 
+// TestDataNamespace
+// pins the routes and query of the DME helpers, including that an empty data category sends no query.
 func TestDataNamespace(t *testing.T) {
 	s := newStack(t)
 	var got seen
@@ -80,6 +92,8 @@ func TestDataNamespace(t *testing.T) {
 	}
 }
 
+// TestModelsNamespace
+// pins that Models().List sends the caller's query to the MLMR route.
 func TestModelsNamespace(t *testing.T) {
 	s := newStack(t)
 	var got seen
@@ -90,6 +104,9 @@ func TestModelsNamespace(t *testing.T) {
 	}
 }
 
+// TestPlatformNamespace
+// pins the SME helpers: provider registration (a null providerDomainInfo when empty), deregistration, and service
+// discovery sending only the filter fields that are set.
 func TestPlatformNamespace(t *testing.T) {
 	s := newStack(t)
 	var got seen
@@ -117,6 +134,9 @@ func TestPlatformNamespace(t *testing.T) {
 	}
 }
 
+// TestRAppNamespace
+// pins the rApp-Management helpers: the paths under the instance, a null operator-API base read as "", and the metrics
+// object sent unwrapped as the body.
 func TestRAppNamespace(t *testing.T) {
 	s := newStack(t)
 	var got seen
@@ -159,6 +179,8 @@ func TestRAppNamespace(t *testing.T) {
 	}
 }
 
+// TestARolePolicyRefusalIsAForbiddenError
+// pins that the gateway's 403 ROLE_NOT_PERMITTED arrives as *Error with that title and satisfies IsForbidden.
 func TestARolePolicyRefusalIsAForbiddenError(t *testing.T) {
 	s := newStack(t)
 	s.api = func(w http.ResponseWriter, r *http.Request) {
