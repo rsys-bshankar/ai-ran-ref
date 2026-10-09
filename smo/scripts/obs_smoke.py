@@ -103,6 +103,11 @@ def datasource_ok(status: int, body: Any) -> bool:
     return status == 200 and isinstance(body, dict) and str(body.get("status", "")).upper() == "OK"
 
 
+def tempo_echo_ok(status: int, body: str) -> bool:
+    """Tempo's /api/echo, which is what Grafana's own "Save & test" calls through the data source proxy: 200 and the word `echo`."""
+    return status == 200 and body.strip().lower() == "echo"
+
+
 def grafana_healthy(status: int, body: Any) -> bool:
     """Grafana's /api/health: 200 and the database `ok`."""
     return status == 200 and isinstance(body, dict) and str(body.get("database", "")).lower() == "ok"
@@ -205,11 +210,18 @@ def main(argv: list[str] | None = None) -> int:
         return None if grafana_healthy(code, body) else f"/api/health answered {code}"
 
     group("Grafana is healthy", grafana_ok)
-    for uid in ("tempo", "loki"):
-        def source_ok(uid: str = uid) -> str | None:
-            code, body = http_json(f"{args.grafana}/api/datasources/uid/{uid}/health")
-            return None if datasource_ok(code, body) else f"health answered {code}"
-        group(f"Grafana's provisioned {uid} data source reports OK", source_ok)
+    # Loki's data source implements the backend health check. Tempo's does not (Grafana answers 404 `plugin.notImplemented`; the UI's "Save & test"
+    # runs in the browser and calls Tempo's /api/echo through the data source proxy), so that is what is called here.
+    def loki_source_ok() -> str | None:
+        code, body = http_json(f"{args.grafana}/api/datasources/uid/loki/health")
+        return None if datasource_ok(code, body) else f"health answered {code}"
+
+    def tempo_source_ok() -> str | None:
+        code, body = http("GET", f"{args.grafana}/api/datasources/proxy/uid/tempo/api/echo")
+        return None if tempo_echo_ok(code, body) else f"proxy to Tempo's /api/echo answered {code}"
+
+    group("Grafana's provisioned tempo data source reaches Tempo", tempo_source_ok)
+    group("Grafana's provisioned loki data source reports OK", loki_source_ok)
 
     print("FAILED: " + ", ".join(failures) if failures else "all observability checks passed")
     return 1 if failures else 0

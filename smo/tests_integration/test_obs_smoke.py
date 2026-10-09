@@ -63,6 +63,10 @@ def test_find_request_line_requires_the_line_itself_to_carry_the_trace_id():
         assert obs.find_request_line(broken, TID) is None
 
 
+def test_tempo_echo():
+    assert obs.tempo_echo_ok(200, "echo\n") and not obs.tempo_echo_ok(200, "") and not obs.tempo_echo_ok(502, "echo")
+
+
 def test_grafana_checks():
     assert obs.datasource_ok(200, {"status": "OK", "message": "Data source is working"})
     assert not obs.datasource_ok(200, {"status": "ERROR"}) and not obs.datasource_ok(500, {"status": "OK"})
@@ -105,7 +109,10 @@ class FakeStack:
         if url.endswith("/bootstrap"):
             self.trace_id = headers["traceparent"].split("-")[1]
             return self.gateway, "{}"
-        return self.http_json(url) and (200, json.dumps(self.http_json(url)[1]))
+        if url.endswith("/api/datasources/proxy/uid/tempo/api/echo"):
+            return (200, "echo") if self.tempo_source == "OK" else (502, "bad gateway")
+        code, body = self.http_json(url)
+        return code, json.dumps(body)
 
     def http_json(self, url):
         self.seen.append(url)
@@ -121,7 +128,7 @@ class FakeStack:
         if url.endswith("/api/health"):
             return 200, {"database": "ok"}
         if url.endswith("/api/datasources/uid/tempo/health"):
-            return 200, {"status": self.tempo_source}
+            return 404, {"message": "plugin.notImplemented"}    # Grafana's Tempo data source has no backend health check
         if url.endswith("/api/datasources/uid/loki/health"):
             return 200, {"status": "OK"}
         return 404, None
@@ -142,7 +149,7 @@ def test_a_healthy_stack_passes_and_the_output_holds_no_header_or_body(monkeypat
 
 
 def test_each_missing_part_fails_the_run(monkeypatch, capsys):
-    for kwargs, name in (({"spans": False}, "trace is found"), ({"log": False}, "log line"), ({"tempo_source": "ERROR"}, "tempo data source")):
+    for kwargs, name in (({"spans": False}, "trace is found"), ({"log": False}, "log line"), ({"tempo_source": "ERROR"}, "reaches Tempo")):
         code, out = run(monkeypatch, capsys, FakeStack(**kwargs))
         assert code == 1 and "FAIL" in out and name in out, (kwargs, out)
 
