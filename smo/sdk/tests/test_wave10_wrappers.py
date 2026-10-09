@@ -1,8 +1,7 @@
-"""Wave 10.1 (HISTORY.md W10-03, decision D-4): the
-convenience wrappers named as in the Wave 10 documents — get_dataset,
-start_training, store_model, get_prediction (already present),
-execute_action — plus the lifecycle, read-back and autonomy-dispatch calls
-the EnergySaving rApp needs.
+"""Tests of the SDK's convenience wrappers (HISTORY.md W10-03, decision D-4): `get_dataset`, `store_model`, the lifecycle job wrappers, `execute_action`, `read_config` and the autonomy dispatch calls.
+
+These are the methods that combine several routes or carry client-side logic, so they are checked against a fake that answers by (verb, path). Run with
+`cd sdk && PYTHONPATH=.:../shared python -m pytest tests/test_wave10_wrappers.py -q`; the `r1` fixture comes from `conftest.py`; no network.
 """
 
 import uuid
@@ -20,7 +19,7 @@ from smo_sdk.platform import PlatformClient
 
 
 class RoutedR1:
-    """Answers by (verb, path); records every call."""
+    """A fake R1 client that answers by (verb, path), from a table of responses or of functions of the call, and records every call."""
 
     def __init__(self, routes):
         self.routes, self.calls = routes, []
@@ -44,6 +43,7 @@ TYPE = {"dmeTypeId": "t-1", "dmeTypeIdStruct": {"namespace": "RAN", "name": "PRB
 
 
 def test_get_dataset_reuses_the_consumers_job_and_pages_records_oldest_first():
+    """`get_dataset` reuses the consumer's existing data job (no POST), reads the records in pages of 500 and returns all 501 oldest first."""
     pages = [[{"recordId": str(i)} for i in range(500, 0, -1)], [{"recordId": "0"}]]
     r1 = RoutedR1({
         ("get", "/dme/dme-types"): FakeResponse(200, [TYPE]),
@@ -57,6 +57,7 @@ def test_get_dataset_reuses_the_consumers_job_and_pages_records_oldest_first():
 
 
 def test_get_dataset_creates_a_job_and_404s_an_unknown_dataset():
+    """`get_dataset` creates a CONTINUOUS PULL_HTTP job for the consumer when none exists, and raises `SdkError(404)` for a dataset no type matches."""
     r1 = RoutedR1({
         ("get", "/dme/dme-types"): FakeResponse(200, [TYPE]),
         ("get", "/dme/data-jobs"): FakeResponse(200, {"items": []}),
@@ -72,6 +73,7 @@ def test_get_dataset_creates_a_job_and_404s_an_unknown_dataset():
 
 
 def test_store_model_registers_once_then_adds_artifact_versions():
+    """Storing the same (type, version) twice registers the model once and uploads two artifact versions to it."""
     models: list[dict] = []
 
     def register(json, **kw):
@@ -91,6 +93,7 @@ def test_store_model_registers_once_then_adds_artifact_versions():
 
 
 def test_lifecycle_wrappers(r1):
+    """The training, validation, emulation, runtime and inference wrappers call the expected routes in order with the expected bodies and parameters."""
     client, model_id, package_id = LifecycleClient(r1), uuid.uuid4(), uuid.uuid4()
     client.start_training(model_id, "es-rapp", package_id=package_id, dme_data_job_ids=["j-1"])
     client.complete_training("t-1", True, metrics={"rmse": 1.2}, modelConfidenceIndication=90)
@@ -118,6 +121,7 @@ def test_lifecycle_wrappers(r1):
 
 
 def test_execute_action_read_config_and_autonomy_dispatch(r1):
+    """`execute_action` forwards the idempotency `actionId`, `read_config` passes the function ref, and the autonomy-dispatch calls reach their routes."""
     action_id = uuid.uuid4()
     PlatformClient(r1).execute_action("es-rapp", [{"managedElementRef": "me-1"}], action_id=action_id,
                                       source_context={"correlationId": "c"})

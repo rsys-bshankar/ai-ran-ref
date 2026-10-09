@@ -76,11 +76,14 @@ CROSS_MODULE_FOREIGN_KEYS = [
 
 
 def upgrade() -> None:
+    """Drop the 24 foreign keys that cross a module boundary (`CROSS_MODULE_FOREIGN_KEYS`); the columns stay. This is a contract step (the schema now enforces less), safe for the previous release because its code never relied on the constraints being absent."""
     for table, name, _ in CROSS_MODULE_FOREIGN_KEYS:
+        # IF EXISTS: a constraint that is already gone is not an error.
         op.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {name}")
 
 
 def downgrade() -> None:
+    """Add the constraints back from their stored definitions; fails if a row written in the meantime names something that does not exist."""
     # re-adding validates the rows: a row written while the constraint was gone, naming something that does not exist, makes this fail, which is the honest answer
     for table, name, definition in CROSS_MODULE_FOREIGN_KEYS:
         op.execute(f"ALTER TABLE {table} ADD CONSTRAINT {name} {definition}")

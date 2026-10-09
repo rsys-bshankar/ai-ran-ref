@@ -18,8 +18,10 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add the nullable `rapp_mgmt.rapp_instance.operator_api_base` (if it does not exist)."""
     op.execute("ALTER TABLE rapp_mgmt.rapp_instance ADD COLUMN IF NOT EXISTS operator_api_base TEXT")
 
 
 def downgrade() -> None:
+    """Drop the column if it exists."""
     op.execute("ALTER TABLE rapp_mgmt.rapp_instance DROP COLUMN IF EXISTS operator_api_base")

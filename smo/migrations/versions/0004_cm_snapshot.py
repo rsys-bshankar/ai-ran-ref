@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Create `cm_snapshot` (one row per dispatched sub-change, deleted with its sub-change or its job) and the index that lists an element's snapshots newest first."""
     op.execute("""
         CREATE TABLE cm_snapshot (
           snapshot_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -32,4 +33,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop `cm_snapshot`."""
     op.execute("DROP TABLE cm_snapshot")

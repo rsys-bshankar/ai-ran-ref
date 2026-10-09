@@ -16,10 +16,12 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add `write_config_job.rollback_of` (nullable) and `rollback_forced` (NOT NULL, default false)."""
     op.execute("ALTER TABLE write_config_job ADD COLUMN rollback_of UUID")
     op.execute("ALTER TABLE write_config_job ADD COLUMN rollback_forced BOOLEAN NOT NULL DEFAULT false")
 
 
 def downgrade() -> None:
+    """Drop the two columns."""
     op.execute("ALTER TABLE write_config_job DROP COLUMN rollback_forced")
     op.execute("ALTER TABLE write_config_job DROP COLUMN rollback_of")

@@ -1,13 +1,9 @@
-"""sdk.lifecycle — a thin client over AIMgF (`aimgf/`) and MLLF
-(`mllf/`): training, certification, inference, MLMF monitoring, and
-deployment. One namespace for both services since an rApp author thinks
-of "advance a model through its lifecycle to deployment" as one journey,
-even though AIMgF and MLLF are separate backend services (see
-docs/ARCHITECTURE.md).
+"""sdk.lifecycle: a thin client over AIMgF (`aimgf/`) and MLLF (`mllf/`): training, validation and emulation jobs, certification, inference, MLMF monitoring and deployment.
 
-Every method verified against aimgf/app/main.py's and mllf/app/main.py's
-own live OpenAPI schemas (query params vs body shape) before being
-written.
+One namespace for both services because an rApp author thinks of "advance a model through its lifecycle to deployment" as one journey, although AIMgF and MLLF are separate services
+(`docs/ARCHITECTURE.md`). The query-versus-body shape of each method was checked against the routes' OpenAPI schemas; where a route takes one body parameter the body is that value itself,
+unwrapped, and where it takes two FastAPI embeds them under their names. Part of the SDK (`sdk/README.md`); the `start_*`, `complete_*` and runtime methods are the Wave 10 execution-mode
+lifecycle (`HISTORY.md` W10-03, D-4).
 """
 
 import uuid
@@ -18,12 +14,14 @@ from ._common import BaseClient, ensure_ok
 class LifecycleClient(BaseClient):
     # ---------------------------------------------------------------- AIMgF: training
 
+    """The `sdk.lifecycle` namespace: AIMgF training, validation, emulation and inference jobs, the model lifecycle, MLMF performance monitoring and feature groups; MLLF deployment."""
     def request_training(self, producer_id: str, model_id: uuid.UUID | str | None = None,
                           model_coordination_group_id: uuid.UUID | str | None = None, required_data: dict | None = None,
                           validation_criteria: dict | None = None, notification_uri: str | None = None,
                           run_id: str | None = None, training_dataset: str | None = None,
                           validation_dataset: str | None = None, consumer_rapp_id: str | None = None,
                           producer_rapp_id: str | None = None) -> dict:
+        """Request a training job (`POST /aimgf/training-jobs`) for a model or a model coordination group, with the datasets and validation criteria; ids are sent as strings and an unset one as null."""
         return ensure_ok(self._r1.post("/aimgf/training-jobs", json={
             "modelId": str(model_id) if model_id else None,
             "modelCoordinationGroupId": str(model_coordination_group_id) if model_coordination_group_id else None,
@@ -39,9 +37,7 @@ class LifecycleClient(BaseClient):
         ensure_ok(self._r1.delete(f"/aimgf/training-jobs/{training_job_id}"))
 
     def suspend_training(self, training_job_id: uuid.UUID | str) -> dict:
-        """Wave 3, HISTORY.md §7's AI/ML Workflow section item 6 — only
-        legal against an IN_PROGRESS job; 409s otherwise.
-        """
+        """Suspend a training job (HISTORY.md section 7, AI/ML Workflow item 6); legal only against an IN_PROGRESS job, AIMgF answers 409 otherwise."""
         return ensure_ok(self._r1.post(f"/aimgf/training-jobs/{training_job_id}/suspend"))
 
     def resume_training(self, training_job_id: uuid.UUID | str) -> dict:
@@ -62,16 +58,11 @@ class LifecycleClient(BaseClient):
 
     def advance_model_lifecycle(self, model_id: uuid.UUID | str, event: str,
                                  decided_by: str | None = None, rationale: str | None = None) -> dict:
-        """Fires a governance or end-of-life ModelLifecycle event (Wave 2,
-        `aimgf/app/statemachine.py` `ADVANCEABLE_EVENTS`): the eight
-        governance decisions (`GOVERNANCE_EVENTS`: SUBMIT_FOR_APPROVAL/
-        APPROVE/REJECT/CERTIFY/PROMOTE/ROLLBACK/APPROVE_TRAINING/
-        APPROVE_VALIDATION), for which AIMgF requires `decided_by` (omitted,
-        it 422s the same way a direct call would), plus DEPRECATE/RETIRE.
-        Job-driven events (CREATE_*/..._COMPLETE/..._FAILED) are refused
-        with 422 — use the job routes (`request_training`/`complete_training`/
-        `cancel_training`, ...). RETIRE also terminates the model's runtime.
-        Call flow 26.
+        """Fire a governance or end-of-life ModelLifecycle event (`aimgf/app/statemachine.py`, `ADVANCEABLE_EVENTS`).
+
+        The eight governance decisions (`GOVERNANCE_EVENTS`: SUBMIT_FOR_APPROVAL, APPROVE, REJECT, CERTIFY, PROMOTE, ROLLBACK, APPROVE_TRAINING, APPROVE_VALIDATION) need `decided_by`; AIMgF answers 422
+        without it, exactly as for a direct call. DEPRECATE and RETIRE are also accepted, and RETIRE terminates the model's runtime. Job-driven events (CREATE_*, ..._COMPLETE, ..._FAILED) are refused with
+        422: use the job routes (`request_training`, `complete_training`, `cancel_training`, ...). Call flow 26.
         """
         return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/advance",
                                         params={"event": event, "decided_by": decided_by, "rationale": rationale}))
@@ -85,9 +76,7 @@ class LifecycleClient(BaseClient):
 
     def resolve_inference(self, inference_job_id: uuid.UUID | str, succeeded: bool,
                           inference_outputs: list[dict] | None = None, potential_impact_info: str | None = None) -> dict:
-        """Wave 10.1: `inference_outputs` (TS 28.105 InferenceOutput, its
-        `outputResult` carrying the rApp's own result) becomes the job's
-        AIMLInferenceReport."""
+        """Resolve an inference job as `succeeded` or not; `inference_outputs` (TS 28.105 InferenceOutput, whose `outputResult` carries the rApp's own result) becomes the job's AIMLInferenceReport."""
         body = None
         if inference_outputs is not None or potential_impact_info is not None:
             body = {"inferenceOutputs": inference_outputs or [], "potentialImpactInfo": potential_impact_info}
@@ -105,10 +94,7 @@ class LifecycleClient(BaseClient):
     def subscribe_performance_monitoring(self, model_id: uuid.UUID | str, metric_types: list[str],
                                           dme_type_id: uuid.UUID | str, guard_kpi_floor: dict | None = None,
                                           notification_destination: str | None = None) -> dict:
-        """`notification_destination` (HISTORY.md §7's `MLMFSubscription`
-        finding, closed): optional, matching every other subscription-
-        shaped resource's own permissive shape.
-        """
+        """Subscribe to a model's performance monitoring (`POST /aimgf/mlmf/subscriptions`); the ids go in the query and the two body fields under their own keys. `notification_destination` is optional, as for every subscription-shaped resource."""
         return ensure_ok(self._r1.post("/aimgf/mlmf/subscriptions", params={
             "model_id": str(model_id), "dme_type_id": str(dme_type_id), "notification_destination": notification_destination,
         }, json={"metric_types": metric_types, "guard_kpi_floor": guard_kpi_floor}))
@@ -136,8 +122,7 @@ class LifecycleClient(BaseClient):
                               enable_dme: bool = False, measured_obj_class: str | None = None,
                               dme_port: str | None = None, source_name: str | None = None,
                               dme_type_id: uuid.UUID | str | None = None, data_delivery_method: str = "PULL_HTTP") -> dict:
-        """With enable_dme, AIMgF creates the group's DME data job of
-        dme_type_id (required then) and returns its dmeDataJobId."""
+        """Create a feature group (`POST /aimgf/feature-groups`); with `enable_dme` AIMgF creates the group's DME data job of `dme_type_id` (required then) and returns its `dmeDataJobId`."""
         return ensure_ok(self._r1.post("/aimgf/feature-groups", json={
             "featureGroupName": feature_group_name, "featureList": feature_list, "datalakeSource": datalake_source,
             "host": host, "port": port, "bucket": bucket, "token": token, "dbOrg": db_org, "measurement": measurement,
@@ -149,7 +134,7 @@ class LifecycleClient(BaseClient):
         return ensure_ok(self._r1.get("/aimgf/feature-groups"))
 
     def delete_feature_group(self, feature_group_name: str) -> dict:
-        """Deletes the group and terminates its DME data job, if it has one."""
+        """Delete the feature group and terminate its DME data job, if it has one."""
         return ensure_ok(self._r1.delete(f"/aimgf/feature-groups/{feature_group_name}"))
 
     # ---------------------------------------------------------------- MLLF: deploy
@@ -167,8 +152,7 @@ class LifecycleClient(BaseClient):
                        dme_data_job_ids: list[uuid.UUID | str] | None = None, runtime_profile: dict | None = None,
                        timeout_seconds: int | None = None, notification_uri: str | None = None,
                        required_data: dict | None = None, validation_criteria: dict | None = None) -> dict:
-        """Starts a training run on an MLTF runtime sized from the package's
-        TRAINING runtime profile (or `runtime_profile`)."""
+        """Start a training run on an MLTF runtime sized from the package's TRAINING runtime profile (or from `runtime_profile`); unset fields are left out of the body."""
         return ensure_ok(self._r1.post("/aimgf/training-jobs", json=_drop_none({
             "modelId": str(model_id), "producerId": producer_id, "packageId": _str(package_id),
             "dmeDataJobIds": [str(j) for j in dme_data_job_ids] if dme_data_job_ids else None,
@@ -177,17 +161,18 @@ class LifecycleClient(BaseClient):
         })))
 
     def report_training_progress(self, training_job_id: uuid.UUID | str, step: str) -> dict:
-        """The execution runtime's step report: DATA_EXTRACTION, TRAINING or
-        TRAINED_MODEL, forward only (OI-5-aiml-trainingjob-steps)."""
+        """The execution runtime's step report: DATA_EXTRACTION, TRAINING or TRAINED_MODEL, forward only (OI-5-aiml-trainingjob-steps)."""
         return ensure_ok(self._r1.post(f"/aimgf/training-jobs/{training_job_id}/progress", json={"step": step}))
 
     def complete_training(self, training_job_id: uuid.UUID | str, succeeded: bool, metrics: dict | None = None,
                           **ts28105_fields) -> dict:
+        """Complete a training job as `succeeded` or not with its `metrics`; `ts28105_fields` are further TS 28.105 result fields sent by their names."""
         return self._complete("training-jobs", training_job_id, succeeded, metrics, ts28105_fields)
 
     def start_validation(self, model_id: uuid.UUID | str, producer_id: str, package_id: uuid.UUID | str | None = None,
                          validation_criteria: dict | None = None, training_job_id: uuid.UUID | str | None = None,
                          timeout_seconds: int | None = None) -> dict:
+        """Start a validation job for a model, with an optional package id, training job id and timeout; unset fields are left out of the body."""
         return ensure_ok(self._r1.post("/aimgf/validation-jobs", json=_drop_none({
             "modelId": str(model_id), "producerId": producer_id, "packageId": _str(package_id),
             "validationCriteria": validation_criteria, "trainingJobId": _str(training_job_id), "timeoutSeconds": timeout_seconds,
@@ -195,10 +180,12 @@ class LifecycleClient(BaseClient):
 
     def complete_validation(self, validation_job_id: uuid.UUID | str, succeeded: bool, metrics: dict | None = None,
                             **ts28105_fields) -> dict:
+        """Complete a validation job as `succeeded` or not with its `metrics`; `ts28105_fields` are further TS 28.105 result fields sent by their names."""
         return self._complete("validation-jobs", validation_job_id, succeeded, metrics, ts28105_fields)
 
     def start_emulation(self, model_id: uuid.UUID | str, producer_id: str, package_id: uuid.UUID | str | None = None,
                         emulation_criteria: dict | None = None, timeout_seconds: int | None = None) -> dict:
+        """Start an emulation job for a model with its `emulation_criteria`; unset fields are left out of the body."""
         return ensure_ok(self._r1.post("/aimgf/emulation-jobs", json=_drop_none({
             "modelId": str(model_id), "producerId": producer_id, "packageId": _str(package_id),
             "emulationCriteria": emulation_criteria, "timeoutSeconds": timeout_seconds,
@@ -206,9 +193,11 @@ class LifecycleClient(BaseClient):
 
     def complete_emulation(self, emulation_job_id: uuid.UUID | str, succeeded: bool, metrics: dict | None = None,
                            **ts28105_fields) -> dict:
+        """Complete an emulation job as `succeeded` or not with its `metrics`; `ts28105_fields` are further TS 28.105 result fields sent by their names."""
         return self._complete("emulation-jobs", emulation_job_id, succeeded, metrics, ts28105_fields)
 
     def _complete(self, kind: str, job_id, succeeded: bool, metrics: dict | None, fields: dict) -> dict:
+        """The shared `POST /aimgf/{kind}/{id}/complete` of the three job kinds (training-jobs, validation-jobs, emulation-jobs); extra result fields are merged into the body after `succeeded` and `metrics`."""
         return ensure_ok(self._r1.post(f"/aimgf/{kind}/{job_id}/complete",
                                        json={"succeeded": succeeded, "metrics": metrics or {}, **fields}))
 
@@ -217,7 +206,7 @@ class LifecycleClient(BaseClient):
 
     def deploy_runtime(self, model_id: uuid.UUID | str, package_id: uuid.UUID | str | None = None,
                        runtime_profile: dict | None = None) -> dict:
-        """MLIF: instantiates the inference runtime through NFO (needs CERTIFIED/PROMOTED)."""
+        """MLIF: instantiate the inference runtime through NFO (needs the model CERTIFIED or PROMOTED); the runtime profile is the body, the package id a query parameter."""
         return ensure_ok(self._r1.post(f"/aimgf/models/{model_id}/runtime/deploy",
                                        params=_drop_none({"package_id": _str(package_id)}), json=runtime_profile))
 
@@ -226,8 +215,10 @@ class LifecycleClient(BaseClient):
 
 
 def _str(value) -> str | None:
+    """`str(value)`, or None for None, so an optional id is sent as a JSON string or null."""
     return str(value) if value is not None else None
 
 
 def _drop_none(d: dict) -> dict:
+    """The mapping without its None values, so an unset optional field is absent from the body instead of null."""
     return {k: v for k, v in d.items() if v is not None}
