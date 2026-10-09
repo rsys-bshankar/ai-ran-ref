@@ -32,6 +32,8 @@ committed `.csar` is stale). Tests, caches and `__pycache__` are left out.
 ├── Files/Sme/{providers,serviceapis,invokers}/*.json   optional   CAPIF registrations
 ├── Files/Dme/{infoproducers,infoconsumers}/*.json      optional   DME type / job declarations
 ├── Files/Acm/definition/compositions.json              optional   ONAP ACM composition (not used)
+├── TOSCA-Metadata/DIGESTS.sha256    optional   signed packages: the sha-256 of every other file (§8)
+├── TOSCA-Metadata/DIGESTS.sha256.sig optional  signed packages: a detached ed25519 signature over DIGESTS.sha256 (§8)
 └── app/, demo.py, …                 free       the rApp's own source (the rApps ship it here)
 ```
 
@@ -44,6 +46,7 @@ committed `.csar` is stale). Tests, caches and `__pycache__` are left out.
 | `Files/Sme/…` | Onboarding → rApp Management | Providers and service APIs are stored raw at onboarding and registered with SME per instance at `bootstrap-complete`. |
 | `Files/Dme/…` | The rApp itself | Declarations the rApp may post to DME when it starts (no reference rApp ships any). Onboarding does not read them. |
 | `Files/Acm/…` | Nothing | An ONAP ACM composition. A package without it onboards identically. |
+| `TOSCA-Metadata/DIGESTS.sha256`, `….sig` | Onboarding, when `ONBOARDING_TRUST_STORE` is set | The package's signature, checked before anything else is read (§8). Without a trust store they are ignored: a signed package onboards as an unsigned one. |
 
 Both extension files are **optional and additive**: a package with neither
 onboards unchanged and its `aiCapabilities` is `null`.
@@ -90,7 +93,7 @@ and tools, and nothing branches on it.
 | `executionModes` | Which of `TRAINING`, `VALIDATION`, `EMULATION`, `INFERENCE` the package supports | Stored; every `runtimeProfiles` key must be one of them | all four | all four | all four | all four |
 | `autonomyModes` | Which of `SHADOW`, `ASSIST`, `AUTONOMOUS` the rApp supports | Stored and exposed only. The mode in force is the rApp *instance's* `autonomyMode`; nothing checks it against this list. | all three | all three | all three | all three |
 | `requiredServices` | Platform services the rApp needs | Stored and exposed only; no deploy-time check | DME, AIMgF, MLMR, MLLF, RAN-NF-OAM | same | same | same |
-| `runtimeProfiles.<MODE>.cpu` | CPU cores for that execution runtime | **Consumed by AIMgF**: sizes the transient NFO runtime for a Training / Validation / Emulation request that names the package (`packageId`); an explicit `runtimeProfile` in the request wins | 8 / 4 / 4 / 2 | 4 / 2 / 2 / 1 | 4 / 2 / 2 / 1 | 4 / 2 / 2 / 1 |
+| `runtimeProfiles.<MODE>.cpu` | CPU cores for that execution runtime | **Consumed by AIMgF**: sizes the transient NFO runtime for a Training / Validation / Emulation request that names the package (`packageId`); an explicit `runtimeProfile` in the request wins. It reaches the NFO descriptor twice: as written (`workloadTemplate.resources`) and as Kubernetes requests and limits (`workloadTemplate.containerResources`, §3.2) | 8 / 4 / 4 / 2 | 4 / 2 / 2 / 1 | 4 / 2 / 2 / 1 | 4 / 2 / 2 / 1 |
 | `runtimeProfiles.<MODE>.memory` | Memory (string, e.g. `16Gi`) | as `cpu` | 16Gi / 8Gi / 8Gi / 4Gi | 8Gi / 4Gi / 4Gi / 2Gi | same as MO | same as MO |
 | `runtimeProfiles.<MODE>.gpu` | GPUs | as `cpu` | 0 in every mode | 0 | 0 | 0 |
 | `name`, `version`, `vendor`, `ownerTeam`, `description`, `useCase`, `domain`, `deploymentModel` | Package description from the Wave 10 package proposal | Descriptive. Identity is taken from the ASD (§2), not from here. | set; `useCase: Energy Saving`, `deploymentModel: NonRT-RIC` | set | set | set |
@@ -105,7 +108,7 @@ package failure (`FAILED`):
 - a mode must be one of the four execution modes;
 - when `executionModes` is declared, every profile mode must appear in it;
 - `cpu` and `gpu` must be non-negative numbers (booleans are refused);
-- `memory` is kept as a string, unchecked.
+- `memory` is kept as a string and must be a Kubernetes quantity (`16Gi`, `512Mi`, `4G`, `1.5Gi`, `129e6`): it becomes a container limit (§3.2), and a value such as `16 GB` would be an invalid pod spec. A package whose memory is not one fails onboarding. (Until release 0.7.0 `memory` was not checked.)
 
 ### 3.1 `operatorUi`: the page a rApp declares
 
@@ -173,6 +176,19 @@ Why a package leaves a parameter out:
   The manifests do not record why.
 - `gpu: 0` everywhere: the reference models are small (threshold / regression),
   see each rApp's `app/model/`.
+
+### 3.2 From the profile to CPU and memory limits (PR-RAPP-2.1)
+
+What was there before: AIMgF copied the profile as written, `{cpu, memory, gpu}`, into `workloadTemplate.resources` of the NFO descriptor it creates for a Training, Validation, Emulation or Inference runtime; NFO stores a descriptor's `workloadTemplate` and nothing reads `resources` (there is no deployment manager behind NFO). The descriptor Onboarding creates for the package itself carried only `toscaEntryDefinitions`, so the manifest's profiles never reached it.
+
+What there is now (`shared/smo_shared/runtime_resources.py`): the same descriptors also carry the Kubernetes `resources:` block of a container, ready to apply.
+
+| Descriptor | Key | Value |
+|---|---|---|
+| AIMgF's, per runtime | `workloadTemplate.containerResources` | `{requests: {cpu, memory}, limits: {cpu, memory}}` for that runtime's profile |
+| Onboarding's, per package | `workloadTemplate.containerResourcesByMode` | `{TRAINING: {requests, limits}, …}` for each mode of the manifest's `runtimeProfiles` that sets a CPU or memory |
+
+The profile `{cpu: 4, memory: 8Gi, gpu: 0}` becomes `{requests: {cpu: "4", memory: 8Gi}, limits: {cpu: "4", memory: 8Gi}}`. Requests equal limits (the pod is `Guaranteed`: a runtime that asks for less than it may use is the one a busy node squeezes). A fractional CPU is written in millicores (`0.5` is `500m`); a zero or an absent value sets nothing for that resource, and a descriptor with nothing to set has no such key. **GPUs are not mapped**: the resource name is vendor specific and where a GPU runs is NFO's decision through `requiredResourceTypeId`. `workloadTemplate.resources` is unchanged. AIMgF's explicit `runtimeProfile.memory` must be a quantity too (422 otherwise). Nothing applies the block yet: that is what a real deployment manager behind NFO would do (`nfo/README.md`, "No real runtime").
 
 ## 4. `capabilities.yaml`
 
@@ -252,14 +268,16 @@ error from the create call (the answer to `POST /packages` carries the reason as
 | Location does not end in `.csar` | `NamingValidator` check |
 | Not a zip, or `TOSCA-Metadata/TOSCA.meta` or the entry definitions file is missing, or no `Entry-Definitions:` line | `_validate_package` |
 | Invalid YAML in `manifest.yaml` or `capabilities.yaml` | `_parse_ai_capabilities` |
-| Invalid `runtimeProfiles` (§3) | `_validate_runtime_profiles` |
+| Invalid `runtimeProfiles` (§3), a `memory` that is not a Kubernetes quantity included | `_validate_runtime_profiles` |
+| `TOSCA.meta` without an `Entry-Definitions:` line | `validate_package_bytes` (a bare `next()` raised `StopIteration` here before 0.7.0, which nothing caught) |
+| A signature or digest list that does not verify against `ONBOARDING_TRUST_STORE`, no signature while `ONBOARDING_REQUIRE_SIGNED_PACKAGES` is on, or a trust store that cannot be used (§8). `failureReason` begins `package signature: ` or `the trust store cannot be used` | `verify_signature`, `_signing_policy` |
 | Invalid `operatorUi` (§3.1): unknown kind, key or version, a `source` that is not a GET, a route with `..`, a limit exceeded, a duplicate id | `smo_shared.operator_ui.validate_operator_ui`, called by `_parse_ai_capabilities`. The message is in `failureReason` of the `202` answer and in the log |
 | Malformed JSON under `Files/Sme/` | `_parse_sme_declarations` (`JSONDecodeError`) |
 | Location unreachable (HTTP error fetching the CSAR) | `_validate_package` |
 | NFO refuses the descriptor | `_create_nf_deployment_descriptor` |
 
-The package signature check is an internal-consistency check, not
-verification against a trust anchor (see [`../../SECURITY.md`](../../SECURITY.md)).
+The code is `onboarding/app/package_validation.py` (the part that needs no database or web framework, which the conformance pack runs offline) and
+`onboarding/app/main.py` (the fetch, the policy, NFO). Signatures: §8.
 
 ## 7. Authoring checklist
 
@@ -271,3 +289,75 @@ verification against a trust anchor (see [`../../SECURITY.md`](../../SECURITY.md
 4. In `capabilities.yaml` declare exactly the SDK namespaces your code calls. To give the rApp its own operator page, add `operatorUi` to the manifest (§3.1; `smo_sdk.operator_ui` builds and checks it).
 5. Rebuild with `python3 samples/build_csar.py <name>` and run
    `PYTHONPATH=shared python -m pytest tests_integration/ -q`.
+6. Check the package the way Onboarding will, without a stack: `python -m conformance.rapp package my-rapp.csar` (§9). Sign it for an operator who requires signatures: §8.
+
+## 8. Signing a package (PR-RAPP-1)
+
+A signed package lets an operator accept only packages from publishers it has chosen, and notice a package that was changed after the publisher signed it. It is off unless the operator configures it: with `ONBOARDING_TRUST_STORE` unset nothing about onboarding changes, signed packages included.
+
+**What is signed.** Two extra entries in the zip:
+
+| Entry | Content |
+|---|---|
+| `TOSCA-Metadata/DIGESTS.sha256` | One line per file of the package other than these two: `<sha-256 hex>  <path>`, sorted by path. `build_csar.py` and `scripts/csar_sign.py` write it |
+| `TOSCA-Metadata/DIGESTS.sha256.sig` | `{"version": 1, "algorithm": "ed25519", "keyId": "<sha-256 of the public key's 32 raw bytes, hex>", "signature": "<base64>"}`: an ed25519 signature over the exact bytes of the digest list |
+
+Signing is deterministic, so the same sources and key give the same bytes (the integration suite relies on it). Algorithm: ed25519 from `cryptography`, already in the hashed lock through `pyjwt[crypto]`: no dependency was added and the lock was not recompiled. cosign is not used (§8.4).
+
+**Trust store.** `ONBOARDING_TRUST_STORE` is a path inside the Onboarding container: one PEM public-key file, or a directory of `<publisher>.pub` / `<publisher>.pem`. The publisher is the **file name** (`acme.pub` is `acme`; several keys in one file are `acme`, `acme#2`), never anything the package says about itself. The store is read for each package: add a key and the next package sees it. An unusable store (missing, empty, a file that is not an ed25519 public key) fails the package with the reason; it never falls back to checking nothing. Compose: set `ONBOARDING_TRUST_STORE=/run/rapp-trust` and mount your directory there with a `docker-compose.override.yml` (`volumes: ["./rapp-trust:/run/rapp-trust:ro"]` under `onboarding`). Kubernetes: `rappSigning.trustStoreConfigMap` (`deploy/helm/smo/README.md`).
+
+**What Onboarding does** (`verify_signature`, before the package is parsed):
+
+| Package | No trust store, policy off (default) | Trust store set | Trust store set and `ONBOARDING_REQUIRE_SIGNED_PACKAGES=true` |
+|---|---|---|---|
+| Unsigned | onboards, `signatureVerified: true` (the old meaning: validated) | onboards, `signatureVerified: false` | refused: `package signature: the package is not signed` |
+| Signed, verifies | onboards, `signatureVerified: true`, nothing checked | onboards, `signatureVerified: true`, the publisher is logged | onboards, as before |
+| Signed, does not verify | onboards (nothing is checked) | refused | refused |
+
+With the policy on and no trust store, every package is refused (`signed packages are required ... but no trusted publisher keys are configured`): a misconfiguration must not mean "accept everything".
+
+A package that does not verify is refused with the rule it broke (`failureReason` of the `202` answer, `package signature: …`):
+
+| Case | Message (shortened) |
+|---|---|
+| A file changed after signing | `file modified after signing: manifest.yaml does not match its signed digest` |
+| A file added | `file added to the package: payload.py is not covered by the signed digest list` |
+| A file removed | `file removed from the package: manifest.yaml is in the signed digest list but not in the package` |
+| The digest list rewritten | `the signature does not verify under the key of publisher acme (the digest list was altered, or it was signed with another key)` |
+| Signed with another key but naming a trusted key id | the same |
+| Signed by a key not in the store | `unknown publisher: the package is signed with key 598ee6466e59f4c7..., which is not in the trust store` |
+| A digest list without a signature, a signature without a list, a malformed one, an entry listed twice, a path with `..` | `no signature`, `malformed`, … |
+
+`signatureVerified` is true only when a signature verified against the trust store, **once a trust store is configured**. With none it keeps its old meaning (the package validated), so nothing changes for an operator who sets nothing; the value will mean "verified against a key" only at the release that makes the trust store mandatory. The publisher is not stored (that would be a column, a migration); it is in Onboarding's log.
+
+### 8.1 Signing your own package
+
+```bash
+python scripts/csar_sign.py keygen --out my-publisher      # my-publisher.key.pem (private: a secret store) and my-publisher.pub (give it to the operators)
+python scripts/csar_sign.py sign my-rapp.csar --key my-publisher.key.pem
+python scripts/csar_sign.py verify my-rapp.csar --trust my-publisher.pub     # exactly Onboarding's check
+python scripts/csar_sign.py digests my-rapp.csar                             # what the files hash to, and whether it is signed
+```
+
+`samples/build_csar.py` builds and signs a sample (`--key`, `--unsigned`). Re-signing a signed package replaces its signature. Key rotation: put the new `.pub` in the store beside the old one, publish with the new key, remove the old file when no package signed with it should be accepted.
+
+### 8.2 The demo key: never trust it in production
+
+The four committed sample packages are signed with a **demo publisher** key whose **private half is committed** under `samples/demo-signing/` (`demo-publisher.seed`), so that the signing path can be shown and tested without generating a key. Anyone who reads the repository can sign a package that verifies against `demo-publisher.pub`. Trust it in a lab, a demo or a test; **never put `demo-publisher.pub` in the trust store of a deployment that matters**, and never reuse the key. It is the only private key in the repository (`tests_integration/test_rapp_signing.py` fails if another appears) and is kept as a one-line seed rather than a PEM block so that secret scanners do not mistake it for a leak. See `samples/demo-signing/README.md`.
+
+### 8.3 What a signature does not give
+
+* **No identity beyond a file name.** There is no certificate chain, no expiry, no revocation list: removing the key file is the revocation, and it applies to the next package, not to ones already onboarded.
+* **No transparency log, no timestamp**: a signature does not say when a package was signed, and an old signed package can be replayed (onboarding it again is refused only when an identical one is already onboarded).
+* **It covers the files, not their meaning.** A signed package can still be a bad rApp; the signature says who vouches for it and that it is unchanged.
+* **Not checked after onboarding.** The check happens when the package is fetched. A package already `AVAILABLE` stays so if the trust store later loses its key.
+
+### 8.4 Not taken
+
+* **cosign** (keyless or key-based): not available in the session that built this, and the keyless form needs a transparency log and an identity provider that an air-gapped operator does not have. A cosign signature could be added beside the ed25519 one later; the digest list does not change.
+* **X.509 / CMS signatures as in the TOSCA CSAR specification** (a certificate and a signature block in `TOSCA.meta`): a certificate chain is the right answer for a public marketplace of rApps, which this is not; an operator-held list of publisher keys is what the rest of this build does (invokers, enrolment).
+* **Storing the publisher** on the package row (a migration, and the GUI to show it).
+
+## 9. Checking a package before you ship it (PR-RAPP-3)
+
+`python -m conformance.rapp package my-rapp.csar [--trust DIR] [--require-signed]` runs Onboarding's own validation code (`onboarding/app/package_validation.py`) on the file, file by file, and adds advice (a missing version in the ASD, a test suite shipped, a private key inside, an execution mode with no runtime profile). `python -m conformance.rapp runtime …` takes the package through onboard, register, heartbeat, R1 usage and terminate on a running stack. Both write `report.json` and `report.md`. The checks and the limits: [`../conformance/rapp/README.md`](../conformance/rapp/README.md).

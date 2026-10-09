@@ -26,6 +26,7 @@ from smo_shared.r1_client import R1Client
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id
+from smo_shared.runtime_resources import container_resources
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.webhook import is_safe_webhook_destination
 from smo_shared.versioning import install_concurrency_handler
@@ -160,9 +161,15 @@ def _create_nf_deployment_descriptor(pkg: ApplicationPackage, entry_definitions:
     reference to the entry definitions rather than a fully parsed TOSCA
     node template.
     """
+    workload: dict = {"toscaEntryDefinitions": entry_definitions}
+    # PR-RAPP-2.1: the manifest's CPU and memory per execution mode as the container resources a deployment manager applies (smo_shared/runtime_resources.py);
+    # absent for a package with no runtimeProfiles, so its descriptor is what it was
+    by_mode = {mode: resources for mode, profile in ((pkg.ai_capabilities or {}).get("runtimeProfiles") or {}).items() if (resources := container_resources(profile))}
+    if by_mode:
+        workload["containerResourcesByMode"] = by_mode
     resp = R1Client().post("/nfo/descriptors", json={
         "packageId": str(pkg.package_id), "name": entry_definitions,
-        "workloadTemplate": {"toscaEntryDefinitions": entry_definitions},
+        "workloadTemplate": workload,
     })
     if resp.status_code != 201:
         raise DescriptorCreationFailed(f"NFO CreateDescriptor returned {resp.status_code}")

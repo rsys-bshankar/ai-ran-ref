@@ -161,7 +161,7 @@ and HA much later).
 | Management functions | `PR-MGT` | MGT-1 CM history/rollback · MGT-2 MSAC reach · MGT-3 dry-run · MGT-4 change windows · MGT-5 canary · MGT-6 drift · MGT-7 plan mgmt · MGT-8 alarm lifecycle · MGT-9 correlation · MGT-10 topology RCA · MGT-11 KPI engine · MGT-12 PM at scale · MGT-13 trace/QoE · MGT-14 zero-touch · MGT-15 SW campaigns · MGT-16 intent conflicts · MGT-17 SO saga · MGT-18 SLA assurance |
 | Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
 | AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
-| rApp ecosystem | `PR-RAPP` | RAPP-1 signing · RAPP-2 sandbox · RAPP-3 conformance pack · RAPP-4 Java/Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
+| rApp ecosystem | `PR-RAPP` | RAPP-1 signing (done) · RAPP-2 sandbox (RAPP-2.2 open) · RAPP-3 conformance pack (done) · RAPP-4 Java/Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
 | GUI | `PR-GUI` | GUI-1 live updates · GUI-2 alarm console · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n · GUI-7 approval inbox |
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
@@ -1122,30 +1122,19 @@ Current state, checked: AIMgF training, validation, emulation and inference jobs
 
 #### PR-RAPP-1 — CSAR signing
 
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| RAPP-1.1 | Digest list of every file in the package | `build_csar.py` writes it | – |
-| RAPP-1.2 | Detached signature (ed25519 or cosign) in the CSAR | Signature present | RAPP-1.1 |
-| RAPP-1.3 | Trust store: accepted publisher keys from config | Config test | – |
-| RAPP-1.4 | Verify in Onboarding validation | Tampered file rejected | RAPP-1.2, RAPP-1.3 |
-| RAPP-1.5 | Policy flag: require signed packages | Unsigned rejected when on | RAPP-1.4 |
-| RAPP-1.6 | Sign the committed sample CSARs | Integration test keeps passing | RAPP-1.2 |
+Closed (`HISTORY.md` PR-RAPP-1): digest list, ed25519 signature, trust store, verification in Onboarding, the `ONBOARDING_REQUIRE_SIGNED_PACKAGES` flag, the signed samples and `scripts/csar_sign.py`. What it deliberately does not do (cosign, certificates, revocation, a stored publisher, a mandatory trust store) is in that entry and in `docs/RAPP_PACKAGING.md` section 8.
 
 #### PR-RAPP-2 — Runtime sandbox
 
+RAPP-2.1 and RAPP-2.3 are closed (`HISTORY.md` PR-RAPP-2a). What is open:
+
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| RAPP-2.1 | Manifest runtime profile becomes CPU and memory limits in the NFO descriptor (confirm current mapping) **(verify)** | Descriptor shows them | – |
 | RAPP-2.2 | Pod `securityContext` (non-root, no privilege escalation) | Pod spec shows it | SB-16.2 |
-| RAPP-2.3 | Egress NetworkPolicy: rApp may reach R1 only | Other egress refused | OPS-2.6 |
 
 #### PR-RAPP-3 — Conformance pack
 
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| RAPP-3.1 | Offline package validator CLI reusing Onboarding validation | Passes on samples | – |
-| RAPP-3.2 | Runtime checks: register, heartbeat, R1 usage, terminate | Pass on a sample rApp | RAPP-3.1 |
-| RAPP-3.3 | Report file | Generated | RAPP-3.2 |
+Closed (`HISTORY.md` PR-RAPP-3): the offline validator, the runtime checks and the report. The CI step that runs it against the compose stack was written without docker: confirm it on its first run.
 
 #### PR-RAPP-4 — Java or Go SDK
 

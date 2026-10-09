@@ -2477,6 +2477,7 @@
           "memory": {
             "anyOf": [
               {
+                "pattern": "^[0-9]+(\\.[0-9]+)?([EPTGMk]i?|m|[eE][+-]?[0-9]+)?$",
                 "type": "string"
               },
               {

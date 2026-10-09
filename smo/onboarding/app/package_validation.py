@@ -18,6 +18,7 @@ import yaml
 
 from smo_shared import csar_signing
 from smo_shared.operator_ui import OperatorUiInvalid, validate_operator_ui
+from smo_shared.runtime_resources import is_quantity
 
 
 class PackageValidationFailed(Exception):
@@ -163,6 +164,10 @@ def _validate_runtime_profiles(profiles, execution_modes) -> dict:
                 clean[field] = profile[field]
         if "memory" in profile:
             clean["memory"] = str(profile["memory"])
+            # PR-RAPP-2.1: the memory becomes a container limit in the NFO descriptor, so it must be a Kubernetes quantity (16Gi, 512Mi, 4G); anything else
+            # (`16 GB`, a bool) would be an invalid pod spec on the day a deployment manager applies it
+            if isinstance(profile["memory"], bool) or not is_quantity(clean["memory"]):
+                raise PackageValidationFailed(f"runtimeProfiles.{mode}.memory must be a Kubernetes quantity such as 4Gi, 512Mi or 4G, not {clean['memory'][:40]!r}")
         out[mode] = clean
     return out
 
@@ -251,11 +256,15 @@ def _carries_signing_entries(data: bytes) -> bool:
 def validate_package_bytes(data: bytes, location: str, *, trust: "csar_signing.TrustStore | None" = None,
                            require_signed: bool = False) -> tuple[str, list[tuple[str, str]], str, dict]:
     """Open TOSCA-Metadata/Definitions/Artifacts of a fetched CSAR, per Onboarding LLD section 1: (entry definitions, artifacts, integrity hash, identity).
-    `location` is only used to give each artifact its access URL. The signature is checked first (a tampered package is not parsed); see verify_signature."""
+    `location` gives each artifact its access URL and must end in `.csar` (NamingValidator). The signature is checked first (a tampered package is not parsed); see verify_signature."""
+    if not location.endswith(".csar"):
+        raise PackageValidationFailed(f"package location {location!r} does not end with .csar")
     signature = verify_signature(data, trust, require_signed)
     with zipfile.ZipFile(BytesIO(data)) as z:
         meta = z.read("TOSCA-Metadata/TOSCA.meta").decode()
-        entry_line = next(l for l in meta.splitlines() if l.startswith("Entry-Definitions:"))
+        entry_line = next((l for l in meta.splitlines() if l.startswith("Entry-Definitions:")), None)
+        if entry_line is None:       # a bare next() raised StopIteration here, which no caller catches
+            raise PackageValidationFailed("TOSCA-Metadata/TOSCA.meta has no Entry-Definitions: line")
         entry_definitions = entry_line.split(":", 1)[1].strip()
         identity: dict[str, Any] = _asd_identity(z.read(entry_definitions).decode(errors="replace"))  # raises KeyError if missing/malformed
         artifacts = [(n, f"{location}#{n}") for n in z.namelist() if n.startswith("Artifacts/") and not n.endswith("/")]

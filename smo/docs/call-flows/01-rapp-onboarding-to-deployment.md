@@ -20,7 +20,7 @@ sequenceDiagram
 
     Operator->>Onb: OnboardPackage(location)
     Onb->>Onb: fetch .csar, open TOSCA-Metadata/TOSCA.meta
-    Onb->>Onb: resolve Entry-Definitions, verify signature (dev cert)
+    Onb->>Onb: verify signature against ONBOARDING_TRUST_STORE (when set), resolve Entry-Definitions
     Onb->>Onb: state: ONBOARDING -> AVAILABLE (or FAILED)
     Onb-->>Operator: packageId, state=AVAILABLE
 

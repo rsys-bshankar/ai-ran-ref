@@ -47,6 +47,7 @@ from sqlalchemy.orm import Session
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
 from smo_shared.health import database_check, install_health, sme_token_check
+from smo_shared.runtime_resources import QUANTITY_PATTERN, container_resources
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
@@ -180,7 +181,7 @@ class RuntimeProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     cpu: float | None = Field(default=None, ge=0)
-    memory: str | None = None
+    memory: str | None = Field(default=None, pattern=QUANTITY_PATTERN)     # PR-RAPP-2.1: a Kubernetes quantity (4Gi, 512Mi), as the manifest's
     gpu: float | None = Field(default=None, ge=0)
 
 
@@ -318,6 +319,8 @@ def _nfo_create_execution_descriptor(job_kind: str, job_id: uuid.UUID, runtime_p
     workload: dict[str, Any] = {"jobKind": job_kind, "jobId": str(job_id)}
     if runtime_profile:
         workload["resources"] = runtime_profile  # Wave 7 (W7-03): the mode's runtime profile
+        if container := container_resources(runtime_profile):
+            workload["containerResources"] = container  # PR-RAPP-2.1: the same as Kubernetes requests and limits
     resp = _r1.post("/nfo/descriptors", json={
         "packageId": None, "name": f"aimgf-{job_kind.lower()}-{job_id}", "workloadTemplate": workload,
     })
@@ -1159,6 +1162,8 @@ def _nfo_create_descriptor(model_id: uuid.UUID, runtime_profile: dict | None = N
     workload: dict[str, Any] = {"modelId": str(model_id), "jobKind": "INFERENCE"}
     if runtime_profile:
         workload["resources"] = runtime_profile  # Wave 7 (W7-03): the INFERENCE runtime profile
+        if container := container_resources(runtime_profile):
+            workload["containerResources"] = container  # PR-RAPP-2.1: the same as Kubernetes requests and limits
     resp = _r1.post("/nfo/descriptors", json={
         "packageId": None, "name": f"aimgf-model-{model_id}-runtime", "workloadTemplate": workload,
     })
