@@ -59,6 +59,7 @@ from . import lifecycle
 from . import mo_tree
 from . import topology
 from . import yang_payload
+from . import ves
 from . import kpi, kpi_formula
 from . import netconf_tls
 from . import restconf_client
@@ -90,6 +91,18 @@ install_concurrency_handler(app)  # a stale write (PR-ST-2) is a 409, not a 500
 app.include_router(msac.router)
 apply_r1_gateway_security(app)
 apply_correlation_id(app)
+
+_r1_openapi = app.openapi
+
+
+def _openapi_with_ves_scheme() -> dict:
+    """SB-7.5: the VES listener is the one route that is not behind the R1 bearer token (an O1 adaptor posts to it directly, with HTTP Basic), so the document names that scheme."""
+    schema = _r1_openapi()
+    schema["components"]["securitySchemes"]["vesBasicAuth"] = {"type": "http", "scheme": "basic"}
+    return schema
+
+
+app.openapi = _openapi_with_ves_scheme  # type: ignore[method-assign]
 
 MISSED_HEARTBEAT_THRESHOLD = datetime.timedelta(seconds=90)
 
@@ -254,6 +267,54 @@ def _valid_refs(*refs: str | None) -> None:
             check_ref(ref)
         except ValueError as exc:
             raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=str(exc)) from exc
+
+
+def _msac_reach() -> bool:
+    """MGT-2: `RAN_NF_OAM_MSAC_REACH` (off by default). On, the TS 28.319 access rules that guard CM writes also guard the reads and the other changes listed in
+    `_require_msac`'s callers. Off, nothing below is asked: an Identity or Role that exists for writes does not begin to refuse reads on upgrade. Read at each call."""
+    return os.environ.get("RAN_NF_OAM_MSAC_REACH", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _require_msac(db: Session, request: Request, operation: str, managed_element_ref: str, managed_function_ref: str | None = None) -> None:
+    """MGT-2: 403 `MSAC_ACCESS_DENIED` when the caller is a managed identity (an Identity of that name is registered, `POST /msac/identities`) and no AccessRule of its roles
+    allows `operation` on the target (`msac.authorize`: DENY beats ALLOW, no rule means refused). The caller is the invoker id the gateway vouches for (`invoker_id`), not
+    a name or role it sends: a read has no `requestedBy`, and a role named by the caller itself would let a restricted identity pick a wider one. A caller that is not a
+    registered Identity (an operator's tool, an rApp with no Identity, a call that did not come through the gateway) is not asked anything, as for writes. Nothing is
+    checked unless `RAN_NF_OAM_MSAC_REACH` is on."""
+    if not _msac_reach():
+        return
+    requester = invoker_id(request)
+    if requester is None:
+        return
+    managed, roles = msac.resolve_roles(db, requester, None)
+    if not managed:
+        return
+    _valid_refs(managed_element_ref, managed_function_ref)
+    target = msac.target_path(managed_element_ref, managed_function_ref)
+    if not msac.authorize(db, roles, target, operation):
+        raise framework_error(FrameworkError.MSAC_ACCESS_DENIED, detail=f"{requester} is not permitted: {operation} {target}")
+
+
+def _require_msac_everywhere(db: Session, request: Request, operation: str) -> None:
+    """MGT-2.5: as `_require_msac`, for a call that is not about one element but all of them (a file subscription gets every file's notice): the target is the root, which only
+    a rule on `/*` selects, so an identity allowed on part of the network is refused."""
+    if not _msac_reach():
+        return
+    requester = invoker_id(request)
+    managed, roles = msac.resolve_roles(db, requester, None) if requester else (False, [])
+    if managed and not msac.authorize(db, roles, "/", operation):
+        raise framework_error(FrameworkError.MSAC_ACCESS_DENIED, detail=f"{requester} is not permitted: {operation} /")
+
+
+def _unreadable_elements(db: Session, request: Request, column) -> list[str]:
+    """MGT-2.5: the elements named in `column` (of the rows a route would list) that a managed caller may not read; none for a caller that is not asked."""
+    if not _msac_reach():
+        return []
+    requester = invoker_id(request)
+    managed, roles = msac.resolve_roles(db, requester, None) if requester else (False, [])
+    if not managed:
+        return []
+    return [ref for ref in db.scalars(select(column).distinct()).all() if not msac.authorize(db, roles, msac.target_path(ref, None), "read")]
 
 
 class KpiGuard(BaseModel):
@@ -1024,6 +1085,7 @@ def read_configuration(managed_element_ref: str, request: Request, managed_funct
     PR-SEC-10.5: a caller whose scope claim does not cover the element (or that names one that is not registered) gets 403 `SCOPE_DENIED`, before anything
     is read from the NF; an unscoped caller is not asked anything."""
     scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])
+    _require_msac(db, request, "read", managed_element_ref, managed_function_ref)         # MGT-2.1
     me = db.get(ManagedEntity, managed_element_ref)
     if me is None:      # an element that does not exist is a 404; 503 is for one that is known and cannot be reached (found by the authenticated DAST scan, V-7d)
         raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
@@ -1048,6 +1110,7 @@ def read_configuration_history(managed_element_ref: str, request: Request, manag
     """MGT-1.4: what each dispatched write to this element replaced and wrote, newest first (`beforeError` says why a before
     image is missing). Read from `cm_snapshot`; a write rejected before dispatch has no row. 403 `SCOPE_DENIED` for an element outside the caller's scope (SEC-10.5)."""
     scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])
+    _require_msac(db, request, "read", managed_element_ref, managed_function_ref)         # MGT-2.1: the history holds the values the element had
     stmt = select(CMSnapshot).where(CMSnapshot.managed_element_ref == managed_element_ref)
     if managed_function_ref:
         stmt = stmt.where(CMSnapshot.managed_function_ref == managed_function_ref)
@@ -1083,6 +1146,7 @@ def diff_configuration_snapshots(managed_element_ref: str, from_snapshot: uuid.U
     over it (`_image`); the diff is over the attributes either image holds. Only attributes a write named are ever known, so an attribute
     neither snapshot touched is not reported as unchanged. 403 `SCOPE_DENIED` for an element outside the caller's scope (SEC-10.5)."""
     scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])
+    _require_msac(db, request, "read", managed_element_ref)                                # MGT-2.1: read of the element, whichever function the snapshots are of
     first, second = (_snapshot_or_404(db, managed_element_ref, from_snapshot), _snapshot_or_404(db, managed_element_ref, to_snapshot))
     if first.managed_function_ref != second.managed_function_ref:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
@@ -2308,6 +2372,18 @@ def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, 
     the ME), e.g. `NRCellDU=101`, so a consumer can hold that one cell
     rather than the whole element. Omitted = the element as a whole.
     """
+    alarm = _raise_alarm(db, source_alarm_id=source_alarm_id, managed_element_ref=managed_element_ref, severity=severity,
+                         correlation_group=correlation_group, probable_cause=probable_cause, specific_problem=specific_problem,
+                         root_cause_indicator=root_cause_indicator, correlated_notifications=correlated_notifications,
+                         proposed_repair_actions=proposed_repair_actions, alarm_type=alarm_type, managed_function_ref=managed_function_ref)
+    return {"alarmId": str(alarm.alarm_id)}
+
+
+def _raise_alarm(db: Session, *, source_alarm_id: str, managed_element_ref: str, severity: str, correlation_group: str | None = None,
+                 probable_cause: str | None = None, specific_problem: str | None = None, root_cause_indicator: bool = False,
+                 correlated_notifications: list[uuid.UUID] | None = None, proposed_repair_actions: str | None = None,
+                 alarm_type: str | None = None, managed_function_ref: str | None = None) -> Alarm:
+    """The alarm a new-alarm report makes, shared by `POST /alarms/ingest` and the VES receiver (SB-7.2): the service check, the severity, the refs, the row."""
     require_service(db, managed_element_ref, "FM")  # Wave 9 (W9-01)
     severity = _perceived_severity(severity)
     _valid_refs(managed_element_ref, managed_function_ref)
@@ -2318,7 +2394,7 @@ def ingest_alarm(source_alarm_id: str, managed_element_ref: str, severity: str, 
                   alarm_type=alarm_type)
     db.add(alarm)
     db.commit()
-    return {"alarmId": str(alarm.alarm_id)}
+    return alarm
 
 
 def _get_alarm(db: Session, alarm_id: uuid.UUID, request: Request) -> Alarm:
@@ -2326,6 +2402,7 @@ def _get_alarm(db: Session, alarm_id: uuid.UUID, request: Request) -> Alarm:
     alarm = db.get(Alarm, alarm_id)
     if alarm is None or not scoping.element_permitted(db, scoping.request_scope(request), alarm.managed_element_ref):
         raise framework_error(FrameworkError.ALARM_NOT_FOUND, detail=f"no such alarm {alarm_id}")
+    _require_msac(db, request, "update", alarm.managed_element_ref, alarm.managed_function_ref)       # MGT-2.3: acknowledging or clearing changes the alarm record
     return alarm
 
 
@@ -2376,6 +2453,7 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
     schema (schedule/priority/multi-instance/reportingPeriod) stays out.
     """
     scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])        # PR-SEC-10.6: 403 SCOPE_DENIED outside the caller's scope
+    _require_msac(db, request, "read", managed_element_ref)                                    # MGT-2.2: a subscription is the right to be sent the element's PM
     if db.get(ManagedEntity, managed_element_ref) is None:      # the subscription refers to the element: no element, no subscription (a 404, not the foreign key's 500)
         raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
     require_service(db, managed_element_ref, "PM")  # Wave 9 (W9-01)
@@ -2428,6 +2506,11 @@ def receive_pm_report(body: PmReportRequest, db: Session = Depends(get_session))
     that counter's DME type (`RAN.PMCounters.<counterType>`, registered by
     SubscribePM). Consumers (e.g. the EnergySaving rApp reading
     PRB_UTILIZATION) only ever see DME, never this module."""
+    return _accept_pm_report(db, body)
+
+
+def _accept_pm_report(db: Session, body: "PmReportRequest") -> dict:
+    """The PM report path, shared by `POST /pm-reports` and the VES receiver (SB-7.4): the service check, the subscription check, the fan-out to DME."""
     require_service(db, body.managedElementRef, "PM")
     subscribed = db.scalars(select(PMSubscription).where(PMSubscription.managed_element_ref == body.managedElementRef,
                                                          PMSubscription.counter_type == body.counterType)).first()
@@ -2540,6 +2623,9 @@ def read_file_info(fileDataType: FileDataType, request: Request, beginTime: date
     """TS 28.532 `GET /files`: FileInfo for the files of a data type, selected by
     the time they became available. Paginated like every list here. PR-SEC-10.6: a caller with a scope claim sees only the files of elements inside it."""
     stmt = scoping.scoped_to_elements(select(PMFile), scoping.request_scope(request), PMFile.managed_element_ref).where(PMFile.file_data_type == fileDataType)
+    unreadable = _unreadable_elements(db, request, PMFile.managed_element_ref)                       # MGT-2.5: the files of elements the caller's rules do not let it read are left out
+    if unreadable:
+        stmt = stmt.where(PMFile.managed_element_ref.not_in(unreadable))
     if beginTime:
         stmt = stmt.where(PMFile.file_ready_time >= beginTime)
     if endTime:
@@ -2553,13 +2639,15 @@ def download_pm_file(file_id: uuid.UUID, request: Request, db: Session = Depends
     f = db.get(PMFile, file_id)
     if f is None or not scoping.element_permitted(db, scoping.request_scope(request), f.managed_element_ref):      # PR-SEC-10.6: outside the scope is a 404
         raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such file {file_id}")
+    _require_msac(db, request, "read", f.managed_element_ref)                                          # MGT-2.5
     if f.file_expiration_time and as_utc(f.file_expiration_time) < datetime.datetime.now(datetime.UTC):
         raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"file {file_id} has expired")
     return Response(content=f.content, media_type="application/json")
 
 
 @app.post("/file-subscriptions", status_code=201)
-def create_file_subscription(body: FileSubscriptionRequest, db: Session = Depends(get_session)):
+def create_file_subscription(body: FileSubscriptionRequest, request: Request, db: Session = Depends(get_session)):
+    _require_msac_everywhere(db, request, "read")                                                    # MGT-2.5: it is sent the ready-notice of every file, so it needs to read everything
     sub = FileSubscription(consumer_reference=body.consumerReference, file_data_type=body.fileDataType)
     db.add(sub)
     db.commit()
@@ -2596,7 +2684,8 @@ def stop_dme_job(data_job_id: str):
 
 
 @app.post("/software-management-jobs", status_code=202)
-def software_update(managed_element_ref: str, ru_instance_id: str | None = None, db: Session = Depends(get_session)):
+def software_update(managed_element_ref: str, request: Request, ru_instance_id: str | None = None, db: Session = Depends(get_session)):
+    _require_msac(db, request, "exec", managed_element_ref)                                    # MGT-2.4: a software job runs a procedure on the element
     require_service(db, managed_element_ref, "SWM")  # Wave 9 (W9-01)
     job = lifecycle.start_software_job(db, managed_element_ref, ru_instance_id)
     db.commit()
@@ -2660,6 +2749,11 @@ def endpoint_heartbeat(endpoint_id: uuid.UUID, db: Session = Depends(get_session
     ep = db.get(O1AdaptorEndpoint, endpoint_id)
     if ep is None:
         raise framework_error(FrameworkError.O1_ENDPOINT_NOT_FOUND, detail=f"unknown endpointId {endpoint_id}")
+    return _record_heartbeat(db, ep)
+
+
+def _record_heartbeat(db: Session, ep: O1AdaptorEndpoint) -> dict:
+    """A heartbeat of an endpoint, shared by its route and the VES receiver (SB-7.3): the time, and DISCOVERED or DEGRADED becomes ACTIVE."""
     ep.last_heartbeat_at = datetime.datetime.now(datetime.UTC)
     current = EndpointHealth(ep.health_status) if ep.health_status in EndpointHealth.__members__.values() else EndpointHealth.DISCOVERED
     if current in (EndpointHealth.DISCOVERED, EndpointHealth.DEGRADED):
@@ -2668,6 +2762,111 @@ def endpoint_heartbeat(endpoint_id: uuid.UUID, db: Session = Depends(get_session
     if current == EndpointHealth.DISCOVERED:
         lifecycle.on_first_heartbeat(db, ep.managed_element_ref)       # MGT-14.3: an autoApply onboarding template is written now (never fails the heartbeat)
     return {"endpointId": str(ep.endpoint_id), "healthStatus": ep.health_status}
+
+
+# ---------------------------------------------------------------- VES event receiver (SB-7; the mapping and the schema are in ves.py)
+
+def _ves_listener_auth(request: Request) -> None:
+    ves.authenticate(request.headers.get("authorization"))
+
+
+class VesResult(BaseModel):
+    index: int
+    domain: str
+    outcome: Literal["APPLIED", "PARTIAL", "IGNORED", "REJECTED"]
+    codes: list[str]
+
+
+class VesAnswer(BaseModel):
+    events: int
+    applied: int
+    results: list[VesResult]
+
+
+def _ves_alarm(db: Session, action: ves.AlarmAction) -> tuple[bool, str]:
+    """SB-7.2: raise, update or clear the alarm of one VES fault event. An open alarm of the same element and condition is the same alarm."""
+    if db.get(ManagedEntity, action.managed_element_ref) is None:
+        return False, FrameworkError.MANAGED_ENTITY_NOT_FOUND[0]
+    open_alarm = db.scalars(select(Alarm).where(Alarm.managed_element_ref == action.managed_element_ref, Alarm.source_alarm_id == action.source_alarm_id,
+                                                Alarm.severity != "cleared").order_by(Alarm.raised_at.desc())).first()
+    now = datetime.datetime.now(datetime.UTC)
+    if action.severity is None:
+        if open_alarm is None:
+            return True, "NO_OPEN_ALARM"
+        open_alarm.severity, open_alarm.cleared_at, open_alarm.clear_user_id, open_alarm.changed_at = "cleared", now, "ves", now
+        db.commit()
+        return True, "ALARM_CLEARED"
+    if open_alarm is not None:
+        if open_alarm.severity == action.severity:
+            return True, "ALARM_ALREADY_OPEN"
+        open_alarm.severity, open_alarm.changed_at = action.severity, now
+        db.commit()
+        return True, "ALARM_UPDATED"
+    _raise_alarm(db, source_alarm_id=action.source_alarm_id, managed_element_ref=action.managed_element_ref, severity=action.severity,
+                 probable_cause=action.probable_cause, specific_problem=action.specific_problem)
+    return True, "ALARM_RAISED"
+
+
+def _ves_heartbeat(db: Session, action: ves.HeartbeatAction) -> tuple[bool, str]:
+    """SB-7.3: the heartbeat of the O1 adaptor endpoint of the element the event is from."""
+    me = db.get(ManagedEntity, action.managed_element_ref)
+    if me is None:
+        return False, FrameworkError.MANAGED_ENTITY_NOT_FOUND[0]
+    endpoint = db.get(O1AdaptorEndpoint, me.o1_adaptor_endpoint_id) if me.o1_adaptor_endpoint_id else None
+    if endpoint is None:
+        return False, FrameworkError.O1_ENDPOINT_NOT_FOUND[0]
+    _record_heartbeat(db, endpoint)
+    return True, "HEARTBEAT_RECORDED"
+
+
+def _ves_pm(db: Session, action: ves.PmReport) -> tuple[bool, str]:
+    """SB-7.4: one PM report, by the path `POST /pm-reports` takes (a PM subscription on the counter is needed, as there)."""
+    try:
+        _accept_pm_report(db, PmReportRequest.model_validate({"managedElementRef": action.managed_element_ref, "counterType": action.counter_type,
+                                                              "measurements": action.measurements}))
+    except HTTPException as exc:
+        db.rollback()
+        return False, str(exc.detail["title"]) if isinstance(exc.detail, dict) else "REJECTED"
+    return True, "PM_REPORT_ACCEPTED"
+
+
+def _ves_apply(db: Session, action: ves.Action) -> tuple[bool, str]:
+    try:
+        if isinstance(action, ves.AlarmAction):
+            return _ves_alarm(db, action)
+        if isinstance(action, ves.HeartbeatAction):
+            return _ves_heartbeat(db, action)
+        return _ves_pm(db, action)
+    except HTTPException as exc:                 # a refusal of the shared helpers (a service the element does not offer, a malformed ref): its fixed code, not its text
+        db.rollback()
+        return False, str(exc.detail["title"]) if isinstance(exc.detail, dict) else "REJECTED"
+
+
+@app.post("/ves/eventListener/v7", status_code=202, response_model=VesAnswer, dependencies=[Depends(_ves_listener_auth)],
+          openapi_extra={"security": [{"vesBasicAuth": []}]}, tags=["ves"],
+          responses={400: {"description": "the body is not a VES post: no event or eventList, a header member missing or of the wrong type"},
+                     401: {"description": "no valid Basic credentials"}, 404: {"description": "the listener is not enabled (no password configured)"}})
+@app.post("/ves/eventListener/v7/eventBatch", status_code=202, response_model=VesAnswer, dependencies=[Depends(_ves_listener_auth)],
+          openapi_extra={"security": [{"vesBasicAuth": []}]}, tags=["ves"], include_in_schema=False)
+def receive_ves_events(body: ves.VesEnvelope, db: Session = Depends(get_session)):
+    """SB-7.1: a VES event (`{"event": {...}}`) or a batch (`{"eventList": [...]}`) from an O1 adaptor, HTTP Basic (SB-7.5). The whole post is checked first (a header that
+    is not a VES `commonEventHeader` is a 400 and nothing is applied); then each event is applied on its own and the 202 says what became of it: `APPLIED`,
+    `PARTIAL` (a measurement event with several reports, some refused), `IGNORED` (a domain this receiver does not map) or `REJECTED` (an unknown element, a PM report
+    with no PM subscription, a service the element does not offer), each with fixed codes. A refused event does not stop the others, and is not a 4xx: the sender
+    would send it again for ever. Not behind the R1 gateway; see `ves.py`."""
+    parsed = ves.parse_events(ves.events_of(body))
+    results = []
+    for event in parsed:
+        try:
+            actions = ves.actions_for(event)
+        except ves.Unsupported as why:
+            results.append(VesResult(index=event.index, domain=event.header.domain, outcome="IGNORED", codes=[why.reason]))
+            continue
+        done = [_ves_apply(db, action) for action in actions]
+        ok = sum(1 for good, _ in done if good)
+        results.append(VesResult(index=event.index, domain=event.header.domain, outcome="APPLIED" if ok == len(done) else ("PARTIAL" if ok else "REJECTED"),
+                                 codes=sorted({code for _, code in done})))
+    return VesAnswer(events=len(results), applied=sum(1 for r in results if r.outcome in ("APPLIED", "PARTIAL")), results=results)
 
 
 def _alarm_view(a: Alarm) -> dict:
@@ -2735,6 +2934,7 @@ def subscribe_fm(managed_element_ref: str, delivery_method: str, request: Reques
     operator, unaffected by whether FM is DME-registered.
     """
     scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])        # PR-SEC-10.6: 403 SCOPE_DENIED outside the caller's scope
+    _require_msac(db, request, "read", managed_element_ref)                                    # MGT-2.2: a subscription is the right to be sent the element's alarms
     if db.get(ManagedEntity, managed_element_ref) is None:      # the subscription refers to the element: no element, no subscription (a 404, not the foreign key's 500)
         raise framework_error(FrameworkError.MANAGED_ENTITY_NOT_FOUND, detail=f"no managed element {managed_element_ref!r}")
     require_service(db, managed_element_ref, "FM")  # Wave 9 (W9-01)
