@@ -593,6 +593,52 @@ jobs:
         working-directory: smo
         run: docker compose down -v
 
+  # PR-OBS-3.6, PR-OBS-6.4: the compose `tracing` and `logging` profiles run for real. The modules are built with the OpenTelemetry packages and send spans to
+  # Tempo; Fluent Bit ships the containers' logs to Loki; scripts/obs_smoke.py makes one request through the gateway and finds its trace in Tempo, its log line in
+  # Loki, and checks Grafana's provisioned data sources. This is the only place the images in smo/docker-compose.yml's observability services are started.
+  obs-stack:
+    name: Tracing and logging profiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Create the secret files and .env
+        working-directory: smo
+        run: |
+          scripts/init_secrets.sh
+          cp .env.example .env
+
+      - name: docker compose --profile tracing --profile logging up --build
+        working-directory: smo
+        env:
+          GUI_COOKIE_SECURE: "false"
+          SMO_WITH_TRACING: "1"
+          SMO_OTEL_ENDPOINT: http://tempo:4318
+        run: |
+          docker compose --profile tracing --profile logging config --quiet
+          docker compose --profile tracing --profile logging up -d --build
+          for i in $(seq 1 60); do
+            [ "$(docker compose ps -a migrate --format json | jq -rs '.[0] | "\(.State) \(.ExitCode)"')" = "exited 0" ] && break
+            sleep 3
+          done
+
+      - name: Trace in Tempo, log line in Loki, Grafana data sources OK
+        working-directory: smo
+        run: docker compose exec -T r1-termination python3 - < scripts/obs_smoke.py
+
+      - name: Dump logs on failure
+        if: failure()
+        working-directory: smo
+        run: |
+          docker compose --profile tracing --profile logging ps -a
+          docker compose --profile tracing --profile logging logs --no-color --tail=300 tempo loki fluent-bit grafana
+
+      - name: Tear down
+        if: always()
+        working-directory: smo
+        run: docker compose --profile tracing --profile logging down -v
+
   # PR-SEC-2: mutual TLS between the services (docker-compose.mtls.yml). Every service requires a client certificate from the development CA
   # (scripts/mtls_certs.py), every call between modules presents one, and the whole runbook replays over it; a client with no certificate, or with one
   # from another CA, is refused by every service, and plain http gets no answer.
