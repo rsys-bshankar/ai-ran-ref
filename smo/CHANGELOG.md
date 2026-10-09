@@ -5,6 +5,9 @@ Entries are written for an operator: what changed in behaviour, configuration or
 
 ## [Unreleased]
 
+### Added
+- **A CI lane that starts the tracing and logging profiles (`PR-OBS-3.6`, `PR-OBS-6.4`).** Job "Tracing and logging profiles" builds the modules with the OpenTelemetry packages, starts `--profile tracing --profile logging` and runs `scripts/obs_smoke.py`: one request through the gateway, its trace found by id through Tempo's API, its log line (shipped by Fluent Bit) found through Loki's API, and Grafana's provisioned Tempo and Loki data sources reporting OK. The lane and the script were written without docker: confirm them on their first run, and read a failure there as a finding about the observability configuration files or image versions, not about the script, until proven otherwise. Nothing changes for a deployment.
+
 ## [0.7.0] - 2026-10-09
 
 The platform learns who an rApp may act on, and what it has to ask first. A signed and checked rApp package, a person's approval before an rApp's change is written (with a record of why, hashed into the audit chain), and a region and tenant an rApp is held to; rApps can now be written in Go and Java; a new element can be set up from a template and software can be rolled out in waves with a health gate; RAN NF OAM takes VES events; and Postgres can be reached over verified TLS. Everything is opt-in: nothing changes on upgrade until you set it. A few things are stand-ins and are named under *Known limitations*.
