@@ -32,6 +32,8 @@ STATE_COLUMNS = {
     ("software_management_job", "status"): ("ran-nf-oam/app/statemachine.py", "SwmState"),
     ("software_management_job", "phase"): ("ran-nf-oam/app/statemachine.py", "SwmPhase"),
     ("o1_adaptor_endpoint", "health_status"): ("ran-nf-oam/app/statemachine.py", "EndpointHealth"),
+    ("element_onboarding", "status"): ("ran-nf-oam/app/statemachine.py", "OnboardingState"),
+    ("software_campaign", "status"): ("ran-nf-oam/app/statemachine.py", "CampaignState"),
     ("nf_deployment", "state"): ("nfo/app/statemachine.py", "DeploymentState"),
     ("application_package", "state"): ("onboarding/app/statemachine.py", "PackageState"),
     ("rapp_instance", "state"): ("rapp-mgmt/app/statemachine.py", "InstanceState"),

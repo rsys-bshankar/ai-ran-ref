@@ -1,7 +1,8 @@
 """The periodic work of RAN NF OAM (PR-MSG-4), run by `python -m smo_shared.worker` (compose service `ran-nf-oam-worker`), never by a request
 process. Each task finds what is due from the database, does it in committed steps, and may run again after a crash.
 
-  advance-waves             every 15 s   the next wave of every staged CM job whose pause has elapsed (`POST /config-jobs/advance-due`)
+  advance-waves             every 15 s   the next wave of every staged CM job whose pause has elapsed (`POST /config-jobs/advance-due`), and of every software campaign
+                                         (`POST /software-campaigns/advance-due`)
   publish-kpis              every 30 s   the KPI schedules whose interval has passed (`PUT /kpi-schedules/{id}`)
   run-kpi-guards            every minute the KPI guards of finished CM jobs whose observation window has passed (`kpiGuard` on `POST /config-jobs`)
   expire-approvals          every minute the rApp action approvals nobody decided in time (EXPIRED or REJECTED by the policy they were parked under; AI-11.3)
@@ -22,9 +23,10 @@ from .models import Alarm, PMFile, SafeguardRefusal
 
 
 def advance_waves() -> None:
-    from . import main
+    from . import lifecycle, main
     with SessionLocal() as db:
         main.advance_due(db)
+        lifecycle.advance_due(db)                  # MGT-15: the software campaigns whose pause has elapsed, and the running ones that have fallen behind
 
 
 def publish_kpis() -> None:

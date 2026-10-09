@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, UniqueConstraint, Uuid, false
+from sqlalchemy import ARRAY, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, UniqueConstraint, Uuid, false, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -481,6 +481,76 @@ class SoftwareManagementJob(Versioned, Base):
     ru_instance_id: Mapped[str | None] = mapped_column(String)  # reserved, section 3.4
     phase: Mapped[str] = mapped_column(String, nullable=False, default="DOWNLOAD")
     status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
+    # MGT-15.1: set on a job a software campaign made (`software_campaign`): the campaign, the wave it belongs to, and, on a job that undoes another one,
+    # that job (a rollback). All NULL for a job started the way it always was (`POST /software-management-jobs`).
+    campaign_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True)
+    campaign_wave: Mapped[int | None] = mapped_column(Integer)
+    rollback_of: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    software_version: Mapped[str | None] = mapped_column(String)
+
+
+class OnboardingTemplate(Base):
+    """MGT-14.1: the initial configuration of an element type. A newly registered element of `entity_type` (and `vendor_name`, when the template names one)
+    is matched to it; `changes` is the list of CM changes applied to the element (each without a `managedElementRef`: it is the element's own).
+    `software_baseline` is the software version the element is expected to run (MGT-14.4); `require_baseline` makes a different version stop the onboarding
+    rather than only flag it; `auto_apply` applies the template when the element first reports in (its first heartbeat) instead of waiting for an operator."""
+    __tablename__ = "onboarding_template"
+
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    description: Mapped[str | None] = mapped_column(String)
+    entity_type: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    vendor_name: Mapped[str | None] = mapped_column(String)
+    software_baseline: Mapped[str | None] = mapped_column(String)
+    require_baseline: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    auto_apply: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    changes: Mapped[list] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.UTC))
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.UTC))
+
+
+class ElementOnboarding(Versioned, Base):
+    """MGT-14.5: where one element is in its onboarding (`OnboardingState`). One row per element that was matched against the templates; an element registered
+    while no template exists has none. `software_check` is the baseline check (MGT-14.4): NOT_CHECKED, MATCH or MISMATCH."""
+    __tablename__ = "element_onboarding"
+
+    managed_element_ref: Mapped[str] = mapped_column(String, ForeignKey("managed_entity.managed_element_ref"), primary_key=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="DISCOVERED")
+    template_name: Mapped[str | None] = mapped_column(String)
+    software_version: Mapped[str | None] = mapped_column(String)
+    software_baseline: Mapped[str | None] = mapped_column(String)
+    software_check: Mapped[str] = mapped_column(String, nullable=False, default="NOT_CHECKED", server_default="NOT_CHECKED")
+    config_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    detail: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.UTC))
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.UTC))
+
+
+class SoftwareCampaign(Versioned, Base):
+    """MGT-15.1: a software change over many elements, run in waves (`CampaignState`). `elements` is the ordered list of references, fixed when the campaign is
+    made; every wave starts one software management job per element (`software_management_job.campaign_id`). `wave_log` is the outcome of each wave's health gate."""
+    __tablename__ = "software_campaign"
+
+    campaign_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    requested_by: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
+    software_version: Mapped[str | None] = mapped_column(String)
+    selector: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
+    elements: Mapped[list] = mapped_column(JSON, nullable=False)
+    wave_size: Mapped[int | None] = mapped_column(Integer)
+    wave_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    current_wave: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    wave_pause_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    gate_max_new_alarms: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    on_gate_failure: Mapped[str] = mapped_column(String, nullable=False, default="halt", server_default="halt")
+    wave_started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    next_wave_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    halted_reason: Mapped[str | None] = mapped_column(String)
+    halted_detail: Mapped[str | None] = mapped_column(String)
+    wave_log: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.datetime.now(datetime.UTC))
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class CMSnapshot(Base):

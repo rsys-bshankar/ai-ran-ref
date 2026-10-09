@@ -23,7 +23,7 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 | Area | In 0.5.0 | Moved to 0.6.0 or later |
 |---|---|---|
 | API | `?total=false` on every list route (opt out of the page `COUNT(*)`; default unchanged) | – |
-| Security | SEC-9 `/bootstrap` exposure; SEC-8.5 shared rate limiter; SEC-7 MFA and logout revocation (done: `HISTORY.md` PR-SEC-7); SEC-2 mTLS between services (done except SEC-2.4, Postgres `verify-full`: `HISTORY.md` PR-SEC-2); SEC-3 mesh option (decided: not taken, mTLS instead); SEC-6 OIDC login for the GUI (done: `HISTORY.md`; SEC-6.8 LDAP stays open and optional) | SEC-5 signing keys and JWKS, SEC-4.7 external secrets example (both 0.6.0) |
+| Security | SEC-9 `/bootstrap` exposure; SEC-8.5 shared rate limiter; SEC-7 MFA and logout revocation (done: `HISTORY.md` PR-SEC-7); SEC-2 mTLS between services and Postgres `verify-full` (done: `HISTORY.md` PR-SEC-2, PR-SEC-2.4); SEC-3 mesh option (decided: not taken, mTLS instead); SEC-6 OIDC login for the GUI (done: `HISTORY.md`; SEC-6.8 LDAP stays open and optional) | SEC-5 signing keys and JWKS, SEC-4.7 external secrets example (both 0.6.0) |
 | Operability | OBS-3 traces (Tempo), OBS-4 business metrics, OBS-5 alerts and SLOs, OBS-6 log shipping, OBS-7 runbooks (OBS-4, 5 and 7 are done in part: what remains is under 5.5), OBS-8 `/version`, OPS-6 GitOps example, OPS-7 configuration reference, OPS-9 sizing | – |
 | Disaster recovery | HA-6: RPO 15 minutes, RTO 1 hour, off-site backup shipping, one timed restore drill (built, `docs/DISASTER_RECOVERY.md`; the drill on a real stack is open, HA-6.3) | HA-7 geo-redundancy (after 1.0.0) |
 | Standards and documents | STD-2.1 spec release table; STD-4.1 personal-data inventory; STD-6.1 data residency statement; STD-4.3 erasure procedure for a GUI user; STD-5 control matrix (ISO 27001, NESAS/SCAS) | STD-3 plugfest plan (0.6.0 or later) |
@@ -33,7 +33,7 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 | Area | In 0.6.0 | Notes |
 |---|---|---|
 | Southbound | SB-9.3 to 9.5 and SB-9.8: the RAN O1 stub emits (alarms, PM reports and files, software-update phases, heartbeats) and the conformance kit checks what RAN NF OAM receives | The stub was configuration-only in 0.5.0 |
-| GUI | `PR-GUI-8` (built except its browser check `GUI-8.7`: `HISTORY.md` PR-GUI-8a and PR-GUI-8b): one rApps entry in the sidebar with a searchable directory, a detail page per rApp, pages declared by the rApp package and drawn by a generic renderer, per-user pins; the four sample rApps moved to it and their hand-written pages are gone | Replaces "one coded page and one sidebar entry per rApp", which does not scale to 100 rApps and gives a rApp onboarded at run time no page |
+| GUI | `PR-GUI-8` (built, with its browser check: `HISTORY.md` PR-GUI-8a, PR-GUI-8b and PR-GUI-8c): one rApps entry in the sidebar with a searchable directory, a detail page per rApp, pages declared by the rApp package and drawn by a generic renderer, per-user pins; the four sample rApps moved to it and their hand-written pages are gone | Replaces "one coded page and one sidebar entry per rApp", which does not scale to 100 rApps and gives a rApp onboarded at run time no page |
 | Security | SEC-5 signing keys and JWKS; SEC-4.7 external secrets example (`PR-SEC-7` MFA, both layers, is built: `HISTORY.md`) | The production sample values file carries `GUI_ADMIN_MFA_REQUIRED` and `GUI_LOGIN_MODE: oidc` as a commented block with the `kubectl create secret` for the key: they are not switched on in the sample, because the backend refuses to start with `GUI_ADMIN_MFA_REQUIRED=true` and no `GUI_TOTP_KEY`, and a sample cannot create your Secret |
 | Retention | `DB-3.10` (built, see `HISTORY.md` PR-DB-3): the proposed periods of `docs/RETENTION.md` ship in a production sample values file and in `.env.example`; the code defaults stay at `0` (keep), so an upgrade deletes nothing; a startup warning and a metric when a table with retention off has grown large | Decided: do not default to deleting |
 | Operability | The SLO targets of `docs/SLOS.md` are accepted as the reference targets (decided October 2026) for a deployment with two or more replicas and a highly available Postgres; the one-pod lab profile is not held to them during an upgrade | Per-route targets and per-deployment tuning stay open |
@@ -51,9 +51,9 @@ Theme: rApps that could be handed to another party. Core (1 to 3) first, then th
 | 2 | Approval and decision audit | `AI-11` approval queue for rApp actions (timeout, notification, autonomy-mode hook) with the GUI inbox; `AI-13` decision record per rApp config job (inputs, model version, rationale, job id), query route and GUI detail; `AI-12` shadow mode if time allows | Answers "who let the rApp do that, and why". **Built** (`HISTORY.md` PR-AI-11, PR-AI-13): the approval queue, the timeout, the hook for an `ASSIST` instance, the notice, the GUI inbox (`GUI-7.2`) and the decision record. **Not started:** `AI-12` shadow mode |
 | 3 | Tenant and region authorization | `SEC-10`: `region` and `tenant` on managed elements, a scope claim on the caller, enforced first on `POST /config-jobs` (the pilot, `SEC-10.1` to `10.4`), then config reads, alarms, PM, DME and MLMR reads | The main security gap left before 1.0.0. Scoping axes: both region and tenant. **Built** (`HISTORY.md` PR-SEC-10): `SEC-10.1` to `10.6`, the pilot, config reads, alarms and PM, with both axes. **Open:** `SEC-10.7` (DME and MLMR have nothing to match on, see below), `10.8` (OPA), and the rest of RAN NF OAM's reads (`10.9`) |
 | 4 | rApp SDK in two more languages | `RAPP-4` (Java and Go, decided): a Java SDK and a Go SDK built from `docs/openapi/` (the Java one: hand-written clients held to the specs by a contract test, `HISTORY.md` PR-RAPP-4 Java) with token acquisition and refresh, one example rApp in each, and a CI build for each | Python SDK stays. Each example runs against the stack |
-| 5 | Life-cycle flows (stretch) | `MGT-14` zero-touch onboarding (templates, discovery triggers a template, status FSM); `MGT-15` software campaigns (waves with a health gate, rollback, report) | The wave machinery is `MGT-5`, done |
-| 6 | Spec and stub realism (stretch) | `MGT-2` MSAC beyond writes; `SB-7` VES event receiver; `SB-10` first vendor profile on the O1 stub | |
-| 7 | Carry-overs from 0.6.0 | `GUI-8.7` compose browser check; `SEC-5.4` load test and the cache default (`SEC-5.5`); `SEC-2.4` Postgres `verify-full` | Closed here rather than carried into 1.0.0 |
+| 5 | Life-cycle flows (stretch) | `MGT-14` zero-touch onboarding (templates, discovery triggers a template, status FSM); `MGT-15` software campaigns (waves with a health gate, rollback, report) | The wave machinery is `MGT-5`, done. **Built** (`HISTORY.md` PR-MGT-14, PR-MGT-15): the API, the migration (`0033`) and the tests; opt in, nothing changes for an existing user. **Open:** the GUI pages (`MGT-14.6`, `MGT-15.5`), notifications (`MGT-14.7`, `MGT-15.6`), a job timeout and rollback in reverse wave order (`MGT-15.7`), and a real software-management exchange with the element (`MGT-15.8`) |
+| 6 | Spec and stub realism (stretch) | `MGT-2` MSAC beyond writes; `SB-7` VES event receiver; `SB-10` first vendor profile on the O1 stub | **Built** (`HISTORY.md` PR-SB-7, PR-SB-10, PR-MGT-2): the VES listener (off until it has a password), MSAC reach (off until `RAN_NF_OAM_MSAC_REACH`), and a vendor profile mechanism with a first profile that is **a stand-in, not a real vendor**. **Open:** `SB-7.6` (needs `MSG-3.4`), the first real vendor profile (`SB-10.5`), and the parts of `MGT-2` named under PR-MGT-2 |
+| 7 | Carry-overs from 0.6.0 | `GUI-8.7` compose browser check; `SEC-5.4` load test and the cache default (`SEC-5.5`); `SEC-2.4` Postgres `verify-full` | Closed here rather than carried into 1.0.0. **Built** (`HISTORY.md` PR-SEC-2.4, PR-SEC-5.4b, PR-GUI-8c): `SEC-2.4` (the compose overlay `docker-compose.pgtls.yml` and the chart's `postgres.tls`; proved against a real Postgres here, the containers and pods by new CI jobs), `SEC-5.4` (measured: the cache cuts SME's introspections by 99 % in the local run, the compose lane `smo-load.yml` repeats it), `GUI-8.7` (`scripts/gui_rapp_pages_e2e.py`, run here against the built GUI, the real backend and the real services; the compose job is CI's). **Open, the owner's:** `SEC-5.5`, the default of the cache (recommendation: 30 s, not applied) |
 
 Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard node loss, a network partition, PgBouncer failover, zones and the external penetration test (they need a host we control and are criteria for 1.0.0); northbound adaptors (`NB-1` to `NB-7`); the developer portal (`RAPP-5`); streaming PM (`SB-8`). Customer-driven requests: none yet.
 
@@ -90,8 +90,7 @@ Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard no
   taken from the last RDN, and the registry now has a containment tree (`managed_object`, `GET /managed-objects/{dn}/children`, PR-SB-6.1).
   `managedElementRef` is still a flat registry key (its root DN is `ManagedElement=<ref>`), and a model-based server fills the tree through
   `POST /managed-entities/{ref}/managed-objects/refresh` (PR-SB-6.2); a server without a model reports no objects.
-- **SA-RANOAM-1 (reach)** — MSAC guards CM writes only. Reads (`GET .../config`) and the other write
-  routes are not evaluated. Approach: reuse `msac.authorize` per route.
+- **SA-RANOAM-1 (reach)** — MSAC reach is built (`MGT-2`, `HISTORY.md` PR-MGT-2) and off by default; what it does not cover is under PR-MGT-2 below.
 
 Closed in this wave: SA-RANOAM-1 (TS 28.319 Identity / Role / AccessRule, per-sub-change evaluation),
 SA-RANOAM-2 (`accessScope`, `scope` kept as an alias), SA-RANOAM-6-severity (`PerceivedSeverity`,
@@ -340,11 +339,9 @@ who can ask, are in `r1-termination/README.md` and `HISTORY.md` PR-SEC-9) and se
 | Step | What | Done when | Needs |
 |---|---|---|---|
 
-#### PR-SEC-2 — mTLS between services (open: SEC-2.4; the rest is in `HISTORY.md` PR-SEC-2)
+#### PR-SEC-2 — mTLS between services (done: `HISTORY.md` PR-SEC-2 and PR-SEC-2.4)
 
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| SEC-2.4 | `sslmode=verify-full` for Postgres (the compose Postgres and the bundled chart one serve no TLS yet; an external one is `postgres.external.sslmode` already) | Connection fails with a wrong CA | `scripts/mtls_certs.py` for a server certificate |
+Nothing open. Left for a deployment rather than this build: Postgres TLS on a release that already runs (the chart's `postgres.tls.enabled` is for a new install, `deploy/helm/smo/README.md`), a CA for an external Postgres inside the pods (`postgres.external.sslmode: verify-full` uses the system trust store of the image), and PgBouncer's client side (the pooler serves no TLS to the services).
 
 #### PR-SEC-3 — Caller allow-list (the service-mesh option is decided: not taken, `HISTORY.md` PR-SEC-2)
 
@@ -362,12 +359,11 @@ who can ask, are in `r1-termination/README.md` and `HISTORY.md` PR-SEC-9) and se
 
 #### PR-SEC-5 — Signing keys and token caching
 
-SEC-5.1 to 5.3 are done, and SEC-5.4 is built but not measured (`HISTORY.md`, PR-SEC-5). What remains:
+SEC-5.1 to 5.4 are done (`HISTORY.md`, PR-SEC-5 and PR-SEC-5.4b). What remains:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-5.4 ★ (load test) | Run `scripts/load_run.py` against the compose stack with `R1_INTROSPECTION_CACHE_SECONDS=30` and without, and compare the introspections SME answers (`smo_http_requests_total{route="/oauth2/introspect"}` at SME) and the gateway's latency; record both in `docs/PERFORMANCE.md`. Then decide whether a small default above 0 is worth the revocation window. | Load test shows fewer SME calls (the unit test with a fake SME already does); the owner decides the default | The compose stack (Docker) |
-| SEC-5.5 | Choose and apply the default of `R1_INTROSPECTION_CACHE_SECONDS` (0 today) and, if gateway replicas must see a revocation at once, a revocation broadcast between them | The owner's decision, recorded | SEC-5.4 load test |
+| SEC-5.5 | Choose and apply the default of `R1_INTROSPECTION_CACHE_SECONDS` (0 today) and, if gateway replicas must see a revocation at once, a revocation broadcast between them. **Recommendation, not applied:** 30 seconds (measured: SME answered 98.4 introspections per 100 calls without the cache and 0.9 with it, at 8.6 and 15.5 requests a second; `docs/PERFORMANCE.md`). It stays 0 because it changes what an upgrade does to revocation (a revoked rApp is honoured for up to 30 s longer, on every replica but the one that carried the revocation) and the first measurement used one token on one machine; the owner decides, and the CI numbers (`smo-load.yml`) are the second reading | The owner's decision, recorded in `HISTORY.md` | SEC-5.4 (done) |
 | SEC-5.6 | A browser sign-in and a render of the chart with `gui.jwtKeySecretRef` set, on a real cluster or in CI with `helm` | Sign-in works under ES256 on a cluster; the pod has the key at `/run/gui-jwt` | A cluster |
 
 #### PR-SEC-6 — OIDC login for the GUI
@@ -683,16 +679,13 @@ A CM write's values are checked against the leaf's YANG type, range, length, pat
 | Step | What | Done when | Needs |
 |---|---|---|---|
 
-#### PR-SB-7 — VES event receiver
+#### PR-SB-7 — VES event receiver (SB-7.1 to 7.5 done: `HISTORY.md` PR-SB-7)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SB-7.1 | `POST /ves/eventListener/v7` accepting the batch and single-event schemas | Schema test | – |
-| SB-7.2 ★ | Map the fault domain to the existing `/alarms/ingest` path | Alarm row created | SB-7.1 |
-| SB-7.3 | Map `heartbeat` to the adaptor heartbeat | Health updated | SB-7.1 |
-| SB-7.4 | Map `measurement` and `stndDefined` PM to the `/pm-reports` path | PM record created | SB-7.1 |
-| SB-7.5 | Basic auth for the listener, credentials through the `*_FILE` helper (`smo_shared/secretfile.py`) | 401 without it | SB-7.1 |
 | SB-7.6 | Kafka consumer variant | Same events via a topic | SB-7.1, MSG-3.4 |
+| SB-7.8 | A chart setting that mounts a Secret for `RAN_NF_OAM_VES_PASSWORD_FILE` on RAN NF OAM (and a Service or NetworkPolicy note for the adaptors' network), so the password need not be an environment value | `helm template` shows the mount; `deploy/helm/smo/README.md` says how | – |
+| SB-7.7 | Try the receiver against a real VES sender (an ONAP-style one, `NB-6.2`'s other half) and fix the mapping where it differs from what was written from the schema | Events of a real sender become alarms, heartbeats and PM reports | – |
 
 #### PR-SB-8 — Streaming PM (`SA-RANOAM-8`)
 
@@ -704,16 +697,13 @@ A CM write's values are checked against the leaf's YANG type, range, length, pat
 | SB-8.4 | MDAF `STREAMING` subscription consumes it (closes `SA-MDA-5`'s recorded-only gap) | End-to-end test | SB-8.3 |
 | SB-8.5 | Backpressure and drop policy | Slow consumer test | SB-8.3 |
 
-#### PR-SB-10 — First vendor profile
+#### PR-SB-10 — First vendor profile (the mechanism and a stand-in profile done: `HISTORY.md` PR-SB-10)
 
-Needs access to a vendor simulator or lab.
+The mechanism (profile directory, loader, onboarding body, report check) is built and `example-du` exercises it, but **`example-du` is a stand-in: no vendor simulator or lab was available**, so SB-10.1 to 10.4 are done for an invented vendor. The real ones need access to a vendor simulator or lab.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SB-10.1 | Collect the vendor's YANG set | Files in a profile directory | – |
-| SB-10.2 | Add a capability registry entry | Registry test | SB-10.1 |
-| SB-10.3 | List deviations from the standard models | List in the profile README | SB-10.1 |
-| SB-10.4 | Conformance pack run against the vendor | Report attached | SB-9.6, SB-1.9 |
+| SB-10.5 | Replace the stand-in with the first real vendor: collect its YANG set (SB-10.1), its capability entry (10.2), its deviations (10.3; a vendor's `deviation` statements are not evaluated by `scripts/ingest_yang_schema.py`, so read them into the leaves or extend the reader), and run the conformance pack against its simulator or lab (10.4, with `SB-1.9`'s path for NETCONF over SSH) | A profile directory for a real vendor with a report from the vendor's own adaptor | **A vendor simulator or lab, and the owner's choice of vendor** |
 
 #### A1 / Near-RT RIC / E2 (future work, out of scope)
 
@@ -783,15 +773,12 @@ ack and clear routes.
 
 #### Configuration management
 
-#### PR-MGT-2 — MSAC beyond writes (`SA-RANOAM-1` reach)
+#### PR-MGT-2 — MSAC beyond writes (`SA-RANOAM-1` reach; MGT-2.1 to 2.5 done: `HISTORY.md` PR-MGT-2)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-2.1 | `authorize(..., "read")` on `GET .../config` | Denied read is 403 | – |
-| MGT-2.2 | Same on PM and FM subscription create | Test | – |
-| MGT-2.3 | Same on alarm ack and clear | Test | – |
-| MGT-2.4 | Same on software-management jobs | Test | – |
-| MGT-2.5 | Same on file routes | Test | – |
+| MGT-2.6 | Decide whether the list routes (alarms, subscriptions, jobs, endpoints, KPIs, the registries) and subscription deletes are in MSAC's reach, and with what target (a list has none; the scope filter of `PR-SEC-10` is the model) | A decision, then tests | The owner |
+| MGT-2.7 | Make the switch the default (`RAN_NF_OAM_MSAC_REACH`), once operators have had a release to add `read` rules to the Identities they made for writes | Default on, a note under `### Changed` | A release after 0.7.0 |
 
 #### PR-MGT-3 — Dry run (done: `HISTORY.md` §10)
 
@@ -893,24 +880,27 @@ Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`); an unknown alarm is a 
 
 #### Network lifecycle
 
-#### PR-MGT-14 — Zero-touch onboarding
+#### PR-MGT-14 — Zero-touch onboarding (built: `HISTORY.md` PR-MGT-14; follow-ups open)
+
+MGT-14.1 to 14.5 are built. What is left:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-14.1 | Onboarding template store (initial config per element type) | Route tests | – |
-| MGT-14.2 | Discovery (exists) triggers template selection | Test | MGT-14.1 |
-| MGT-14.3 | Apply the template as a config job | Config applied | MGT-14.2 |
-| MGT-14.4 | Software baseline check | Mismatch flagged | MGT-14.2 |
-| MGT-14.5 | Onboarding status FSM | Transition tests | MGT-14.3 |
+| MGT-14.6 | GUI: the template list and editor (admin), the onboarding table with its status, the baseline flag, select and apply (operator) | Vitest and a page in the Infrastructure area | – |
+| MGT-14.7 | Tell someone when an onboarding fails or the software baseline does not match, as a notification (an alarm is raised today); an entry in `docs/NOTIFICATIONS.md` | Notification inventory test | – |
+| MGT-14.8 | Template placeholders beyond the element itself (a site name, an address plan), and scope (region, tenant) on a template | Test | – |
 
-#### PR-MGT-15 — Software campaigns
+#### PR-MGT-15 — Software campaigns (built: `HISTORY.md` PR-MGT-15; follow-ups open)
+
+MGT-15.1 to 15.4 are built. What is left:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-15.1 | Campaign object over many software-management jobs | Migration | – |
-| MGT-15.2 | Waves with a health gate | Gate failure halts | MGT-15.1 (the wave machinery is `MGT-5`, done) |
-| MGT-15.3 | Campaign rollback | Test | MGT-15.1 |
-| MGT-15.4 | Campaign report | Route test | MGT-15.1 |
+| MGT-15.5 | GUI: start a campaign (selector, wave size, gate), the campaign list, the report, continue / halt / abort / rollback | Vitest and a page | – |
+| MGT-15.6 | Tell someone when a campaign halts or a rollback fails, as a notification; an entry in `docs/NOTIFICATIONS.md` | Notification inventory test | – |
+| MGT-15.7 | A timeout for a software job that never reports (a wave waits for every job today), and a rollback in reverse wave order instead of all revert jobs at once | Test | – |
+| MGT-15.8 | The software management job becomes a real exchange with the element (download, install and activate a named version, report each phase); today `POST /software-management-jobs/{id}/advance` is the report, so a campaign orders and gates the jobs but does not tell an element what to install | Mock adaptor receives the version | `SB-10` or the SWM part of the O1 stub |
+| MGT-15.9 | Gate on KPIs (after `MGT-11`) beside the failed-job and alarm gates | Test | `MGT-11` |
 
 #### PR-MGT-16 — Intent and rApp conflict handling
 
@@ -1234,13 +1224,9 @@ Step 7.2 is built (the Approvals page lists pending rApp actions and decides the
 | GUI-7.1 | Inbox page listing pending change-window approvals | Component test | MGT-4.3 |
 | GUI-7.3 | Add model gate approvals | Component test | – |
 
-#### PR-GUI-8 — rApp directory and declared pages (0.6.0)
+#### PR-GUI-8 — rApp directory and declared pages (done: `HISTORY.md` PR-GUI-8a, PR-GUI-8b and PR-GUI-8c)
 
-Built except its browser check (`HISTORY.md` PR-GUI-8a and PR-GUI-8b: the declaration and its check, the SDK helper, `operatorApiBase`, the gateway prefix, the GUI backend, the directory, the renderer, the pins and the four sample rApps moved to declarations). What is left is the one step that needs the compose stack and a browser.
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| GUI-8.7 | Browser check in `smo-gui-e2e` (`scripts/gui_e2e.py` is the model; it needs Docker and Chromium): onboard a package that carries an `operatorUi` at run time, deploy it with an `operatorApiBase` (a stub rApp on the compose network is enough), open `/rapps/<instance>` and see its panels with no GUI rebuild; sign in as a viewer and see no change button, and see the BFF refuse a hand-made call (`UNDECLARED_ROUTE`, `FORBIDDEN`, `RAPP_READ_ONLY`) | The job passes | GUI-8.6 (done) |
+Nothing open.
 
 ### 5.14 Standards and compliance (`PR-STD`)
 

@@ -1,0 +1,45 @@
+module example-du-ext {
+  yang-version 1.1;
+  namespace "urn:example-vendor:o1:du-ext";
+  prefix edx;
+
+  organization "Example Vendor (a stand-in: not a real company or product)";
+  description
+    "The vendor-specific part of the example-du profile (SB-10.1): what an O-DU of this vendor models beyond, or differently from, 3GPP TS 28.541.
+     Two kinds of statement, because those are the two things a real profile has to say. Attributes the standard does not have (exampleTxBackoffDb,
+     exampleBeamMode, the class ExampleBeamProfile) and attributes the standard has but this vendor accepts a narrower range of
+     (NRSectorCarrier.configuredMaxTxPower, 0..40 dBm where the SMO's stub defaults to 43). The classes repeat only the leaves they add or narrow;
+     the profile is COMBINED with the bundled TS 28.541 descriptor, so everything else is the standard's.";
+  revision 2026-10-01 { description "Initial version."; }
+
+  list NRCellDU {
+    key "id";
+    leaf id { type string; }
+    leaf exampleTxBackoffDb {
+      type uint8 { range "0..20"; }
+      units "dB";
+      description "Transmit power back-off the cell applies on top of its configured maximum.";
+    }
+    leaf exampleBeamMode {
+      type enumeration { enum NARROW; enum WIDE; enum ADAPTIVE; }
+      default ADAPTIVE;
+    }
+  }
+
+  list NRSectorCarrier {
+    key "id";
+    leaf id { type string; }
+    leaf configuredMaxTxPower {
+      type int32 { range "0..40"; }
+      units "dBm";
+      description "Narrower than the standard's range: this vendor's radios stop at 40 dBm.";
+    }
+  }
+
+  list ExampleBeamProfile {
+    key "id";
+    leaf id { type string; }
+    leaf profileName { type string { length "1..32"; pattern "[A-Za-z0-9_-]+"; } }
+    leaf horizontalBeamwidth { type uint16 { range "10..120"; } units "degrees"; }
+  }
+}

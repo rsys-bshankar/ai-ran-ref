@@ -382,6 +382,42 @@
     "queryMatch": {}
   },
   {
+    "method": "PUT",
+    "pattern": "^/ran-nf-oam/onboarding-templates/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-nf-oam/onboarding-templates/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/element-onboarding/[^/]+/select$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/element-onboarding/[^/]+/apply$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/software-campaigns$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/software-campaigns/[^/]+/(continue|halt|abort|rollback)$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
     "method": "POST",
     "pattern": "^/ran-nf-oam/(cm-schemas|vendor-onboarding)$",
     "role": "admin",
