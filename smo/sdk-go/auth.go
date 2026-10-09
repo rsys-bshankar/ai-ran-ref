@@ -1,3 +1,14 @@
+// auth.go is the SDK's identity at SME: the OAuth2 client_credentials token every call to the platform carries.
+//
+// tokenSource finds SME's token endpoint through the gateway's /bootstrap, enrolls a CAPIF API invoker unless the
+// configuration pins one, asks for a token with the rApp scope, caches it and renews it. Client.Token and Client.Do
+// (client.go) are its callers; it sends its own HTTP through Client.roundTrip, so the retry policy applies to it too.
+//
+// It owns the invoker identity and the token of one Client and nothing else: retries, headers and error mapping stay in
+// client.go, retry.go and errors.go. The three steps mirror smo_shared.r1_client._ModuleIdentity for an rApp
+// (SMO_IDENTITY_KIND=rapp) and the Python and Java SDKs: change them together. An rApp never presents the enrollment
+// secret, which is why SME records the invoker as an rApp (the scope check in auth_test.go).
+
 package smosdk
 
 import (
@@ -104,6 +115,11 @@ func (t *tokenSource) acquire(ctx context.Context) (string, error) {
 	return t.token, nil
 }
 
+// discover learns SME's token endpoint from GET {gateway}/bootstrap, once per tokenSource: when the endpoint is already
+// known it returns at once. X-Bootstrap-Key is sent when Config.BootstrapKey is set. It returns an *Error for a status
+// >= 400 (a gateway that asks for a key answers 401), and an error when the answer is not JSON, names no
+// tokenEndPoint.uri, or names one that does not end in /oauth2/token (smeBase finds SME's own API by trimming that
+// suffix, so any other shape is refused). The first entry of apiEndpoints that has a token endpoint wins. The caller holds t.mu.
 func (t *tokenSource) discover(ctx context.Context) error {
 	if t.tokenEndpoint != "" {
 		return nil
@@ -144,6 +160,10 @@ func (t *tokenSource) discover(ctx context.Context) error {
 // smeBase is the address of SME's own API, derived from the token endpoint as the Python client does.
 func (t *tokenSource) smeBase() string { return strings.TrimSuffix(t.tokenEndpoint, tokenPathSuffix) }
 
+// onboard enrolls a new CAPIF API invoker at SME (POST {sme}/invoker-registrations) and keeps the returned apiInvokerId
+// and onboardingSecret as this process's identity. No enrollment secret is sent, so SME records an rApp. The request
+// carries an opaque label "smo-rapp:<Name>:<random>" in place of a public key. It returns an *Error for a status >= 400
+// and an error when the answer lacks either field. The caller holds t.mu.
 func (t *tokenSource) onboard(ctx context.Context) error {
 	label, err := randomToken(8)
 	if err != nil {
@@ -171,11 +191,15 @@ func (t *tokenSource) onboard(ctx context.Context) error {
 	return nil
 }
 
+// tokenAnswer is the part of SME's token answer the SDK uses; ExpiresIn is in seconds and 0 when absent.
 type tokenAnswer struct {
 	AccessToken string `json:"access_token"`
 	ExpiresIn   int    `json:"expires_in"`
 }
 
+// grant asks the token endpoint for a client_credentials token for scope smo-rapp with the stored invoker id and
+// secret. It returns an *Error for a status >= 400 (invalid_client when SME no longer knows the invoker: acquire then
+// enrolls afresh) and an error when the answer carries no access_token. The caller holds t.mu.
 func (t *tokenSource) grant(ctx context.Context) (tokenAnswer, error) {
 	body, _ := json.Marshal(map[string]string{
 		"grant_type": "client_credentials", "client_id": t.invokerID, "client_secret": t.secret, "scope": rappScope,

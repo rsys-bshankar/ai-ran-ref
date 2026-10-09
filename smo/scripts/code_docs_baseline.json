@@ -33,7 +33,7 @@
       "tests_without_docstring": 0
     },
     "deploy": {
-      "files_without_description": 6,
+      "files_without_description": 0,
       "functions_without_description": 0,
       "items_requiring_description": 0,
       "source_files": 42,
@@ -58,7 +58,7 @@
     },
     "fuzz": {
       "files_without_description": 0,
-      "functions_without_description": 4,
+      "functions_without_description": 0,
       "items_requiring_description": 4,
       "source_files": 2,
       "tests": 0,
@@ -138,7 +138,7 @@
     },
     "netconf-lab": {
       "files_without_description": 0,
-      "functions_without_description": 1,
+      "functions_without_description": 0,
       "items_requiring_description": 1,
       "source_files": 3,
       "tests": 0,
@@ -265,20 +265,20 @@
       "tests_without_docstring": 133
     },
     "sdk-go": {
-      "files_without_description": 14,
-      "functions_without_description": 18,
+      "files_without_description": 0,
+      "functions_without_description": 0,
       "items_requiring_description": 65,
       "source_files": 19,
       "tests": 60,
-      "tests_without_docstring": 59
+      "tests_without_docstring": 0
     },
     "sdk-java": {
-      "files_without_description": 4,
-      "functions_without_description": 36,
-      "items_requiring_description": 79,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 80,
       "source_files": 28,
       "tests": 48,
-      "tests_without_docstring": 48
+      "tests_without_docstring": 0
     },
     "shared": {
       "files_without_description": 2,

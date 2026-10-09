@@ -1,3 +1,8 @@
+// stack_test.go is the fake platform the other tests in this package use: fakeStack serves /bootstrap, SME's invoker
+// registration and token endpoint, and hands every other path to a handler the test sets. It is test support only and has
+// no tests of its own. It counts what it received and hands out tokens tok-1, tok-2, ..., so the tests can assert how
+// often the SDK enrolled and renewed.
+
 package smosdk
 
 import (
@@ -32,6 +37,7 @@ type fakeStack struct {
 	api           func(w http.ResponseWriter, r *http.Request)
 }
 
+// newStack starts a fakeStack on a local port and closes it when the test ends. Tokens are valid for 300 s until a test changes expiresIn.
 func newStack(t *testing.T) *fakeStack {
 	s := &fakeStack{t: t, validToken: map[string]bool{}, expiresIn: 300}
 	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
@@ -39,6 +45,8 @@ func newStack(t *testing.T) *fakeStack {
 	return s
 }
 
+// serve answers the platform paths itself and passes the rest to s.api after checking that the Bearer token is one it
+// issued and has not revoked (401 otherwise). s.mu is held, except while s.api runs.
 func (s *fakeStack) serve(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -93,20 +101,24 @@ func (s *fakeStack) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// revoke makes the stack answer 401 to tok from now on.
 func (s *fakeStack) revoke(tok string) { s.mu.Lock(); s.validToken[tok] = false; s.mu.Unlock() }
 
+// counts returns how many times /bootstrap, the registration and the token endpoint were called.
 func (s *fakeStack) counts() (bootstraps, registrations, grants int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.bootstraps, s.registrations, s.grants
 }
 
+// writeJSON answers with status and v encoded as JSON.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// readBody returns the request body as a string.
 func readBody(r *http.Request) string {
 	b, _ := io.ReadAll(r.Body)
 	return string(b)
@@ -115,6 +127,7 @@ func readBody(r *http.Request) string {
 // fast is a retry policy that waits (almost) nothing and is deterministic.
 var fast = RetryPolicy{MaxAttempts: 4, BaseDelay: time.Millisecond, MaxDelay: 2 * time.Millisecond, NoJitter: true}
 
+// client returns a Client for the stack with the fast retry policy; mutate edits the Config first.
 func (s *fakeStack) client(t *testing.T, mutate ...func(*Config)) *Client {
 	t.Helper()
 	cfg := Config{GatewayURL: s.srv.URL, Name: "test-rapp", Retry: fast}

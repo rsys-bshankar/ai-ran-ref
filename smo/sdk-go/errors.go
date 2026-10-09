@@ -1,3 +1,10 @@
+// errors.go maps a platform answer with an error status to *Error and offers StatusOf, IsNotFound, IsConflict and
+// IsForbidden to test it. Client.Do (client.go) and the token flow (auth.go) return what newError builds here.
+//
+// The SDK adds no interpretation: Title and Detail carry the platform's own words, whichever of the four body shapes
+// newError reads, and Body keeps the start of the raw answer. isConcurrentModification is the one place that gives a title
+// meaning (the write race Do repeats once). errors_test.go has the table of body shapes: extend it with any new one.
+
 package smosdk
 
 import (
@@ -31,6 +38,8 @@ type Error struct {
 	Body       []byte // the response body, cut at 4 KiB
 }
 
+// Error formats the failure as "METHOD PATH: STATUS TITLE: DETAIL"; an empty title or detail is left out. The response
+// body is not included.
 func (e *Error) Error() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s %s: %d", e.Method, e.Path, e.StatusCode)

@@ -1,3 +1,10 @@
+{{- /*
+  Renders the bundled database (`postgres.enabled`, a lab or trial setup: one pod, one volume): a headless Service `postgres`, the StatefulSet
+  `postgres`, and with `postgres.tls.enabled` also the ConfigMap `postgres-hba` (hostssl only) and, with `postgres.tls.certManager.enabled`, the
+  cert-manager Certificate for the server. Driven by `postgres.*` (image, pullPolicy, storage, storageClassName, resources, tls). The password comes
+  from the Secret named by smo.secretName (templates/_helpers.tpl). The pod template's labels are frozen on purpose (see the comment there): a
+  changed template restarts the database.
+*/ -}}
 {{- if .Values.postgres.enabled }}
 {{- $labels := include "smo.labels" (dict "root" .) }}
 apiVersion: v1
@@ -52,6 +59,7 @@ spec:
         - name: postgres
           image: {{ .Values.postgres.image }}
           imagePullPolicy: {{ .Values.postgres.pullPolicy }}
+          {{- /* Renders when `postgres.tls.enabled`: the server arguments that switch TLS on and name the certificate, the key and the hba file. */}}
           {{- if .Values.postgres.tls.enabled }}
           # PR-SEC-2.4: TLS from the network only (the hba file below: `hostssl`, plain `host` rejected); the modules verify the certificate (sslmode=verify-full)
           args:
@@ -91,6 +99,7 @@ spec:
             - { name: pgdata, mountPath: /var/lib/postgresql }    # PostgreSQL 18+ keeps its data in a version-named subdirectory here
             - { name: run, mountPath: /var/run/postgresql }
             - { name: secrets, mountPath: /run/secrets, readOnly: true }
+            {{- /* Renders when `postgres.tls.enabled`: the mounts of the certificate Secret and of the hba ConfigMap. */}}
             {{- if .Values.postgres.tls.enabled }}
             - { name: pg-tls, mountPath: /run/pg-tls, readOnly: true }
             - { name: pg-hba, mountPath: /etc/smo, readOnly: true }
@@ -104,6 +113,7 @@ spec:
             defaultMode: 0444
             items:
               - { key: db-password, path: db_password }
+        {{- /* Renders when `postgres.tls.enabled`: the volumes behind those mounts. */}}
         {{- if .Values.postgres.tls.enabled }}
         - name: pg-tls
           secret:
@@ -124,6 +134,7 @@ spec:
         resources:
           requests:
             storage: {{ .Values.postgres.storage }}
+{{- /* Renders when `postgres.tls.enabled`: the hba ConfigMap, and below it the Certificate when cert-manager makes the server certificate. */}}
 {{- if .Values.postgres.tls.enabled }}
 ---
 # PR-SEC-2.4: the same rules as smo/pgtls/pg_hba.conf (docker-compose.pgtls.yml); a test keeps the two equal.
@@ -139,6 +150,7 @@ data:
     local   all   all                    trust
     hostssl all   all   all              scram-sha-256
     host    all   all   all              reject
+{{- /* Renders when `postgres.tls.certManager.enabled`: a cert-manager Certificate whose Secret is `postgres.tls.secretName`; the render fails without an issuer name. */}}
 {{- if .Values.postgres.tls.certManager.enabled }}
 {{- $ref := .Values.postgres.tls.certManager.issuerRef }}
 {{- if not $ref.name }}{{ fail "postgres.tls.certManager.enabled needs postgres.tls.certManager.issuerRef.name (an Issuer or ClusterIssuer of cert-manager; with mtls.certManager.createCA that is smo-mtls-ca)" }}{{ end }}
