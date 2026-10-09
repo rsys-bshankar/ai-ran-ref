@@ -28,8 +28,9 @@ from typing import NamedTuple
 
 from smo_shared.scope import Scope
 
-NEGATIVE_SECONDS = 5.0
+NEGATIVE_SECONDS = 5.0                   # the longest an "inactive" answer is remembered, whatever the TTL: a wrong token must not be locked in for long
 DEFAULT_MAX_ENTRIES = 10000
+
 
 class Caller(NamedTuple):
     """Who an active token is for, as SME introspected it: the invoker id, its role and its scope claim (PR-SEC-10; None: unscoped)."""
@@ -42,16 +43,25 @@ Answer = Caller | None                   # the caller of an active token, None f
 
 
 class _Entry(NamedTuple):
+    """One cached answer: the clock time it expires at and the answer (None: SME said inactive)."""
+
     expires: float
     answer: Answer
 
 
 def token_key(token: str) -> str:
+    """The cache key for a bearer token: its SHA-256 hex digest, so the raw token is never held in memory by the cache."""
     return hashlib.sha256(token.encode()).hexdigest()
 
 
 class IntrospectionCache:
+    """A bounded, thread-safe map from token hash to SME's introspection answer, each entry with its own expiry.
+
+    Used only by `main._introspect_token` when `R1_INTROSPECTION_CACHE_SECONDS` is above 0. `generation` counts revocations: an answer fetched before the
+    latest eviction is refused by `put`. Entries are kept in insertion order, so the oldest goes first when the cache is full.
+    """
     def __init__(self, max_entries: int = DEFAULT_MAX_ENTRIES, clock: Callable[[], float] = time.monotonic) -> None:
+        """Builds an empty cache of at most `max_entries` entries (at least 1). `clock` returns seconds, monotonic; tests pass a fake one to step time exactly."""
         self.max_entries = max(1, max_entries)
         self._clock = clock
         self._entries: OrderedDict[str, _Entry] = OrderedDict()
@@ -62,7 +72,7 @@ class IntrospectionCache:
         return len(self._entries)
 
     def get(self, token: str) -> tuple[bool, Answer]:
-        """(True, answer) for a live entry, (False, None) otherwise. An expired entry is dropped on the way."""
+        """Returns `(True, answer)` for a live entry (the answer is None for a remembered "inactive"), `(False, None)` for a miss. An expired entry is deleted on the way."""
         key = token_key(token)
         with self._lock:
             entry = self._entries.get(key)
@@ -74,8 +84,12 @@ class IntrospectionCache:
             return True, entry.answer
 
     def put(self, token: str, answer: Answer, ttl: float, generation: int) -> bool:
-        """Remember `answer` for `ttl` seconds (a positive answer for at most the token's life: the caller passes the smaller). Not stored when a revocation evicted since
-        `generation` was read (the answer may be from before it), or when `ttl` is not positive."""
+        """Remembers `answer` for `ttl` seconds; True when stored.
+
+        The caller passes the smaller of the configured TTL and the token's remaining life. Nothing is stored when `ttl` is not positive, or when `generation` (read
+        before SME was asked) differs from the current one: a revocation evicted meanwhile and this answer may predate it. When the cache is full it drops expired
+        entries first and then the oldest live ones, so a flood of distinct tokens cannot grow it.
+        """
         if ttl <= 0:
             return False
         key = token_key(token)
@@ -91,12 +105,16 @@ class IntrospectionCache:
             return True
 
     def _drop_expired(self) -> None:
+        """Deletes every expired entry. The caller holds the lock."""
         now = self._clock()
         for key in [k for k, e in self._entries.items() if e.expires <= now]:
             del self._entries[key]
 
     def evict_invoker(self, invoker_id: str) -> int:
-        """A revocation of `invoker_id`: drop every entry for it (and refuse to store an answer that was in flight)."""
+        """A revocation of `invoker_id`: deletes every positive entry for it and returns how many went.
+
+        Also bumps `generation`, so an introspection that is in flight is not stored afterwards. Negative entries ("inactive" answers, which name no invoker) stay.
+        """
         with self._lock:
             self.generation += 1
             gone = [k for k, e in self._entries.items() if e.answer is not None and e.answer.invoker_id == invoker_id]
@@ -105,6 +123,7 @@ class IntrospectionCache:
             return len(gone)
 
     def clear(self) -> int:
+        """Deletes every entry and returns how many went. Bumps `generation` like `evict_invoker`; used after a real `purge-stale`, which offboards invokers the gateway is not told by name."""
         with self._lock:
             self.generation += 1
             count = len(self._entries)

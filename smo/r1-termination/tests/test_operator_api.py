@@ -1,4 +1,9 @@
-"""GUI-8.3: the gateway's dynamic prefix `/rapps/{instanceId}/operator/<route>` resolves to the base the instance registered at rApp Management."""
+"""GUI-8.3: the gateway's dynamic prefix `/rapps/{instanceId}/operator/<route>` resolves to the base the instance registered at rApp Management.
+
+Covers `operator_api.py` and `_forward_operator_api` in `main.py`: path shape, the lookup and its cache, what is and is not forwarded to the rApp, the fixed error
+titles that leak no address, the SSRF guard on the registered base, and how the role policy, kill switch and audit apply to the prefix. The `world` fixture fakes SME,
+rApp Management and the rApp over httpx. Run: `PYTHONPATH=.:../shared python -m pytest tests/test_operator_api.py -q`.
+"""
 
 import json
 import uuid
@@ -27,6 +32,7 @@ class FakeResponse:
 
 @pytest.fixture(autouse=True)
 def fresh_state(monkeypatch):
+    """Autouse fixture: full rate buckets, an empty operator-API lookup cache and the default cache lifetime before and after each test."""
     from app.main import _limiter
     _limiter.clear()
     operator_api.clear_cache()
@@ -38,7 +44,11 @@ def fresh_state(monkeypatch):
 
 @pytest.fixture
 def world(monkeypatch):
-    """SME says who calls; rApp Management says where the rApp is; the rApp records what it was sent."""
+    """Fixture: SME says who calls, rApp Management says where the rApp is, and the rApp records what it was sent; returns the mutable `state` dict.
+
+    Keys: `sme_says` (introspection answer, default an internal GUI caller), `rapp_mgmt` ((status, body) or an exception to raise), `rapp_answer` and `rapp_error` (what the
+    rApp returns or raises), and the observations `lookups` (rApp Management calls), `rapp_calls` ((method, url, kwargs) reaching the rApp) and `other` (calls to anything else).
+    """
     state = {"sme_says": {"active": True, "client_id": "smo-gui-inv", "role": "internal"},
              "rapp_mgmt": (200, {"instanceId": INSTANCE, "state": "RUNNING", "operatorApiBase": "http://my-rapp:8000"}),
              "rapp_answer": FakeResponse(b'{"cells": []}', 200, {"content-type": "application/json", "set-cookie": "x=1", "x-rapp": "y"}),
@@ -77,6 +87,7 @@ def world(monkeypatch):
 
 
 def test_the_prefix_reaches_the_registered_base_with_the_rest_of_the_path_and_the_query(world):
+    """The call reaches the registered base with the rest of the path and the query, nothing goes to a static route, and the rApp's `Set-Cookie` is not passed back."""
     resp = client.get(f"/rapps/{INSTANCE}/operator/instances/{INSTANCE}/dashboard?points=48", headers=AUTH)
     assert resp.status_code == 200 and resp.json() == {"cells": []}
     method, url, kwargs = world["rapp_calls"][0]
@@ -87,6 +98,7 @@ def test_the_prefix_reaches_the_registered_base_with_the_rest_of_the_path_and_th
 
 
 def test_a_change_is_forwarded_with_its_method_and_body(world):
+    """A POST through the prefix reaches the rApp as a POST with its body unchanged."""
     resp = client.post(f"/rapps/{INSTANCE}/operator/instances/{INSTANCE}/cells/C1/override", headers={**AUTH, "Content-Type": "application/json"},
                        content=b'{"operator": "smo-gui:alice"}')
     assert resp.status_code == 200
@@ -95,6 +107,7 @@ def test_a_change_is_forwarded_with_its_method_and_body(world):
 
 
 def test_the_callers_credentials_never_reach_the_rapp(world):
+    """The caller's `Authorization`, cookies and other headers are not sent to the registered address (a workload chose it); only the identity the gateway vouches for and the correlation id are."""
     client.get(f"/rapps/{INSTANCE}/operator/instances/x", headers={**AUTH, "Cookie": "smo_session=secret", "X-Evil": "1", "X-R1-Role": "internal"})
     headers = {k.lower(): v for k, v in world["rapp_calls"][0][2]["headers"].items()}
     assert "authorization" not in headers and "cookie" not in headers and "x-evil" not in headers
@@ -103,18 +116,21 @@ def test_the_callers_credentials_never_reach_the_rapp(world):
 
 
 def test_the_base_may_carry_a_path_prefix(world):
+    """A registered base with a path (`https://host/ops/`) is joined with the route without doubling the slash."""
     world["rapp_mgmt"] = (200, {"instanceId": INSTANCE, "state": "RUNNING", "operatorApiBase": "https://rapp.example/ops/"})
     client.get(f"/rapps/{INSTANCE}/operator/x/y", headers=AUTH)
     assert world["rapp_calls"][0][1] == "https://rapp.example/ops/x/y"
 
 
 def test_an_encoded_slash_is_decoded_once_by_the_framework_and_then_checked_as_the_path_it_is(world):
+    """`%2F` is decoded once by the framework and the result is checked as an ordinary path; `%2e%2e` becomes `..` and is refused with a 400."""
     client.get(f"/rapps/{INSTANCE}/operator/a%2Fb", headers=AUTH)
     assert world["rapp_calls"][0][1] == "http://my-rapp:8000/a/b"
     assert client.get(f"/rapps/{INSTANCE}/operator/%2e%2e/x", headers=AUTH).status_code == 400
 
 
 def test_no_registered_base_is_a_404_with_a_fixed_title(world):
+    """An instance with no registered operator API is a 404 `OPERATOR_API_NOT_REGISTERED` and nothing is called."""
     world["rapp_mgmt"] = (200, {"instanceId": INSTANCE, "state": "RUNNING", "operatorApiBase": None})
     resp = client.get(f"/rapps/{INSTANCE}/operator/instances/x", headers=AUTH)
     assert resp.status_code == 404 and resp.json()["title"] == "OPERATOR_API_NOT_REGISTERED"
@@ -122,6 +138,7 @@ def test_no_registered_base_is_a_404_with_a_fixed_title(world):
 
 
 def test_an_unknown_instance_is_the_same_404(world):
+    """rApp Management's 404 for an unknown instance gives the same answer as "none registered", so the response does not tell instance ids apart."""
     world["rapp_mgmt"] = (404, {"detail": "no such RAppInstance"})
     resp = client.get(f"/rapps/{INSTANCE}/operator/instances/x", headers=AUTH)
     assert resp.status_code == 404 and resp.json()["title"] == "OPERATOR_API_NOT_REGISTERED"
@@ -131,6 +148,7 @@ def test_an_unknown_instance_is_the_same_404(world):
     "/rapps/not-a-uuid/operator/x", f"/rapps/{INSTANCE}", f"/rapps/{INSTANCE}/other/x", f"/rapps/{INSTANCE}/operatorx/x",
     f"/rapps/{INSTANCE}/operator/a b", f"/rapps/{INSTANCE}/operator/a;b", f"/rapps/{INSTANCE}/operator/a:b"])
 def test_a_path_that_is_not_that_shape_is_refused_before_anything_is_looked_up(world, path):
+    """A path that is not `<uuid>/operator[/<segments of letters, digits and ._~->]` is a 404 `NO_ROUTE` before rApp Management or the rApp is called (table of paths above)."""
     resp = client.get(path, headers=AUTH)
     assert resp.status_code == 404 and resp.json()["title"] == "NO_ROUTE"
     assert world["lookups"] == 0 and world["rapp_calls"] == []
@@ -138,12 +156,14 @@ def test_a_path_that_is_not_that_shape_is_refused_before_anything_is_looked_up(w
 
 @pytest.mark.parametrize("path", [f"/rapps/{INSTANCE}/operator/../x", f"/rapps/{INSTANCE}/operator//x"])
 def test_dot_segments_and_empty_segments_are_refused_by_the_gateways_path_check(world, path):
+    """`..` and `//` in the route are refused (400 by the gateway's path check, or 404 by the router) and never reach the rApp."""
     resp = client.request("GET", path, headers=AUTH)
     assert resp.status_code in (400, 404)
     assert world["rapp_calls"] == []
 
 
 def test_the_lookup_is_cached_briefly_and_zero_turns_the_cache_off(world, monkeypatch):
+    """Three calls cost one lookup at rApp Management; `R1_OPERATOR_API_CACHE_SECONDS=0` makes each call look up again."""
     for _ in range(3):
         client.get(f"/rapps/{INSTANCE}/operator/x", headers=AUTH)
     assert world["lookups"] == 1
@@ -154,6 +174,7 @@ def test_the_lookup_is_cached_briefly_and_zero_turns_the_cache_off(world, monkey
 
 
 def test_a_changed_registration_is_picked_up_when_the_cache_expires(world, monkeypatch):
+    """With the cache off, an operator API that is deregistered between two calls turns the second into a 404."""
     monkeypatch.setenv("R1_OPERATOR_API_CACHE_SECONDS", "0")
     client.get(f"/rapps/{INSTANCE}/operator/x", headers=AUTH)
     world["rapp_mgmt"] = (200, {"instanceId": INSTANCE, "state": "RUNNING", "operatorApiBase": None})
@@ -161,6 +182,7 @@ def test_a_changed_registration_is_picked_up_when_the_cache_expires(world, monke
 
 
 def test_rapp_management_down_is_a_503_not_a_guess(world):
+    """When rApp Management cannot be asked and nothing is cached the call is a 503 `OPERATOR_API_UNRESOLVED` with `Retry-After`, and no exception text appears in the body."""
     world["rapp_mgmt"] = httpx.ConnectError("boom: password=hunter2")
     resp = client.get(f"/rapps/{INSTANCE}/operator/x", headers=AUTH)
     assert resp.status_code == 503 and resp.json()["title"] == "OPERATOR_API_UNRESOLVED" and resp.headers["Retry-After"] == "5"
@@ -170,6 +192,7 @@ def test_rapp_management_down_is_a_503_not_a_guess(world):
 
 
 def test_an_answer_a_little_old_is_used_when_rapp_management_goes_down(world, monkeypatch):
+    """An answer under a minute old is used when rApp Management fails, so a short outage does not take the operator pages down."""
     monkeypatch.setenv("R1_OPERATOR_API_CACHE_SECONDS", "0")
     assert client.get(f"/rapps/{INSTANCE}/operator/x", headers=AUTH).status_code == 200
     world["rapp_mgmt"] = httpx.ConnectError("down")
@@ -177,6 +200,7 @@ def test_an_answer_a_little_old_is_used_when_rapp_management_goes_down(world, mo
 
 
 def test_an_unreachable_rapp_is_a_502_and_a_slow_one_a_504_with_no_exception_text(world):
+    """An unreachable rApp is a 502 and a timeout a 504, with a fixed title and no address or exception text in the response."""
     world["rapp_error"] = httpx.ConnectError("connect to 10.9.9.9:8000 failed")
     resp = client.get(f"/rapps/{INSTANCE}/operator/x", headers=AUTH)
     assert resp.status_code == 502 and resp.json()["title"] == "UPSTREAM_UNAVAILABLE"
@@ -196,8 +220,7 @@ def test_a_registered_base_that_fails_the_guard_is_never_called(world, base):
 
 
 def test_a_rapp_may_read_another_rapps_operator_api_but_never_change_it(world):
-    """Reads are open to every valid token, as for every module (the sample rApps coordinate this way: a cell list another rApp publishes); a change by an
-    rApp is refused by the same allow-list as everywhere (the prefix is not a module an rApp may change)."""
+    """An rApp caller may GET through the prefix (the sample rApps coordinate that way) but every change is a 403 `ROLE_NOT_PERMITTED` and never reaches the rApp."""
     world["sme_says"] = {"active": True, "client_id": "inv-1", "role": "rapp"}
     assert client.get(f"/rapps/{INSTANCE}/operator/instances/{INSTANCE}/cells", headers=AUTH).status_code == 200
     for method in ("POST", "PUT", "PATCH", "DELETE"):
@@ -207,17 +230,20 @@ def test_a_rapp_may_read_another_rapps_operator_api_but_never_change_it(world):
 
 
 def test_a_rapp_may_register_the_operator_api_of_its_own_instance_through_rapp_management(world):
+    """An rApp may PUT and DELETE the operator-API registration of an instance via rApp Management; the role allow-list lets exactly those through."""
     world["sme_says"] = {"active": True, "client_id": "inv-1", "role": "rapp"}
     assert client.put(f"/rapp-mgmt/instances/{INSTANCE}/operator-api", headers=AUTH, json={"operatorApiBase": "http://my-rapp:8000"}).status_code == 200
     assert client.delete(f"/rapp-mgmt/instances/{INSTANCE}/operator-api", headers=AUTH).status_code == 200
 
 
 def test_no_token_is_a_401_and_nothing_is_looked_up(world):
+    """Without a token the prefix is a 401 and rApp Management is not asked, so unauthenticated callers cannot probe instance ids."""
     assert client.get(f"/rapps/{INSTANCE}/operator/x").status_code == 401
     assert world["lookups"] == 0
 
 
 def test_a_change_through_the_prefix_is_audited_like_any_other(world, gateway_database):
+    """A POST through the prefix leaves an audit row with the full `/rapps/...` target, like a change to any module."""
     from sqlalchemy import text
     client.post(f"/rapps/{INSTANCE}/operator/instances/{INSTANCE}/evaluate", headers=AUTH)
     with gateway_database.connect() as conn:

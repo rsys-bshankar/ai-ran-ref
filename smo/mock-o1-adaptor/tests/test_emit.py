@@ -1,6 +1,7 @@
-"""The emitting side of the stub (PR-SB-9b, SB-9.8): the trigger routes POST what RAN NF OAM's routes expect, relay what it answers, and are honest when it
-cannot be reached, when no target is set, and when the adaptor does not declare the service. RAN NF OAM is replaced by a recording `httpx.post`; the
-stub wired to the real RAN NF OAM app is tests_integration/test_o1_conformance_emit.py.
+"""The emitting side of the stub (PR-SB-9b, SB-9.8): the trigger routes POST what RAN NF OAM's routes expect, relay what it answers, and are honest when it cannot be reached, when no target is set, and when the adaptor does not declare the service.
+
+RAN NF OAM is replaced by a recording `httpx.post` (the `Oam` class, installed by the `oam` fixture); the stub wired to the real RAN NF OAM app is
+`tests_integration/test_o1_conformance_emit.py`. Needs no network. Run: `cd smo/mock-o1-adaptor && PYTHONPATH=.:../shared python -m pytest tests/test_emit.py -q`.
 """
 
 import httpx
@@ -28,6 +29,7 @@ class Oam:
 
 @pytest.fixture
 def oam(monkeypatch):
+    """Fixture: points `MOCK_O1_OAM_URL` at `OAM`, removes any services override and replaces `httpx.post` with a recording fake that answers 200 `{"alarmId": "a-1"}`; returns the fake."""
     monkeypatch.setenv("MOCK_O1_OAM_URL", OAM)
     monkeypatch.delenv("MOCK_O1_SUPPORTED_SERVICES", raising=False)
     fake = Oam(200, {"alarmId": "a-1"})
@@ -36,6 +38,7 @@ def oam(monkeypatch):
 
 
 def test_an_alarm_is_posted_to_the_ingest_with_query_parameters_and_the_answer_is_returned(oam):
+    """An alarm trigger POSTs RAN NF OAM's `/alarms/ingest` with the fields as snake_case query parameters, a bounded timeout and no body, and returns RAN NF OAM's answer wrapped in `emitted/status/response/target`."""
     resp = client.post("/emit/alarm", json={"managedElementRef": "gnb-1", "severity": "MAJOR", "sourceAlarmId": "native-7", "probableCause": "linkFailure",
                                             "specificProblem": "port 3 down", "managedFunctionRef": "NRCellDU=101", "alarmType": "COMMUNICATIONS_ALARM",
                                             "correlationGroup": "g1"})
@@ -49,6 +52,7 @@ def test_an_alarm_is_posted_to_the_ingest_with_query_parameters_and_the_answer_i
 
 
 def test_the_source_alarm_id_defaults_to_a_new_uuid_each_time_and_unset_fields_are_not_sent(oam):
+    """Without a `sourceAlarmId` each call raises a distinct alarm (a fresh UUID), and fields the caller left out are not sent at all."""
     for _ in range(2):
         client.post("/emit/alarm", json={"managedElementRef": "gnb-1", "severity": "minor"})
     first, second = (c["params"] for c in oam.calls)
@@ -57,6 +61,7 @@ def test_the_source_alarm_id_defaults_to_a_new_uuid_each_time_and_unset_fields_a
 
 
 def test_a_pm_report_and_a_pm_file_are_posted_as_json(oam):
+    """PM report and PM file triggers POST their JSON bodies to `/pm-reports` and `/pm-files`, without `target` and with the file defaults filled in."""
     measurements = [{"cellId": "101", "timestamp": "2026-10-01T12:00:00+00:00", "value": 40.0},
                     {"cellId": "102", "timestamp": "2026-10-01T12:00:00+00:00", "values": {"RRU.PrbTotDl": 3.5}, "relation": "102-103"}]
     client.post("/emit/pm-report", json={"managedElementRef": "gnb-1", "counterType": "LOAD", "measurements": measurements})
@@ -68,6 +73,7 @@ def test_a_pm_report_and_a_pm_file_are_posted_as_json(oam):
 
 
 def test_a_heartbeat_and_a_software_phase_go_to_their_routes(oam):
+    """The heartbeat goes to the endpoint's heartbeat route, and a software phase to the job's advance route with `succeeded` as true or false."""
     client.post("/emit/heartbeat", json={"endpointId": "0b8d6c1e-1111-4222-8333-444455556666"})
     client.post("/emit/software-phase", json={"jobId": "job-1", "succeeded": True})
     client.post("/emit/software-phase", json={"jobId": "job-1", "succeeded": False})
@@ -78,11 +84,13 @@ def test_a_heartbeat_and_a_software_phase_go_to_their_routes(oam):
 
 
 def test_an_id_that_would_leave_its_path_segment_is_encoded(oam):
+    """An id containing slashes or dots is percent-encoded into one path segment, so a trigger cannot be pointed at another RAN NF OAM route."""
     client.post("/emit/software-phase", json={"jobId": "../../alarms", "succeeded": True})
     assert oam.calls[0]["url"] == f"{OAM}/software-management-jobs/..%2F..%2Falarms/advance"
 
 
 def test_a_refusal_is_relayed_not_raised(monkeypatch, oam):
+    """A 4xx from RAN NF OAM is returned to the caller as `emitted: false` with its status and body, with the trigger itself answering 200."""
     refusal = Oam(422, {"detail": "severity 'LOUD' is not a PerceivedSeverity"})
     monkeypatch.setattr(httpx, "post", refusal.post)
     resp = client.post("/emit/alarm", json={"managedElementRef": "gnb-1", "severity": "LOUD"})
@@ -91,6 +99,7 @@ def test_a_refusal_is_relayed_not_raised(monkeypatch, oam):
 
 
 def test_an_answer_that_is_not_json_is_relayed_as_text(monkeypatch, oam):
+    """A non-JSON answer is relayed as text cut to its first 500 characters."""
     monkeypatch.setattr(httpx, "post", Oam(503, "upstream down" * 100).post)
     body = client.post("/emit/heartbeat", json={"endpointId": "e"}).json()
     assert body["emitted"] is False and body["status"] == 503 and body["response"].startswith("upstream down") and len(body["response"]) == 500
@@ -98,6 +107,7 @@ def test_an_answer_that_is_not_json_is_relayed_as_text(monkeypatch, oam):
 
 @pytest.mark.parametrize("error", [httpx.ConnectError("refused"), httpx.ReadTimeout("slow")])
 def test_an_unreachable_ran_nf_oam_is_a_502_with_a_problem_body(monkeypatch, oam, error):
+    """A connection failure or timeout talking to RAN NF OAM is a 502 `application/problem+json` naming the error class and the path, with no raw exception text."""
     monkeypatch.setattr(httpx, "post", Oam(raises=error).post)
     resp = client.post("/emit/alarm", json={"managedElementRef": "gnb-1", "severity": "MAJOR"})
     assert resp.status_code == 502 and resp.headers["content-type"].startswith("application/problem+json")
@@ -105,6 +115,7 @@ def test_an_unreachable_ran_nf_oam_is_a_502_with_a_problem_body(monkeypatch, oam
 
 
 def test_no_target_is_a_409_that_says_so(monkeypatch):
+    """With no `MOCK_O1_OAM_URL` and no `target` in the request, the trigger is a 409 that names the variable to set."""
     monkeypatch.delenv("MOCK_O1_OAM_URL", raising=False)
     monkeypatch.delenv("MOCK_O1_SUPPORTED_SERVICES", raising=False)
     resp = client.post("/emit/alarm", json={"managedElementRef": "gnb-1", "severity": "MAJOR"})
@@ -112,6 +123,7 @@ def test_no_target_is_a_409_that_says_so(monkeypatch):
 
 
 def test_the_request_can_name_its_own_target(monkeypatch, oam):
+    """A request can name its own RAN NF OAM origin (trailing slash dropped); the call then goes through the guarded sender with the parameters in the URL."""
     monkeypatch.delenv("MOCK_O1_OAM_URL")
     resp = client.post("/emit/alarm", json={"managedElementRef": "gnb-1", "severity": "MAJOR", "target": "http://other-oam:9000/"})
     assert resp.status_code == 200 and resp.json()["target"] == "http://other-oam:9000"
@@ -121,6 +133,7 @@ def test_the_request_can_name_its_own_target(monkeypatch, oam):
 
 @pytest.mark.parametrize("target", ["http://127.0.0.1:8000", "http://localhost:8000", "file:///etc/passwd", "http://169.254.169.254", "not a url"])
 def test_a_target_that_is_not_a_usable_origin_is_refused_before_anything_is_sent(oam, target):
+    """A caller-supplied target that is a loopback or link-local address, not http(s), or not a URL is a 422 and nothing is sent (the guard against making the stub call internal addresses)."""
     resp = client.post("/emit/heartbeat", json={"endpointId": "e", "target": target})
     assert resp.status_code == 422 and oam.calls == []
 
@@ -133,6 +146,7 @@ def test_a_target_that_is_not_a_usable_origin_is_refused_before_anything_is_sent
     ("software-phase", {"jobId": "j"}, "SWM"),
 ])
 def test_a_service_the_adaptor_does_not_declare_is_not_emitted(monkeypatch, oam, route, body, service):
+    """Each trigger is a 409 naming its service when `/capabilities` does not declare that service, and nothing is sent (table above: route, body, service)."""
     monkeypatch.setenv("MOCK_O1_SUPPORTED_SERVICES", ",".join(s for s in ("PROV", "FM", "PM", "FILE", "SWM", "HEARTBEAT") if s != service))
     resp = client.post(f"/emit/{route}", json=body)
     assert resp.status_code == 409 and service in resp.json()["detail"] and oam.calls == []
@@ -140,6 +154,7 @@ def test_a_service_the_adaptor_does_not_declare_is_not_emitted(monkeypatch, oam,
 
 
 def test_the_declaration_and_the_emitter_follow_the_same_environment(monkeypatch, oam):
+    """`MOCK_O1_SUPPORTED_SERVICES` (whitespace tolerated) drives both the capability declaration and which triggers are allowed to emit."""
     monkeypatch.setenv("MOCK_O1_SUPPORTED_SERVICES", "PROV, FM ,HEARTBEAT")
     assert client.get("/capabilities").json()["supportedServices"] == ["PROV", "FM", "HEARTBEAT"]
     assert client.post("/emit/alarm", json={"managedElementRef": "g", "severity": "MAJOR"}).status_code == 200
@@ -147,12 +162,14 @@ def test_the_declaration_and_the_emitter_follow_the_same_environment(monkeypatch
 
 
 def test_a_body_of_the_wrong_shape_is_a_422(oam):
+    """A request body with a missing or malformed field is a 422 and nothing is sent."""
     assert client.post("/emit/alarm", json={"severity": "MAJOR"}).status_code == 422
     assert client.post("/emit/pm-report", json={"managedElementRef": "g", "counterType": "C", "measurements": [{"cellId": "1"}]}).status_code == 422
     assert oam.calls == []
 
 
 def test_the_triggers_are_in_the_openapi_document_with_their_error_responses():
+    """Every trigger's OpenAPI operation declares the 200, 409, 422 and 502 responses."""
     paths = app.openapi()["paths"]
     for route in ("alarm", "pm-report", "pm-file", "heartbeat", "software-phase"):
         responses = paths[f"/emit/{route}"]["post"]["responses"]
