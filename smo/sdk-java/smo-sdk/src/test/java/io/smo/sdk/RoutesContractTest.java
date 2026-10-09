@@ -36,8 +36,7 @@ class RoutesContractTest {
         assertTrue(Files.exists(file), "no OpenAPI document for module " + module + " at " + file.toAbsolutePath());
         JsonNode spec = Json.MAPPER.readTree(Files.readString(file));
         String wanted = route.template().substring(module.length() + 1);
-        for (var paths = spec.get("paths").fields(); paths.hasNext(); ) {
-            var path = paths.next();
+        for (var path : spec.get("paths").properties()) {
             if (normalise(path.getKey()).equals(wanted)) {
                 JsonNode op = path.getValue().get(route.method().toLowerCase());
                 if (op != null) {
