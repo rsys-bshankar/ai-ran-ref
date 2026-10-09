@@ -14,7 +14,7 @@ Each item in sections 1–4: what is missing, why it matters, suggested approach
 
 **Out of scope at every stage**: A1, xApps, the Near-RT RIC and E2, and their policy. The `a1-related` module, `mock-near-rt-ric` and the `OI-5-a1-*` items were removed in release 0.5.0 (the code is in the tag `smo-v0.4.0`); A1 stays as a future work item, see "A1 / Near-RT RIC / E2" under 5.8.
 
-**Not decided yet**: what goes in 0.7.0 (to be discussed once 0.6.0 is done), and when 1.0.0 is cut. The external penetration test is a criterion for 1.0.0 (see `docs/VALIDATION.md`, V-7c); the criteria are in `docs/RELEASES.md`.
+**Not decided yet**: when 1.0.0 is cut. (0.7.0 is decided, below.) The external penetration test is a criterion for 1.0.0 (see `docs/VALIDATION.md`, V-7c); the criteria are in `docs/RELEASES.md`.
 
 ### Release 0.5.0 scope (decided, October 2026)
 
@@ -40,6 +40,22 @@ Besides the validation program (`docs/VALIDATION.md`), release 0.5.0 contains:
 | Standards | STD-3 plugfest plan | If time allows |
 
 Not in 0.6.0 (needs a host we control or a decision outside the code): the real-size disaster-recovery drill (HA-6.3), a hard node loss, a network partition, PgBouncer failover, zones, the external penetration test. They are criteria for 1.0.0 (`docs/RELEASES.md`).
+
+### Release 0.7.0 scope (decided, October 2026)
+
+Theme: rApps that could be handed to another party. Core (1 to 3) first, then the stretch (4 to 6) as time allows.
+
+| # | Area | In 0.7.0 | Notes |
+|---|---|---|---|
+| 1 | Signed and conformant rApp packages | `RAPP-1` CSAR signing with a trust store and a policy flag to require signed packages (sample CSARs signed); `RAPP-3` offline validator and runtime conformance checks with a report; `RAPP-2.1` and `2.3` (runtime profile becomes pod limits, egress only to R1) | The rApp-side counterpart of the O1 conformance kit |
+| 2 | Approval and decision audit | `AI-11` approval queue for rApp actions (timeout, notification, autonomy-mode hook) with the GUI inbox; `AI-13` decision record per rApp config job (inputs, model version, rationale, job id), query route and GUI detail; `AI-12` shadow mode if time allows | Answers "who let the rApp do that, and why" |
+| 3 | Tenant and region authorization | `SEC-10`: `region` and `tenant` on managed elements, a scope claim on the caller, enforced first on `POST /config-jobs` (the pilot, `SEC-10.1` to `10.4`), then config reads, alarms, PM, DME and MLMR reads | The main security gap left before 1.0.0. Scoping axes: both region and tenant |
+| 4 | rApp SDK in two more languages | `RAPP-4` (Java and Go, decided): a Java SDK and a Go SDK generated from `docs/openapi/` with token acquisition and refresh, one example rApp in each, and a CI build for each | Python SDK stays. Each example runs against the stack |
+| 5 | Life-cycle flows (stretch) | `MGT-14` zero-touch onboarding (templates, discovery triggers a template, status FSM); `MGT-15` software campaigns (waves with a health gate, rollback, report) | The wave machinery is `MGT-5`, done |
+| 6 | Spec and stub realism (stretch) | `MGT-2` MSAC beyond writes; `SB-7` VES event receiver; `SB-10` first vendor profile on the O1 stub | |
+| 7 | Carry-overs from 0.6.0 | `GUI-8.7` compose browser check; `SEC-5.4` load test and the cache default (`SEC-5.5`); `SEC-2.4` Postgres `verify-full` | Closed here rather than carried into 1.0.0 |
+
+Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard node loss, a network partition, PgBouncer failover, zones and the external penetration test (they need a host we control and are criteria for 1.0.0); northbound adaptors (`NB-1` to `NB-7`); the developer portal (`RAPP-5`); streaming PM (`SB-8`). Customer-driven requests: none yet.
 
 **Documentation rule (every pull request):** a change updates the documents it makes stale in the same pull request: the overall `README.md`, the module's own `README.md` (HLD, LLD, tests), `docs/ARCHITECTURE.md` and `docs/STANDARDS.md` where behaviour or a standard's realisation changes, `OPEN_ITEMS.md` (closed items move to `HISTORY.md`), `CHANGELOG.md`, `docs/VALIDATION.md`, and the chart's README for anything an operator deploys.
 
