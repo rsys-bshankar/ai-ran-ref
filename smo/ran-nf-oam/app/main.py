@@ -55,6 +55,7 @@ from .models import Alarm, ApprovalSubscription, RAppActionApproval, RAppApprova
 from . import msac
 from . import scoping
 from .ldn import check_ref, leaf_class, leaf_id
+from . import lifecycle
 from . import mo_tree
 from . import topology
 from . import yang_payload
@@ -345,6 +346,9 @@ class RegisterO1AdaptorEndpointRequest(BaseModel):
     # (tenants) may touch only elements whose region (tenant) it names, so an element registered without them is for unscoped callers only.
     region: str | None = Field(default=None, max_length=100)
     tenant: str | None = Field(default=None, max_length=100)
+    # MGT-14.4: the software version the element runs, for the baseline check of an onboarding template (lifecycle.py). Kept only when a template matches the
+    # element (an element registered while no template exists has no onboarding row to keep it on).
+    softwareVersion: str | None = Field(default=None, min_length=1, max_length=100)
 
     @field_validator("region", "tenant")
     @classmethod
@@ -433,9 +437,11 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
         mo_tree.sync_registry(db, me)          # PR-SB-6: the element's root (and the function it was registered with) join the containment tree
     except ValueError as exc:                  # a ref that is not a distinguished name
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=str(exc)) from None
+    onboarding = lifecycle.on_registered(db, me, body.softwareVersion)         # MGT-14.2: None (nothing else changes) unless an onboarding template is defined
     db.commit()
     return {"endpointId": str(endpoint.endpoint_id), "managedElementRef": me.managed_element_ref, "healthStatus": endpoint.health_status,
-            "region": me.region, "tenant": me.tenant}
+            "region": me.region, "tenant": me.tenant,
+            **({"onboarding": {"status": onboarding.status, "templateName": onboarding.template_name, "softwareCheck": onboarding.software_check}} if onboarding else {})}
 
 
 class PinHostKeyRequest(BaseModel):
@@ -2592,10 +2598,7 @@ def stop_dme_job(data_job_id: str):
 @app.post("/software-management-jobs", status_code=202)
 def software_update(managed_element_ref: str, ru_instance_id: str | None = None, db: Session = Depends(get_session)):
     require_service(db, managed_element_ref, "SWM")  # Wave 9 (W9-01)
-    job = SoftwareManagementJob(managed_element_ref=managed_element_ref, ru_instance_id=ru_instance_id, status="PENDING", phase="DOWNLOAD")
-    db.add(job)
-    db.flush()
-    job.status = SOFTWARE_MANAGEMENT_FSM.fire(SwmState.PENDING, SwmEvent.START)
+    job = lifecycle.start_software_job(db, managed_element_ref, ru_instance_id)
     db.commit()
     return {"jobId": str(job.job_id), "status": job.status, "phase": job.phase}
 
@@ -2613,6 +2616,8 @@ def advance_software_job(job_id: uuid.UUID, succeeded: bool, db: Session = Depen
         if event in PHASE_ORDER:
             job.phase = PHASE_ORDER[event]
     db.commit()
+    if job.campaign_id is not None:
+        lifecycle.on_job_advanced(db, job.campaign_id)          # MGT-15: the job belongs to a campaign, which decides what comes next (its own transaction)
     return {"jobId": str(job.job_id), "status": job.status, "phase": job.phase}
 
 
@@ -2660,6 +2665,8 @@ def endpoint_heartbeat(endpoint_id: uuid.UUID, db: Session = Depends(get_session
     if current in (EndpointHealth.DISCOVERED, EndpointHealth.DEGRADED):
         ep.health_status = ENDPOINT_HEALTH_FSM.fire(current, EndpointEvent.HEARTBEAT)
     db.commit()
+    if current == EndpointHealth.DISCOVERED:
+        lifecycle.on_first_heartbeat(db, ep.managed_element_ref)       # MGT-14.3: an autoApply onboarding template is written now (never fails the heartbeat)
     return {"endpointId": str(ep.endpoint_id), "healthStatus": ep.health_status}
 
 
@@ -2815,8 +2822,11 @@ def list_software_management_jobs(request: Request, managed_element_ref: str | N
         stmt = stmt.where(SoftwareManagementJob.managed_element_ref == managed_element_ref)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"jobId": str(j.job_id), "managedElementRef": j.managed_element_ref, "ruInstanceId": j.ru_instance_id,
-             "phase": j.phase, "status": j.status} for j in page["items"]]}
+             "phase": j.phase, "status": j.status,
+             **({"campaignId": str(j.campaign_id), "campaignWave": j.campaign_wave} if j.campaign_id else {}),
+             **({"rollbackOf": str(j.rollback_of)} if j.rollback_of else {})} for j in page["items"]]}
 
 
 # Wave 9 — multi-vendor capability registry, CM schemas, cell guards (vendors.py)
 app.include_router(vendors_router)
+app.include_router(lifecycle.router)      # MGT-14, MGT-15: onboarding templates, element onboarding, software campaigns
