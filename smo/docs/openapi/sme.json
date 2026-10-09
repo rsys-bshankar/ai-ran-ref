@@ -63,6 +63,24 @@
         "title": "AccessTokenRequest",
         "type": "object"
       },
+      "AuthzScopeRequest": {
+        "properties": {
+          "authzScope": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authzscope"
+          }
+        },
+        "title": "AuthzScopeRequest",
+        "type": "object"
+      },
       "ErrorEnvelope": {
         "properties": {
           "detail": {
@@ -187,6 +205,18 @@
           "apiInvokerPublicKey": {
             "title": "Apiinvokerpublickey",
             "type": "string"
+          },
+          "authzScope": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authzscope"
           }
         },
         "required": [
@@ -1876,6 +1906,144 @@
           }
         },
         "summary": "Update Invoker"
+      }
+    },
+    "/invoker-registrations/{api_invoker_id}/authz-scope": {
+      "put": {
+        "description": "PR-SEC-10.3: set (or, with `authzScope` null or `{}`, remove) the scope claim of an invoker: which managed elements, by region and tenant, it may touch\n(docs/adr/0005-tenant-region-authorization.md). Replaces the claim. For an operator or an SMO module: an rApp is refused at the gateway (the route\nis in `INTERNAL_ONLY` and not in `RAPP_MAY_CHANGE`). Takes effect on the invoker's next request (R1 Termination reads the claim from the\nintrospection; with its introspection cache on, within `R1_INTROSPECTION_CACHE_SECONDS`). 404 for an unknown invoker, 422 `AUTHZ_SCOPE_INVALID`.",
+        "operationId": "set_invoker_authz_scope_invoker_registrations__api_invoker_id__authz_scope_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "api_invoker_id",
+            "required": true,
+            "schema": {
+              "title": "Api Invoker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthzScopeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Set Invoker Authz Scope"
       }
     },
     "/live": {

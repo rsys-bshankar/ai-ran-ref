@@ -49,7 +49,7 @@ Theme: rApps that could be handed to another party. Core (1 to 3) first, then th
 |---|---|---|---|
 | 1 | Signed and conformant rApp packages | `RAPP-1` CSAR signing with a trust store and a policy flag to require signed packages (sample CSARs signed); `RAPP-3` offline validator and runtime conformance checks with a report; `RAPP-2.1` and `2.3` (runtime profile becomes pod limits, egress only to R1) | The rApp-side counterpart of the O1 conformance kit |
 | 2 | Approval and decision audit | `AI-11` approval queue for rApp actions (timeout, notification, autonomy-mode hook) with the GUI inbox; `AI-13` decision record per rApp config job (inputs, model version, rationale, job id), query route and GUI detail; `AI-12` shadow mode if time allows | Answers "who let the rApp do that, and why". **Built** (`HISTORY.md` PR-AI-11, PR-AI-13): the approval queue, the timeout, the hook for an `ASSIST` instance, the notice, the GUI inbox (`GUI-7.2`) and the decision record. **Not started:** `AI-12` shadow mode |
-| 3 | Tenant and region authorization | `SEC-10`: `region` and `tenant` on managed elements, a scope claim on the caller, enforced first on `POST /config-jobs` (the pilot, `SEC-10.1` to `10.4`), then config reads, alarms, PM, DME and MLMR reads | The main security gap left before 1.0.0. Scoping axes: both region and tenant |
+| 3 | Tenant and region authorization | `SEC-10`: `region` and `tenant` on managed elements, a scope claim on the caller, enforced first on `POST /config-jobs` (the pilot, `SEC-10.1` to `10.4`), then config reads, alarms, PM, DME and MLMR reads | The main security gap left before 1.0.0. Scoping axes: both region and tenant. **Built** (`HISTORY.md` PR-SEC-10): `SEC-10.1` to `10.6`, the pilot, config reads, alarms and PM, with both axes. **Open:** `SEC-10.7` (DME and MLMR have nothing to match on, see below), `10.8` (OPA), and the rest of RAN NF OAM's reads (`10.9`) |
 | 4 | rApp SDK in two more languages | `RAPP-4` (Java and Go, decided): a Java SDK and a Go SDK generated from `docs/openapi/` with token acquisition and refresh, one example rApp in each, and a CI build for each | Python SDK stays. Each example runs against the stack |
 | 5 | Life-cycle flows (stretch) | `MGT-14` zero-touch onboarding (templates, discovery triggers a template, status FSM); `MGT-15` software campaigns (waves with a health gate, rollback, report) | The wave machinery is `MGT-5`, done |
 | 6 | Spec and stub realism (stretch) | `MGT-2` MSAC beyond writes; `SB-7` VES event receiver; `SB-10` first vendor profile on the O1 stub | |
@@ -398,16 +398,16 @@ Done (`HISTORY.md`, PR-SEC-7: SEC-7.1 to 7.8). Not built, and not planned unless
 
 #### PR-SEC-10 — Tenant / region authorization
 
+Done (`HISTORY.md`, PR-SEC-10; decision `docs/adr/0005-tenant-region-authorization.md`): SEC-10.1 to 10.6 (the ADR, `region` and `tenant` on `managed_entity`, the scope claim on the invoker, the pilot `POST /config-jobs` with rollback and the approval path, configuration reads, alarms and PM). What is left:
+
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-10.1 | ADR: where scope is enforced (R1 Termination vs each module) | ADR merged | – |
-| SEC-10.2 | `region` and `tenant` columns on `managed_entity` | Migration; set by registration | – |
-| SEC-10.3 | Scope claim on the invoker (registration field, returned by introspection) | Introspection returns it | – |
-| SEC-10.4 ★ | Pilot: `POST /config-jobs` refuses a target outside the caller's scope | 403 test | SEC-10.2, SEC-10.3 |
-| SEC-10.5 | Same on `GET .../config` | 403 test | SEC-10.4 |
-| SEC-10.6 | Same on alarms and PM reads | 403 test | SEC-10.4 |
-| SEC-10.7 | Same on rApp-facing DME and MLMR reads | 403 test | SEC-10.3 |
-| SEC-10.8 | OPA sidecar as an alternative decision point (optional) | Same tests pass with it | SEC-10.1 |
+| SEC-10.7 | Same on rApp-facing DME and MLMR reads. **Open, with a reason:** neither module's data has a managed element, a region or a tenant to match (DME types, producers, jobs and records; MLMR models and repositories), so there is no rule to apply until someone decides what a tenant of a data type or of a model is (a column on `dme_type` and `ml_model`, set by the producer or the registrant, or derived from the producer's scope). The one DME route that names an element, `POST /dme/actions`, is already held to the rApp's scope at RAN NF OAM (tests in `tests_integration/test_tenant_region_scope.py`); `GET /dme/actions` lists records with an element reference and is not filtered | 403 test | SEC-10.3 |
+| SEC-10.8 | OPA sidecar as an alternative decision point (optional; the seam is `smo_shared/scope.py`) | Same tests pass with it | SEC-10.1 |
+| SEC-10.9 | The rest of RAN NF OAM's reads: the managed-object tree (`/managed-objects/...`), topology and links, the KPI schedules, the file subscriptions, the vendor and CM-schema registries (`GET /kpis/{name}` is scoped) | 403 / filtered tests like `ran-nf-oam/tests/test_scope.py` | SEC-10.4 |
+| SEC-10.10 | A form in the GUI to set a claim on an invoker or an instance, and the place of an element (today an admin calls `PUT /sme/invoker-registrations/{id}/authz-scope` and `PUT /ran-nf-oam/managed-entities/{ref}/scope` through the API); a scoped rApp's refusals on the Safeguards page already show | Vitest | SEC-10.3 |
+| SEC-10.11 | Ownership of a config job: an rApp rolling back another rApp's job inside its own scope is allowed today (and is not part of the scope rule) | 403 test | – |
+| SEC-10.12 | Scoping the human users (an operator who may act on one tenant only, an approver for one region): the GUI session claim (`GUI-5.1`) and the BFF passing it to the modules | Claim in the session | GUI-5.1 |
 
 #### PR-SEC-11 — Tamper-evident audit
 

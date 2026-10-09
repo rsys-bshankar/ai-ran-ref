@@ -33,7 +33,7 @@ from smo_shared import tracing
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
 from smo_shared.audit import audit_enabled, write_audit
 from smo_shared.health import install_health
-from smo_shared import killswitch, mtls, roles
+from smo_shared import killswitch, mtls, roles, scope as authz_scope
 from smo_shared.invoker import INVOKER_ID_HEADER, ON_BEHALF_OF_HEADER
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.ratelimit import SharedTokenBuckets, TokenBuckets, store_from_environment
@@ -42,7 +42,7 @@ from smo_shared.timeouts import introspect_timeout, upstream_timeout
 from smo_shared.webhook import forward_to_destination
 
 from . import operator_api
-from .introspection_cache import DEFAULT_MAX_ENTRIES, NEGATIVE_SECONDS, IntrospectionCache
+from .introspection_cache import DEFAULT_MAX_ENTRIES, NEGATIVE_SECONDS, Caller, IntrospectionCache
 
 log = logging.getLogger(__name__)
 
@@ -240,12 +240,14 @@ async def proxy(full_path: str, request: Request):
 
 
 def _drop_revoked_tokens(method: str, full_path: str, status: int) -> None:
-    """PR-SEC-5.4: SME removed the tokens of an invoker (offboarding it, or a purge that was not a dry run) through this gateway: forget the cached answers for them now,
+    """PR-SEC-5.4: SME removed the tokens of an invoker (offboarding it, or a purge that was not a dry run) or changed its scope claim (PR-SEC-10.3) through this gateway: forget the cached answers for them now,
     so this replica stops honouring them on the next request instead of after the TTL. Other replicas, and a revocation made without this gateway, wait for the TTL."""
     if not 200 <= status < 300:
         return
     parts = [p for p in full_path.split("/") if p]
-    if len(parts) == 3 and parts[0] == "sme" and parts[1] == "invoker-registrations":
+    if len(parts) == 4 and parts[:2] == ["sme", "invoker-registrations"] and parts[3] == "authz-scope" and method == "PUT":
+        _introspection_cache.evict_invoker(parts[2])         # PR-SEC-10.3: a changed scope claim applies from the next request on this replica
+    elif len(parts) == 3 and parts[0] == "sme" and parts[1] == "invoker-registrations":
         if method == "DELETE":
             _introspection_cache.evict_invoker(parts[2])
         elif method == "POST" and parts[2] == "purge-stale":
@@ -283,7 +285,7 @@ async def _proxy(full_path: str, request: Request):
             "title": "AUTH_SERVICE_UNAVAILABLE", "status": 503, "detail": "the token could not be checked now (SME did not answer); retry shortly"})
     if caller is None:
         return JSONResponse(status_code=401, content={"title": "UNAUTHORIZED", "status": 401})
-    invoker_id, role = caller
+    invoker_id, role, caller_scope = caller
     request.state.audit = (invoker_id, role, None, request.headers.get(ON_BEHALF_OF_HEADER) if role == roles.ROLE_INTERNAL else None)
     wait = await _take_budget(invoker_id or "anonymous")
     if wait is not None:
@@ -341,7 +343,7 @@ async def _proxy(full_path: str, request: Request):
     # is just forwarding the already-authenticated request.
     body = await request.body()
     if dynamic:
-        return await _forward_operator_api(request, rest_of_path, body, invoker_id, role)
+        return await _forward_operator_api(request, rest_of_path, body, invoker_id, role, caller_scope)
     # Every other header forwards verbatim; X-Correlation-ID is
     # explicitly overridden with this request's own real one (the
     # caller's, or one apply_correlation_id's middleware just generated
@@ -350,7 +352,7 @@ async def _proxy(full_path: str, request: Request):
     # ID threaded through its own request's whole downstream fan-out.
     forwarded_headers = {k: v for k, v in request.headers.items()
                           if k.lower() not in ("host", CORRELATION_ID_HEADER.lower(), INVOKER_ID_HEADER.lower(), roles.ROLE_HEADER.lower(),
-                                               ON_BEHALF_OF_HEADER.lower(),
+                                               ON_BEHALF_OF_HEADER.lower(), authz_scope.SCOPE_HEADER.lower(), authz_scope.ON_BEHALF_SCOPE_HEADER.lower(),
                                                tracing.TRACEPARENT, tracing.TRACESTATE)}
     forwarded_headers[roles.ROLE_HEADER] = role              # PR-SEC-14: never a value the caller sent (dropped above)
     forwarded_headers[CORRELATION_ID_HEADER] = get_correlation_id()
@@ -359,6 +361,7 @@ async def _proxy(full_path: str, request: Request):
     # token carries no client id.
     if invoker_id:
         forwarded_headers[INVOKER_ID_HEADER] = invoker_id
+    _stamp_scope(forwarded_headers, request, role, caller_scope)
     # Who an SMO module is acting for (smo_shared/invoker.py). Only a module may say it: an rApp's own value was dropped above, so an rApp cannot
     # pose as another rApp (to escape its own limits, or to spend another's).
     on_behalf_of = request.headers.get(ON_BEHALF_OF_HEADER)
@@ -400,7 +403,20 @@ def _problem(status: int, title: str, detail: str) -> JSONResponse:
     return JSONResponse(status_code=status, content={"title": title, "status": status, "detail": detail})
 
 
-async def _forward_operator_api(request: Request, rest_of_path: str, body: bytes, invoker_id: str | None, role: str):
+def _stamp_scope(headers: dict, request: Request, role: str, caller_scope: authz_scope.Scope | None) -> None:
+    """PR-SEC-10: the caller's scope claim as SME introspected it, in `X-R1-Scope` (compact JSON; absent: unscoped). Never a value the caller sent: both scope headers
+    were dropped before this, so what a module reads is the gateway's own. What an SMO module passes on for the rApp it acts for (`X-R1-On-Behalf-Scope`, with
+    `X-R1-On-Behalf-Of`) is believed only from an `internal` caller, as the id is; an rApp's own value of it never reaches a module."""
+    claim = authz_scope.encode(caller_scope)
+    if claim:
+        headers[authz_scope.SCOPE_HEADER] = claim
+    passed_on = request.headers.get(authz_scope.ON_BEHALF_SCOPE_HEADER)
+    if passed_on and role == roles.ROLE_INTERNAL:
+        headers[authz_scope.ON_BEHALF_SCOPE_HEADER] = passed_on
+
+
+async def _forward_operator_api(request: Request, rest_of_path: str, body: bytes, invoker_id: str | None, role: str,
+                                caller_scope: authz_scope.Scope | None = None):
     """GUI-8.3: `/rapps/{instanceId}/operator/<route>` -> `<operatorApiBase of that instance>/<route>`. The caller was authenticated and the role policy,
     the kill switch and the rate limit were applied by `_proxy`. Every failure is a fixed title: no exception text, no address of the rApp."""
     target = operator_api.split(rest_of_path)
@@ -419,6 +435,7 @@ async def _forward_operator_api(request: Request, rest_of_path: str, body: bytes
     headers[CORRELATION_ID_HEADER] = get_correlation_id()
     if invoker_id:
         headers[INVOKER_ID_HEADER] = invoker_id
+    _stamp_scope(headers, request, role, caller_scope)
     on_behalf_of = request.headers.get(ON_BEHALF_OF_HEADER)
     if on_behalf_of and role == roles.ROLE_INTERNAL:
         headers[ON_BEHALF_OF_HEADER] = on_behalf_of
@@ -443,14 +460,14 @@ async def _forward_operator_api(request: Request, rest_of_path: str, body: bytes
 async def _introspect(request: Request) -> str | None:
     """The caller's invoker id from the token, None when the token is not good (see `_introspect_token`)."""
     caller = await _introspect_token(request)
-    return None if caller is None else caller[0]
+    return None if caller is None else caller.invoker_id
 
 
 class IntrospectionUnavailable(Exception):
     """SME did not answer the introspection (unreachable, or an error of its own): the token is neither good nor bad."""
 
 
-async def _introspect_token(request: Request) -> tuple[str, str] | None:
+async def _introspect_token(request: Request) -> Caller | None:
     """HISTORY.md §2: "No real OAuth2/token enforcement at R1
     Termination — only a comment and a tokenEndPoint URI in the bootstrap
     response; no actual validation code path." This is that path, per
@@ -498,7 +515,8 @@ async def _introspect_token(request: Request) -> tuple[str, str] | None:
     # PR-SEC-14: the role SME records for the invoker. An SME that does not say (the release before this one) is read by the scope, which is
     # what its own clients ask for: smo-internal / smo-gui is an SMO module, anything else an rApp.
     role = body.get("role") or (roles.ROLE_INTERNAL if body.get("scope") in roles.INTERNAL_SCOPES else roles.ROLE_RAPP)
-    answer = (str(body.get("client_id") or ""), role)
+    # PR-SEC-10.3: the scope claim SME holds for the invoker (absent: unscoped). One that is not valid permits nothing, it is never dropped.
+    answer = Caller(str(body.get("client_id") or ""), role, authz_scope.from_introspection(body.get("authz_scope")))
     if ttl > 0:
         # never past the token's own end of life (SME's `exp`, when it says)
         exp = body.get("exp")

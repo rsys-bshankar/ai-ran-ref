@@ -91,7 +91,7 @@ It does not decide anything: what to change is decided by rApps (via DME action 
 - **Alarm ids are always minted here** (fresh UUID), never the raising ME's native id, so ids cannot collide across a fleet.
 - **Safe parsing.** Adaptor replies are parsed with `defusedxml`; entity-expansion or external-entity XML is treated like an unparseable reply.
 - **Failure behaviour toward callers.** Per-change failures (unreachable endpoint, protocol not supported, RPC failure) are recorded as sub-change `REJECTED` with a `rejectionReason`, and the job ends `FAILED` or `PARTIAL_SUCCESS`; the HTTP response is still `202`. Registry or pre-check refusals are 4xx `ProblemDetails`.
-- **Security / RBAC.** No in-module authorization; R1 Termination introspects every token. The GUI BFF restricts `vendor-onboarding`, `cm-schemas`, `vendor-capabilities` writes, cell-guard writes, `alarms/ingest` and endpoint `heartbeat` to admin, and `config-jobs`, subscriptions, SWM and endpoint registration to operator. Inside the module, TS 28.319 MSAC (`/msac/...`) decides who may write which managed objects; a requester with no Identity or defined Role keeps the old rule that `accessScope == "entire-RAN"` needs a non-empty `msacRole`.
+- **Security / RBAC.** R1 Termination introspects every token. In the module, the only authorization of a caller is the scope check of `PR-SEC-10` (which managed elements, by region and tenant, a caller with a claim may touch; [section](#tenant-and-region-authorization-pr-sec-10)). The GUI BFF restricts `vendor-onboarding`, `cm-schemas`, `vendor-capabilities` writes, cell-guard writes, `alarms/ingest` and endpoint `heartbeat` to admin, and `config-jobs`, subscriptions, SWM and endpoint registration to operator. Inside the module, TS 28.319 MSAC (`/msac/...`) decides who may write which managed objects; a requester with no Identity or defined Role keeps the old rule that `accessScope == "entire-RAN"` needs a non-empty `msacRole`.
 
 ## 2. Low-level design (LLD)
 
@@ -100,6 +100,7 @@ It does not decide anything: what to change is decided by rApps (via DME action 
 | File | Responsibility |
 |---|---|
 | `app/main.py` | App, endpoint registry, the approval queue and the decision record (`AI-11`, `AI-13`: `_park_for_approval`, `approve_action`, `_record_decision`, `chain_decisions`), `POST /config-jobs` (pre-check, dispatch loop, aggregation; `_o1_client` picks the NETCONF or RESTCONF client by `o1_protocol`), alarms, PM / FM subscriptions and PM report fan-out, SWM jobs, health aging, list reads, DME callback stubs (`/health`, `/dme-jobs`) |
+| `app/scoping.py` | `PR-SEC-10`: what a caller with a scope claim may touch (`element_permitted`, `denied_refs`, `require_elements` for a request that names elements, `scoped_to_elements` for a list), over `managed_entity.region` / `.tenant`; the rule itself is `../shared/smo_shared/scope.py` |
 | `app/leafcheck.py` | `check_value(entry, value)`: a descriptor entry's type, `range`, `length`, `pattern`, `fractionDigits` and `enum` against one value (`PR-SB-5.1`); used by `schema_problems` |
 | `app/vendors.py` | Capability registry, CM schemas, onboarding flow, managed entities, cell guards, and the two request-time checks (`require_service`, `schema_problems`); mounted as a router |
 | `app/netconf_client.py` | RFC 6241 `edit-config` / `get-config` RPC builders, HTTP transport, `EditResult` (reason, retryable) |
@@ -140,6 +141,7 @@ Cross-module references are bare strings or UUIDs; none exist here.
 | `o1_protocol` | `NETCONF` / `RESTCONF` |
 | `o1_adaptor_endpoint_id` | FK to `o1_adaptor_endpoint` |
 | `cell_guards` | JSON `{cellId: {cellClass, sectorGroup, incidentZone, neighbourRefs}}` |
+| `region`, `tenant` | `SEC-10.2` (revision `0032`): nullable, indexed; where the element is and whom it belongs to. A caller whose scope claim restricts regions (tenants) may touch only elements whose region (tenant) it names, so an element without one is for unscoped callers only |
 
 **`vendor_capability`** (PK `vendor_name`): `supported_services` (list), `conformance_mode` (`OWN` / `SPEC` / `COMBINED`, default `SPEC`), `supported_vendor_modes` (list), `schema_name` / `schema_revision` (vendor descriptor), `spec_schema_name` / `spec_schema_revision` (spec descriptor), `discovery_uri`, `updated_at`.
 
@@ -215,12 +217,13 @@ All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limi
 
 | Method | Path | Purpose / notable errors |
 |---|---|---|
-| POST | `/o1-adaptor-endpoints` | Register an adaptor and its ME (201, `healthStatus` `DISCOVERED`). Body: `managedElementRef`, `adaptorUri`, `protocolSupport`, `o1Protocol`, `entityType`, `managedFunctionRef?`, `vendorName?`, `supportedServices?`. 409 `PROTOCOL_NOT_SUPPORTED`, 422 `SCHEMA_VALIDATION_FAILED` |
+| POST | `/o1-adaptor-endpoints` | Register an adaptor and its ME (201, `healthStatus` `DISCOVERED`). Body: `managedElementRef`, `adaptorUri`, `protocolSupport`, `o1Protocol`, `entityType`, `managedFunctionRef?`, `vendorName?`, `supportedServices?`, `region?`, `tenant?`. 409 `PROTOCOL_NOT_SUPPORTED`, 422 `SCHEMA_VALIDATION_FAILED` |
 | GET | `/o1-adaptor-endpoints` | List; filter `health_status` |
 | POST | `/o1-adaptor-endpoints/discover` | Bulk heartbeat-aging sweep; returns `{checked}` |
 | POST | `/o1-adaptor-endpoints/{endpoint_id}/heartbeat` | Heartbeat; `DISCOVERED` / `DEGRADED` -> `ACTIVE` |
-| GET | `/managed-entities` | List; filter `vendor_name`. Items carry effective `supportedServices`, `conformanceMode`, `cellGuards` |
-| GET | `/managed-entities/{me}` | One ME; 404 `MANAGED_ENTITY_NOT_FOUND` |
+| GET | `/managed-entities` | List; filters `vendor_name`, `region`, `tenant`. Items carry effective `supportedServices`, `conformanceMode`, `cellGuards`, `region`, `tenant`. Filtered to the caller's scope claim |
+| GET | `/managed-entities/{me}` | One ME; 404 `MANAGED_ENTITY_NOT_FOUND`; 403 `SCOPE_DENIED` outside the caller's scope claim |
+| PUT | `/managed-entities/{me}/scope` | `PR-SEC-10.2`: `{region?, tenant?}` replaces both (`null` or a key left out clears it) → `{managedElementRef, region, tenant}`. Internal-only at the gateway; 404 `MANAGED_ENTITY_NOT_FOUND`; 422 for a value that is not valid |
 | GET | `/managed-entities/{me}/config` | Read-after-write via `get-config`; query `managed_function_ref`. 409 `O1_SERVICE_NOT_SUPPORTED` (PROV), 503 `ENDPOINT_UNREACHABLE` |
 | PUT / DELETE | `/managed-entities/{me}/cells/{cell}/guards` | Set / remove a cell guard (`cellClass` `EMERGENCY` / `COVERAGE_CRITICAL` / `NORMAL`, `sectorGroup`, `incidentZone`, `neighbourRefs`); DELETE is idempotent |
 | GET | `/cell-guards` | Guard query across MEs; filters `managed_element_ref`, `cell_id`, `cell_class`, `sector_group`, `incident_zone` |
@@ -242,8 +245,8 @@ All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limi
 
 | Method | Path | Purpose / notable errors |
 |---|---|---|
-| POST | `/config-jobs` | `WriteConfigurationChanges` (202 `{jobId, status}`). Body: `requestedBy`, `accessScope` (`scope` is a deprecated alias; both, if sent, must agree), `changes[]` (`managedElementRef`, `managedFunctionRef?`, `className?`, `attributeChanges?`, `operation?`), `msacRole?`, `dryRun?` (true: run every check, send and store nothing, answer 200 `{dryRun, status: VALIDATED | WOULD_REJECT_SOME, changes[]: {…, verdict: PASS | WOULD_REJECT, reason}}`). 403 `MSAC_ACCESS_DENIED`, 409 `O1_SERVICE_NOT_SUPPORTED`, 422 `SCHEMA_VALIDATION_FAILED` |
-| GET | `/config-jobs/{job_id}` | Job with `subChanges` (`operation`, `status`, `rejectionReason`, `attempts`) |
+| POST | `/config-jobs` | `WriteConfigurationChanges` (202 `{jobId, status}`). Body: `requestedBy`, `accessScope` (`scope` is a deprecated alias; both, if sent, must agree), `changes[]` (`managedElementRef`, `managedFunctionRef?`, `className?`, `attributeChanges?`, `operation?`), `msacRole?`, `dryRun?` (true: run every check, send and store nothing, answer 200 `{dryRun, status: VALIDATED | WOULD_REJECT_SOME, changes[]: {…, verdict: PASS | WOULD_REJECT, reason}}`). 403 `SCOPE_DENIED` (any element outside the caller's scope claim, `PR-SEC-10.4`), 403 `MSAC_ACCESS_DENIED`, 409 `O1_SERVICE_NOT_SUPPORTED`, 422 `SCHEMA_VALIDATION_FAILED` |
+| GET | `/config-jobs/{job_id}` | Job with `subChanges` (`operation`, `status`, `rejectionReason`, `attempts`). 404 for a job that touched an element outside the caller's scope claim (`PR-SEC-10`) |
 | GET | `/config-jobs` | List; filter `status` |
 
 **Alarms and subscriptions**
@@ -258,7 +261,7 @@ All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limi
 | PUT / GET / DELETE | `/rapp-limits/{invokerId}` | what one rApp (by its invoker id) may do through `POST /config-jobs`; `PUT` replaces the whole set, at least one of: `maxConfigJobsPerHour` (429 `RAPP_RATE_LIMITED` beyond it), `maxElementsPerJob` (the blast radius: 403 `RAPP_BLAST_RADIUS_EXCEEDED` for a job naming more distinct elements), `maxChangePercent` (the magnitude: 403 `RAPP_MAGNITUDE_EXCEEDED` when a numeric value would move by more than that percentage of its current value read from the NF, or cannot be measured; 0 may only stay 0). Checked before anything is recorded or sent, dry runs too; rollbacks and reverts are not limited (`AI-10.3`). Set by rApp Management from the manifest at bootstrap; `GET` adds `configJobsLastHour`; a caller cannot change its own (403) (`AI-10.2`) |
 | GET | `/topology/links` | `managed_element_ref?`, `link_type?`: the declared neighbour relations with `linkType` (`INTRA_ELEMENT`, `INTER_ELEMENT`, `AMBIGUOUS`, `EXTERNAL`), `reciprocal`, `sameSectorGroup`, `sameIncidentZone` (`MGT-10.2`) |
 | GET | `/topology/relation` | `a`, `b` (DNs): `SAME`, `ANCESTOR`, `DESCENDANT`, `SIBLING`, `SAME_ELEMENT` or `DIFFERENT_ELEMENT` in the containment tree; 404 if either is not in it (`MGT-10.2`) |
-| POST / GET / DELETE | `/safeguard-subscriptions` (`/{id}`) | `{callbackUri, refusals?}`: be told (a `POST` through the outbox: `eventType` `RAPP_SAFEGUARD_REFUSAL`, `refusal`, `invokerId`, `requestedBy`, `detail`, `occurredAt`, `refusalId`) each time an rApp is refused by the kill switch, the rate, the blast radius or the magnitude limit; `refusals` narrows it to those codes. The same refusal of the same rApp is announced once per `SAFEGUARD_EVENT_MIN_INTERVAL_SECONDS` (60; 0: every one). Internal-only at R1 (`AI-10.6`) |
+| POST / GET / DELETE | `/safeguard-subscriptions` (`/{id}`) | `{callbackUri, refusals?}`: be told (a `POST` through the outbox: `eventType` `RAPP_SAFEGUARD_REFUSAL`, `refusal`, `invokerId`, `requestedBy`, `detail`, `occurredAt`, `refusalId`) each time an rApp is refused by the kill switch, the rate, the blast radius or the magnitude limit, or (`PR-SEC-10`) for naming a managed element outside its scope (`SCOPE_DENIED`); `refusals` narrows it to those codes. The same refusal of the same rApp is announced once per `SAFEGUARD_EVENT_MIN_INTERVAL_SECONDS` (60; 0: every one). Internal-only at R1 (`AI-10.6`) |
 | GET | `/safeguard-refusals` | `invoker_id?`, `code?`, `since?`: every refusal recorded, newest first, whether or not anyone was subscribed, with `announced` (`AI-10.6`). Internal-only at R1 |
 | POST | `/safeguard-refusals/purge` | `older_than_days?` (default `SAFEGUARD_REFUSAL_RETENTION_DAYS`; 422 when neither is set): delete refusal records older than that; `{deleted, olderThanDays}`. Internal-only at R1 |
 | PUT / GET / DELETE | `/rapp-approval-policy/{invokerId}` | `AI-11.4`. `PUT {requestedBy, timeoutSeconds?=3600 (60..604800), onTimeout?="EXPIRE" ("EXPIRE" or "REJECT")}`: from now on this rApp's `POST /config-jobs` waits for a person (replaces an earlier policy; an rApp cannot set its own: 403 `RAPP_LIMIT_SELF_CHANGE`). `GET` 404 `APPROVAL_POLICY_NOT_FOUND` when it is not held; `DELETE` (204) writes at once again, requests already waiting stay. `PUT`/`DELETE` internal-only at R1 |
@@ -371,6 +374,7 @@ ProblemDetails are returned as `{"detail": {"type": "about:blank", "title": <cod
 | `APPROVAL_NOT_FOUND`, `APPROVAL_POLICY_NOT_FOUND`, `APPROVAL_SUBSCRIPTION_NOT_FOUND`, `DECISION_RECORD_NOT_FOUND` | 404 | An unknown approval request, approval policy, approval subscription or decision record |
 | `APPROVAL_NOT_PENDING` | 409 | The request was already decided, or lapsed (the detail says which, and why) |
 | `APPROVAL_SELF_DECISION` | 403 | The requester of an action tried to decide it |
+| `SCOPE_DENIED` | 403 | `PR-SEC-10`: the caller's scope claim does not cover a managed element the request names (or the element is not registered); also the `refusalCode` of an approval refused for it |
 | `MSAC_ACCESS_DENIED` | 403 | A sub-change is not permitted by the requester's MSAC roles; or, for a requester with no Identity / defined Role, `accessScope` `entire-RAN` without `msacRole` |
 | `O1_SERVICE_NOT_SUPPORTED` | 409 | The ME's effective services lack the required MnS service (see [checks](#checks-at-request-time)) |
 | `PROTOCOL_NOT_SUPPORTED` | 409 | Endpoint registration or capability declaration with an `o1Protocol` the vendor has not declared; also the sub-change `rejectionReason` for an ME whose provisioned protocol is neither NETCONF nor RESTCONF at dispatch, and the error of `GET .../config` for such an ME |
@@ -381,6 +385,27 @@ ProblemDetails are returned as `{"detail": {"type": "about:blank", "title": <cod
 | `MANAGED_ENTITY_NOT_FOUND` | 404 | ME lookups (`GET /managed-entities/{me}`, cell guards, onboarding `discoverFrom`) |
 | `ENDPOINT_UNREACHABLE` | 503 | the configuration read (`get-config` or RESTCONF GET) failed or ME has no adaptor; onboarding discovery failed or ME has no adaptor. As a sub-change `rejectionReason` it also means the endpoint was missing / `DEGRADED` / `UNREACHABLE` |
 | `NETCONF_TIMEOUT`, `NETCONF_UNREACHABLE`, `NETCONF_RPC_FAILED`, `RESTCONF_TIMEOUT`, `RESTCONF_UNREACHABLE`, `RESTCONF_REQUEST_FAILED` | n/a | Sub-change `rejectionReason` values only |
+
+## Tenant and region authorization (PR-SEC-10)
+
+Decision and semantics: `docs/adr/0005-tenant-region-authorization.md`. This module owns the managed elements, so it decides which of them a caller may touch. The caller's scope claim (`{"regions": [...], "tenants": [...]}`) arrives from the gateway in `X-R1-Scope`, or, for a call an SMO module (DME) makes for an rApp, in `X-R1-On-Behalf-Scope`; `app/scoping.py` reads it (`smo_shared.scope.request_scope`) and applies the one rule of `smo_shared/scope.py` to the element's `region` and `tenant`.
+
+- **No claim: nothing changes.** An unscoped caller (an SMO module on its own account, the operator's GUI, an rApp nobody scoped) is never asked anything and no query is made. Nothing changes on upgrade until an operator sets a claim.
+- **A claim.** Every axis it names must match the element's value exactly. An element with no region (tenant) is outside a claim that restricts regions (tenants); so is an element that is not registered. A claim that cannot be read permits nothing.
+- **Where it applies** (all in `ran-nf-oam/tests/test_scope.py`):
+
+| Route | A scoped caller, element outside the scope |
+|---|---|
+| `POST /config-jobs` (also `dryRun`) | **403 `SCOPE_DENIED`**: one element outside refuses the whole job, before MSAC, the rate limit, the change limits and the schema check; the refusal is recorded like the other safeguard refusals (`GET /safeguard-refusals`, a `RAPP_SAFEGUARD_REFUSAL` event) |
+| `POST /config-jobs/{id}/rollback` (also `dryRun`) | **403** unless every element the job wrote to is inside the scope; the detail names none of them |
+| approving a parked request (`POST /rapp-approvals/{id}/approve`) | the requester's claim as it was when the request was parked (`rapp_action_approval.requester_scope`) is checked against the targets as they are now: **403 `SCOPE_DENIED`**, the request is closed `REFUSED` with that `refusalCode`, nothing is written. The approver is an operator and is not scoped |
+| `GET /managed-entities/{me}`, `.../config`, `.../config-history`, `.../config-history/diff`, `POST /pm-subscriptions`, `POST /fm-subscriptions` | **403 `SCOPE_DENIED`** (an unregistered element is refused alike, so the answer does not say which references exist) |
+| `GET /config-jobs/{id}`, `PATCH /alarms/{id}/ack`, `PATCH /alarms/{id}/clear`, `GET /pm-files/{id}/file` | **404** (`CONFIG_JOB_NOT_FOUND`, `ALARM_NOT_FOUND`, `NRM_OBJECT_NOT_FOUND`): an id the system minted is not shown to a caller whose scope does not cover its element (for a job: any element) |
+| lists: `GET /alarms`, `/managed-entities`, `/o1-adaptor-endpoints`, `/config-jobs` (jobs all of whose elements are inside), `/pm-subscriptions`, `/fm-subscriptions`, `/files`, `/software-management-jobs`, `/cell-guards` | **filtered**, never refused; `total` counts what the caller may see. `GET /kpis/{name}` reads only the performance files of the elements inside the scope |
+| `DELETE /pm-subscriptions/{id}`, `/fm-subscriptions/{id}` | **204**, nothing removed |
+
+- **Not yet scoped** (`OPEN_ITEMS.md`, `SEC-10.9`): the managed-object tree and topology, the KPI schedules, the file subscriptions, the vendor and CM-schema registries. The automatic revert of a failed wave and the KPI-guard revert run on the job's own record and are not scoped (undoing is never refused).
+- **Setting it.** `region` and `tenant` are accepted by `POST /o1-adaptor-endpoints` and replaced by `PUT /managed-entities/{me}/scope` (an operator's call; the gateway refuses it to an rApp, the GUI backend allows an admin). Same alphabet as a claim value: 1 to 100 characters of letters, digits and `. _ : / @ + -`, starting with a letter or digit.
 
 ### 2.8 Limits and open items
 
@@ -515,6 +540,7 @@ cd smo/ran-nf-oam && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_netconf_client.py` | RPC builders (`operation`, `function-ref`), `<ok/>` handling, failure reasons, `get-config` parsing | 12 |
 | `tests/test_restconf_client.py` | Data-resource URL and key encoding, `yang-data+json` bodies, `operation` -> method mapping (PATCH / PUT / POST on the parent / DELETE), `remove` tolerating `data-missing`, error-reply vs transient failure reasons, GET read-back parsing | 22 |
 | `tests/test_statemachine.py` | The three FSMs, aggregation, forbidden transitions (e.g. `ACTIVE` -> `UNREACHABLE`) | 10 |
+| `tests/test_scope.py` | `PR-SEC-10` (46): region and tenant at registration and edit; an unscoped caller unchanged; every row of the semantic table; the whole job refused for one element outside, a dry run, an unregistered element answered as an out-of-scope one, the scope checked before the schema; the refusal recorded and announced; a write through DME held to the rApp's scope; a damaged claim; rollback; the approval path (made, parked with the claim, refused when the element moved); configuration, history, diff and element reads; job, alarm, PM/FM, file, KPI, endpoint and cell-guard views | 46 |
 | `tests/test_approvals.py` | `AI-11`: an rApp without a policy writes at once; with one it is parked (nothing dispatched, no job), only that rApp, also when an SMO module writes for it; dry runs and the checks before parking; replay of a parked request; approve makes the job and closes the request, reject writes nothing, decided once, 404/409/403 (an rApp never decides, the requester cannot), queue filters and paging (`total=false`), safeguards checked again at approval and a refused request closed `REFUSED`; the timeout (default `EXPIRE`, `REJECT`, enforced on read, list, decide, the sweep route and the worker task, bounds, no auto-approve); the notice to approvers through the outbox | 29 |
 | `tests/test_decision_records.py` | `AI-13`: a record per rApp job with the context given and empty when not, none for an SMO module's own write, one for a write made for an rApp and for its rollback, validation, written in the job's transaction, approver and approval named, rejected request recorded without a job, the query (every filter, paging, `total=false`, 422), one record by id, the audit chain row per record and a chain that verifies, a changed record or audit row is a `MISMATCH`, an `UNCHAINED` record chained by the worker once, a lapsed request recorded | 17 |
 | **Total** | | **101** |

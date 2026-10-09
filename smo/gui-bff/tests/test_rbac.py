@@ -86,6 +86,8 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("PUT", "/rapp-mgmt/instances/i/kill", "operator"),
     ("DELETE", "/rapp-mgmt/instances/i/kill", "admin"),
     ("PUT", "/ran-nf-oam/rapp-limits/i", "admin"),
+    ("PUT", "/ran-nf-oam/managed-entities/e/scope", "admin"),           # SEC-10
+    ("PUT", "/sme/invoker-registrations/i/authz-scope", "admin"),
     # AI-11: a person decides an rApp's action (operator); who waits for a decision, and who is told, is administrative
     ("POST", "/ran-nf-oam/rapp-approvals/a/approve", "operator"),
     ("POST", "/ran-nf-oam/rapp-approvals/a/reject", "operator"),

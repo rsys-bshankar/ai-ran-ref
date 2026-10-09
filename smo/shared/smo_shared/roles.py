@@ -11,7 +11,7 @@ Enforcement (`SMO_ROLE_ENFORCEMENT`, read by SME and R1 Termination, default `en
 Two lists decide what an rApp may call. `INTERNAL_ONLY` is a deny-list (any method, so it also covers reads): a route listed is refused. `RAPP_MAY_CHANGE` is
 an allow-list for *changes* (POST, PUT, PATCH, DELETE): an rApp may change only what the SDK and the 3GPP consumer-facing routes need, and a change anywhere
 else (onboarding, instance management, orchestration, the other modules' administration) is refused with the same 403 `ROLE_NOT_PERMITTED`. Reads are
-open to every valid token, as before; scoping them per tenant is PR-SEC-10. Add a route to either list with the test that proves it exists.
+open to every valid token, as before; what a caller with a scope claim may read is decided by the module that owns the data (PR-SEC-10, scope.py). Add a route to either list with the test that proves it exists.
 """
 
 import hmac
@@ -57,6 +57,9 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/ran-nf-oam", ("GET", "POST", "DELETE"), r"^/approval-subscriptions(/[^/]+)?$"),
         # AI-13: the record of why rApps acted
         ("/ran-nf-oam", ("GET",), r"^/decision-records$"),
+        # SEC-10: what a caller (or a target) is scoped to is set by the platform, never by an rApp
+        ("/sme", ("PUT",), r"^/invoker-registrations/[^/]+/authz-scope$"),
+        ("/ran-nf-oam", ("PUT",), r"^/managed-entities/[^/]+/scope$"),
     ))
 
 
@@ -103,7 +106,11 @@ RAPP_MAY_CHANGE: dict[str, tuple[tuple[frozenset[str], re.Pattern], ...] | None]
         ),
         "/mllf": ((("POST",), r"^/models/[^/]+/deploy$"),),
         # GUI-8.3: a rApp registers (or withdraws) the operator API of its own instance; rApp Management checks that the instance is the caller's
-        "/rapp-mgmt": ((("PUT", "DELETE"), r"^/instances/[^/]+/operator-api$"),),
+        "/rapp-mgmt": (
+            (("PUT", "DELETE"), r"^/instances/[^/]+/operator-api$"),
+            # the container reports that it is up and how it performs; rApp Management checks that the instance is the caller's own (it is refused for another)
+            (("POST",), r"^/instances/[^/]+/(bootstrap-complete|performance)$"),
+        ),
         "/mdaf": (
             (("POST",), r"^/(subscriptions|mda-requests|mda-reports|reports)$"),
             (("DELETE",), r"^/(subscriptions|mda-requests)/[^/]+$"),

@@ -51,6 +51,7 @@ import httpx
 from .correlation import HEADER_NAME as CORRELATION_ID_HEADER
 from .correlation import get_correlation_id
 from .invoker import ON_BEHALF_OF_HEADER, get_originator
+from .scope import ON_BEHALF_SCOPE_HEADER, encode as encode_scope, get_originator_scope
 from . import metrics, mtls, tracing
 from .roles import BOOTSTRAP_KEY_HEADER, ENROLLMENT_HEADER, RAPP_SCOPE
 from .secretfile import read_secret
@@ -221,6 +222,10 @@ class R1Client:
         originator = get_originator()
         if originator:
             headers[ON_BEHALF_OF_HEADER] = originator
+            # ... and what that rApp may touch (PR-SEC-10): the module that owns the target decides, so the claim travels with the id
+            claim = encode_scope(get_originator_scope())
+            if claim:
+                headers[ON_BEHALF_SCOPE_HEADER] = claim
         return headers
 
     def _call(self, send, method: str, path: str, headers: dict, **kwargs) -> httpx.Response:

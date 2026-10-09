@@ -14,7 +14,7 @@ What the cache promises, and what it does not:
   - Only SME's answer is cached. "SME did not answer" (a transport error or a 5xx) is never stored, so an outage is a 503 as before, and a stored answer is never served
     past its TTL to ride one out.
   - The key is the SHA-256 of the token: the raw token is never held. The size is bounded; the oldest entry goes first when it is full.
-  - A change to the role SME records for an invoker is seen after at most the TTL, like a revocation that does not go through this gateway.
+  - A change to the role or the scope claim SME records for an invoker is seen after at most the TTL, like a revocation that does not go through this gateway.
 
 The lookup-then-store race with a revocation is closed by a generation number: an answer fetched while a revocation was evicting is not stored.
 """
@@ -26,10 +26,19 @@ from collections import OrderedDict
 from collections.abc import Callable
 from typing import NamedTuple
 
+from smo_shared.scope import Scope
+
 NEGATIVE_SECONDS = 5.0
 DEFAULT_MAX_ENTRIES = 10000
 
-Answer = tuple[str, str] | None          # (invoker id, role) of an active token, None for an inactive one
+class Caller(NamedTuple):
+    """Who an active token is for, as SME introspected it: the invoker id, its role and its scope claim (PR-SEC-10; None: unscoped)."""
+    invoker_id: str
+    role: str
+    scope: Scope | None = None
+
+
+Answer = Caller | None                   # the caller of an active token, None for an inactive one
 
 
 class _Entry(NamedTuple):
@@ -90,7 +99,7 @@ class IntrospectionCache:
         """A revocation of `invoker_id`: drop every entry for it (and refuse to store an answer that was in flight)."""
         with self._lock:
             self.generation += 1
-            gone = [k for k, e in self._entries.items() if e.answer is not None and e.answer[0] == invoker_id]
+            gone = [k for k, e in self._entries.items() if e.answer is not None and e.answer.invoker_id == invoker_id]
             for key in gone:
                 del self._entries[key]
             return len(gone)

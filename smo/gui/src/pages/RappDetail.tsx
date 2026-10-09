@@ -6,7 +6,7 @@ import type { FaultReport, Instance, InstanceSafeguards, PerfReport } from "../a
 import { Sparkline } from "../components/charts";
 import { DeclaredPage } from "../components/OperatorUi";
 import { Card, DataTable, ErrorBox, Id, Json, KeyValue, PageHeader, SeverityChip, StateBadge } from "../components/ui";
-import { describeLimits, formatTime, metricSeries, numericMetricKeys } from "../lib/domain";
+import { describeLimits, describeScope, formatTime, metricSeries, numericMetricKeys } from "../lib/domain";
 import { InstanceActions, VersionHistory } from "./Rapps";
 
 // PR-GUI-8 (GUI-8.4): the page of one rApp, /rapps/<instance>. First what the rApp's package declares (drawn by components/OperatorUi.tsx, the same for every
@@ -68,6 +68,7 @@ function Overview({ instanceId }: { instanceId: string }) {
           ["NFO deployment", inst.data.workloadRef && <code key="w">{inst.data.workloadRef}</code>],
           ["Autonomy mode", <StateBadge key="a" state={inst.data.autonomyMode} />],
           ["Region scope", inst.data.regionScope ? <Json value={inst.data.regionScope} /> : <span className="muted">—</span>],
+          ["Access scope", <span key="z" title="Which managed elements, by region and tenant, this rApp may touch (set when the instance was created)">{describeScope(inst.data.authzScope)}</span>],
         ]} />}
       </Card>
       <Card title="KPIs reported">

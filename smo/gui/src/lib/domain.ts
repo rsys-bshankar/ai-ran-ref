@@ -201,7 +201,7 @@ export function splitList(text: string): string[] {
 
 // ---------------------------------------------------------------- rApp safeguards (AI-10.x)
 
-export const REFUSAL_CODES = ["RAPP_KILLED", "RAPP_RATE_LIMITED", "RAPP_BLAST_RADIUS_EXCEEDED", "RAPP_MAGNITUDE_EXCEEDED"] as const;
+export const REFUSAL_CODES = ["RAPP_KILLED", "RAPP_RATE_LIMITED", "RAPP_BLAST_RADIUS_EXCEEDED", "RAPP_MAGNITUDE_EXCEEDED", "SCOPE_DENIED"] as const;
 
 /** What a refusal code means, in the operator's words. */
 export const REFUSAL_MEANING: Record<(typeof REFUSAL_CODES)[number], string> = {
@@ -209,7 +209,24 @@ export const REFUSAL_MEANING: Record<(typeof REFUSAL_CODES)[number], string> = {
   RAPP_RATE_LIMITED: "It started too many config jobs in the last hour",
   RAPP_BLAST_RADIUS_EXCEEDED: "One job touched more managed elements than allowed",
   RAPP_MAGNITUDE_EXCEEDED: "A value moved further than allowed in one write",
+  SCOPE_DENIED: "It named a managed element outside its region or tenant scope",
 };
+
+// ---------------------------------------------------------------- tenant and region scope (SEC-10)
+
+/** One line for a scope claim: "regions eu-west, eu-north · tenants acme"; "Unscoped (every managed element)" when there is none. */
+export function describeScope(scope: { regions?: string[] | null; tenants?: string[] | null } | null | undefined): string {
+  const parts: string[] = [];
+  if (scope?.regions?.length) parts.push(`regions ${scope.regions.join(", ")}`);
+  if (scope?.tenants?.length) parts.push(`tenants ${scope.tenants.join(", ")}`);
+  return parts.length ? parts.join(" · ") : "Unscoped (every managed element)";
+}
+
+/** Where a managed element is and whom it belongs to, for a table cell: "eu-west / acme"; a part that is not set shows as "—"; "—" when neither is. */
+export function describePlace(place: { region?: string | null; tenant?: string | null } | null | undefined): string {
+  if (!place || (!place.region && !place.tenant)) return "—";
+  return `${place.region || "—"} / ${place.tenant || "—"}`;
+}
 
 export interface LimitsLike {
   maxConfigJobsPerHour: number | null; maxElementsPerJob: number | null; maxChangePercent: number | null; configJobsLastHour?: number;

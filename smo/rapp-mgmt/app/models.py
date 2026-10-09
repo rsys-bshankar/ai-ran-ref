@@ -49,6 +49,10 @@ class RAppInstance(Versioned, Base):
     # PR-AI-11.4: {timeoutSeconds, onTimeout}, only for an ASSIST instance: its config jobs wait at RAN NF OAM for a human to approve them. Pushed there
     # (under oauth_client_id) when the instance finishes bootstrapping, removed on teardown. NULL: the instance's writes are not held, as before.
     approval_policy: Mapped[dict | None] = mapped_column(JSON)
+    # PR-SEC-10.3: the scope claim ({"regions": [...], "tenants": [...]}; NULL: unscoped) the instance was created with: which managed elements it may touch.
+    # Put on its invoker at SME when the invoker is registered; kept by an upgrade and restored by a rollback. Not `region_scope`, which is where an AUTONOMOUS
+    # instance's intents go (Intent Service), not what the instance is allowed to touch.
+    authz_scope: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
     # OI-2-terminate-workload / OI-2-upgrade-completeness: the outcome of
     # the most recent best-effort workload teardown this row performed or
     # inherited — its own TERMINATE, the old row's teardown on an upgrade
@@ -90,6 +94,7 @@ class RAppInstanceVersion(Base):
     previous_autonomy_mode: Mapped[str] = mapped_column(String, nullable=False)
     previous_region_scope: Mapped[dict | None] = mapped_column(JSON)
     previous_approval_policy: Mapped[dict | None] = mapped_column(JSON)       # PR-AI-11.4: restored with the rest by a rollback
+    previous_authz_scope: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))     # PR-SEC-10.3: likewise
     kind: Mapped[str] = mapped_column(String, nullable=False)  # UPGRADE | ROLLBACK
     # UPGRADE rows only: the ROLLBACK version that undid this one. A rolled-back
     # upgrade is skipped when looking for the next version to roll back to.
