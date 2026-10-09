@@ -26,8 +26,13 @@ updates:
     groups:
       python: { patterns: ["*"] }
 
+  # Go: the SDK has no module dependencies today (standard library only); this watches for the first one
+  - package-ecosystem: gomod
+    directory: /smo/sdk-go
+    schedule: { interval: weekly }
+
   - package-ecosystem: docker
-    directories: [/smo, /smo/gui]
+    directories: [/smo, /smo/gui, /smo/sdk-go/examples/hello-rapp]
     schedule: { interval: weekly }
 
   # image: lines in docker-compose.yml are a separate ecosystem
