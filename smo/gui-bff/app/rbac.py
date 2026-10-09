@@ -14,7 +14,7 @@ deliberately absent, so the GUI can't reach them at all.
 Some rules also pin request parameters to the caller's GUI identity rather
 than trusting what the browser sent: who acknowledged or cleared an alarm,
 SA SMOS's requester_is_admin flag, the RMIO identity on Intent Service
-intents, and who rejected an ASSIST autonomy dispatch.
+intents, and who rejected an ASSIST autonomy dispatch, and who approved or rejected an rApp action.
 """
 
 import re
@@ -192,6 +192,16 @@ RULES: list[Rule] = [
     _rule("POST", "/ran-nf-oam/safeguard-subscriptions", A),
     _rule("DELETE", "/ran-nf-oam/safeguard-subscriptions/{id}", A),
     _rule("POST", "/ran-nf-oam/safeguard-refusals/purge", A),
+    # AI-11: whether an rApp's action is written is a person's decision. Approving or rejecting is an operator's, as is writing a change by hand, and who
+    # decided is the signed-in user, never what the browser sent. Which rApps wait for a decision, and who is told, are administrative (admin).
+    # The sweep that lapses old requests is not exposed.
+    _rule("POST", "/ran-nf-oam/rapp-approvals/{id}/(approve|reject)", O,
+          json_overrides=lambda u: {"decidedBy": f"smo-gui:{u.username}"}),
+    _rule("PUT", "/ran-nf-oam/rapp-approval-policy/{id}", A,
+          json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
+    _rule("DELETE", "/ran-nf-oam/rapp-approval-policy/{id}", A),
+    _rule("POST", "/ran-nf-oam/approval-subscriptions", A),
+    _rule("DELETE", "/ran-nf-oam/approval-subscriptions/{id}", A),
 
     # --- DME: consumers are operator-level, producers admin
     _rule("POST", "/dme/data-jobs", O),

@@ -128,3 +128,13 @@ def test_execute_action_read_config_and_autonomy_dispatch(r1):
     assert (r1.calls[1]["path"], r1.calls[1]["params"]) == ("/ran-nf-oam/managed-entities/me-1/config",
                                                             {"managed_function_ref": "NRCellDU=101"})
     assert r1.calls[2]["json"]["rmihId"] == "sa-smos" and r1.calls[3]["path"] == "/intent-service/autonomy-dispatches/d-1"
+
+
+def test_execute_action_carries_the_decision_context_and_the_approval_can_be_followed(r1):
+    """PR-AI-13 / PR-AI-11: why the rApp acts rides on the action; an action held for a human is followed by its approval id."""
+    approval_id = uuid.uuid4()
+    PlatformClient(r1).execute_action("es-rapp", [{"managedElementRef": "me-1"}], decision={"modelVersion": "m 1.0", "rationale": "low load"})
+    PlatformClient(r1).execute_action("es-rapp", [{"managedElementRef": "me-1"}])
+    PlatformClient(r1).get_approval(approval_id)
+    assert r1.calls[0]["json"]["decision"] == {"modelVersion": "m 1.0", "rationale": "low load"} and "decision" not in r1.calls[1]["json"]
+    assert (r1.calls[2]["verb"], r1.calls[2]["path"]) == ("get", f"/ran-nf-oam/rapp-approvals/{approval_id}")

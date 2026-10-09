@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, UniqueConstraint, Uuid, false
+from sqlalchemy import ARRAY, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, UniqueConstraint, Uuid, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -247,6 +247,82 @@ class SafeguardRefusal(Base):
     code: Mapped[str] = mapped_column(String, nullable=False)
     detail: Mapped[str | None] = mapped_column(String)
     notified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+def _now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.UTC)
+
+
+class RAppApprovalPolicy(Base):
+    """AI-11.4: an rApp (by invoker id) whose config jobs wait for a human. While a row exists, a write by that rApp that passed every check is parked as a
+    `rapp_action_approval` instead of being dispatched. `on_timeout` says what happens to a request nobody decided within `timeout_seconds`:
+    `EXPIRE` (it lapses, status EXPIRED) or `REJECT` (the platform rejects it, status REJECTED, decided by `system:timeout`); neither writes anything."""
+    __tablename__ = "rapp_approval_policy"
+
+    invoker_id: Mapped[str] = mapped_column(String, primary_key=True)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=3600, server_default="3600")
+    on_timeout: Mapped[str] = mapped_column(String, nullable=False, default="EXPIRE", server_default="EXPIRE")
+    set_by: Mapped[str | None] = mapped_column(String)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class RAppActionApproval(Base):
+    """AI-11.1: one rApp action waiting for, or given, a human decision. `request` is the whole write request (what the job will be made from when it
+    is approved), `status` is PENDING, APPROVED (a job was made: `job_id`), REJECTED, EXPIRED, or REFUSED (approved, but a safeguard or a check refused
+    it at that moment: `refusal_code`). It is decided once."""
+    __tablename__ = "rapp_action_approval"
+
+    approval_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    invoker_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    requested_by: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING", index=True)
+    request: Mapped[dict] = mapped_column(JSON, nullable=False)
+    managed_elements: Mapped[list] = mapped_column(JSON, nullable=False, default=list)       # the distinct elements the action touches, for the list view
+    change_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, index=True)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    on_timeout: Mapped[str] = mapped_column(String, nullable=False, default="EXPIRE")         # the policy as it was when the request was parked
+    decided_by: Mapped[str | None] = mapped_column(String)
+    decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_reason: Mapped[str | None] = mapped_column(String)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True)
+    refusal_code: Mapped[str | None] = mapped_column(String)
+    correlation_id: Mapped[str | None] = mapped_column(String)
+
+
+class ApprovalSubscription(Base):
+    """AI-11.5: who is told (a POST to `callback_uri`, through the outbox) when an rApp action needs a decision, and when one lapses."""
+    __tablename__ = "approval_subscription"
+
+    subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    callback_uri: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+class RAppDecisionRecord(Base):
+    """AI-13.1: why an rApp acted, written when its config job is made (and when an action that needed approval ended without a job). Written once:
+    `content_hash` covers every field but `audit_seq`, which is set a moment later and is the row of the shared hash chain (`smo_shared.audit`) that carries that hash, so a
+    changed record no longer matches its link in the chain. `disposition`: DIRECT (no approval was needed), APPROVED, REJECTED, EXPIRED, REFUSED."""
+    __tablename__ = "rapp_decision_record"
+
+    decision_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    occurred_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now, index=True)
+    invoker_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    requested_by: Mapped[str] = mapped_column(String, nullable=False)
+    disposition: Mapped[str] = mapped_column(String, nullable=False)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, unique=True)
+    approval_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True)
+    action_id: Mapped[str | None] = mapped_column(String)
+    inputs_ref: Mapped[str | None] = mapped_column(String)
+    model_version: Mapped[str | None] = mapped_column(String, index=True)
+    rationale: Mapped[str | None] = mapped_column(String)
+    decided_by: Mapped[str | None] = mapped_column(String)                                  # the approver (APPROVED, REJECTED) or `system:timeout`
+    decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    managed_elements: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    change_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    correlation_id: Mapped[str | None] = mapped_column(String)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    audit_seq: Mapped[int | None] = mapped_column(BigInteger().with_variant(Integer, "sqlite"))     # NULL until the chain entry is written (a moment after the commit)
 
 
 class FileSubscription(Base):

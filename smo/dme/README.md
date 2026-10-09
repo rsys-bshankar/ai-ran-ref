@@ -226,7 +226,7 @@ All routes sit under `/dme`. Lists marked "paged" return `{items, total, limit, 
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/actions` (202) | `{requestedBy, changes[], scope="single-ME", msacRole?, sourceContext?, actionId?}`; each change is RAN NF OAM's `WriteConfigRequest.changes` shape (`managedElementRef`, `managedFunctionRef?`, `attributeChanges?`, `operation?`) plus optional `className`. Returns `{actionId, forwardedJobId, status}`; a replayed `actionId` returns 200 `IGNORED`. | 422 `SCHEMA_VALIDATION_FAILED` (empty `changes`); RAN NF OAM's own status and detail, action recorded `REJECTED` |
+| POST | `/actions` (202) | `{requestedBy, changes[], scope="single-ME", msacRole?, sourceContext?, actionId?, decision?}` (`decision {inputsRef?, modelVersion?, rationale?, actionId?}` is forwarded to RAN NF OAM, which keeps it as the job's decision record, `AI-13`; for an rApp whose changes wait for a person, RAN NF OAM answers `PENDING_APPROVAL` with no job: the action is recorded `PENDING_APPROVAL`, `forwardedJobId` is null and the answer carries `approvalId`, `AI-11`); each change is RAN NF OAM's `WriteConfigRequest.changes` shape (`managedElementRef`, `managedFunctionRef?`, `attributeChanges?`, `operation?`) plus optional `className`. Returns `{actionId, forwardedJobId, status}`; a replayed `actionId` returns 200 `IGNORED`. | 422 `SCHEMA_VALIDATION_FAILED` (empty `changes`); RAN NF OAM's own status and detail, action recorded `REJECTED` |
 | GET | `/actions?managed_element_ref=&requested_by=` | Paged | |
 | GET | `/actions/{id}` | | 404 `DME_ACTION_NOT_FOUND` |
 

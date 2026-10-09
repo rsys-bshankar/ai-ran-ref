@@ -1192,6 +1192,30 @@ def test_get_unknown_action_is_404(client):
     assert resp.status_code == 404
 
 
+def test_the_decision_context_is_forwarded_with_the_action_id_and_absent_when_not_given(client, ran_nf_oam):
+    """PR-AI-13: why the rApp acts goes to RAN NF OAM, which keeps it as the decision record of the job."""
+    action_id = "22222222-2222-2222-2222-222222222222"
+    client.post("/actions", json={"requestedBy": "r", "actionId": action_id, "changes": [{"managedElementRef": "me-1"}],
+                                  "decision": {"inputsRef": "dme://jobs/1", "modelVersion": "m 1.0", "rationale": "low load"}})
+    client.post("/actions", json={"requestedBy": "r", "changes": [{"managedElementRef": "me-2"}]})
+    assert ran_nf_oam.received[0]["decision"] == {"inputsRef": "dme://jobs/1", "modelVersion": "m 1.0", "rationale": "low load", "actionId": action_id}
+    assert "decision" not in ran_nf_oam.received[1]
+
+
+def test_an_action_held_for_approval_is_recorded_as_waiting_with_no_job(client, monkeypatch):
+    """PR-AI-11: RAN NF OAM answers PENDING_APPROVAL with no jobId; the action is recorded as waiting, and the rApp follows `approvalId`."""
+    fake = FakeRanNfOam()
+    monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeConfigJobResponse(
+        {"status": "PENDING_APPROVAL", "jobId": None, "approvalId": "33333333-3333-3333-3333-333333333333"}))
+    resp = client.post("/actions", json={"requestedBy": "r", "changes": [{"managedElementRef": "me-1"}]})
+    assert resp.status_code == 202
+    assert resp.json() == {"actionId": resp.json()["actionId"], "forwardedJobId": None, "status": "PENDING_APPROVAL",
+                           "approvalId": "33333333-3333-3333-3333-333333333333"}
+    action = client.get(f"/actions/{resp.json()['actionId']}").json()
+    assert action["status"] == "PENDING_APPROVAL" and action["forwardedJobId"] is None
+    assert fake.received == []
+
+
 def test_list_actions_filters_by_managed_element_ref(client, ran_nf_oam):
     client.post("/actions", json={"requestedBy": "rapp-1", "changes": [{"managedElementRef": "me-1"}]})
     client.post("/actions", json={"requestedBy": "rapp-2", "changes": [{"managedElementRef": "me-2"}]})

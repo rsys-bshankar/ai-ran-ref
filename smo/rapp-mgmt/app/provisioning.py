@@ -34,7 +34,7 @@ DEPLOYABLE_PACKAGE_STATES = ("AVAILABLE", "PRIMED")
 
 
 def provision_instance(db: Session, package_id: uuid.UUID, configuration: dict | None,
-                       autonomy_mode: str, region_scope: dict | None) -> RAppInstance:
+                       autonomy_mode: str, region_scope: dict | None, approval_policy: dict | None = None) -> RAppInstance:
     """Requires a validated package: AVAILABLE, or PRIMED (AVAILABLE plus
     pre-provisioned resources; D-SEC-RAPP-1) — 404 PACKAGE_NOT_FOUND for an
     unknown package, 409 MODEL_NOT_CERTIFIED for any other state. NFO handoff
@@ -56,7 +56,7 @@ def provision_instance(db: Session, package_id: uuid.UUID, configuration: dict |
         raise framework_error(FrameworkError.MODEL_NOT_CERTIFIED, detail="package has no nfDeploymentDescriptorId")
 
     inst = RAppInstance(package_id=package_id, configuration=configuration, state=InstanceState.DEPLOYING,
-                        oauth_client_id=str(uuid.uuid4()), autonomy_mode=autonomy_mode, region_scope=region_scope)
+                        oauth_client_id=str(uuid.uuid4()), autonomy_mode=autonomy_mode, region_scope=region_scope, approval_policy=approval_policy)
     db.add(inst)
     db.flush()
     deliver_credentials(inst, register_instance_invoker(inst))   # replaces the placeholder identity; the secret goes to the workload's Secret (or nowhere: see there)
@@ -226,6 +226,22 @@ def apply_rapp_limits(inst: RAppInstance, status: dict | None = None) -> None:
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE,
                               detail=f"the package declares limits {limits} but RAN NF OAM did not accept them; the instance stays DEPLOYING")
     inst.rapp_limits_set = True
+
+
+def apply_approval_policy(inst: RAppInstance) -> None:
+    """AI-11.4: hand the approval policy the instance was created with (ASSIST only) to RAN NF OAM, which holds this instance's config jobs for a human
+    under its invoker id. Fail closed, like the limits: an instance that was asked to wait for approval does not run writing at once because the
+    policy could not be set, so an unreachable RAN NF OAM or a refused push is a 503 and the instance stays DEPLOYING. No policy: no call."""
+    if not inst.approval_policy:
+        return
+    try:
+        resp = R1Client().put(f"/ran-nf-oam/rapp-approval-policy/{inst.oauth_client_id}", json={"requestedBy": "rapp-mgmt", **inst.approval_policy})
+        pushed = resp.status_code == 200
+    except httpx.HTTPError:
+        pushed = False
+    if not pushed:
+        raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE,
+                              detail="RAN NF OAM did not accept the approval policy of the instance; it stays DEPLOYING")
 
 
 def register_sme_declarations(inst: RAppInstance, status: dict | None = None) -> None:

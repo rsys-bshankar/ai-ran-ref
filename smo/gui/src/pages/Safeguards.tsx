@@ -1,9 +1,9 @@
 import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
-import type { InstanceSafeguards, InstanceSummary, RappKill, RefusalCode, SafeguardRefusal, SafeguardSubscription } from "../api/types";
+import type { ApprovalPolicy, InstanceSafeguards, InstanceSummary, RappKill, RefusalCode, SafeguardRefusal, SafeguardSubscription } from "../api/types";
 import { ActionButton, Can, Card, DataTable, Field, Id, Modal, PageHeader, StateBadge, Tabs, useHashTab } from "../components/ui";
-import { REFUSAL_CODES, REFUSAL_MEANING, describeLimits, formatTime, limitsForm, limitsPayload } from "../lib/domain";
+import { REFUSAL_CODES, REFUSAL_MEANING, approvalPolicyForm, approvalPolicyPayload, describeApprovalPolicy, describeLimits, formatTime, limitsForm, limitsPayload } from "../lib/domain";
 
 const TABS = ["rapps", "refusals", "watchers"] as const;
 
@@ -51,7 +51,7 @@ function RappLimits() {
 
 function InstanceRow({ instance }: { instance: InstanceSummary }) {
   const sg = useSmo<InstanceSafeguards>(`/rapp-mgmt/instances/${instance.instanceId}/safeguards`);
-  const [dialog, setDialog] = useState<"stop" | "limits" | null>(null);
+  const [dialog, setDialog] = useState<"stop" | "limits" | "approval" | null>(null);
   const view = sg.data;
   const invoker = view?.invokerId ?? null;
   return (
@@ -65,7 +65,10 @@ function InstanceRow({ instance }: { instance: InstanceSummary }) {
           : view.killed ? <span title={`${view.kill?.killedBy ?? ""}: ${view.kill?.reason ?? "no reason given"} (${formatTime(view.kill?.killedAt)})`}><StateBadge state="DISABLED" /> stopped</span>
           : <StateBadge state="ACTIVE" />}
       </td>
-      <td>{view ? (invoker ? describeLimits(view.limits) : <span className="muted">—</span>) : "…"}</td>
+      <td>
+        {view ? (invoker ? describeLimits(view.limits) : <span className="muted">—</span>) : "…"}
+        {view && invoker && <div className="small muted">{describeApprovalPolicy(view.approvalPolicy)}</div>}
+      </td>
       <td className="row gap">
         {invoker && view && <>
           {view.killed
@@ -77,12 +80,18 @@ function InstanceRow({ instance }: { instance: InstanceSummary }) {
           <Can method="PUT" path={`/ran-nf-oam/rapp-limits/${invoker}`}>
             <button className="btn" onClick={() => setDialog("limits")}>Limits…</button>
           </Can>
+          <Can method="PUT" path={`/ran-nf-oam/rapp-approval-policy/${invoker}`}>
+            <button className="btn" onClick={() => setDialog("approval")}>Approval…</button>
+          </Can>
+          {view.approvalPolicy && <ActionButton action={{ method: "DELETE", path: `/ran-nf-oam/rapp-approval-policy/${invoker}`, success: "This rApp's changes are written at once again" }}
+            label="Stop holding" tone="danger" confirm="Write this rApp's changes at once again? Requests already waiting stay in the Approvals inbox." />}
           {view.limits && <ActionButton action={{ method: "DELETE", path: `/ran-nf-oam/rapp-limits/${invoker}`, success: "Limits removed" }}
             label="Remove limits" tone="danger" confirm="Remove every limit of this rApp?" />}
         </>}
       </td>
       {dialog === "stop" && <StopDialog instanceId={instance.instanceId} onClose={() => setDialog(null)} />}
       {dialog === "limits" && invoker && <LimitsDialog invokerId={invoker} current={view?.limits ?? null} onClose={() => setDialog(null)} />}
+      {dialog === "approval" && invoker && <ApprovalPolicyDialog invokerId={invoker} current={view?.approvalPolicy ?? null} onClose={() => setDialog(null)} />}
     </tr>
   );
 }
@@ -128,6 +137,35 @@ function LimitsDialog({ invokerId, current, onClose }: { invokerId: string; curr
       {problem && <div className="error-box" role="alert">{problem}</div>}
       <div className="row gap">
         <button className="btn primary" disabled={action.isPending} onClick={save}>{action.isPending ? "…" : "Save limits"}</button>
+        <button className="btn ghost" onClick={onClose}>Cancel</button>
+      </div>
+    </Modal>
+  );
+}
+
+function ApprovalPolicyDialog({ invokerId, current, onClose }: { invokerId: string; current: ApprovalPolicy | null; onClose: () => void }) {
+  const [form, setForm] = useState(approvalPolicyForm(current));
+  const [problem, setProblem] = useState<string | null>(null);
+  const action = useSmoAction();
+  const save = () => {
+    const parsed = approvalPolicyPayload(form);
+    if (!parsed.ok) return setProblem(parsed.error);
+    setProblem(null);
+    action.mutate({ method: "PUT", path: `/ran-nf-oam/rapp-approval-policy/${invokerId}`, json: parsed.body, success: "Changes by this rApp now wait for approval" }, { onSuccess: onClose });
+  };
+  return (
+    <Modal title="Hold this rApp's changes for approval" onClose={onClose}>
+      <p className="muted small">From now on every config job this rApp asks for waits in the Approvals inbox until a person approves it; nothing is written before. Dry runs, rollbacks and reverts are not held.</p>
+      <Field label="A request may wait, minutes" hint="1 to 10080 (a week)"><input inputMode="numeric" value={form.minutes} onChange={(e) => setForm({ ...form, minutes: e.target.value })} /></Field>
+      <Field label="A request nobody decided" hint="Neither writes anything; there is no option that approves by itself">
+        <select value={form.onTimeout} onChange={(e) => setForm({ ...form, onTimeout: e.target.value as "EXPIRE" | "REJECT" })}>
+          <option value="EXPIRE">expires</option>
+          <option value="REJECT">is rejected by the platform</option>
+        </select>
+      </Field>
+      {problem && <div className="error-box" role="alert">{problem}</div>}
+      <div className="row gap">
+        <button className="btn primary" disabled={action.isPending} onClick={save}>{action.isPending ? "…" : "Hold for approval"}</button>
         <button className="btn ghost" onClick={onClose}>Cancel</button>
       </div>
     </Modal>
