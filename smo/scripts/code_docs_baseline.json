@@ -97,12 +97,12 @@
       "tests_without_docstring": 52
     },
     "mdaf": {
-      "files_without_description": 1,
-      "functions_without_description": 56,
-      "items_requiring_description": 77,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 78,
       "source_files": 8,
       "tests": 45,
-      "tests_without_docstring": 35
+      "tests_without_docstring": 0
     },
     "migrations": {
       "files_without_description": 0,
@@ -118,15 +118,15 @@
       "items_requiring_description": 1,
       "source_files": 2,
       "tests": 6,
-      "tests_without_docstring": 4
+      "tests_without_docstring": 0
     },
     "mlmr": {
-      "files_without_description": 1,
-      "functions_without_description": 39,
-      "items_requiring_description": 70,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 73,
       "source_files": 5,
       "tests": 54,
-      "tests_without_docstring": 41
+      "tests_without_docstring": 0
     },
     "mock-o1-adaptor": {
       "files_without_description": 0,
@@ -145,12 +145,12 @@
       "tests_without_docstring": 0
     },
     "nfo": {
-      "files_without_description": 1,
-      "functions_without_description": 13,
-      "items_requiring_description": 27,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 28,
       "source_files": 5,
       "tests": 40,
-      "tests_without_docstring": 18
+      "tests_without_docstring": 0
     },
     "onboarding": {
       "files_without_description": 1,
@@ -177,12 +177,12 @@
       "tests_without_docstring": 120
     },
     "ran-analytics": {
-      "files_without_description": 1,
-      "functions_without_description": 3,
+      "files_without_description": 0,
+      "functions_without_description": 0,
       "items_requiring_description": 5,
       "source_files": 3,
       "tests": 13,
-      "tests_without_docstring": 5
+      "tests_without_docstring": 0
     },
     "ran-nf-oam": {
       "files_without_description": 1,
