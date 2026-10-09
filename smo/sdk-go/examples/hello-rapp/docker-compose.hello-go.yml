@@ -1,0 +1,26 @@
+# The Go example rApp as one more service of the reference stack (sdk-go/README.md, "Run the example"):
+#
+#     cd smo
+#     docker compose -f docker-compose.yml -f sdk-go/examples/hello-rapp/docker-compose.hello-go.yml up -d --build hello-go-rapp
+#
+# Like the sample rApps it is an rApp: no enrollment secret, so SME records its invoker as `rapp` and R1 applies the rApp
+# role. Unlike them it has no database. HELLO_INSTANCE_ID is the id of an rApp instance created from the package
+# (sdk-go/README.md); leave it empty to run without registering an operator API.
+services:
+  hello-go-rapp:
+    build: { context: ./sdk-go, dockerfile: examples/hello-rapp/Dockerfile }
+    stop_grace_period: 30s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    environment:
+      R1_GATEWAY_URL: http://r1-termination:8000
+      MODULE: hello-go-rapp
+      SMO_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}       # sent as X-Bootstrap-Key when R1_BOOTSTRAP_KEY is set at the gateway
+      SMO_INVOKER_ID: ${HELLO_INVOKER_ID:-}          # the invoker rApp Management issued for the instance (POST .../credentials); empty: enroll one
+      SMO_INVOKER_SECRET: ${HELLO_INVOKER_SECRET:-}
+      HELLO_INSTANCE_ID: ${HELLO_INSTANCE_ID:-}
+      HELLO_OPERATOR_API_BASE: http://hello-go-rapp:8000
+      HELLO_HEARTBEAT_SECONDS: "30"
+    depends_on:
+      r1-termination: { condition: service_started }
