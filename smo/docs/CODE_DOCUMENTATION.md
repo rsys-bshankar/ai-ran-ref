@@ -143,7 +143,7 @@ comments removed: Python by `ast.dump` after dropping docstrings (so reformattin
 Go by the token stream after `go/parser` accepted the file, Java by tokens after a lexer removed comments (strings, chars and text blocks respected), shell, Dockerfile, YAML and
 Helm templates by the text without `#` and `{{- /* */ -}}` comments, SQL by tokens without `--` and `/* */`. A comment that is a tool directive (`# noqa`, `# type: ignore`,
 `# shellcheck disable=`, `//go:build`, `//go:embed`...) is compared too, so editing or moving one fails. It exits 1 with a reason per file when anything else differs,
-when a code file is added or deleted, or when a file cannot be classified ("not verified"); an extension is let through only with `--allow-unverified-extension`. The comparison
+when a code file is added or deleted, or when a file cannot be classified ("not verified"); an extension is let through only with `--allow-unverified-extension`. The one exception is `scripts/code_docs_baseline.json`, the gate's own data, which a documentation change lowers in the same change: it is reported as exempt. The comparison
 also notes (without failing) a changed docstring on a route or request model, because that text is published in the OpenAPI document.
 
 **The pull request title convention.** A pull request that changes only comments and docstrings is titled `Docs(code): <what>`. CI then runs the proof against the merge
