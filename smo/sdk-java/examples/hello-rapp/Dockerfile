@@ -4,7 +4,7 @@
 
 # The build stage is the Maven image, pinned by digest (Maven 3.9.11, the version the wrapper pins for local and CI builds): the image build
 # downloads no Maven distribution, so there is no wrapper download to fail or to verify here.
-FROM maven:3.9.11-eclipse-temurin-21-noble@sha256:6fdc855a6ed81d288ca7ca37ac6ff5e9308b612485c0801d70b25a858c83d237 AS build
+FROM maven:3.9-eclipse-temurin-26-noble@sha256:b2c1ad85954592f9928e84327c65201f308ad9b5d8ed7d5b823717c97bf23fbb AS build
 WORKDIR /src
 COPY pom.xml ./
 COPY smo-sdk/pom.xml smo-sdk/pom.xml
