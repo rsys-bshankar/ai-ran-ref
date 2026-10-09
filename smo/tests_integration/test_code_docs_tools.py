@@ -463,6 +463,16 @@ def test_cli_markdown_needs_the_allow_flag(repo, capsys):
     assert run_verify(repo, "--allow-unverified-extension", ".md", capsys=capsys)[0] == 0
 
 
+def test_cli_the_documentation_baseline_is_exempt_but_other_json_is_not(repo, capsys):
+    """`scripts/code_docs_baseline.json` may change in a documentation change; any other JSON file is still not verified."""
+    (repo / "smo" / "scripts").mkdir()
+    (repo / "smo" / "scripts" / "code_docs_baseline.json").write_text("{}\n")
+    code, out = run_verify(repo, capsys=capsys)
+    assert code == 0 and "exempt" in out
+    (repo / "smo" / "other.json").write_text("{}\n")
+    assert run_verify(repo, capsys=capsys)[0] == 1
+
+
 def test_cli_a_new_untracked_code_file_fails(repo, capsys):
     """A file that is not tracked yet is still part of the working-tree change; a new code file is not a documentation change."""
     (repo / "smo" / "m" / "b.py").write_text("x = 1\n")
