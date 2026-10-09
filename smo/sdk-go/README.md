@@ -171,7 +171,7 @@ err = c.Do(ctx, smosdk.Request{Method: "POST", Path: "/mlmr/models", Body: myMod
 if smosdk.IsConflict(err) { ... }
 ```
 
-Go 1.22 or later at run time (the example uses the method-and-wildcard `ServeMux` patterns); `go.mod` says 1.24.
+Go 1.22 or later at run time (the example uses the method-and-wildcard `ServeMux` patterns); `go.mod` says 1.27 (1.24 is out of security support; the CI job and the example image build with the same release).
 
 ### 4.1 Run the example against `docker compose`
 
