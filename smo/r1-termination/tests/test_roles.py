@@ -66,7 +66,9 @@ INTERNAL_ONLY_CALLS = [("PUT", "/ran-nf-oam/rapp-limits/x"), ("DELETE", "/ran-nf
                        ("PUT", "/ran-nf-oam/rapp-approval-policy/x"), ("DELETE", "/ran-nf-oam/rapp-approval-policy/x"), ("POST", "/ran-nf-oam/rapp-approvals/a/approve"),
                        ("POST", "/ran-nf-oam/rapp-approvals/a/reject"), ("POST", "/ran-nf-oam/rapp-approvals/expire-due"), ("GET", "/ran-nf-oam/rapp-approvals"),
                        ("GET", "/ran-nf-oam/approval-subscriptions"), ("POST", "/ran-nf-oam/approval-subscriptions"), ("DELETE", "/ran-nf-oam/approval-subscriptions/s"),
-                       ("GET", "/ran-nf-oam/decision-records")]
+                       ("GET", "/ran-nf-oam/decision-records"),
+                       # SEC-10: the scope of a caller and of a target is set by the platform
+                       ("PUT", "/sme/invoker-registrations/i/authz-scope"), ("PUT", "/ran-nf-oam/managed-entities/e/scope")]
 
 
 @pytest.mark.parametrize("method, path", INTERNAL_ONLY_CALLS)
@@ -86,6 +88,8 @@ def test_an_smo_module_is_not_refused_there(gateway, method, path):
 @pytest.mark.parametrize("method, path", [("GET", "/ran-nf-oam/rapp-limits/x"), ("GET", "/ran-nf-oam/rapp-kill/x"), ("GET", "/ran-nf-oam/kpi-definitions"), ("GET", "/ran-nf-oam/kpi-definitions/standard"),
                                           ("GET", "/ran-nf-oam/rapp-approvals/a"), ("GET", "/ran-nf-oam/decision-records/d"), ("GET", "/ran-nf-oam/rapp-approval-policy/x"), ("GET", "/ran-nf-oam/kpis/k"),
                                           ("POST", "/ran-nf-oam/config-jobs"), ("POST", "/ran-nf-oam/config-jobs/j/rollback"), ("POST", "/dme/actions"), ("POST", "/aimgf/training-jobs"),
+                                          # the rApp container reports that it is up and how it performs (rApp Management checks that the instance is its own)
+                                          ("POST", "/rapp-mgmt/instances/i/bootstrap-complete"), ("POST", "/rapp-mgmt/instances/i/performance"),
                                           ("DELETE", "/sme/provider-registrations/a"), ("GET", "/onboarding/packages"), ("GET", "/rapp-mgmt/instances"), ("GET", "/sme/trusted-invokers")])
 def test_other_routes_are_open_to_an_rapp_as_before(gateway, method, path):
     assert client.request(method, path, headers=AUTH).status_code == 200
@@ -161,6 +165,12 @@ def test_a_module_that_names_nobody_forwards_nothing(gateway):
     # GUI-8.3: an rApp registers (and forgets) the operator API of an instance, with those two methods and that one path
     ("POST", "/rapp-mgmt/instances/i/operator-api"), ("PATCH", "/rapp-mgmt/instances/i/operator-api"), ("PUT", "/rapp-mgmt/instances/i/operator-api/x"),
     ("PUT", "/rapp-mgmt/instances/i/j/operator-api"), ("DELETE", "/rapp-mgmt/instances/operator-api"),
+    # an rApp reports its own bootstrap and performance, and nothing else of its instance's life cycle: not those routes with another method, path or id shape
+    ("PUT", "/rapp-mgmt/instances/i/bootstrap-complete"), ("DELETE", "/rapp-mgmt/instances/i/performance"), ("PATCH", "/rapp-mgmt/instances/i/performance"),
+    ("POST", "/rapp-mgmt/instances/i/bootstrap-complete/x"), ("POST", "/rapp-mgmt/instances/i/j/performance"), ("POST", "/rapp-mgmt/instances/bootstrap-complete"),
+    ("POST", "/rapp-mgmt/x/i/performance"),
+    ("POST", "/rapp-mgmt/instances/i/fault"), ("POST", "/rapp-mgmt/instances/i/recover"), ("POST", "/rapp-mgmt/instances/i/credentials"),
+    ("POST", "/rapp-mgmt/instances/i/upgrade"), ("PUT", "/rapp-mgmt/instances/i/config"), ("POST", "/rapp-mgmt/instances/i/performance-x"),
 ])
 def test_an_rapp_may_not_change_what_it_does_not_use(gateway, method, path):
     resp = client.request(method, path, headers=AUTH)
@@ -172,6 +182,7 @@ def test_an_rapp_may_not_change_what_it_does_not_use(gateway, method, path):
     ("POST", "/ran-nf-oam/config-jobs"), ("POST", "/dme/actions"), ("PUT", "/dme/data-jobs/j"), ("POST", "/aimgf/models/m/advance"),
     ("POST", "/aimgf/ml-training-requests"), ("PATCH", "/intent-service/intents/i/admin-state"), ("POST", "/sme/oauth2/token"),
     ("POST", "/mlmr/models/m/artifact"), ("DELETE", "/mdaf/subscriptions/s"), ("PUT", "/rapp-mgmt/instances/i/operator-api"), ("DELETE", "/rapp-mgmt/instances/i/operator-api"),
+    ("POST", "/rapp-mgmt/instances/i/bootstrap-complete"), ("POST", "/rapp-mgmt/instances/i/performance"),
 ])
 def test_an_rapp_may_change_what_it_uses(gateway, method, path):
     assert client.request(method, path, headers=AUTH).status_code == 200

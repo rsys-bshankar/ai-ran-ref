@@ -20,7 +20,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import kpi_formula
+from smo_shared.scope import Scope
+
 from .models import KpiDefinition, ManagedEntity, PMFile
+from .scoping import scoped_to_elements
 
 AGGREGATIONS = ("sum", "avg", "min", "max", "last", "count")
 GROUPS = ("cell", "element", "sectorGroup", "incidentZone", "all")
@@ -72,9 +75,10 @@ def _as_utc(value: datetime.datetime) -> datetime.datetime:
 
 
 def load_samples(db: Session, counters: set[str], start: datetime.datetime, end: datetime.datetime,
-                 element: str | None = None, cell: str | None = None) -> tuple[list[Sample], int, bool]:
-    """(samples in [start, end) of the counters asked for, files read, whether more files than the bound were left unread)."""
-    stmt = select(PMFile).order_by(PMFile.file_ready_time.desc())
+                 element: str | None = None, cell: str | None = None, scope: Scope | None = None) -> tuple[list[Sample], int, bool]:
+    """(samples in [start, end) of the counters asked for, files read, whether more files than the bound were left unread). `scope` (PR-SEC-10.6) limits the files
+    to those of the elements a caller with that claim may touch: a KPI over "all" is then over its elements, not the network's."""
+    stmt = scoped_to_elements(select(PMFile), scope, PMFile.managed_element_ref).order_by(PMFile.file_ready_time.desc())
     if element:
         stmt = stmt.where(PMFile.managed_element_ref == element)
     files = db.scalars(stmt.limit(MAX_FILES + 1)).all()
@@ -145,11 +149,11 @@ def _group_view(group_by: str, key: tuple) -> dict:
 
 
 def compute(db: Session, definition: KpiDefinition, start: datetime.datetime, end: datetime.datetime, group_by: str = "cell",
-            element: str | None = None, cell: str | None = None) -> dict:
+            element: str | None = None, cell: str | None = None, scope: Scope | None = None) -> dict:
     """The KPI over [start, end), one item per group. A group with no samples of a needed counter, or whose formula is undefined (a division by
     zero), has `value` null and says which (`NO_DATA`, `UNDEFINED`)."""
     table = definition.counters
-    samples, scanned, truncated = load_samples(db, {c["counter"] for c in table}, start, end, element, cell)
+    samples, scanned, truncated = load_samples(db, {c["counter"] for c in table}, start, end, element, cell, scope)
     grouped: dict[tuple, list[Sample]] = {}
     guards: dict = {}
     for sample in samples:

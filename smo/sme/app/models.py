@@ -115,6 +115,9 @@ class InvokerRegistration(Base):
     # reports it as the token's `role`. The column default is 'internal' because the release before this one inserts rows without it and its
     # invokers are SMO modules (a rolling upgrade); this code always sets it.
     kind: Mapped[str] = mapped_column(String, nullable=False, default="internal", server_default="internal")
+    # PR-SEC-10.3: the scope claim, {"regions": [...], "tenants": [...]} (either key optional); NULL: unscoped. Introspection returns it as `authz_scope`
+    # and R1 Termination forwards it, so the modules that own the targets can decide (smo_shared/scope.py).
+    authz_scope: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
 
 
 class IssuedAccessToken(Base):

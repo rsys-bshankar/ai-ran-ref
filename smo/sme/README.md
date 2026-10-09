@@ -118,7 +118,7 @@ Failure behaviour: SME has no outbound dependency whose failure changes a respon
 
 **`provider_registration`**: `apf_id` (PK), `provider_domain_info`.
 
-**`invoker_registration`**: `api_invoker_id` (PK, `api-invoker-<uuid>`), `public_key` (a PEM key verifies client assertions; anything else is a label), `onboarding_secret_hash`.
+**`invoker_registration`**: `api_invoker_id` (PK, `api-invoker-<uuid>`), `public_key` (a PEM key verifies client assertions; anything else is a label), `onboarding_secret_hash`, `kind` (`internal` or `rapp`, PR-SEC-14), `authz_scope` (JSON, null: unscoped; PR-SEC-10.3, revision `0032`: the scope claim `{"regions": [...], "tenants": [...]}`, either key optional, which the introspection returns and the modules that own a target enforce; `smo_shared/scope.py`, `docs/adr/0005-tenant-region-authorization.md`).
 
 **`issued_access_token`**: `access_token_hash` (PK), `api_invoker_id`, `expires_at`, `scope` (the granted scope, null if unscoped). Expired rows are not purged; an invoker's rows are deleted when it is offboarded.
 
@@ -148,13 +148,14 @@ None: stateless as to lifecycle. The only time-dependent state is token validity
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/invoker-registrations` (201) | `{apiInvokerPublicKey}` → `{apiInvokerId, onboardingSecret, keyAuthentication}`; always creates a new invoker (it cannot be idempotent: only a hash of the secret is kept, so a repeat could not return it; modules share one identity through `smo_shared/module_identity.py` instead); emits `API_INVOKER_ONBOARDED` | 422 `SECURITY_CONTEXT_INVALID` (a malformed PEM key) |
+| POST | `/invoker-registrations` (201) | `{apiInvokerPublicKey, authzScope?}` → `{apiInvokerId, onboardingSecret, role, keyAuthentication, authzScope}`; a **scoped caller** (an rApp whose claim the gateway forwards) gets an invoker that carries its own claim, or a narrower one it asks for, never a wider one; always creates a new invoker (it cannot be idempotent: only a hash of the secret is kept, so a repeat could not return it; modules share one identity through `smo_shared/module_identity.py` instead); emits `API_INVOKER_ONBOARDED` | 422 `SECURITY_CONTEXT_INVALID` (a malformed PEM key), 422 `AUTHZ_SCOPE_INVALID` (fixed message), 403 `SCOPE_DENIED` (a claim wider than the caller's own, or a caller whose claim permits nothing) |
+| PUT | `/invoker-registrations/{id}/authz-scope` | PR-SEC-10.3: `{authzScope}` replaces the claim (`null` or `{}` removes it) → `{apiInvokerId, authzScope}`; emits `API_INVOKER_UPDATED`. Read live by the introspection, so tokens already issued are limited from the next request. Internal-only at the gateway (`INTERNAL_ONLY`; an admin's call in the GUI backend) | 400 `INVOKER_NOT_REGISTERED`; 422 `AUTHZ_SCOPE_INVALID` |
 | PUT | `/invoker-registrations/{id}` | Replace the public key (rotation) → `{apiInvokerId, keyAuthentication}`; emits `API_INVOKER_UPDATED` | 400 `INVOKER_NOT_REGISTERED`; 422 |
 | DELETE | `/invoker-registrations/{id}` (204) | Offboard: the invoker, its tokens and its trusted-invoker context; idempotent; emits `API_INVOKER_OFFBOARDED` | |
 | POST | `/invoker-registrations/purge-stale` | PR-ST-4 housekeeping (this build's own): query `unused_for_days` (> 0) and `dry_run` (default true). Offboards, like DELETE, every invoker that got no token for that long (or never did and was onboarded that long ago) → `{unusedForDays, dryRun, count, invokerIds}`. Invokers carry `created_at` and `last_token_issued_at`. A module whose identity is purged is onboarded afresh by `R1Client` | 422 `unused_for_days` missing or ≤ 0 |
-| GET | `/invoker-registrations` | Paged: `apiInvokerId`, `apiInvokerPublicKey`, `keyAuthentication`, `trusted` | |
+| GET | `/invoker-registrations` | Paged: `apiInvokerId`, `apiInvokerPublicKey`, `keyAuthentication`, `authzScope`, `trusted` | |
 | POST | `/oauth2/token` | `{grant_type: client_credentials, client_id, client_secret? \| client_assertion_type + client_assertion?, scope?}` → `{access_token, expires_in, token_type: Bearer, scope}` | 400 `unsupported_grant_type`, `invalid_request` (secret and assertion together), `invalid_client`, `unauthorized_client`, `invalid_scope` |
-| POST | `/oauth2/introspect` | `{token}` → `{active: false}` or `{active: true, client_id, exp, scope?}`; unauthenticated | |
+| POST | `/oauth2/introspect` | `{token}` → `{active: false}` or `{active: true, client_id, exp, role, scope?, authz_scope?}` (`authz_scope`: PR-SEC-10.3, absent for an unscoped invoker); unauthenticated | |
 
 **Trusted invokers (CAPIF security contexts)**
 
@@ -208,6 +209,8 @@ Matching rule for the last case: the subscriber id is compared with `allowedCons
 | `SERVICE_NAME_CONFLICT` | 409 | `serviceName` held by a different producer |
 | `PUBLISHING_FUNCTION_NOT_FOUND` | 404 | Own-services query for an unenrolled `apf_id` with no services |
 | `SUBSCRIPTION_SCOPE_CONFLICT` | 422 | Unknown event type (the name is shared with A1; here it means an invalid `eventTypes`) |
+| `AUTHZ_SCOPE_INVALID` | 422 | A scope claim that is not an object of `regions` and/or `tenants`, each a list of 1 to 100 distinct values (PR-SEC-10.3) |
+| `SCOPE_DENIED` | 403 | A scoped caller registering an invoker with a wider claim than its own |
 | `INVOKER_NOT_REGISTERED` | 400 | `PUT /trusted-invokers` or `PUT /invoker-registrations/{id}` for an invoker never onboarded |
 | `TRUSTED_INVOKER_NOT_FOUND` | 404 | Read, update or revoke without a context |
 | `SECURITY_CONTEXT_INVALID` | 422 | Malformed `ServiceSecurity` or `SecurityNotification`; a malformed PEM `apiInvokerPublicKey` |
@@ -243,6 +246,7 @@ cd smo/sme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Invoker onboarding, token issue and introspection (server-generated id and secret, no cleartext secret or token, bad grant / client / secret, expired and unknown tokens) | 12 |
 | | Trusted invokers: validation, replace, redaction and reveal, update, revocation (by `aefId`, whole record), 404s | 17 |
 | | Registry reads (providers with service count, invokers without secrets, trusted invokers, event subscriptions) and health | 5 |
+| `tests/test_scope.py` | PR-SEC-10.3: an invoker without a claim is unscoped and introspection says nothing of one; the claim at registration is returned sorted by introspection; invalid claims are 422 with a fixed message and register nothing; an operator sets, replaces and removes a claim and it applies to tokens already issued; a scoped caller (or a module acting for a scoped rApp) cannot mint a wider invoker | 16 |
 | `tests/test_security.py` | Scope: unscoped and internal scopes, a `3gpp#` scope over published APIs (and introspection of it), unpublished API, wrong AEF, malformed entries, unknown scope, an API hidden from the invoker | 10 |
 | | Client assertions: RSA and EC keys, one token per assertion, wrong key / audience / issuer, expired, too long-lived, no `jti`, label-only invoker, secret and assertion together, malformed PEM at onboarding, key rotation, offboarding revokes tokens | 14 |
 | | Invoker events and filters: onboarded / updated / offboarded delivery, `apiInvokerIds` filter, `aefIds` filter, a filter of another kind never matches, filters listed, unknown event type | 6 |

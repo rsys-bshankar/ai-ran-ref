@@ -32,10 +32,14 @@ export interface Package {
   // instance at bootstrap-complete, not here at onboarding time.
   smeDeclarations: { providers: Record<string, unknown>[]; serviceApis: Record<string, unknown>[] } | null;
 }
+/** PR-SEC-10: which managed elements, by region and tenant, a caller (an rApp instance) may touch. A key that is left out does not restrict that axis; no claim at all is unscoped. */
+export interface AuthzScope { regions?: string[]; tenants?: string[] }
 export interface InstanceSummary {
   instanceId: string; packageId: string; state: string;
   // HISTORY.md OI-6.3: fixed at onboarding (CreateInstance), SHADOW by default.
   autonomyMode: string;
+  // PR-SEC-10.3: the scope claim the instance was created with; null or absent: unscoped (it may touch every managed element, as before).
+  authzScope?: AuthzScope | null;
 }
 export interface Instance extends InstanceSummary {
   workloadRef: string | null; configuration: Record<string, unknown> | null; pendingUpgradeInstanceId: string | null;
@@ -121,7 +125,11 @@ export interface Alarm {
 }
 export interface PmSubscription { subscriptionId: string; managedElementRef: string; counterType: string; deliveryMethod: string; southboundEngine: string; granularityPeriod: number | null }
 export interface FmSubscription { subscriptionId: string; managedElementRef: string; deliveryMethod: string; southboundEngine: string }
-export interface O1Endpoint { endpointId: string; managedElementRef: string; adaptorUri: string; protocolSupport: string[]; registeredVia: string; healthStatus: string; lastHeartbeatAt: string | null }
+export interface O1Endpoint {
+  endpointId: string; managedElementRef: string; adaptorUri: string; protocolSupport: string[]; registeredVia: string; healthStatus: string; lastHeartbeatAt: string | null;
+  // PR-SEC-10.2: where the element is and whom it belongs to; null or absent: not set (such an element is for unscoped callers only).
+  region?: string | null; tenant?: string | null;
+}
 export interface ConfigJobSummary { jobId: string; requestedBy: string; scope: string; status: string; msacRole: string | null }
 export interface KpiGuardSettings {
   kpi: string; baselineMinutes: number; observationMinutes: number; maxRegressionPercent: number; direction: "higher" | "lower"; minSamples: number;
@@ -228,7 +236,7 @@ export interface RappLimits {
 export interface RappKill { invokerId: string; killedBy: string; reason: string | null; killedAt: string }
 /** GET /rapp-mgmt/instances/{id}/safeguards: what holds one instance in check at RAN NF OAM. `invokerId` is null once it is terminated. */
 export interface InstanceSafeguards { instanceId: string; invokerId: string | null; killed: boolean; kill: RappKill | null; limits: RappLimits | null; approvalPolicy?: ApprovalPolicy | null }
-export type RefusalCode = "RAPP_KILLED" | "RAPP_RATE_LIMITED" | "RAPP_BLAST_RADIUS_EXCEEDED" | "RAPP_MAGNITUDE_EXCEEDED";
+export type RefusalCode = "RAPP_KILLED" | "RAPP_RATE_LIMITED" | "RAPP_BLAST_RADIUS_EXCEEDED" | "RAPP_MAGNITUDE_EXCEEDED" | "SCOPE_DENIED";
 export interface SafeguardRefusal {
   refusalId: string; occurredAt: string; invokerId: string; requestedBy: string | null; refusal: RefusalCode; detail: string | null; announced: boolean;
 }

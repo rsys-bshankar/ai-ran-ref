@@ -37,16 +37,18 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared import scope as authz_scope
 from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
 from smo_shared.webhook import get_webhook
 
+from . import scoping
 from .ldn import leaf_class
 from .leafcheck import check_value
 from .models import CMSchemaCache, ManagedEntity, O1AdaptorEndpoint, VendorCapability
@@ -430,13 +432,19 @@ def _me_view(db: Session, me: ManagedEntity) -> dict:
             "entityType": me.entity_type, "vendorName": me.vendor_name, "o1Protocol": me.o1_protocol,
             "o1AdaptorEndpointId": str(me.o1_adaptor_endpoint_id) if me.o1_adaptor_endpoint_id else None,
             "supportedServices": effective_services(db, me), "conformanceMode": cap.conformance_mode if cap else None,
-            "cellGuards": me.cell_guards or {}}
+            "cellGuards": me.cell_guards or {}, "region": me.region, "tenant": me.tenant}
 
 
 @router.get("/managed-entities")
-def list_managed_entities(vendor_name: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
-                          db: Session = Depends(get_session)):
-    stmt = select(ManagedEntity).order_by(ManagedEntity.managed_element_ref)
+def list_managed_entities(request: Request, vendor_name: str | None = None, region: str | None = None, tenant: str | None = None,
+                          limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    """The registered managed elements. `region` and `tenant` narrow the list (PR-SEC-10.2). A caller with a scope claim sees only the elements inside it
+    (PR-SEC-10.6: the list is filtered, never refused)."""
+    stmt = scoping.scoped_to_elements(select(ManagedEntity), scoping.request_scope(request), ManagedEntity.managed_element_ref).order_by(ManagedEntity.managed_element_ref)
+    if region:
+        stmt = stmt.where(ManagedEntity.region == region)
+    if tenant:
+        stmt = stmt.where(ManagedEntity.tenant == tenant)
     if vendor_name:
         stmt = stmt.where(ManagedEntity.vendor_name == vendor_name)
     page = paginate(db, stmt, limit, offset)
@@ -444,8 +452,34 @@ def list_managed_entities(vendor_name: str | None = None, limit: int = PageLimit
 
 
 @router.get("/managed-entities/{managed_element_ref}")
-def get_managed_entity(managed_element_ref: str, db: Session = Depends(get_session)):
+def get_managed_entity(managed_element_ref: str, request: Request, db: Session = Depends(get_session)):
+    scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])       # PR-SEC-10.5: 403 SCOPE_DENIED outside the caller's scope
     return _me_view(db, _get_me(db, managed_element_ref))
+
+
+class ScopeBody(BaseModel):
+    """Where an element is and whom it belongs to (PR-SEC-10.2): `null` clears it. Both keys replace the stored values."""
+    model_config = ConfigDict(extra="forbid")
+    region: str | None = Field(default=None, max_length=100)
+    tenant: str | None = Field(default=None, max_length=100)
+
+    @field_validator("region", "tenant")
+    @classmethod
+    def _valid(cls, value: str | None) -> str | None:
+        if value is not None and not authz_scope.valid_value(value):
+            raise ValueError("must be 1 to 100 characters of letters, digits and . _ : / @ + -, starting with a letter or digit")
+        return value
+
+
+@router.put("/managed-entities/{managed_element_ref}/scope")
+def set_managed_entity_scope(managed_element_ref: str, body: ScopeBody, db: Session = Depends(get_session)):
+    """PR-SEC-10.2: set the `region` and `tenant` of a managed element (an operator's or an SMO module's call; an rApp is refused at the gateway). Replaces both;
+    a key left out or `null` clears it, and an element with no region (tenant) is then for unscoped callers, and for callers whose claim does not restrict
+    regions (tenants), only. Takes effect on the next request. 404 for an unknown element."""
+    me = _get_me(db, managed_element_ref)
+    me.region, me.tenant = body.region, body.tenant
+    db.commit()
+    return {"managedElementRef": me.managed_element_ref, "region": me.region, "tenant": me.tenant}
 
 
 @router.put("/managed-entities/{managed_element_ref}/cells/{cell_id}/guards")
@@ -465,12 +499,12 @@ def delete_cell_guards(managed_element_ref: str, cell_id: str, db: Session = Dep
 
 
 @router.get("/cell-guards")
-def query_cell_guards(managed_element_ref: str | None = None, cell_id: str | None = None, cell_class: CellClass | None = None,
+def query_cell_guards(request: Request, managed_element_ref: str | None = None, cell_id: str | None = None, cell_class: CellClass | None = None,
                       sector_group: str | None = None, incident_zone: str | None = None, limit: int = PageLimit,
                       offset: int = PageOffset, db: Session = Depends(get_session)):
     """The guard query any rApp uses (e.g. the EnergySaving rApp never
-    sleeps an EMERGENCY cell, nor two cells of one sectorGroup at once)."""
-    stmt = select(ManagedEntity).order_by(ManagedEntity.managed_element_ref)
+    sleeps an EMERGENCY cell, nor two cells of one sectorGroup at once). PR-SEC-10.6: only the elements inside the caller's scope claim."""
+    stmt = scoping.scoped_to_elements(select(ManagedEntity), scoping.request_scope(request), ManagedEntity.managed_element_ref).order_by(ManagedEntity.managed_element_ref)
     if managed_element_ref:
         stmt = stmt.where(ManagedEntity.managed_element_ref == managed_element_ref)
     items = []

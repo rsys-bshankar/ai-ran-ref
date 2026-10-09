@@ -7,12 +7,14 @@
 # change no test notices ("survived", or "no tests": nothing runs that code) is a place where a bug could be introduced and every test would still pass. Coverage says
 # a line ran; this says whether a test would notice if it were wrong.
 #
-# Scope (smo/shared/pyproject.toml, [tool.mutmut] only_mutate): 16 modules of the shared library, chosen because a silent change in them is a security or integrity defect:
+# Scope (smo/shared/pyproject.toml, [tool.mutmut] only_mutate): 17 modules of the shared library, chosen because a silent change in them is a security or integrity defect:
 # pagination, ratelimit, timeutil, roles (the gateway's role policy and enrollment-secret check), webhook (the SSRF guard), killswitch, invoker, bodylimit, secretfile,
-# versioning, identity, correlation, audit (the hash chain), idempotency, security_headers and errors. Tested by shared/tests and the gateway's tests/test_roles.py.
+# versioning, identity, correlation, audit (the hash chain), idempotency, security_headers, errors and scope (tenant and region authorization). Tested by shared/tests and the
+# gateway's tests/test_roles.py and tests/test_scope.py.
 # Fails unless every mutant is killed. First run (October 2026): 131 mutants in four modules, 49 killed. Widened in two steps to 1560 mutants in 16 modules: the first
 # eight added modules gave 822 mutants with 73 survivors; adding audit, idempotency, security_headers and errors gave 1604 with 251 survivors. The tests added to kill them are
 # shared/tests/test_mutation_survivors.py, test_idempotency_exact.py, test_errors_exact.py and test_audit_exact.py.
+# PR-SEC-10 added `scope` (1859 mutants in all, none surviving: the one `no tests` mutant of the first run was `request_scope`, which only a module called, now tested in shared).
 # Besides missing tests it found: a CHECK-violation message could override a known SQLSTATE (errors.py), and several mutants that were equivalent to the original (a default
 # argument no code path read, a cast that does nothing at run time, a dict key a later key overwrote, a falsy `None` where `False` was meant): the code was changed to not have
 # them rather than a mutant being excused. The audit command line's help text is held in module constants, which mutmut does not mutate, and its presence is tested.

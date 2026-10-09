@@ -174,6 +174,15 @@ Why a package leaves a parameter out:
 - `gpu: 0` everywhere: the reference models are small (threshold / regression),
   see each rApp's `app/model/`.
 
+### 3.2 The regions and tenants an rApp may touch are not in the package
+
+A scope claim (`{"regions": [...], "tenants": [...]}`, `PR-SEC-10`, `docs/adr/0005-tenant-region-authorization.md`) says which managed elements an rApp instance may touch. It is **not** a key of
+`manifest.yaml` or `capabilities.yaml`, and nothing reads one if a package carries it: reach is granted by the operator who creates the instance (`POST /rapp-mgmt/instances`,
+field `authzScope`), not claimed by the author of the package. (The `limits` of the manifest are different: they are the most the author says the rApp needs, and the platform holds it to
+them.) So the package does not change; the same package can be run unscoped in one deployment and scoped to a tenant in another. A rApp that runs scoped should expect, from
+RAN NF OAM, `403 SCOPE_DENIED` for a write that names an element outside its scope (the whole job is refused), the same for a read of such an element's configuration, an empty or shorter
+list where it used to see every element, and `404` for an alarm, job or file by id that belongs to another region or tenant.
+
 ## 4. `capabilities.yaml`
 
 `capabilities.consumes` and `capabilities.provides` are lists of
@@ -269,7 +278,8 @@ verification against a trust anchor (see [`../../SECURITY.md`](../../SECURITY.md
 3. In `manifest.yaml` list only the modes you implement, and keep every
    `runtimeProfiles` key inside `executionModes`.
 4. In `capabilities.yaml` declare exactly the SDK namespaces your code calls. To give the rApp its own operator page, add `operatorUi` to the manifest (§3.1; `smo_sdk.operator_ui` builds and checks it).
-5. Rebuild with `python3 samples/build_csar.py <name>` and run
+5. If the rApp will run scoped, handle `403 SCOPE_DENIED` and filtered lists (§3.2); nothing in the package declares the scope.
+6. Rebuild with `python3 samples/build_csar.py <name>` and run
    `PYTHONPATH=shared python -m pytest tests_integration/ -q`.
 
 ### 7.1 An rApp that is not written in Python

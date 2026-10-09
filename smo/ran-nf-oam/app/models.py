@@ -71,6 +71,10 @@ class ManagedEntity(Base):
     # Wave 9 (W9-06, decision D-5): per-cell guard attributes any rApp may
     # query — {cellId: {cellClass, sectorGroup, incidentZone, neighbourRefs}}.
     cell_guards: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # PR-SEC-10.2 (docs/adr/0005-tenant-region-authorization.md): where the element is and whom it belongs to. NULL: not set. A caller whose scope claim
+    # restricts regions (tenants) may touch only elements whose region (tenant) is one it names, so an element without one is for unscoped callers only.
+    region: Mapped[str | None] = mapped_column(String, index=True)
+    tenant: Mapped[str | None] = mapped_column(String, index=True)
 
 
 class Alarm(Base):
@@ -288,6 +292,9 @@ class RAppActionApproval(Base):
     job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True)
     refusal_code: Mapped[str | None] = mapped_column(String)
     correlation_id: Mapped[str | None] = mapped_column(String)
+    # PR-SEC-10.4: the scope claim of the requester when the request was parked ({"regions": [...], "tenants": [...]}; NULL: unscoped), checked again against
+    # the targets as they are when the request is approved
+    requester_scope: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
 
 
 class ApprovalSubscription(Base):

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ModuleStatus } from "../api/types";
 
-import { APPROVAL_MEANING, DISPOSITION_MEANING, approvalPolicyForm, approvalPolicyPayload, describeApprovalPolicy, INTEGRITY_MEANING, completionRoute, decisionQuery, describeChange, describeElements, timeLeft, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describeSeconds, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, waveProgress, metricSeries, moduleRows, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
+import { REFUSAL_CODES, REFUSAL_MEANING, APPROVAL_MEANING, DISPOSITION_MEANING, approvalPolicyForm, approvalPolicyPayload, describeApprovalPolicy, INTEGRITY_MEANING, completionRoute, decisionQuery, describeChange, describeElements, timeLeft, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describePlace, describeScope, describeSeconds, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, waveProgress, metricSeries, moduleRows, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
 
 describe("model lifecycle", () => {
   it("maps each state to the FSM's next legal action", () => {
@@ -305,5 +305,31 @@ describe("approvals and decision records (AI-11, AI-13)", () => {
     expect(approvalPolicyPayload({ minutes: " 30 ", onTimeout: "REJECT" })).toEqual({ ok: true, body: { timeoutSeconds: 1800, onTimeout: "REJECT" } });
     expect(approvalPolicyPayload({ minutes: "10080", onTimeout: "EXPIRE" }).ok).toBe(true);
     for (const bad of ["", " ", "0", "-5", "1.5", "10081", "soon"]) expect(approvalPolicyPayload({ minutes: bad, onTimeout: "EXPIRE" }).ok).toBe(false);
+  });
+});
+
+describe("tenant and region scope (SEC-10)", () => {
+  it("describes a scope claim: each axis it restricts, or that there is none", () => {
+    expect(describeScope(null)).toBe("Unscoped (every managed element)");
+    expect(describeScope(undefined)).toBe("Unscoped (every managed element)");
+    expect(describeScope({})).toBe("Unscoped (every managed element)");
+    expect(describeScope({ regions: [], tenants: [] })).toBe("Unscoped (every managed element)");
+    expect(describeScope({ regions: ["eu-west", "eu-north"] })).toBe("regions eu-west, eu-north");
+    expect(describeScope({ tenants: ["acme"] })).toBe("tenants acme");
+    expect(describeScope({ regions: ["eu-west"], tenants: ["acme", "globex"] })).toBe("regions eu-west · tenants acme, globex");
+  });
+
+  it("describes where an element is: region / tenant, a dash for a part that is not set", () => {
+    expect(describePlace(null)).toBe("—");
+    expect(describePlace({})).toBe("—");
+    expect(describePlace({ region: null, tenant: null })).toBe("—");
+    expect(describePlace({ region: "eu-west", tenant: "acme" })).toBe("eu-west / acme");
+    expect(describePlace({ region: "eu-west", tenant: null })).toBe("eu-west / —");
+    expect(describePlace({ tenant: "acme" })).toBe("— / acme");
+  });
+
+  it("explains every refusal code the safeguards page can filter by, including a scope refusal", () => {
+    expect(REFUSAL_CODES).toContain("SCOPE_DENIED");
+    for (const code of REFUSAL_CODES) expect(REFUSAL_MEANING[code]).toMatch(/\S/);
   });
 });

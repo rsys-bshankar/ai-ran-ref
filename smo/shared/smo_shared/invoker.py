@@ -15,11 +15,15 @@ is dropped, so an rApp cannot pose as another), and a backend reads the effectiv
   - `invoker_id(request)` is that originator when an internal module is acting for one, otherwise the caller's own `X-R1-Invoker-Id`.
 
   get_originator()           the originator of the request being handled (None outside a request, or when nobody is being acted for)
+  on_own_account()           a block in which the module acts for nobody: `R1Client` adds no `X-R1-On-Behalf-Of` (nor claim). For what the platform does about an rApp
+                             rather than for it, such as setting the rApp's own limits when the rApp reports that it is up (a module acting "for" the rApp there would be
+                             refused by RAN NF OAM's rule that a caller cannot change its own limit)
   apply_invoker_context(app) installs the middleware that records it; `apply_correlation_id` calls it, so every service already has it
 """
 
+from contextlib import contextmanager
 from contextvars import ContextVar
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 
 from fastapi import FastAPI, Request
 
@@ -52,6 +56,15 @@ def invoker_id(request: Request) -> str | None:
 
 def get_originator() -> str | None:
     return _current_originator.get()
+
+
+@contextmanager
+def on_own_account() -> Iterator[None]:
+    token = _current_originator.set(None)
+    try:
+        yield
+    finally:
+        _current_originator.reset(token)
 
 
 def apply_invoker_context(app: FastAPI) -> None:

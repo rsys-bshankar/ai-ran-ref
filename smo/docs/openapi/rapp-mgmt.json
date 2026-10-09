@@ -36,6 +36,18 @@
               }
             ]
           },
+          "authzScope": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authzscope"
+          },
           "autonomyMode": {
             "default": "SHADOW",
             "enum": [
@@ -992,7 +1004,7 @@
     },
     "/instances/{instance_id}/bootstrap-complete": {
       "post": {
-        "description": "Called once the rApp container has bootstrapped via R1 Termination\nand registered with SME/DME \u2014 closes DEPLOYING -> RUNNING. 409 if the\ninstance is not DEPLOYING.",
+        "description": "Called once the rApp container has bootstrapped via R1 Termination\nand registered with SME/DME \u2014 closes DEPLOYING -> RUNNING. 409 if the\ninstance is not DEPLOYING. The rApp may call it for its own instance only\n(403 `NOT_THIS_INSTANCE` for another rApp's); an operator may call it for any.",
         "operationId": "bootstrap_complete_instances__instance_id__bootstrap_complete_post",
         "parameters": [
           {
@@ -2654,6 +2666,7 @@
         "summary": "List Performance Reports"
       },
       "post": {
+        "description": "Record a metrics object for the instance. The rApp may report for its own instance only (403 `NOT_THIS_INSTANCE` for another rApp's); an operator may for any.",
         "operationId": "report_performance_instances__instance_id__performance_post",
         "parameters": [
           {
