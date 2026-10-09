@@ -1,5 +1,7 @@
-"""Tests for the ApplicationPackage lifecycle (Onboarding/rApp Mgmt LLD
-sections 3-4). Run with: pytest smo/onboarding/tests -q
+"""The package state machine (`app/statemachine.py`) on its own: legal and illegal transitions and the two guards, without the web layer.
+
+Covers Onboarding/rApp Mgmt LLD sections 3 and 4 and the priming stage (HISTORY.md §5). Fixtures: `db` (an in-memory SQLite with the package and usage tables and a stub NFO
+table) and the helper `make_package`. Run: `cd smo/onboarding && PYTHONPATH=.:../shared python -m pytest tests/test_statemachine.py -q`.
 """
 
 import uuid
@@ -17,6 +19,8 @@ from app.statemachine import ONBOARDING_FSM, PackageEvent, PackageState
 
 @pytest.fixture
 def db():
+    """A SQLAlchemy session over an in-memory SQLite holding the package and usage tables, with a stub for NFO's descriptor table so the foreign key resolves.
+    """
     engine = create_engine("sqlite://")
     # nf_deployment_descriptor lives in the nfo module, out of scope for this
     # test package — stand in a minimal table so ApplicationPackage's FK
@@ -30,6 +34,7 @@ def db():
 
 
 def make_package(db, state=PackageState.ONBOARDING, parent_id=None) -> ApplicationPackage:
+    """Adds and flushes a package in `state` (optionally a child of `parent_id`) and returns it; nothing is committed."""
     pkg = ApplicationPackage(
         application_type="rApp", name="energy-saving", version="1.0",
         state=state, manifest_ref="s3://pkg.csar", parent_package_id=parent_id,
@@ -40,18 +45,21 @@ def make_package(db, state=PackageState.ONBOARDING, parent_id=None) -> Applicati
 
 
 def test_onboard_success_reaches_available(db):
+    """VALIDATE_OK takes ONBOARDING to AVAILABLE."""
     pkg = make_package(db)
     new_state = ONBOARDING_FSM.fire(PackageState(pkg.state), PackageEvent.VALIDATE_OK, db=db, package=pkg)
     assert new_state == PackageState.AVAILABLE
 
 
 def test_onboard_failure_reaches_failed_not_available(db):
+    """VALIDATE_FAILED takes ONBOARDING to FAILED."""
     pkg = make_package(db)
     new_state = ONBOARDING_FSM.fire(PackageState(pkg.state), PackageEvent.VALIDATE_FAILED, db=db, package=pkg)
     assert new_state == PackageState.FAILED
 
 
 def test_deprecate_then_cancel_delete_returns_to_available(db):
+    """DEPRECATE and then CANCEL_DELETE bring an AVAILABLE package back to AVAILABLE."""
     pkg = make_package(db, state=PackageState.AVAILABLE)
     s = ONBOARDING_FSM.fire(PackageState.AVAILABLE, PackageEvent.DEPRECATE, db=db, package=pkg)
     assert s == PackageState.DEPRECATED
@@ -60,9 +68,7 @@ def test_deprecate_then_cancel_delete_returns_to_available(db):
 
 
 def test_delete_blocked_by_available_child(db):
-    """The cascade-delete rule this LLD pass concretized: a parent cannot
-    be deleted while a child package is AVAILABLE.
-    """
+    """The cascade-delete guard (LLD section 4): a package with an AVAILABLE child cannot be deleted."""
     parent = make_package(db, state=PackageState.DEPRECATED)
     make_package(db, state=PackageState.AVAILABLE, parent_id=parent.package_id)
 
@@ -71,6 +77,7 @@ def test_delete_blocked_by_available_child(db):
 
 
 def test_delete_blocked_by_active_usage_registration(db):
+    """A usage registration with no stopped_at blocks DELETE."""
     pkg = make_package(db, state=PackageState.DEPRECATED)
     db.add(PackageUsageRegistration(package_id=pkg.package_id, consumer_id="some-rapp", stopped_at=None))
     db.flush()
@@ -80,6 +87,7 @@ def test_delete_blocked_by_active_usage_registration(db):
 
 
 def test_delete_allowed_once_usage_stopped(db):
+    """A stopped registration no longer blocks DELETE, which then reaches DELETING."""
     import datetime
 
     pkg = make_package(db, state=PackageState.DEPRECATED)
@@ -94,19 +102,14 @@ def test_delete_allowed_once_usage_stopped(db):
 
 
 def test_no_transition_from_failed(db):
-    """FAILED is terminal within this FSM — nothing in v1.3 or the LLD
-    proposes a recovery path out of it.
-    """
+    """FAILED is terminal in the table: no event leaves it (the route deletes a FAILED package directly)."""
     pkg = make_package(db, state=PackageState.FAILED)
     with pytest.raises(IllegalTransition):
         ONBOARDING_FSM.fire(PackageState.FAILED, PackageEvent.VALIDATE_OK, db=db, package=pkg)
 
 
 def test_prime_then_deprime_round_trip(db):
-    """HISTORY.md §5: the reference's real
-    COMMISSIONED->PRIMING->PRIMED->DEPRIMING lifecycle, missing
-    entirely before this pass.
-    """
+    """AVAILABLE -> PRIMING -> PRIMED -> DEPRIMING -> AVAILABLE through PRIME, PRIME_COMPLETE, DEPRIME and DEPRIME_COMPLETE (HISTORY.md §5)."""
     pkg = make_package(db, state=PackageState.AVAILABLE)
     s = ONBOARDING_FSM.fire(PackageState.AVAILABLE, PackageEvent.PRIME, db=db, package=pkg)
     assert s == PackageState.PRIMING
@@ -120,19 +123,14 @@ def test_prime_then_deprime_round_trip(db):
 
 
 def test_prime_from_onboarding_is_illegal(db):
-    """No PRIME edge exists from ONBOARDING (or DEPRECATED, DELETING,
-    FAILED) — only AVAILABLE. A package that never reached AVAILABLE
-    can't be primed.
-    """
+    """PRIME has an edge only from AVAILABLE, so a package that never reached AVAILABLE cannot be primed."""
     pkg = make_package(db, state=PackageState.ONBOARDING)
     with pytest.raises(IllegalTransition):
         ONBOARDING_FSM.fire(PackageState.ONBOARDING, PackageEvent.PRIME, db=db, package=pkg)
 
 
 def test_deprime_blocked_by_active_usage_registration(db):
-    """The reference's own deprimeRapp guard: 'Unable to deprime as there
-    are active rapp instances.'
-    """
+    """The reference's deprimeRapp guard: DEPRIME is refused while a usage registration is open."""
     pkg = make_package(db, state=PackageState.PRIMED)
     db.add(PackageUsageRegistration(package_id=pkg.package_id, consumer_id="some-rapp", stopped_at=None))
     db.flush()
@@ -142,11 +140,7 @@ def test_deprime_blocked_by_active_usage_registration(db):
 
 
 def test_delete_has_no_edge_from_primed(db):
-    """Matches the reference's own deleteRapp guard: delete is only
-    permitted from COMMISSIONED (our AVAILABLE) — a PRIMED package
-    must be deprimed first, same as the reference's error
-    'the rApp is not in COMMISSIONED state'.
-    """
+    """DELETE has no edge from PRIMED: a primed package must be deprimed first, as the reference requires."""
     pkg = make_package(db, state=PackageState.PRIMED)
     with pytest.raises(IllegalTransition):
         ONBOARDING_FSM.fire(PackageState.PRIMED, PackageEvent.DELETE, db=db, package=pkg)
