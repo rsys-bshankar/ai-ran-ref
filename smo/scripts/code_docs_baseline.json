@@ -42,7 +42,7 @@
     },
     "dme": {
       "files_without_description": 1,
-      "functions_without_description": 32,
+      "functions_without_description": 30,
       "items_requiring_description": 58,
       "source_files": 3,
       "tests": 94,
@@ -186,7 +186,7 @@
     },
     "ran-nf-oam": {
       "files_without_description": 1,
-      "functions_without_description": 246,
+      "functions_without_description": 239,
       "items_requiring_description": 497,
       "source_files": 57,
       "tests": 580,

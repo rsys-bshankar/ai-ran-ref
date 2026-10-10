@@ -48,12 +48,14 @@ class RanNfOam:
 
 @pytest.fixture
 def oam(monkeypatch):
+    """Replaces the R1 client's GET with the `RanNfOam` double so a test chooses which elements the claim covers and can read back the calls made."""
     fake = RanNfOam()
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, params=None, **kw: fake.get(path, params=params, **kw))
     return fake
 
 
 def _action(client, *elements, requested_by="es-rapp"):
+    """Stores a DME action row naming the given elements (none: an action naming no element) and returns its id as a string."""
     with Session(client.app.state.test_engine) as db:
         row = DmeActionRecord(requested_by=requested_by, managed_element_ref=elements[0] if elements else "", changes=[{"managedElementRef": e} for e in elements] or [{}])
         db.add(row)
@@ -66,6 +68,7 @@ def _listed(client, headers, **q):
 
 
 def test_an_unscoped_caller_asks_nobody_and_sees_every_action(client, oam):
+    """Without a scope claim DME lists and reads every action and never calls RAN NF OAM, so unscoped callers behave as before."""
     ids = {_action(client, "ME-1"), _action(client, "ME-3"), _action(client)}
     for headers in ({}, UNSCOPED, INTERNAL):
         assert {a["actionId"] for a in _listed(client, headers)["items"]} == ids
@@ -74,6 +77,7 @@ def test_an_unscoped_caller_asks_nobody_and_sees_every_action(client, oam):
 
 
 def test_a_scoped_caller_sees_the_actions_whose_elements_are_all_inside_its_claim(client, oam):
+    """A scoped caller lists only the actions whose every element is inside its claim, with a matching total, and asking for another's element gives an empty page."""
     oam.visible = ["ME-1", "ME-2"]
     inside, also = _action(client, "ME-1"), _action(client, "ME-2", "ME-1")
     _action(client, "ME-1", "ME-3")                                  # one element outside: the whole action is
@@ -89,6 +93,7 @@ def test_a_scoped_caller_sees_the_actions_whose_elements_are_all_inside_its_clai
 
 
 def test_the_elements_are_asked_for_in_pages_until_all_are_known(client, oam):
+    """DME pages through RAN NF OAM's element list (500 at a time) until it knows them all, so an element beyond the first page is still recognised."""
     oam.visible = [f"E{i}" for i in range(1100)]
     last = _action(client, "E1099")
     assert [a["actionId"] for a in _listed(client, EU)["items"]] == [last]
@@ -96,6 +101,7 @@ def test_the_elements_are_asked_for_in_pages_until_all_are_known(client, oam):
 
 
 def test_an_action_by_id_outside_the_claim_is_a_404_like_one_that_is_not_there(client, oam):
+    """An action outside the caller's claim answers exactly like a missing one (404, same body), so a scoped caller cannot tell which action ids exist."""
     oam.visible = ["ME-1"]
     mine, theirs = _action(client, "ME-1"), _action(client, "ME-3")
     assert client.get(f"/actions/{mine}", headers=EU).status_code == 200
@@ -105,6 +111,7 @@ def test_an_action_by_id_outside_the_claim_is_a_404_like_one_that_is_not_there(c
 
 
 def test_if_the_elements_cannot_be_learned_nothing_is_shown(client, oam):
+    """When RAN NF OAM cannot say which elements the claim covers, a scoped list or read fails with 502 instead of showing actions unfiltered."""
     action = _action(client, "ME-1")
     oam.visible, oam.status = ["ME-1"], 503
     assert client.get("/actions", headers=EU).status_code == 502

@@ -96,6 +96,7 @@ def test_the_actions_dme_lists_are_those_inside_the_callers_scope(places):
 
 
 def test_a_scoped_rapp_reads_its_own_jobs_through_dme_and_not_an_operators(places):
+    """A scoped rApp can read the job DME forwarded for it, but not an operator's job on the same element, through the real DME and RAN NF OAM modules."""
     eu = scoped(regions=["eu"])
     mine = _action(places, eu, ["ME-EU"]).json()["forwardedJobId"]
     operator = {"X-R1-Role": "internal", "X-R1-Invoker-Id": "gui-invoker"}

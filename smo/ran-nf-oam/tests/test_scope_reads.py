@@ -30,6 +30,7 @@ def dn(ref):
 
 @pytest.fixture
 def tree(places):
+    """Syncs the registry and creates a managed-object node (the cell `NRCellDU=101`) for each of ME-1..ME-4 on top of the `places` fixture, and returns that fixture."""
     with places["db"]() as db:
         for ref in ELEMENTS:
             mo_tree.sync_registry(db, db.get(ManagedEntity, ref))
@@ -41,6 +42,7 @@ def tree(places):
 # ---- the managed-object tree
 
 def test_a_node_of_another_element_is_a_404_exactly_as_one_that_is_not_there(client, tree):
+    """A managed object of an element outside the caller's scope answers 404 with the same title as a missing DN, so a scoped caller cannot learn which DNs exist."""
     assert client.get(f"/managed-objects/{dn('ME-3')}").status_code == 200                        # unscoped: as before
     assert client.get(f"/managed-objects/{dn('ME-1')}", headers=EU).json()["managedElementRef"] == "ME-1"
     hidden, absent = (client.get(f"/managed-objects/{x}", headers=EU) for x in (dn("ME-3"), "ManagedElement=ME-9,GNBDUFunction=1"))
@@ -50,6 +52,7 @@ def test_a_node_of_another_element_is_a_404_exactly_as_one_that_is_not_there(cli
 
 
 def test_children_and_subtree_leave_out_the_nodes_of_other_elements(client, tree):
+    """Children and subtree filter row by row, so a node of another element hung below a visible node is left out, and the children or subtree of a hidden element are 404."""
     with tree["db"]() as db:       # a node of ME-3 hung below ME-1's function: a row-level filter, not only a check of the node asked for
         db.add(ManagedObject(dn=f"{dn('ME-1')},Stray=1", parent_dn=dn("ME-1"), object_class="Stray", object_id="1", managed_element_ref="ME-3", source="walk"))
         db.add(ManagedObject(dn=f"{dn('ME-1')},Own=1", parent_dn=dn("ME-1"), object_class="Own", object_id="1", managed_element_ref="ME-1", source="walk"))
@@ -63,6 +66,7 @@ def test_children_and_subtree_leave_out_the_nodes_of_other_elements(client, tree
 
 
 def test_the_walk_of_an_element_outside_the_scope_is_refused_by_reference(client, tree):
+    """A refresh (walk) of an element the caller names but may not touch, or that does not exist, is refused with 403 SCOPE_DENIED, while an unscoped caller is not refused."""
     for ref in ("ME-3", "ME-4", "ME-NOT-THERE"):
         refused = client.post(f"/managed-entities/{ref}/managed-objects/refresh", headers=EU)
         assert refused.status_code == 403 and _title(refused) == "SCOPE_DENIED", ref
@@ -71,6 +75,7 @@ def test_the_walk_of_an_element_outside_the_scope_is_refused_by_reference(client
 
 
 def test_the_topology_export_holds_the_nodes_of_the_callers_elements_only(client, tree):
+    """The topology export lists only the nodes of the elements inside the caller's claim (nothing for a claim that matches nothing) and is unchanged for an unscoped caller."""
     refs = lambda headers, **q: {a["attributes"]["managedElementRef"] for group in client.get("/topology", headers=headers, params=q).json()["entities"]      # noqa: E731
                                  for a in group["o-ran-smo-teiv-ran:ManagedObject"]}
     assert refs({}) == set(ELEMENTS) and refs(UNSCOPED) == set(ELEMENTS)
@@ -80,10 +85,12 @@ def test_the_topology_export_holds_the_nodes_of_the_callers_elements_only(client
 
 
 def _guards(client, ref, cell, neighbours):
+    """Sets the cell guards of one cell with the given neighbour cell ids, and checks that the write was accepted."""
     assert client.put(f"/managed-entities/{ref}/cells/{cell}/guards", json={"cellClass": "NORMAL", "neighbourRefs": neighbours}).status_code == 200
 
 
 def test_the_links_never_name_an_element_outside_the_scope(client, tree):
+    """In the links list a scoped caller sees a cell on an element it may not touch only as EXTERNAL with no element named, and never a link that starts on such an element."""
     _guards(client, "ME-1", "1", ["2", "3", "7"])         # 2 is on ME-2 (eu), 3 on ME-3 (us), 7 on ME-3 and ME-4: ambiguous when both are seen
     _guards(client, "ME-2", "2", ["1"])
     _guards(client, "ME-3", "3", ["1"])
@@ -103,6 +110,7 @@ def test_the_links_never_name_an_element_outside_the_scope(client, tree):
 
 
 def test_the_relation_of_two_nodes_needs_both_in_the_tree_the_caller_sees(client, tree):
+    """The relation of two nodes is answered only when both are in the tree the caller sees; if either is not, it is a 404 as for a missing node."""
     one, two, three = dn("ME-1"), dn("ME-2"), dn("ME-3")
     relation = lambda a, b, headers: client.get("/topology/relation", headers=headers, params={"a": a, "b": b})      # noqa: E731
     assert relation(one, three, {}).json()["relation"] == "DIFFERENT_ELEMENT" and relation(one, two, EU).json()["relation"] == "DIFFERENT_ELEMENT"
@@ -114,6 +122,7 @@ def test_the_relation_of_two_nodes_needs_both_in_the_tree_the_caller_sees(client
 
 @pytest.fixture
 def schedules(client, places):
+    """Defines the `prb` KPI and three schedules (`eu` on ME-1, `us` on ME-3, `net` on the whole network) on top of the `places` fixture, and returns that fixture."""
     assert client.put("/kpi-definitions/prb", json={"formula": "prb", "unit": "%", "counters": [{"counter": "RRU.PrbTotDl", "variable": "prb", "aggregation": "avg"}]}).status_code == 200
     for name, element in (("eu", "ME-1"), ("us", "ME-3"), ("net", None)):
         body = {"kpi": "prb", "intervalSeconds": 300, **({"managedElementRef": element} if element else {})}
@@ -122,6 +131,7 @@ def schedules(client, places):
 
 
 def test_the_schedules_a_caller_sees_are_those_of_its_own_elements(client, schedules):
+    """A scoped caller lists and reads only the KPI schedules of its own elements (the whole-network one is for unscoped callers) and a hidden one is a 404 like a missing one."""
     names = lambda headers: [s["scheduleId"] for s in client.get("/kpi-schedules", headers=headers).json()["items"]]      # noqa: E731
     assert names({}) == names(UNSCOPED) == names(GUI) == ["eu", "net", "us"]
     assert names(EU) == ["eu"] and names(NOWHERE) == []                                          # the schedule of the whole network is for an unscoped caller
@@ -133,6 +143,7 @@ def test_the_schedules_a_caller_sees_are_those_of_its_own_elements(client, sched
 
 
 def test_a_scoped_caller_cannot_make_or_replace_a_schedule_outside_its_scope(client, schedules):
+    """A scoped caller's PUT of a schedule for an element outside its scope, the whole network, or an unknown element, or over a hidden schedule id, is refused with 403 and changes nothing."""
     body = {"kpi": "prb", "intervalSeconds": 600}
     for name, element in (("new-us", "ME-3"), ("new-net", None), ("new-none", "ME-4"), ("new-missing", "ME-NOT-THERE"), ("us", "ME-1"), ("net", "ME-1")):
         refused = client.put(f"/kpi-schedules/{name}", headers=EU, json={**body, **({"managedElementRef": element} if element else {})})
@@ -145,6 +156,7 @@ def test_a_scoped_caller_cannot_make_or_replace_a_schedule_outside_its_scope(cli
 
 
 def test_a_scoped_caller_removes_only_its_own_schedules(client, schedules):
+    """A scoped caller deleting a schedule of another element or of the whole network gets 404 and removes nothing, while it can delete its own."""
     for hidden in ("us", "net"):
         assert client.delete(f"/kpi-schedules/{hidden}", headers=EU).status_code == 404
     with schedules["db"]() as db:
@@ -156,6 +168,7 @@ def test_a_scoped_caller_removes_only_its_own_schedules(client, schedules):
 # ---- the file subscriptions
 
 def test_a_file_subscription_is_the_whole_networks_so_a_scoped_caller_has_none(client, places):
+    """Creating a file subscription is refused with 403 for any scoped (or unreadable) claim, and a scoped delete answers 204 and removes nothing, because such a subscription covers the whole network."""
     body = {"consumerReference": "http://consumer.example/notify", "fileDataType": "Performance"}
     for headers in (EU, ACME, NOWHERE, {**UNSCOPED, SCOPE_HEADER: "not json"}):
         refused = client.post("/file-subscriptions", json=body, headers=headers)
@@ -181,6 +194,7 @@ VENDOR = {"supportedServices": ["PROV", "FM", "PM", "FILE"], "supportedVendorMod
 
 @pytest.fixture
 def vendors(client, places):
+    """Gives ME-1 and ME-3 different vendors, loads a CM schema for each vendor and registers three vendor capabilities (one used by no element), on top of the `places` fixture."""
     with places["db"]() as db:
         db.get(ManagedEntity, "ME-1").vendor_name = "acme-ran"
         db.get(ManagedEntity, "ME-3").vendor_name = "other-ran"
@@ -195,6 +209,7 @@ def vendors(client, places):
 
 
 def test_a_scoped_caller_reads_the_capabilities_of_the_vendors_of_its_own_elements(client, vendors):
+    """A scoped caller lists and reads the capabilities of only the vendors of its own elements, and another vendor is a 404 like an unknown one."""
     names = lambda headers: [v["vendorName"] for v in client.get("/vendor-capabilities", headers=headers).json()["items"]]      # noqa: E731
     assert names({}) == names(UNSCOPED) == ["acme-ran", "other-ran", "unused-ran"]
     assert names(EU) == ["acme-ran"] and names(ACME) == ["acme-ran", "other-ran"] and names(NOWHERE) == []
@@ -206,6 +221,7 @@ def test_a_scoped_caller_reads_the_capabilities_of_the_vendors_of_its_own_elemen
 
 
 def test_the_summary_of_what_can_be_driven_is_over_the_callers_vendors(client, vendors):
+    """The capabilities summary lists only the vendors of the caller's elements and the vendor modes of those vendors, leaving the MnS services unchanged."""
     summary = lambda headers: client.get("/capabilities", headers=headers).json()      # noqa: E731
     assert summary({})["supportedVendorModes"] == ["O1_NETCONF", "O1_RESTCONF"] and len(summary({})["vendors"]) == 3
     assert [v["vendorName"] for v in summary(EU)["vendors"]] == ["acme-ran"] and summary(EU)["supportedVendorModes"] == ["O1_NETCONF"]
@@ -213,6 +229,7 @@ def test_the_summary_of_what_can_be_driven_is_over_the_callers_vendors(client, v
 
 
 def test_the_loaded_cm_schemas_shown_are_those_the_callers_vendors_use(client, vendors):
+    """A scoped caller sees the loaded CM schemas used by its own vendors (a hidden one is a 404), while the bundled schemas stay visible to everyone."""
     loaded = lambda headers: sorted(s["schemaName"] for s in client.get("/cm-schemas", headers=headers, params={"limit": 500}).json()["items"] if not s["builtin"])      # noqa: E731
     builtin = lambda headers: sorted(s["schemaName"] for s in client.get("/cm-schemas", headers=headers, params={"limit": 500}).json()["items"] if s["builtin"])      # noqa: E731
     assert loaded({}) == ["acme-model", "other-model"] and loaded(EU) == ["acme-model"] and loaded(NOWHERE) == []
@@ -225,6 +242,7 @@ def test_the_loaded_cm_schemas_shown_are_those_the_callers_vendors_use(client, v
 
 
 def test_a_scoped_caller_cannot_edit_the_guards_of_an_element_outside_its_scope(client, places):
+    """Setting or removing the cell guards of an element outside the caller's scope, or of an unknown element, is refused with 403, while inside the scope it works."""
     guard = {"cellClass": "EMERGENCY"}
     for ref in ("ME-3", "ME-4", "ME-NOT-THERE"):
         assert client.put(f"/managed-entities/{ref}/cells/1/guards", headers=EU, json=guard).status_code == 403
@@ -235,6 +253,7 @@ def test_a_scoped_caller_cannot_edit_the_guards_of_an_element_outside_its_scope(
 
 
 def test_the_host_keys_of_an_endpoint_outside_the_scope_are_a_404(client, places):
+    """The host keys of an adaptor endpoint of a hidden element are a 404 like those of an unknown endpoint, for both reading and deleting."""
     with places["db"]() as db:
         ids = {e.managed_element_ref: e.endpoint_id for e in db.query(O1AdaptorEndpoint)}
         for endpoint in db.query(O1AdaptorEndpoint):
@@ -252,12 +271,14 @@ def test_the_host_keys_of_an_endpoint_outside_the_scope_are_a_404(client, places
 # ---- SEC-10.11: whose job it is
 
 def _rapp_job(client, refs, headers):
+    """Makes a configuration job on the given elements as the given caller, checks that it was accepted (202) and returns its job id."""
     resp = _write(client, refs, headers)
     assert resp.status_code == 202, resp.text
     return resp.json()["jobId"]
 
 
 def test_a_scoped_rapp_reads_and_undoes_only_its_own_jobs(client, places):
+    """A scoped rApp lists, reads and rolls back only the jobs it made, another rApp's or an operator's job in the same region is a 404, and nothing is written back for them."""
     mine = _rapp_job(client, ["ME-1"], EU)
     theirs = _rapp_job(client, ["ME-2"], OTHER_RAPP)                      # another rApp, the same region: inside the scope, not its job
     operators = _rapp_job(client, ["ME-1"], GUI)
@@ -277,6 +298,7 @@ def test_a_scoped_rapp_reads_and_undoes_only_its_own_jobs(client, places):
 
 
 def test_the_job_that_undoes_a_job_belongs_to_whom_the_original_belongs_to(client, places):
+    """A rollback job (and a rollback of a rollback) belongs to the owner of the original job, including when an operator made the rollback."""
     mine = _rapp_job(client, ["ME-1"], EU)
     undo = client.post(f"/config-jobs/{mine}/rollback", headers=EU, json={"requestedBy": "es-rapp"})
     assert undo.status_code == 202
@@ -291,6 +313,7 @@ def test_the_job_that_undoes_a_job_belongs_to_whom_the_original_belongs_to(clien
 
 
 def test_an_smo_module_acting_for_an_rapp_is_held_to_that_rapps_jobs(client, places):
+    """An SMO module acting on behalf of an rApp sees only that rApp's jobs, and a job it creates for the rApp is the rApp's."""
     mine = _rapp_job(client, ["ME-1"], EU)
     operators = _rapp_job(client, ["ME-1"], GUI)
     for_the_rapp = {"X-R1-Role": "internal", "X-R1-Invoker-Id": "dme-client", "X-R1-On-Behalf-Of": "es-client", "X-R1-On-Behalf-Scope": claim(regions=["eu"])}
@@ -301,6 +324,7 @@ def test_an_smo_module_acting_for_an_rapp_is_held_to_that_rapps_jobs(client, pla
 
 
 def test_nothing_changes_for_a_caller_without_a_claim_or_for_an_smo_module(client, places):
+    """Callers with no claim, and SMO modules even when given a claim, still read every job, while an rApp's scoped claim hides jobs that are not its own."""
     job = _rapp_job(client, ["ME-1"], GUI)
     theirs = _rapp_job(client, ["ME-2"], UNSCOPED)
     internal_with_claim = {"X-R1-Role": "internal", "X-R1-Invoker-Id": "gui-invoker", SCOPE_HEADER: claim(regions=["eu"])}      # an SMO module the operator gave a claim: scoped, not an rApp
@@ -312,6 +336,7 @@ def test_nothing_changes_for_a_caller_without_a_claim_or_for_an_smo_module(clien
 
 
 def test_a_claim_with_no_invoker_owns_nothing(client, places):
+    """A claim without an invoker id owns no job: the call neither reads one nor lists any, instead of being read as unscoped."""
     job = _rapp_job(client, ["ME-1"], EU)
     anonymous = {SCOPE_HEADER: claim(regions=["eu"]), "X-R1-Role": "rapp"}
     assert client.get(f"/config-jobs/{job}", headers=anonymous).status_code == 404
@@ -319,6 +344,7 @@ def test_a_claim_with_no_invoker_owns_nothing(client, places):
 
 
 def test_an_approval_request_and_a_decision_record_are_read_by_their_owner_only(client, places):
+    """An approval request and a decision record can be read by the rApp that owns them (and by an operator or unscoped caller) but not by another rApp, which gets a 404."""
     assert client.put("/rapp-approval-policy/es-client", json={"requestedBy": "admin"}).status_code == 200
     parked = _write(client, ["ME-1"], EU)
     assert parked.json()["status"] == "PENDING_APPROVAL"
@@ -374,6 +400,7 @@ def _read_routes():
 
 
 def test_every_read_route_is_classified():
+    """Every GET route of the module is in exactly one of the two sets (about elements, or not), so a new read route cannot be added without deciding whether a claim has to filter it."""
     routes = _read_routes()
     assert routes <= ABOUT_ELEMENTS | NOT_ABOUT_ELEMENTS.keys(), f"a read route nobody decided about: {sorted(routes - ABOUT_ELEMENTS - NOT_ABOUT_ELEMENTS.keys())}"
     assert ABOUT_ELEMENTS <= routes and NOT_ABOUT_ELEMENTS.keys() <= routes, "a route in the lists is not a route any more"
@@ -399,6 +426,7 @@ def _seed_everything(client, tree):
 
 
 def _nothing(response, name):
+    """Tells whether a response to a caller whose claim matches nothing shows nothing: a 403 or 404, an empty list (bundled schemas excepted), or an empty topology or vendor list."""
     if response.status_code in (403, 404):
         return True
     body = response.json()
@@ -408,6 +436,7 @@ def _nothing(response, name):
 
 
 def test_a_claim_that_matches_nothing_sees_nothing_of_what_is_there(client, vendors, tmp_path):
+    """With one of everything seeded on ME-3, a claim that matches nothing gets nothing back from any read route about elements."""
     tree = vendors
     with tree["db"]() as db:
         for ref in ELEMENTS:

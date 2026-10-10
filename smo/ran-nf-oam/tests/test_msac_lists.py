@@ -69,8 +69,10 @@ LISTS = {
 EVERY = set(ELEMENTS)
 
 
+# Table: one row per list route in `LISTS` (alarms, subscriptions, jobs, endpoints, elements, guards, KPIs, topology, links), each reduced to the set of elements it shows.
 @pytest.mark.parametrize("name", LISTS)
 def test_a_list_leaves_out_what_the_callers_rules_do_not_let_it_read(client, world, on, name):
+    """With the switch on, a registered Identity sees only the elements its rules let it read (none for one without rules, all for `/*`), while an unregistered caller or one outside the gateway sees everything."""
     seen = LISTS[name]
     assert seen(client, as_("reader")) == {"ME-1", "ME-2"}
     assert seen(client, as_("nobody")) == set()
@@ -79,20 +81,24 @@ def test_a_list_leaves_out_what_the_callers_rules_do_not_let_it_read(client, wor
     assert seen(client, {}) == EVERY                                # did not come through the gateway
 
 
+# Table: the same rows of `LISTS`, run with the switch off.
 @pytest.mark.parametrize("name", LISTS)
 def test_nothing_changes_until_the_switch_is_on(client, world, monkeypatch, name):
+    """With `RAN_NF_OAM_MSAC_REACH` off every list shows every element to every caller, so shipping the code changes nothing until the switch is turned on."""
     monkeypatch.delenv("RAN_NF_OAM_MSAC_REACH", raising=False)
     for caller in ("reader", "nobody", "stranger"):
         assert LISTS[name](client, as_(caller)) == EVERY, caller
 
 
 def test_the_total_of_a_filtered_page_does_not_count_what_is_hidden(client, world, on):
+    """The `total` of a filtered page counts only what the caller may read, so the total does not reveal how many rows are hidden."""
     page = client.get("/alarms", headers=as_("reader")).json()
     assert len(page["items"]) == 2 and page["total"] == 2
     assert client.get("/alarms").json()["total"] == 4
 
 
 def test_a_job_is_listed_only_when_every_element_it_wrote_to_is_readable(client, world, on):
+    """A configuration job is listed only when every element it wrote to is readable by the caller, so a job spanning a hidden element stays hidden."""
     with world["db"]() as db:
         for name, elements in (("one", ["ME-1"]), ("both", ["ME-1", "ME-2"]), ("mixed", ["ME-1", "ME-3"]), ("far", ["ME-3"])):
             job = WriteConfigJob(requested_by=name, scope="cell")
@@ -106,6 +112,7 @@ def test_a_job_is_listed_only_when_every_element_it_wrote_to_is_readable(client,
 
 
 def test_a_node_of_the_tree_needs_read_on_its_element(client, world, on):
+    """Reading a managed object, its children or subtree, or a relation between two nodes needs `read` on the element of each node, and the refusal names the missing permission."""
     dn = "ManagedElement=ME-3"
     assert denied(client.get(f"/managed-objects/{dn}", headers=as_("reader"))).startswith("reader is not permitted: read /ManagedElement=ME-3")
     assert client.get("/managed-objects/ManagedElement=ME-1", headers=as_("reader")).status_code == 200
@@ -117,12 +124,14 @@ def test_a_node_of_the_tree_needs_read_on_its_element(client, world, on):
 
 
 def test_a_neighbour_on_an_element_the_caller_may_not_read_is_external_to_it(client, world, on):
+    """In the links list a neighbour cell on an unreadable element is not shown, while links between readable elements stay INTER_ELEMENT."""
     links = {(l["aCell"], l["bCell"]): l for l in client.get("/topology/links", headers=as_("reader")).json()["items"]}
     assert links[("1", "2")]["linkType"] == "INTER_ELEMENT" and links[("2", "1")]["linkType"] == "INTER_ELEMENT"
     assert "3" not in {a for a, _ in links}
 
 
 def test_subscriptions_are_removed_by_those_who_may_read_their_element_only(client, world, on):
+    """Deleting a PM or FM subscription answers 204 for everyone, but removes it only when the caller may read its element (or is not a registered Identity), so a refusal does not reveal that it exists."""
     with world["db"]() as db:
         ids = {(kind, ref): row.subscription_id for kind, model in (("pm", PMSubscription), ("fm", FMSubscription)) for row in db.query(model) for ref in [row.managed_element_ref]}
 
@@ -142,6 +151,7 @@ def test_subscriptions_are_removed_by_those_who_may_read_their_element_only(clie
 
 
 def test_a_file_subscription_is_removed_by_whoever_may_read_the_whole_network(client, world, on):
+    """A file subscription belongs to the whole network, so only a caller that may read everything removes it; others get 204 and nothing is removed."""
     body = {"consumerReference": "http://consumer.example/notify", "fileDataType": "Performance"}
     sub = client.post("/file-subscriptions", json=body, headers=as_("everything")).json()["subscriptionId"]
     for caller in ("reader", "nobody"):
@@ -154,6 +164,7 @@ def test_a_file_subscription_is_removed_by_whoever_may_read_the_whole_network(cl
 
 
 def test_the_deletes_are_unchanged_with_the_switch_off(client, world, monkeypatch):
+    """With the switch off a delete by an Identity without any rule still removes the subscription, as before the rule existed."""
     monkeypatch.delenv("RAN_NF_OAM_MSAC_REACH", raising=False)
     with world["db"]() as db:
         sub = db.query(PMSubscription).first().subscription_id
