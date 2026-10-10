@@ -609,6 +609,9 @@ button.sev-count:hover, button.sev-count.active { border-color: var(--text); }
 .g-edge { stroke: var(--line-strong); stroke-width: 1.5; fill: none; }
 .g-edge.oneway { stroke-dasharray: 5 4; stroke: var(--warn); }
 .g-edge.ext { stroke: var(--info); }
+.g-fold { fill: var(--muted); cursor: pointer; font-size: 12px; }
+.g-label { fill: var(--text); cursor: pointer; font: 500 12px var(--f-mono); }
+.g-label:hover, .g-label:focus { text-decoration: underline; outline: none; }
 .g-node { cursor: pointer; }
 .g-node circle, .g-node rect { fill: var(--raised); stroke: var(--ok); stroke-width: 2; }
 .g-node.warn circle, .g-node.warn rect { stroke: var(--warn); }

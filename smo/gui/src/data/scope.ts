@@ -34,6 +34,7 @@ export const SCOPED_ROUTES: Record<string, readonly ("region" | "site_cluster")[
   "/ran-nf-oam/cell-guards": ["region", "site_cluster"],
   "/ran-nf-oam/topology/links": ["region", "site_cluster"],
   "/ran-nf-oam/topology/links/counts": ["region", "site_cluster"],
+  "/ran-nf-oam/topology/graph": ["region", "site_cluster"],
   "/ran-nf-oam/software-campaigns": ["region", "site_cluster"],
   "/ran-nf-oam/o1-adaptor-endpoints": ["region", "site_cluster"],
   "/ran-nf-oam/element-onboarding": ["region", "site_cluster"],

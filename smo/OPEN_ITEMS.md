@@ -177,7 +177,7 @@ and HA much later).
 | Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
 | AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
 | rApp ecosystem | `PR-RAPP` | RAPP-1 signing (done) · RAPP-2 sandbox (RAPP-2.2 open) · RAPP-3 conformance pack (done) · RAPP-4 Java and Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
-| GUI | `PR-GUI` | GUI-1 live updates (1.5 left) · GUI-2 alarm console (done) · GUI-3 topology · GUI-4 KPI dashboards (done) · GUI-5 scoped views · GUI-6 a11y/i18n (6.3-6.4 left) · GUI-7 approval inbox · GUI-9/10 console redesign (done) |
+| GUI | `PR-GUI` | GUI-1 live updates (1.5 left) · GUI-2 alarm console (done) · GUI-3 topology (done) · GUI-4 KPI dashboards (done) · GUI-5 scoped views · GUI-6 a11y/i18n (6.3-6.4 left) · GUI-7 approval inbox · GUI-9/10 console redesign (done) |
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
 
@@ -1203,15 +1203,8 @@ Done: GUI-2.1 and 2.2 by the console redesign (same `HISTORY.md` entry), GUI-2.5
 
 #### PR-GUI-3 — Topology view
 
-Not built as written. The redesign's Topology page draws the **neighbour relations** declared in cell guards (a graph, problem relations, counts, a
-drill to the element), not the containment tree, and shows no alarm overlay (`gui/src/pages/topology/README.md`, "Known limits").
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| GUI-3.1 | Graph API from the containment tree | Route test | SB-6.3 |
-| GUI-3.2 | Viewer component | Renders demo data | GUI-3.1 |
-| GUI-3.3 | Alarm overlay | Colours by severity | GUI-3.2 |
-| GUI-3.4 | Drill-down to the element page | Test | GUI-3.2 |
+Nothing open: the containment tree's graph route, the viewer, its alarm overlay and the drill-down are built (`HISTORY.md` GUI-3.1-3.4). The
+neighbour-relation graph of the redesign stays beside it.
 
 #### PR-GUI-4 — KPI dashboards
 
