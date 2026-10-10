@@ -200,6 +200,17 @@ def test_a_subscriber_merges_changes_it_has_not_sent_yet():
     assert sub.drain() == []
 
 
+
+def test_a_changed_panel_is_pushed_with_the_panels_and_the_counts_kept_apart():
+    """A Dashboard panel that changes (a new decision) is pushed even when no count moved, as `panels` next to `counts`, named `panel.<name>`."""
+    sub = events._Subscriber("viewer", ("dashboard",))
+    sub.offer({"page": "dashboard", "counts": {"a": 1}, "panels": {"decisions": {"items": []}}})
+    sub.drain()
+    sub.offer({"page": "dashboard", "counts": {"a": 1}, "panels": {"decisions": {"items": [{"decisionId": "d1"}]}}})
+    [event] = sub.drain()
+    assert event["changed"] == ["panel.decisions"] and event["counts"] == {"a": 1}
+    assert event["panels"] == {"decisions": {"items": [{"decisionId": "d1"}]}}
+
 # ------------------------------------------------------------------ the typeahead
 
 def test_search_groups_matches_by_kind_with_the_gui_route_of_each(app, smo):

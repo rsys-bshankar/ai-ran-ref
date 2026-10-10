@@ -25,6 +25,10 @@ GUI-9.8b, "Needs your attention": `GET /api/summary/attention` is the Dashboard'
 call to its module for the newest `limit` rows with the filter of the matching count, which answers the rows and their `total` together. The rows are
 trimmed to the fields the GUI shows. Cached and shared the same way (`app.state.summary_attention`, also fed to the event stream as the topic
 `summary:attention`). This route is declared before `/api/summary/{page}`, so "attention" is never read as a page name.
+
+GUI-9.11, the Dashboard in three calls: a page can also carry `panels` (`PANELS`), small module answers kept whole (the latest decisions, the fleet
+health by region, the worst elements, the 24 hourly alarm buckets), asked in the same parallel fan-out as its counts, narrowed by the same scope and
+cached and pushed with them. The Dashboard's first load is then this summary, the attention call and the shell's module status.
 """
 
 import asyncio
@@ -123,7 +127,28 @@ SCOPED_PATHS: dict[str, tuple[str, ...]] = {
     "/ran-nf-oam/software-campaigns": SCOPE_BOTH,
     "/ran-nf-oam/decision-records": SCOPE_BOTH,
     "/ran-nf-oam/managed-entities": SCOPE_BOTH,
+    "/ran-nf-oam/alarms/counts": SCOPE_BOTH,
+    "/ran-nf-oam/managed-entities/health": SCOPE_BOTH,
+    "/ran-nf-oam/managed-entities/worst": SCOPE_BOTH,
     "/rapp-mgmt/instances": ("region",),
+}
+
+
+@dataclass(frozen=True)
+class Panel:
+    """A module answer a page carries whole (GUI-9.11): `path` asked with `params` (and the scope where `SCOPED_PATHS` lists the path)."""
+    path: str
+    params: tuple[tuple[str, str], ...] = ()
+
+
+# The panels each page carries next to its counts. Keys are what the GUI reads under `panels`.
+PANELS: dict[str, dict[str, Panel]] = {
+    "dashboard": {
+        "decisions": Panel("/ran-nf-oam/decision-records", (("limit", "6"), ("total", "false"))),
+        "health": Panel("/ran-nf-oam/managed-entities/health", (("group_by", "region"),)),
+        "worst": Panel("/ran-nf-oam/managed-entities/worst", (("limit", "10"),)),
+        "alarmHours": Panel("/ran-nf-oam/alarms/counts", (("group_by", "hour"),)),
+    },
 }
 
 
@@ -180,7 +205,7 @@ class _Cached:
 def page_allowed(page: str, role) -> bool:
     """Whether `role` may read every count of `page` (each is a GET through the permission table), or every list of "attention". Every role may
     today; checked anyway, so a future rule that narrows a read also narrows its count, here and on the event stream."""
-    paths = [g.path for g in ATTENTION] if page == "attention" else [c.path for c in PAGES[page].values()]
+    paths = [g.path for g in ATTENTION] if page == "attention" else [c.path for c in PAGES[page].values()] + [s.path for s in PANELS.get(page, {}).values()]
     return all(decide("GET", p, {}, role).allowed for p in paths)
 
 
@@ -216,16 +241,33 @@ def install(app: FastAPI, *, current_session, problem) -> None:
         total = body.get("total")
         return (name, total, True) if isinstance(total, int) and not isinstance(total, bool) else (name, None, False)
 
+    async def panel(name: str, spec: Panel, region: str | None, site_cluster: str | None) -> tuple[str, object, bool]:
+        """(`name`, the module's answer as it came, whether it answered with 200 and JSON). The answer is None when it did not. Never raises."""
+        try:
+            resp = await app.state.gateway.request("GET", spec.path, params=[*spec.params, *scope_params(spec.path, region, site_cluster)],
+                                                   timeout=COUNT_TIMEOUT_SECONDS)
+            return (name, resp.json(), True) if resp.status_code == 200 else (name, None, False)
+        except (SmoAuthError, httpx.HTTPError, ValueError) as exc:
+            log.warning("summary panel %s (%s) failed: %r", name, spec.path, exc)
+            return name, None, False
+
     async def compute(page: str, region: str | None, site_cluster: str | None) -> dict:
-        """Ask every count of `page` in parallel, narrowed by the scope where its path accepts it; the body the route answers."""
+        """Ask every count (and panel) of `page` in parallel, narrowed by the scope where its path accepts it; the body the route answers."""
         specs = PAGES[page]
         names = list(specs)
-        results = await asyncio.gather(*(count(n, specs[n], scope_params(specs[n].path, region, site_cluster)) for n in names))
+        panels = PANELS.get(page, {})
+        results, panel_results = await asyncio.gather(
+            asyncio.gather(*(count(n, specs[n], scope_params(specs[n].path, region, site_cluster)) for n in names)),
+            asyncio.gather(*(panel(n, panels[n], region, site_cluster) for n in panels)))
         scoped = region is not None or site_cluster is not None
-        return {"page": page, "computedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "counts": {n: v for n, v, _ in results},
-                "partial": sorted({specs[n].path.split("/")[1] for n, _, answered in results if not answered}),
-                "scope": scope_view(region, site_cluster),
+        failed = {specs[n].path.split("/")[1] for n, _, answered in results if not answered}
+        failed |= {panels[n].path.split("/")[1] for n, _, answered in panel_results if not answered}
+        body = {"page": page, "computedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "counts": {n: v for n, v, _ in results},
+                "partial": sorted(failed), "scope": scope_view(region, site_cluster),
                 "unscoped": sorted(n for n in names if not _narrowed(specs[n].path, region, site_cluster)) if scoped else []}
+        if panels:
+            body["panels"] = {n: v for n, v, _ in panel_results}
+        return body
 
     async def group(spec: AttentionGroup, limit: int, region: str | None, site_cluster: str | None) -> tuple[dict, bool]:
         """One attention group and whether its module answered: `{type, total, items}`, the newest `limit` rows trimmed to `spec.fields`.

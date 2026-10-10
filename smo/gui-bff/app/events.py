@@ -102,7 +102,8 @@ class _Subscriber:
         if page == ATTENTION:
             values = {g["type"]: {"total": g.get("total"), "items": g.get("items")} for g in body.get("groups") or []}
         else:
-            values = body.get("counts") or {}
+            # a page's panels (GUI-9.11) are compared with its counts, so a new decision or a changed health group is pushed too
+            values = {**(body.get("counts") or {}), **{f"panel.{k}": v for k, v in (body.get("panels") or {}).items()}}
         before = self.seen.get(key)
         changed = [k for k, v in values.items() if before is None or k not in before or before[k] != v]
         if not changed:
@@ -115,7 +116,9 @@ class _Subscriber:
         if page == ATTENTION:
             event["groups"] = list(body.get("groups") or [])
         else:
-            event["counts"] = dict(values)
+            event["counts"] = dict(body.get("counts") or {})
+            if "panels" in body:
+                event["panels"] = dict(body["panels"])
         event.update({"changed": changed, "computedAt": body.get("computedAt"), "partial": body.get("partial", [])})
         if body.get("scope") is not None or key != page:
             event.update({"topic": TOPIC_PREFIX + key, "scope": body.get("scope"), "unscoped": body.get("unscoped", [])})

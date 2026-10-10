@@ -25,12 +25,18 @@ const COUNTS = {
 const alarm = (i: number) => ({ alarmId: `a${i}`, managedElementRef: `du-0${i}`, severity: "critical", ackState: "UNACKNOWLEDGED", specificProblem: "LOS", raisedAt: "2026-10-09T10:00:00Z" });
 const element = (ref: string, region: string | null) => ({ managedElementRef: ref, managedFunctionRef: null, entityType: "DU", vendorName: "acme", region, tenant: null, supportedServices: [] });
 
-/** A BFF whose lists hold three rows each while the summary says there are many more. */
-function bff() {
+const HEALTH = { groupBy: "region", healthScore: 97.5, groups: [{ key: "eu-west", elements: 3, unhealthy: 1, worstSeverity: "critical" },
+  { key: "us-east", elements: 1, unhealthy: 0, worstSeverity: null }, { key: null, elements: 1, unhealthy: 0, worstSeverity: "minor" }] };
+const WORST = [{ managedElementRef: "du-07", region: "eu-west", siteCluster: "metro-a", critical: 3, major: 1, openAlarms: 9 }];
+const HOURS = { groupBy: "hour", groups: Array.from({ length: 24 }, (_, i) => ({ key: `2026-10-09T${String(i).padStart(2, "0")}:00:00Z`, count: 2, bySeverity: { critical: 1, major: 1, minor: 0, warning: 0 } })) };
+const PANELS = { decisions: page([]), health: HEALTH, worst: WORST, alarmHours: HOURS };
+
+/** A BFF whose lists hold three rows each while the summary says there are many more; `panels: false` is an older BFF whose summary carries none. */
+function bff({ panels = true }: { panels?: boolean } = {}) {
   return fakeBff({
     "GET /me": { username: "ana", role: "operator", csrfToken: "c", local: true },
     "GET /permissions": { role: "operator", rules },
-    "GET /summary/dashboard": { page: "dashboard", computedAt: "2026-10-09T10:00:00Z", counts: COUNTS, partial: [] },
+    "GET /summary/dashboard": { page: "dashboard", computedAt: "2026-10-09T10:00:00Z", counts: COUNTS, partial: [], ...(panels ? { panels: PANELS } : {}) },
     "GET /modules/status": { checkedAt: "2026-10-09T10:00:00Z", modules: [
       { module: "ran-nf-oam", healthy: true, latencyMs: 4, statusCode: 200, error: null, ready: true, version: "1", buildSha: "abc", builtAt: "x" },
       { module: "aimgf", healthy: false, latencyMs: 0, statusCode: 503, error: null, ready: null, version: null, buildSha: null, builtAt: null },
@@ -48,10 +54,9 @@ function bff() {
     "GET /smo/ran-nf-oam/decision-records": page([]),
     "GET /smo/ran-nf-oam/managed-entities/health": (c: Call) => c.query.get("group_by") === "site_cluster"
       ? { groupBy: "site_cluster", healthScore: 50, groups: [{ key: "metro-a", elements: 2, unhealthy: 1, worstSeverity: "critical" }] }
-      : { groupBy: "region", healthScore: 97.5, groups: [{ key: "eu-west", elements: 3, unhealthy: 1, worstSeverity: "critical" },
-        { key: "us-east", elements: 1, unhealthy: 0, worstSeverity: null }, { key: null, elements: 1, unhealthy: 0, worstSeverity: "minor" }] },
-    "GET /smo/ran-nf-oam/managed-entities/worst": [{ managedElementRef: "du-07", region: "eu-west", siteCluster: "metro-a", critical: 3, major: 1, openAlarms: 9 }],
-    "GET /smo/ran-nf-oam/alarms/counts": { groupBy: "hour", groups: Array.from({ length: 24 }, (_, i) => ({ key: `2026-10-09T${String(i).padStart(2, "0")}:00:00Z`, count: 2, bySeverity: { critical: 1, major: 1, minor: 0, warning: 0 } })) },
+      : HEALTH,
+    "GET /smo/ran-nf-oam/managed-entities/worst": WORST,
+    "GET /smo/ran-nf-oam/alarms/counts": HOURS,
     "GET /smo/ran-nf-oam/managed-entities": (c: Call) => c.query.get("site_cluster") === "metro-a"
       ? { items: [element("du-01", "eu-west")], limit: 50, offset: 0, total: 1 }
       : { items: [], limit: 50, offset: 0, total: 0 },
@@ -127,22 +132,32 @@ describe("Dashboard", () => {
     expect(trend.querySelectorAll("svg rect").length).toBe(48);
   });
 
-  // the first load makes at most 6 page calls (summary, the one attention call, decisions, health, worst, hourly counts) plus the shell's module
-  // health (the sidebar's cache entry); the four attention lists are never asked one by one; trends wait for a click
-  it("keeps the first load within its call budget of 6 and loads trends on demand", async () => {
+  // the first load makes three calls (GUI-9.11): the summary with its panels (decisions, health, worst, hourly counts), the one attention call and
+  // the shell's module health; no module list is asked directly; trends wait for a click
+  it("keeps the first load within its call budget of 3 and loads trends on demand", async () => {
     const calls = bff();
     const { container } = await mountWith(<AuthProvider><Dashboard /></AuthProvider>);
     await settle(6);
-    const data = calls.filter((c) => c.path !== "/me" && c.path !== "/permissions" && c.path !== "/modules/status");
-    expect(new Set(data.map((c) => `${c.path}?${c.query}`)).size).toBeLessThanOrEqual(6);
+    const data = calls.filter((c) => c.path !== "/me" && c.path !== "/permissions");
+    expect([...new Set(data.map((c) => c.path))].sort()).toEqual(["/modules/status", "/summary/attention", "/summary/dashboard"]);
     expect(calls.filter((c) => c.path === "/summary/attention")).toHaveLength(1);
-    for (const p of ["/smo/ran-nf-oam/rapp-approvals", "/smo/sa-smos/remedial-actions", "/smo/aimgf/mlmf/reports"]) expect(calls.some((c) => c.path === p)).toBe(false);
-    expect(calls.some((c) => c.path === "/smo/ran-nf-oam/alarms")).toBe(false);
-    expect(calls.some((c) => c.path === "/smo/rapp-mgmt/instances")).toBe(false);
-    for (const c of data.filter((d) => d.path.startsWith("/smo/") && d.query.has("limit"))) expect(Number(c.query.get("limit"))).toBeLessThanOrEqual(10);
+    expect(container.querySelector("[data-section='dashboard.worst'] a[href='/elements/du-07']")).not.toBeNull();
     await click(byText(container, "button", "Show trends")!);
     await settle();
     expect(calls.some((c) => c.path === "/smo/rapp-mgmt/instances" && c.query.get("state") === "RUNNING")).toBe(true);
+  });
+
+  // an older BFF whose summary carries no panels: each box reads its module route directly, bounded as before
+  it("falls back to the module routes when the summary has no panels", async () => {
+    const calls = bff({ panels: false });
+    const { container } = await mountWith(<AuthProvider><Dashboard /></AuthProvider>);
+    await settle(6);
+    for (const p of ["/smo/ran-nf-oam/decision-records", "/smo/ran-nf-oam/managed-entities/health", "/smo/ran-nf-oam/managed-entities/worst", "/smo/ran-nf-oam/alarms/counts"]) {
+      expect(calls.some((c) => c.path === p)).toBe(true);
+    }
+    for (const c of calls.filter((d) => d.path.startsWith("/smo/") && d.query.has("limit"))) expect(Number(c.query.get("limit"))).toBeLessThanOrEqual(10);
+    expect(container.querySelector("[data-section='dashboard.worst'] a[href='/elements/du-07']")).not.toBeNull();
+    expect(tile(container, "Network health")).toContain("97.5");
   });
 
   // a tile's tone follows the worst open severity; the hourly series keep one value per bucket and severity

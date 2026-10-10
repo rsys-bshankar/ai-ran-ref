@@ -177,7 +177,7 @@ and HA much later).
 | Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
 | AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
 | rApp ecosystem | `PR-RAPP` | RAPP-1 signing (done) · RAPP-2 sandbox (RAPP-2.2 open) · RAPP-3 conformance pack (done) · RAPP-4 Java and Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
-| GUI | `PR-GUI` | GUI-1 live updates · GUI-2 alarm console · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n · GUI-7 approval inbox · GUI-9/10 console redesign (done; two follow-ups) |
+| GUI | `PR-GUI` | GUI-1 live updates · GUI-2 alarm console · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n · GUI-7 approval inbox · GUI-9/10 console redesign (done) |
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
 
@@ -1236,12 +1236,7 @@ Nothing open.
 
 #### PR-GUI-9 and PR-GUI-10 — console redesign and its review findings (done: `HISTORY.md` PR-GUI-9a, 9b, 9c and PR-GUI-10)
 
-Nothing of the redesign's own scope is open. Two follow-ups it surfaced, neither needed by the console today:
-
-| Step | What | Done when | Needs |
-|---|---|---|---|
-| GUI-9.10 | GPU utilisation of O-Cloud nodes: no module or producer measures it (CPU and memory are served, GUI-9.8b) | A `GPU_UTILIZATION` entry in FOCOM's dictionary and a producer that sends it | a GPU-capable O-Cloud |
-| GUI-9.11 | The Dashboard's first load is 6 calls (SCALE.md's target was 3): folding the latest decisions, the health map, the worst elements and the hourly alarm counts into `/api/summary/dashboard` would reach it | First-load call test at 3 | – |
+Nothing open (GUI-9.10 and GUI-9.11 closed: `HISTORY.md` PR-GUI-9d).
 
 ### 5.14 Standards and compliance (`PR-STD`)
 

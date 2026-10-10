@@ -178,3 +178,40 @@ def test_the_number_of_stopped_rapps_is_on_the_rapps_and_dashboard_pages(app, sm
     viewer = login(app, "viewer")
     assert viewer.get("/api/summary/rapps").json()["counts"]["rappsStopped"] == 2
     assert viewer.get("/api/summary/dashboard").json()["counts"]["rappsStopped"] == 2
+
+
+# ------------------------------------------------------------------ dashboard panels (GUI-9.11)
+
+PANEL_ANSWERS = {
+    "/ran-nf-oam/decision-records": {"items": [{"decisionId": "d1"}], "limit": 6, "offset": 0, "hasMore": False},
+    "/ran-nf-oam/managed-entities/health": {"groupBy": "region", "groups": [{"key": "eu-west", "elements": 4, "unhealthy": 1, "worstSeverity": "major"}],
+                                            "healthScore": 75.0},
+    "/ran-nf-oam/managed-entities/worst": [{"managedElementRef": "du-1", "critical": 1, "major": 0, "openAlarms": 1}],
+    "/ran-nf-oam/alarms/counts": {"groupBy": "hour", "groups": [{"key": "2026-10-10T08:00:00Z", "count": 2}]},
+}
+
+
+def test_the_dashboard_summary_carries_its_panels_whole(app, smo):
+    """The Dashboard's four small lists come back inside its summary, as the modules answered them, so its first load needs no extra calls."""
+    smo.stats.update(PANEL_ANSWERS)
+    body = login(app, "viewer").get("/api/summary/dashboard").json()
+    assert body["panels"]["health"]["healthScore"] == 75.0 and body["panels"]["worst"][0]["managedElementRef"] == "du-1"
+    assert body["panels"]["decisions"]["items"][0]["decisionId"] == "d1" and body["panels"]["alarmHours"]["groupBy"] == "hour"
+    assert "panels" not in login(app, "viewer").get("/api/summary/alarms").json()
+
+
+def test_dashboard_panels_follow_the_scope(app, smo):
+    """A scoped Dashboard asks every panel with the region and site cluster, like its counts."""
+    smo.stats.update(PANEL_ANSWERS)
+    login(app, "viewer").get("/api/summary/dashboard", params={"region": "eu-west", "site_cluster": "metro-a"})
+    asked = [c for c in smo.count_calls if c.url.path in PANEL_ANSWERS]
+    assert {c.url.path for c in asked} == set(PANEL_ANSWERS)
+    assert all(c.url.params.get("region") == "eu-west" and c.url.params.get("site_cluster") == "metro-a" for c in asked)
+
+
+def test_a_panel_whose_module_fails_is_null_and_named_partial(app, smo):
+    """A panel the module could not answer is null and its module is listed in `partial`, as for a count."""
+    smo.stats.update(PANEL_ANSWERS)
+    smo.down_modules.add("ran-nf-oam")
+    body = login(app, "viewer").get("/api/summary/dashboard").json()
+    assert body["panels"]["health"] is None and "ran-nf-oam" in body["partial"]

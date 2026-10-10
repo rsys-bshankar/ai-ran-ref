@@ -22,7 +22,11 @@ export type SummaryPage = "nav" | "dashboard" | "alarms" | "rapps" | "approvals"
 export interface SummaryScope { region: string | null; siteCluster: string | null }
 
 /** The body of `GET /api/summary/{page}`. `unscoped`: the count keys that stayed network-wide under a scope (empty or absent without one). */
-export interface Summary { page: string; computedAt: string; counts: Record<string, number | null>; partial: string[]; scope?: SummaryScope | null; unscoped?: string[] }
+export interface Summary {
+  page: string; computedAt: string; counts: Record<string, number | null>; partial: string[]; scope?: SummaryScope | null; unscoped?: string[];
+  /** Small module answers a page carries whole (GUI-9.11: the Dashboard's decisions, health, worst elements, hourly alarms); null when the module did not answer. */
+  panels?: Record<string, unknown>;
+}
 
 /** The summary of one page, refreshed every `POLL.summary` while the tab is visible, or only once a minute while the summary stream is open
  * (`data/events.ts` writes each pushed update into this same cache entry). */

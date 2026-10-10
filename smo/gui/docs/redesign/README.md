@@ -34,7 +34,7 @@ training epoch / ETA, intent fulfilment percent and conflict counts, DME late de
 export the decision records and the audit log as asynchronous jobs (the Exports page), and page the Decisions table by keyset. Round 3
 (GUI-9.3, 9.5b, 9.8b) added the global scope picker (`src/data/scope.ts`, `src/shell/ScopePicker.tsx`: region → site cluster in the URL, applied
 to every scopable read, the summaries and the event topics, with a "network-wide" note on what it cannot narrow), the Dashboard's "Needs your
-attention" in one server call (`GET /api/summary/attention`, first load 6 calls), the export jobs, and node CPU / memory utilisation from FOCOM
-(the topology inspector and a pool's resources). What is still missing: GPU utilisation (no module measures it), and SCALE.md's Dashboard
-target of 3 calls (it is 6). Until each is filled, the widget that needs it is hidden or shows "—", and the page README's "Known limits" names
-it. The energy-saving rApp's per-cell state history is the rApp's own data, drawn by its declared page.
+attention" in one server call (`GET /api/summary/attention`), the export jobs, and node CPU / memory utilisation from FOCOM
+(the topology inspector and a pool's resources). The Dashboard reaches SCALE.md's target of 3 first-load calls (GUI-9.11): its
+small module answers ride in the summary's `panels`. GPU utilisation is not shown: every O-Cloud node of this deployment is CPU only (GUI-9.10,
+closed as not needed). The energy-saving rApp's per-cell state history is the rApp's own data, drawn by its declared page.

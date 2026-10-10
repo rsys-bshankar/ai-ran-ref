@@ -2245,12 +2245,32 @@ Closed from `OPEN_ITEMS.md` (what is left stays there as GUI-9.3, 9.5b and 9.8b)
 
 ### PR-GUI-9c — scope, background exports, node utilisation and the rApp's cell history (GUI-9.3, GUI-9.5b, GUI-9.8b)
 
-Closed from `OPEN_ITEMS.md`. What is left of the redesign's neighbourhood is GUI-9.10 (GPU utilisation) and GUI-9.11 (a three-call Dashboard).
+Closed from `OPEN_ITEMS.md`. Its two follow-ups, GUI-9.10 and GUI-9.11, are closed in PR-GUI-9d.
 
 - **Scope (9.3).** RAN NF OAM filters every element-tied list by `region` and `site_cluster` in SQL (alarms and their counts and stats, decision records and their export, config jobs, cell guards, topology links and counts, software campaigns, O1 endpoints, element onboarding, approvals, the health map and the worst elements), only ever narrowing the caller's ADR 0005 claim; a multi-element row (a decision, an approval, a campaign) is in a place when any of its elements is. `GET /managed-entities/scopes` feeds the picker. rApp Management filters instances by their `authzScope` region (unrestricted instances included by default). Safeguard refusals record no element and stay fleet-wide. The BFF passes the scope to the counts whose route takes it, keys its cache and its event topics by it, and names the counts it could not narrow; the GUI keeps the scope in the URL, applies it in one place (`api/hooks.ts`) and marks a box "network-wide" when the scope cannot narrow it.
 - **Background exports (9.5b).** `POST /api/exports` starts a decisions (operator) or audit (admin) CSV job in the BFF instance that accepted it, paging the source by keyset and storing the file in chunks in the BFF database, so any instance on a shared database serves the download; a heartbeat lets another instance mark an interrupted job FAILED; 24 h expiry, 3 running jobs per user, 10,000,000 rows; requested, downloaded and deleted are audited. The GUI's Decisions and audit pages create jobs, and `/exports` lists them. The Decisions table pages by keyset.
 - **Data (9.8b).** FOCOM serves node utilisation from `CPU_UTILIZATION` / `MEMORY_UTILIZATION` performance records (this build's dictionary entries: O2 IMS defines none; 0–100 % checked on ingest; migration 0036 adds the index), single and batched; the runbook has the producer step, and the screenshot walk-through runs it. The Energy Saving rApp serves its cells' state history from its own decision trail and declares a chart and a table panel for it (kinds the renderer already draws), so the history belongs to the rApp, as an rApp's data should. The Dashboard's "Needs your attention" is one cached BFF call (`/api/summary/attention`, also an event topic).
 - **Not taken.** Scoping refusals (a migration to record elements on every refusal; refusals are per rApp, and the page already filters by rApp); a job queue service for exports (an in-process task with a database heartbeat covers a restart without a new component); a time-to-scale chart axis for the rApp history (the renderer's axis is categorical; changing it would change every declared chart).
+
+### PR-GUI-9d — the Dashboard in three calls; GPU utilisation not needed (GUI-9.11, GUI-9.10)
+
+Closed from `OPEN_ITEMS.md`.
+
+- **The Dashboard in three calls (9.11).** `GET /api/summary/dashboard` carries `panels` (gui-bff `app/summary.py` `PANELS`): the latest six
+  decisions (`/decision-records?limit=6&total=false`, the page envelope), the fleet health by region (`/managed-entities/health?group_by=region`),
+  the ten worst elements (`/managed-entities/worst?limit=10`) and the 24 hourly alarm buckets (`/alarms/counts?group_by=hour`), each asked in the
+  same parallel fan-out as the counts, narrowed by the scope (`SCOPED_PATHS` gains the three aggregates), checked with `decide` like a count, and
+  cached 5 s for every user with them. A panel whose module failed is null and its module named in `partial`. The event stream compares the
+  panels with the counts (`panel.<name>` in `changed`) and sends them with the counts, so a new decision or a changed health group is pushed.
+  The GUI's Dashboard hooks (`pages/dashboard/data/queries.ts` `usePanel`) read the panels; the first load is the summary, the attention groups
+  and the shell's module status, pinned by the Dashboard test. The site-cluster drill-down and the trends still load when opened.
+- **Not taken.** Folding the attention groups into the summary too (two calls): they have their own topic and event, pushed separately, and
+  their rows are larger; the module status is the shell's read on every page, not the Dashboard's. A panel per page for every list (the other
+  pages' lists are server-paged tables the operator pages through; a panel is for a small, fixed answer). The direct reads stay as the fallback
+  for a BFF without panels, so a GUI and a BFF of different builds still work during a rolling upgrade.
+- **GPU utilisation (9.10), closed as not needed.** Every O-Cloud node of this deployment is CPU only, so there is nothing to measure; FOCOM's
+  utilisation dictionary (`CPU_UTILIZATION`, `MEMORY_UTILIZATION`) stays as it is. A GPU-capable O-Cloud would add a `GPU_UTILIZATION` entry and
+  a producer that sends it, the same way.
 
 ### PR-GUI-10 — the GUI review findings (GUI-10.1 … GUI-10.10)
 

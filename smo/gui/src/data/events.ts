@@ -84,6 +84,8 @@ export function listPathsFor(changed: string[]): string[] {
 
 /** The body of one `event: summary` (a scoped topic's adds `topic`, `scope` and `unscoped`). */
 export interface SummaryEvent {
+  /** The page's panels, when one of them changed (GUI-9.11). */
+  panels?: Record<string, unknown>;
   page: string; counts: Record<string, number | null>; changed?: string[]; computedAt?: string; partial?: string[];
   topic?: string; scope?: SummaryScope | null; unscoped?: string[];
 }
@@ -99,9 +101,14 @@ function eventScopeKey(scope: SummaryScope | null | undefined): string {
 /** Write one event's counts into the cache and, unless it is the stream's first event for that page (which only says what the page already
  * read), refetch the lists whose counts changed. Returns the list paths it invalidated. */
 export function applySummaryEvent(qc: QueryClient, ev: SummaryEvent, opts: { first: boolean }): string[] {
+  const key = KEYS.summary(ev.page, eventScopeKey(ev.scope));
+  const before = qc.getQueryData<Summary>(key);
   const body: Summary = { page: ev.page, computedAt: ev.computedAt ?? new Date().toISOString(), counts: ev.counts ?? {}, partial: ev.partial ?? [],
     scope: ev.scope ?? null, unscoped: ev.unscoped ?? [] };
-  qc.setQueryData(KEYS.summary(ev.page, eventScopeKey(ev.scope)), body);
+  // a page's panels (GUI-9.11) come with every event of a page that has them; an event without any (an older BFF) keeps the ones already read
+  const panels = ev.panels ?? before?.panels;
+  if (panels) body.panels = panels;
+  qc.setQueryData(key, body);
   if (opts.first) return [];
   const paths = listPathsFor(ev.changed ?? []);
   if (paths.length > 0) {

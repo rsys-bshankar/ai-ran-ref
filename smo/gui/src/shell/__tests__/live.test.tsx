@@ -71,6 +71,18 @@ describe("event rules", () => {
     expect(qc.getQueryState(["smo", "/ran-nf-oam/alarms", "page", {}])?.isInvalidated).toBe(true);
     expect(qc.getQueryState(["smo", "/rapp-mgmt/instances", "page", {}])?.isInvalidated).toBe(false);
   });
+
+  // The Dashboard's panels (GUI-9.11) are replaced by an event that carries them and kept by one that carries none.
+  it("replaces the panels an event carries and keeps them otherwise", () => {
+    const qc = new QueryClient();
+    const worst = () => qc.getQueryData<{ panels?: Record<string, unknown> }>(KEYS.summary("dashboard"))?.panels?.worst;
+    applySummaryEvent(qc, { page: "dashboard", counts: {}, panels: { worst: [{ managedElementRef: "du-1" }] } }, { first: true });
+    expect(worst()).toEqual([{ managedElementRef: "du-1" }]);
+    applySummaryEvent(qc, { page: "dashboard", counts: { "alarms.critical": 1 }, changed: ["alarms.critical"] }, { first: false });
+    expect(worst()).toEqual([{ managedElementRef: "du-1" }]);
+    applySummaryEvent(qc, { page: "dashboard", counts: {}, panels: { worst: [] }, changed: ["panel.worst"] }, { first: false });
+    expect(worst()).toEqual([]);
+  });
 });
 
 describe("LiveEvents", () => {
