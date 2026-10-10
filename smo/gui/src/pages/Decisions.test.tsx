@@ -137,6 +137,25 @@ describe("one decision", () => {
     expect(second.container.textContent).toContain("A person (or the timeout policy) rejected it");
   });
 
+  // A decision record with two approvers shows both in the list row and under "Approvers (two were needed)" on the record, while one without the field shows its single approver as before.
+  it("names both approvers of a decision that needed two, in the list and on the record", async () => {
+    const two = record({ approvedBy: "smo-gui:bob", approvers: ["smo-gui:alice", "smo-gui:bob"] });
+    bff({
+      "GET /smo/ran-nf-oam/decision-records": { items: [two, record({ decisionId: "d2", approvedBy: "smo-gui:carol" })], limit: 25, offset: 0, hasMore: false },
+      [`GET /smo/ran-nf-oam/decision-records/${DID}`]: { body: { ...two, integrity: { status: "VERIFIED" } } },
+    });
+    const list = await mountWith(<AuthProvider><Decisions /></AuthProvider>, { at: "/decisions" });
+    await settle();
+    const rows = Array.from(list.container.querySelectorAll("tbody tr"));
+    expect(rows[0].textContent).toContain("smo-gui:alice, smo-gui:bob");
+    expect(rows[1].textContent).toContain("smo-gui:carol");                              // a record without the field reads as before
+    cleanup();
+    const one = await open();
+    await settle();
+    expect(one.container.textContent).toContain("Approvers (two were needed)");
+    expect(one.container.textContent).toContain("smo-gui:alice, smo-gui:bob");
+  });
+
   it("is a 404 message for a record that does not exist", async () => {
     bff({ [`GET /smo/ran-nf-oam/decision-records/${DID}`]: { status: 404, body: { title: "DECISION_RECORD_NOT_FOUND", detail: "no decision record" } } });
     const { container } = await open();

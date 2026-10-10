@@ -113,8 +113,8 @@ class FakePlatform:
         self.training.append((ok, metrics))
         return {"status": "TRAINED" if ok else "FAILED"}
 
-    def execute_action(self, consumer, changes, action_id, source_context):
-        self.actions.append({"changes": changes, "actionId": action_id, "context": source_context})
+    def execute_action(self, consumer, changes, action_id, source_context, decision=None):
+        self.actions.append({"changes": changes, "actionId": action_id, "context": source_context, "decision": decision})
         if not self.stuck:
             for change in changes:
                 self.config.setdefault(change["managedFunctionRef"], {}).update(change["attributeChanges"])
@@ -200,6 +200,15 @@ def _cio(platform, relation=REL):
 
 # ---------------------------------------------------------------- instance binding
 
+
+def _assert_decision(action, rapp, reason):
+    """PR-AI-13: a direct write says why it is made, so RAN NF OAM's decision record (and an approver) has more than the job: the execution it came from, the
+    version of the model that decided (when the instance has one) and the reason in words."""
+    decision = action["decision"]
+    assert decision["rationale"] == f"Restoring service: {reason}"
+    assert decision["inputsRef"].startswith(f"{rapp}:") and ":execution:" in decision["inputsRef"] and decision["inputsRef"].endswith(action["context"]["correlationId"])
+    assert set(decision) <= {"inputsRef", "modelVersion", "rationale"}
+
 def test_start_binds_the_instance_and_discovers_a_dataset_per_stage(client, platform, r1):
     instance_id = _start(client, r1, "ASSIST", baselineCio=2, dmroBounds={"maximumDeviationHoTriggerHigh": 4},
                          energySavingInstanceId="es-1", trafficSteeringInstanceId="ts-1")
@@ -256,6 +265,7 @@ def test_the_model_lifecycle_trains_validates_emulates_and_deploys_with_the_dmro
     deployed = client.post(f"/instances/{instance_id}/lifecycle/deploy").json()
     assert deployed["artifactVersion"] == 4 and deployed["dmro"]["verification"] == "VERIFIED"
     assert platform.config[f"DMROFunction={ME}"]["maximumDeviationHoTriggerHigh"] == 6
+    assert "DMRO bounds" in platform.actions[0]["decision"]["rationale"]               # PR-AI-13: the bounds write says why it is made
     view = client.get(f"/instances/{instance_id}").json()
     assert view["lifecycleJobs"] == {"training": "tr-1", "validation": "va-1", "emulation": "em-1"}
     assert client.post(f"/instances/{instance_id}/lifecycle/train").json()["modelId"] == view["modelId"]
@@ -316,6 +326,7 @@ def test_a_change_that_degrades_the_kpi_is_reverted_straight_through_dme(client,
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
     assert (d["decision"], d["reason"], d["outcome"], d["kpi"]["verdict"]) == ("REVERT_CIO", "KPI_DEGRADED", "REVERTED", "DEGRADED")
     assert _cio(platform) == [0] * 6 and platform.actions[-1]["context"]["reason"] == "REVERT:KPI_DEGRADED"
+    _assert_decision(platform.actions[-1], "mobility-optimization-rapp", "REVERT:KPI_DEGRADED")
     assert d["finalState"] == {"state": "STEADY", "cio": 0}
 
 

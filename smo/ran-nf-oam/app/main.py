@@ -1790,6 +1790,7 @@ def purge_refusals(older_than_days: int | None = None, db: Session = Depends(get
 
 APPROVAL_STATUSES = ("PENDING", "APPROVED", "REJECTED", "EXPIRED", "REFUSED")
 SYSTEM_DECIDER = "system:timeout"
+APPROVAL_ALREADY_GIVEN = ("APPROVAL_ALREADY_GIVEN", 409)       # kept here, not in smo_shared.errors (a mutation-tested module), as lifecycle.py keeps its own codes
 APPROVAL_SWEEP_BATCH = 100
 
 
@@ -1800,10 +1801,16 @@ class ApprovalPolicyRequest(BaseModel):
     requestedBy: str = Field(min_length=1)
     timeoutSeconds: int = Field(default=3600, ge=60, le=604_800)
     onTimeout: Literal["EXPIRE", "REJECT"] = "EXPIRE"
+    # 1 (the default) is one approval, as before. 2 asks for two different people: the first approval keeps the request waiting, the second makes the job. The
+    # requester's own approval never counts, and one person's approval counts once. A rejection by any one person ends the request.
+    requiredApprovals: Literal[1, 2] = 1
 
 
 def _policy_view(row: RAppApprovalPolicy) -> dict:
-    return {"invokerId": row.invoker_id, "timeoutSeconds": row.timeout_seconds, "onTimeout": row.on_timeout, "setBy": row.set_by, "updatedAt": row.updated_at}
+    view = {"invokerId": row.invoker_id, "timeoutSeconds": row.timeout_seconds, "onTimeout": row.on_timeout, "setBy": row.set_by, "updatedAt": row.updated_at}
+    if row.required_approvals > 1:                         # absent means 1: a policy nobody opted into reads exactly as it did
+        view["requiredApprovals"] = row.required_approvals
+    return view
 
 
 def _policy_or_404(db: Session, invoker: str) -> RAppApprovalPolicy:
@@ -1824,6 +1831,7 @@ def set_approval_policy(invoker_id_: str, body: ApprovalPolicyRequest, request: 
         row = RAppApprovalPolicy(invoker_id=invoker_id_)
         db.add(row)
     row.timeout_seconds, row.on_timeout, row.set_by = body.timeoutSeconds, body.onTimeout, body.requestedBy
+    row.required_approvals = body.requiredApprovals
     db.commit()
     return _policy_view(db.get_one(RAppApprovalPolicy, invoker_id_, populate_existing=True))
 
@@ -1883,6 +1891,8 @@ def _notify_approvers(db: Session, event_type: str, row: RAppActionApproval) -> 
     event = {"href": "/ran-nf-oam/rapp-approvals", "eventType": event_type, "approvalId": str(row.approval_id), "invokerId": row.invoker_id,
              "requestedBy": row.requested_by, "status": row.status, "managedElements": row.managed_elements, "changeCount": row.change_count,
              "expiresAt": as_utc(row.expires_at).isoformat(), "occurredAt": datetime.datetime.now(datetime.UTC).isoformat()}
+    if row.required_approvals > 1:                         # only a request that needs two people says so: every other notice is what it was
+        event["requiredApprovals"], event["approvalsGiven"] = row.required_approvals, len(row.approvals or [])
     for sub in db.scalars(select(ApprovalSubscription)).all():
         enqueue(db, sub.callback_uri, event)
 
@@ -1894,7 +1904,8 @@ def _park_for_approval(db: Session, body: WriteConfigRequest, invoker: str, poli
     row = RAppActionApproval(invoker_id=invoker, requested_by=body.requestedBy, status="PENDING", request=body.model_dump(mode="json"),
                              managed_elements=elements, change_count=len(body.changes), created_at=now,
                              expires_at=now + datetime.timedelta(seconds=policy.timeout_seconds), on_timeout=policy.on_timeout,
-                             correlation_id=get_correlation_id(), requester_scope=authz_scope.to_claim(requester_scope))
+                             correlation_id=get_correlation_id(), requester_scope=authz_scope.to_claim(requester_scope),
+                             required_approvals=policy.required_approvals)
     db.add(row)
     db.flush()
     _notify_approvers(db, "RAPP_APPROVAL_REQUESTED", row)
@@ -1909,11 +1920,29 @@ def _approval_view(row: RAppActionApproval, detail: bool = False) -> dict:
             "expiresAt": as_utc(row.expires_at).isoformat(), "onTimeout": row.on_timeout, "decidedBy": row.decided_by,
             "decidedAt": as_utc(row.decided_at).isoformat() if row.decided_at else None, "decisionReason": row.decision_reason,
             "jobId": str(row.job_id) if row.job_id else None, "refusalCode": row.refusal_code, "correlationId": row.correlation_id,
-            "decision": (row.request or {}).get("decision")}
+            "decision": (row.request or {}).get("decision"), "requiredApprovals": row.required_approvals, "approvals": _approvals_given(row)}
     if detail:
         view["changes"] = (row.request or {}).get("changes", [])
         view["accessScope"] = (row.request or {}).get("accessScope")
     return view
+
+
+def _approvals_given(row: RAppActionApproval) -> list[dict]:
+    """The approvals so far, in the order given. A request that needs one approval keeps its approver in `decided_by`; once approved it reads as that one."""
+    if row.approvals:
+        return list(row.approvals)
+    if row.status == "APPROVED" and row.decided_by:
+        return [{"by": row.decided_by, "at": as_utc(row.decided_at).isoformat() if row.decided_at else None, "reason": row.decision_reason}]
+    return []
+
+
+def _same_person(a: str, b: str) -> bool:
+    """Two decider names that differ only in case or surrounding space are one person (`smo-gui:Alice` is `smo-gui:alice `): an approver cannot count twice by typing."""
+    return a.strip().casefold() == b.strip().casefold()
+
+
+def _vote(body: "ApprovalDecisionRequest", now: datetime.datetime) -> dict:
+    return {"by": body.decidedBy, "at": now.isoformat(), "reason": body.reason}
 
 
 def _approval_or_404(db: Session, approval_id: uuid.UUID, lock: bool = False) -> RAppActionApproval:
@@ -2009,7 +2038,8 @@ def _decidable(db: Session, approval_id: uuid.UUID, request: Request, body: Appr
     if role_of(request) == ROLE_RAPP:
         raise framework_error(FrameworkError.ROLE_NOT_PERMITTED, detail="an rApp cannot decide an approval request")
     row = _approval_or_404(db, approval_id, lock=True)
-    if body.decidedBy in (row.invoker_id, row.requested_by) or invoker_id(request) == row.invoker_id:
+    if body.decidedBy in (row.invoker_id, row.requested_by) or invoker_id(request) == row.invoker_id or (
+            row.required_approvals > 1 and (_same_person(body.decidedBy, row.invoker_id) or _same_person(body.decidedBy, row.requested_by))):
         raise framework_error(FrameworkError.APPROVAL_SELF_DECISION, detail="the requester of an action cannot decide it")
     if _lapse_if_due(db, row):
         db.commit()
@@ -2025,8 +2055,22 @@ def _decidable(db: Session, approval_id: uuid.UUID, request: Request, body: Appr
 def approve_action(approval_id: uuid.UUID, body: ApprovalDecisionRequest, request: Request, db: Session = Depends(get_session)):
     """AI-11.2: approve a waiting request. The safeguards are checked again now (a kill switch thrown while it waited refuses it: 403 `RAPP_KILLED`, the
     request is closed REFUSED), then MSAC, the schema check and the dispatch run as for any write, and the job is made from the request as the rApp
-    sent it. 200 with the request (now APPROVED, `jobId`) and the job's status. 404, 403 (an rApp, or the requester), 409 (not pending)."""
+    sent it. 200 with the request (now APPROVED, `jobId`) and the job's status. 404, 403 (an rApp, or the requester), 409 (not pending).
+
+    A request parked under a policy of `requiredApprovals: 2` needs two different people: the first approval is recorded and the request stays PENDING (200,
+    `jobStatus` null, the approvals so far in `approvals`), a second approval by the same person is 409 `APPROVAL_ALREADY_GIVEN`, and the second person's approval
+    runs everything above. The requester's own approval never counts (403 `APPROVAL_SELF_DECISION`). The first approval checks nothing and writes nothing."""
     row = _decidable(db, approval_id, request, body)
+    now = datetime.datetime.now(datetime.UTC)
+    if row.required_approvals > 1:
+        given = list(row.approvals or [])
+        if any(_same_person(v["by"], body.decidedBy) for v in given):
+            raise framework_error(APPROVAL_ALREADY_GIVEN, detail=f"{body.decidedBy} has already approved this request: a different person must give the other approval")
+        if len(given) + 1 < row.required_approvals:
+            row.approvals = [*given, _vote(body, now)]
+            db.commit()
+            return {**_approval_view(_approval_or_404(db, approval_id), detail=True), "jobStatus": None}
+        row.approvals = [*given, _vote(body, now)]         # the last approval: kept with the job's transaction, and re-added by `_close_refused` if the checks refuse
     try:
         _refuse_if_killed(db, row.invoker_id, row.requested_by)
         _enforce_rapp_limit(db, row.invoker_id, row.requested_by)
@@ -2053,6 +2097,10 @@ def _close_refused(db: Session, approval_id: uuid.UUID, body: ApprovalDecisionRe
     detail: dict[str, Any] = exc.detail if isinstance(exc.detail, dict) else {}
     row.status, row.refusal_code = "REFUSED", str(detail.get("title") or "REFUSED")
     row.decided_by, row.decided_at, row.decision_reason = body.decidedBy, datetime.datetime.now(datetime.UTC), body.reason
+    if row.required_approvals > 1 and not any(_same_person(v["by"], body.decidedBy) for v in row.approvals or []):
+        # the approval was given and the request was refused after it. A refusal that committed its own record (a safeguard's) took the vote with it; one that did not
+        # (MSAC, the schema) was rolled back with it: either way it is in the list once
+        row.approvals = [*(row.approvals or []), _vote(body, row.decided_at)]
     _record_decision(db, row.invoker_id, WriteConfigRequest.model_validate(row.request), "REFUSED", approval=row)
     db.commit()
     _chain_decisions_quietly(db)
@@ -2082,6 +2130,8 @@ def _decision_hash(rec: RAppDecisionRecord) -> str:
             "action_id": rec.action_id, "inputs_ref": rec.inputs_ref, "model_version": rec.model_version, "rationale": rec.rationale,
             "decided_by": rec.decided_by, "decided_at": _stamp(rec.decided_at), "managed_elements": rec.managed_elements,
             "change_count": rec.change_count, "correlation_id": rec.correlation_id}
+    if rec.approvers is not None:                          # only a two-person record: every other record hashes as it always did
+        body["approvers"] = rec.approvers
     return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
 
 
@@ -2095,7 +2145,8 @@ def _record_decision(db: Session, invoker: str, body: WriteConfigRequest, dispos
         job_id=job_id, approval_id=approval.approval_id if approval is not None else None, action_id=context.actionId, inputs_ref=context.inputsRef,
         model_version=context.modelVersion, rationale=context.rationale, decided_by=approval.decided_by if approval is not None else None,
         decided_at=approval.decided_at if approval is not None else None,
-        managed_elements=list(dict.fromkeys(c["managedElementRef"] for c in body.changes)), change_count=len(body.changes), correlation_id=get_correlation_id())
+        managed_elements=list(dict.fromkeys(c["managedElementRef"] for c in body.changes)), change_count=len(body.changes), correlation_id=get_correlation_id(),
+        approvers=[v["by"] for v in approval.approvals or []] if approval is not None and approval.required_approvals > 1 else None)
     rec.content_hash = _decision_hash(rec)
     db.add(rec)
     db.flush()
@@ -2153,7 +2204,7 @@ def _decision_view(rec: RAppDecisionRecord, integrity: dict | None = None) -> di
             "actionId": rec.action_id, "inputsRef": rec.inputs_ref, "modelVersion": rec.model_version, "rationale": rec.rationale,
             "approvedBy": rec.decided_by if rec.disposition == "APPROVED" else None, "decidedBy": rec.decided_by, "decidedAt": _stamp(rec.decided_at),
             "managedElements": rec.managed_elements, "changeCount": rec.change_count, "correlationId": rec.correlation_id,
-            "contentHash": rec.content_hash, "auditSeq": rec.audit_seq}
+            "contentHash": rec.content_hash, "auditSeq": rec.audit_seq, "approvers": rec.approvers}
     if integrity is not None:
         view["integrity"] = integrity
     return view

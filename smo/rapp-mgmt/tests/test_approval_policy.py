@@ -95,3 +95,63 @@ def test_an_upgrade_keeps_the_policy_and_a_rollback_restores_it(client, db_sessi
     with db_session_factory() as db:
         [version] = db.query(RAppInstanceVersion).all()
         assert version.previous_approval_policy == POLICY
+
+
+# ---- two-person approval (opt-in): requiredApprovals
+
+TWO = {"timeoutSeconds": 600, "onTimeout": "EXPIRE", "requiredApprovals": 2}
+
+
+def _echoing_put(monkeypatch, calls, echo=True):
+    """RAN NF OAM that answers a policy push with the policy, as the current release does (or without `requiredApprovals`, as the previous release would)."""
+    def put(self, path, json=None, **kw):
+        calls["put"].append((path, json))
+        answer = {k: v for k, v in (json or {}).items() if k != "requestedBy"}
+        if not echo:
+            answer.pop("requiredApprovals", None)
+        return FakeR1Response(200, answer)
+    monkeypatch.setattr("app.main.R1Client.put", put)
+
+
+def test_a_policy_asking_for_two_approvals_is_stored_pushed_and_returned_with_the_number(client, monkeypatch):
+    """A `requiredApprovals: 2` policy is stored with the instance, pushed to RAN NF OAM with the number when bootstrap completes, and returned unchanged."""
+    calls = _wire(monkeypatch, None)
+    _echoing_put(monkeypatch, calls)
+    created = _create(client, policy=TWO).json()
+    assert client.get(f"/instances/{created['instanceId']}").json()["approvalPolicy"] == TWO
+    assert client.post(f"/instances/{created['instanceId']}/bootstrap-complete").json()["state"] == "RUNNING"
+    assert _policy_calls(calls) == [(f"/ran-nf-oam/rapp-approval-policy/{created['oauthClientId']}", {"requestedBy": "rapp-mgmt", **TWO})]
+    assert client.get(f"/instances/{created['instanceId']}").json()["approvalPolicy"] == TWO
+
+
+def test_asking_for_one_approval_explicitly_is_the_policy_it_was_before_the_field_existed(client, monkeypatch):
+    """`requiredApprovals: 1` is dropped: the stored policy and the pushed body have no such key, as for a policy written before the field."""
+    calls = _wire(monkeypatch, None)
+    created = _create(client, policy={**POLICY, "requiredApprovals": 1}).json()
+    assert client.get(f"/instances/{created['instanceId']}").json()["approvalPolicy"] == POLICY       # no requiredApprovals key: stored and shown as before
+    client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    assert _policy_calls(calls)[0][1] == {"requestedBy": "rapp-mgmt", **POLICY}
+
+
+# Each `number` is not the integer 1 or 2 (0, 3, the string "2", null, a float): creating the instance answers 422.
+@pytest.mark.parametrize("number", [0, 3, "2", None, 1.5])
+def test_the_number_of_approvals_is_one_or_two(client, monkeypatch, number):
+    _wire(monkeypatch, None)
+    assert _create(client, policy={"requiredApprovals": number}).status_code == 422
+
+
+def test_a_ran_nf_oam_that_does_not_know_two_approvals_keeps_the_instance_from_running(client, monkeypatch):
+    """The previous release's RAN NF OAM ignores the field and would hold the instance's writes for ONE approval: fail closed, like any refused push."""
+    calls = _wire(monkeypatch, None)
+    _echoing_put(monkeypatch, calls, echo=False)
+    created = _create(client, policy=TWO).json()
+    resp = client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
+    assert resp.status_code == 503 and "approval policy" in resp.json()["detail"]["detail"]
+    assert client.get(f"/instances/{created['instanceId']}").json()["state"] == "DEPLOYING"
+
+
+def test_two_approvals_are_refused_for_a_mode_in_which_no_one_decides(client, monkeypatch):
+    """Creating an AUTONOMOUS instance with a two-approval policy answers 422 APPROVAL_POLICY_NEEDS_ASSIST."""
+    _wire(monkeypatch, None)
+    resp = _create(client, mode="AUTONOMOUS", policy=TWO)
+    assert resp.status_code == 422 and resp.json()["detail"]["title"] == "APPROVAL_POLICY_NEEDS_ASSIST"

@@ -436,3 +436,58 @@ def test_the_gui_key_secret_is_mounted_and_named_only_when_set():
     assert env["GUI_JWT_PRIVATE_KEY_FILE"] == "/run/gui-jwt/private-key.pem" and env["GUI_JWT_ALGORITHM"] == "ES256"
     assert {"name": "gui-jwt", "mountPath": "/run/gui-jwt", "readOnly": True} in on["containers"][0]["volumeMounts"]
     assert next(v for v in on["volumes"] if v["name"] == "gui-jwt")["secret"]["secretName"] == "gui-jwt-key"
+
+
+# ---------------------------------------------------------------- SB-7.8: the VES listener's password from a Secret
+
+def test_the_chart_has_a_ves_password_secret_reference_off_by_default_and_documents_it():
+    """`ranNfOam.vesPasswordSecretRef` defaults to empty, `modules.yaml` carries the file variable, mount and default key, and the chart README names the value."""
+    assert VALUES["ranNfOam"]["vesPasswordSecretRef"] == {}                          # off by default: no listener, nothing mounted
+    template = (CHART / "templates" / "modules.yaml").read_text()
+    assert "name: RAN_NF_OAM_VES_PASSWORD_FILE" in template and "mountPath: /run/ves" in template and 'default "ves-password"' in template
+    assert "vesPasswordSecretRef" in (CHART / "README.md").read_text()
+
+
+def _pod_env(pod: dict) -> dict:
+    return {e["name"]: e.get("value") for e in pod["containers"][0].get("env") or []}
+
+
+@helm
+def test_nothing_about_ves_is_rendered_unless_a_secret_is_named():
+    """With no Secret named, no Deployment has a `RAN_NF_OAM_VES*` variable or a `ves-password` volume."""
+    for deployment in (d for d in _render() if d["kind"] == "Deployment"):
+        pod = deployment["spec"]["template"]["spec"]
+        assert not [k for k in _pod_env(pod) if k.startswith("RAN_NF_OAM_VES")], deployment["metadata"]["name"]
+        assert "ves-password" not in {v["name"] for v in pod.get("volumes") or []}, deployment["metadata"]["name"]
+
+
+@helm
+def test_a_named_secret_is_mounted_as_a_file_on_ran_nf_oam_only_and_named_by_the_file_variable():
+    """A named Secret is mounted read-only at /run/ves on ran-nf-oam alone, one key only, and reaches it as `RAN_NF_OAM_VES_PASSWORD_FILE`, never as a plain password."""
+    docs = _render("--set", "ranNfOam.vesPasswordSecretRef.name=ves-listener", "--set", "modules.ran-nf-oam.env.RAN_NF_OAM_VES_USERNAME=adaptor")
+    pod = _deployment(docs, "ran-nf-oam")["spec"]["template"]["spec"]
+    env = _pod_env(pod)
+    assert env["RAN_NF_OAM_VES_PASSWORD_FILE"] == "/run/ves/password" and env["RAN_NF_OAM_VES_USERNAME"] == "adaptor" and "RAN_NF_OAM_VES_PASSWORD" not in env
+    assert {"name": "ves-password", "mountPath": "/run/ves", "readOnly": True} in pod["containers"][0]["volumeMounts"]
+    volume = next(v for v in pod["volumes"] if v["name"] == "ves-password")["secret"]
+    assert volume["secretName"] == "ves-listener" and volume["items"] == [{"key": "ves-password", "path": "password"}]          # one key, not the whole Secret
+    for other in ("ran-nf-oam-worker", "mock-o1-adaptor", "rapp-mgmt", "gui-bff"):                                            # nothing else gets the password
+        other_pod = _deployment(docs, other)["spec"]["template"]["spec"]
+        assert "RAN_NF_OAM_VES_PASSWORD_FILE" not in _pod_env(other_pod) and "ves-password" not in {v["name"] for v in other_pod.get("volumes") or []}, other
+
+
+@helm
+def test_the_secret_key_can_be_named():
+    """`vesPasswordSecretRef.key` replaces the default key `ves-password` in the mounted volume's item."""
+    docs = _render("--set", "ranNfOam.vesPasswordSecretRef.name=ves-listener", "--set", "ranNfOam.vesPasswordSecretRef.key=pw")
+    volume = next(v for v in _deployment(docs, "ran-nf-oam")["spec"]["template"]["spec"]["volumes"] if v["name"] == "ves-password")["secret"]
+    assert volume["items"] == [{"key": "pw", "path": "password"}]
+
+
+# Each `variable` is a way of also giving the VES password in `modules.ran-nf-oam.env` while the Secret reference is set: `helm template` must fail with "given twice".
+@pytest.mark.parametrize("variable", ["RAN_NF_OAM_VES_PASSWORD", "RAN_NF_OAM_VES_PASSWORD_FILE"])
+@helm
+def test_a_password_given_twice_fails_the_render_because_the_listener_would_answer_503(variable):
+    result = subprocess.run(["helm", "template", "smo", str(CHART), "-n", "smo", "--kube-version", "1.30.0", "--set", "ranNfOam.vesPasswordSecretRef.name=ves-listener",
+                             "--set", f"modules.ran-nf-oam.env.{variable}=x"], capture_output=True, text=True)
+    assert result.returncode != 0 and "given twice" in result.stderr
