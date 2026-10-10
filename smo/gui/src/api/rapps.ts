@@ -1,5 +1,10 @@
-// The BFF's rApp routes (gui-bff/app/rapps.py, PR-GUI-8): the directory, one rApp with its declared page, the declared routes, the user's pins.
-// All keys start with "bff" so the existing `useSmoAction` invalidation (["bff"]) also refreshes them.
+/**
+ * The react-query hooks for the BFF's rApp routes (gui-bff/app/rapps.py, PR-GUI-8): the directory, one rApp with its declared page, the
+ * declared operator reads and actions, and the user's pins (the sidebar shortcuts).
+ *
+ * Every query key starts with "bff", so the invalidation `useSmoAction` already does (["bff"]) also refreshes these. The types here
+ * mirror the BFF's answers; the page declaration is typed loosely on purpose (see lib/operatorUi.ts).
+ */
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -7,6 +12,9 @@ import { useToast } from "../components/Toast";
 import { refreshInterval, type Obj } from "../lib/operatorUi";
 import { api, ApiError, type Query } from "./client";
 
+/**
+ * One row of the rApp directory: the instance and its package, state and autonomy mode, whether its package declares an operator page, whether its operator API is registered, and whether the user pinned it.
+ */
 export interface RappSummary {
   instanceId: string; packageId: string; name: string | null; version: string | null; vendor: string | null;
   state: string | null; autonomyMode: string | null; hasPage: boolean; operatorApiRegistered: boolean; pinned: boolean;
@@ -14,6 +22,9 @@ export interface RappSummary {
 
 export interface RappDirectory { items: RappSummary[]; total: number; limit: number; offset: number; owners: string[]; states: string[] }
 
+/**
+ * One rApp as the detail page needs it: the summary plus the declaration state (declared, none, or unreadable), the declaration itself and the two flags that decide whether the renderer draws buttons.
+ */
 export interface RappPage extends RappSummary {
   declarationState: "declared" | "none" | "unreadable";
   declaration: Declaration | null;
@@ -27,6 +38,10 @@ export interface Declaration { version?: number; readOnly?: boolean; panels: Obj
 
 export interface DirectoryQuery { search?: string; state?: string; owner?: string; hasPage?: boolean | ""; pinned?: boolean | ""; limit?: number; offset?: number }
 
+/**
+ * Queries the directory of rApps with the page's filters (search, state, owner, has-page, pinned, limit, offset) and polls it every 15 s.
+ * An empty-string has-page or pinned filter means "any" and is left out of the request. The previous page stays on screen while the next loads.
+ */
 export function useRappDirectory(q: DirectoryQuery) {
   return useQuery<RappDirectory, ApiError>({
     queryKey: ["bff", "rapps", q],
@@ -36,6 +51,7 @@ export function useRappDirectory(q: DirectoryQuery) {
   });
 }
 
+/** Queries one rApp with its declared page (GET /rapps/{id}), refreshed every 15 s. */
 export function useRapp(instanceId: string) {
   return useQuery<RappPage, ApiError>({
     queryKey: ["bff", "rapp", instanceId],
@@ -58,6 +74,10 @@ export function useOperatorRead(instanceId: string, path: string | null, query: 
 
 export interface OperatorAction { actionId: string; method: "POST" | "PUT" | "PATCH" | "DELETE"; path: string; body?: Obj; success: string }
 
+/**
+ * Returns the mutation behind a declared action button: sends the action to the rApp's operator API through the BFF with its action id in the X-Action-Id header
+ * (DELETE carries no body, the other methods send the given body or {}). Toasts the declared success text or the error, and refreshes this rApp's declared reads and every SMO read.
+ */
 export function useOperatorAction(instanceId: string) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -82,6 +102,9 @@ export function usePins(enabled = true) {
   return useQuery<Pins, ApiError>({ queryKey: ["bff", "pins"], queryFn: ({ signal }) => api<Pins>("/me/pins", { signal }), enabled, staleTime: 30_000, retry: false });
 }
 
+/**
+ * Returns the mutation that pins (PUT) or unpins (DELETE) an rApp for the signed-in user. A 409 means the user is at the pin limit (`MAX_PINS`) and gets that explanation as a toast; success refreshes every BFF read, so the sidebar updates.
+ */
 export function usePinToggle() {
   const qc = useQueryClient();
   const toast = useToast();

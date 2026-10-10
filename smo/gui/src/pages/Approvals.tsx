@@ -1,3 +1,9 @@
+/**
+ * The approval inbox (route /approvals, PR-GUI-7): `Approvals` with its two tabs (waiting, decided) and `ApprovalDrawer`, the review of one rApp action held for a person's decision (AI-11) with Approve and Reject.
+ * Reads RAN NF OAM's /rapp-approvals through the BFF (the waiting list polls every 5 s). Every signed-in role may read it; Approve and Reject are drawn only for the operator role and up
+ * (`Can` on POST .../approve, as the BFF's permission table says), and the BFF checks again. The same drawer is opened from the decision record page. Covered by `Approvals.test.tsx`.
+ */
+
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -34,6 +40,9 @@ export function Approvals() {
   );
 }
 
+/**
+ * The "waiting" tab: the requests that are still PENDING, with the rApp, the changes, the rationale, approvals so far, and when each lapses; a row or "Review…" opens `ApprovalDrawer`.
+ */
 function Waiting() {
   const waiting = useSmoPage<Approval>(WAITING, { status: "PENDING", limit: 100, total: false }, { refetchInterval: 5_000 });
   const [open, setOpen] = useState<string | null>(null);
@@ -55,6 +64,9 @@ function Waiting() {
   );
 }
 
+/**
+ * The "decided" tab: every request that is no longer PENDING (approved, rejected, expired or refused) with who decided it, when and why.
+ */
 function Decided() {
   const decided = useSmoPage<Approval>(WAITING, { limit: 100, total: false });
   const [open, setOpen] = useState<string | null>(null);
@@ -85,6 +97,7 @@ export function ApprovalDrawer({ id, onClose }: { id: string; onClose: () => voi
   const data = view.data;
   const needed = data?.requiredApprovals ?? 1;
   const given = data?.approvals ?? [];
+  // The BFF records a vote under `smo-gui:<username>`; comparing that name is how the drawer knows this user already approved (one person cannot give both approvals).
   const iApproved = me !== null && given.some((v) => v.by.trim().toLowerCase() === `smo-gui:${me.username}`.toLowerCase());
   const lastApproval = given.length + 1 >= needed;
   const decide = (verb: "approve" | "reject") => action.mutate(

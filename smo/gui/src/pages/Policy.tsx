@@ -1,3 +1,10 @@
+/**
+ * The Intents page (route /policy; the file keeps its older name): TS 28.312 intents dispatched to intent handlers, the registered handlers (RMIH) and the rApp autonomy dispatches (HISTORY.md OI-6.3). Reads Intent Service through
+ * the BFF; every signed-in role may read. Creating an intent or an autonomy dispatch, changing an intent's admin state and resolving or rejecting a dispatch need the operator role; deleting an intent, and registering or deregistering a
+ * handler or publishing a report (the framework-internal tools, D-SEC-POLICY-1), need admin, as the BFF's permission table says (`Can` and `ActionButton` hide the rest). Intents made here carry the RMIO identity `smo-gui`,
+ * and only the creator of an intent may change its admin state, so the Activate and Deactivate buttons are drawn only for such intents.
+ */
+
 import { useState } from "react";
 
 import { useSmo } from "../api/hooks";
@@ -7,6 +14,7 @@ import { formatTime, parseJsonObject, splitList } from "../lib/domain";
 
 const TABS = ["intents", "handlers", "autonomy"] as const;
 
+/** The page: header and the three tabs (intents, intent handlers, autonomy dispatches), kept in the URL hash. */
 export function Policy() {
   const [tab, setTab] = useHashTab(TABS, "intents");
   return (
@@ -27,6 +35,9 @@ export function Policy() {
 const PURPOSES = ["FULFILMENT_WITHOUT_NEGOTIATION", "FULFILMENT_WITH_NEGOTIATION", "FEASIBILITYCHECK", "FEASIBILITYCHECK_WITH_RECOMMENDATIONS", "EXPLORATION"];
 const OBJECT_TYPES = ["RAN_SUBNETWORK", "EDGE_SERVICE_SUPPORT", "5GC_SUBNETWORK", "RADIO_SERVICE", "SUBNETWORK"];
 
+/**
+ * The intents tab: the create form (operator), the list filterable by admin state, and a drawer with the selected intent's expectations and reports.
+ */
 function Intents() {
   const [state, setState] = useState("");
   const intents = useSmo<Intent[]>("/intent-service/intents", { admin_state: state });
@@ -51,6 +62,9 @@ function Intents() {
   );
 }
 
+/**
+ * The row buttons of an intent: Activate or Deactivate (only for an intent created by this console, `rmioId` smo-gui) and Delete (asks first).
+ */
 function IntentActions({ intent }: { intent: Intent }) {
   const path = `/intent-service/intents/${intent.intentId}`;
   const next = intent.intentAdminState === "ACTIVATED" ? "DEACTIVATED" : "ACTIVATED";
@@ -76,6 +90,10 @@ function expectationOf(objectType: string, targets: unknown[]) {
   return { expectationId: "e1", expectationVerb: "DELIVER", expectationObject: { objectType }, expectationTargets: targets };
 }
 
+/**
+ * The form that creates an intent addressed to one chosen handler (consumer-side selection): the object type (which fills a valid default target list), the targets as a JSON array, priority, purpose, handling scope and an optional report recipient.
+ * The button is enabled only with a handler, a label and a non-empty JSON array of targets; Intent Service rejects the intent when the handler's declared capabilities, targets or scope do not cover it.
+ */
 function CreateIntent() {
   const handlers = useSmo<Rmih[]>("/intent-service/intent-handling-functions");
   const [rmihId, setRmihId] = useState("");
@@ -114,6 +132,9 @@ function CreateIntent() {
   );
 }
 
+/**
+ * The drawer of one intent: its admin state and actions, its fields, the expectations, and the reports its handler published (admin can publish one as the handler).
+ */
 function IntentDrawer({ intent, onClose }: { intent: Intent; onClose: () => void }) {
   const reports = useSmo<IntentReport[]>("/intent-service/intent-reports", { intent_id: intent.intentId });
   return (
@@ -134,6 +155,9 @@ function IntentDrawer({ intent, onClose }: { intent: Intent; onClose: () => void
   );
 }
 
+/**
+ * The registered intent handlers (RMIH) with their capabilities, scope and callback, plus an admin tool to register one on the framework's behalf. An rApp identity (a UUID) is always refused by Intent Service, and the form warns about it.
+ */
 function Handlers() {
   const handlers = useSmo<Rmih[]>("/intent-service/intent-handling-functions");
   const [f, setF] = useState({ rmihId: "so-smos", smeServiceId: "so-smos-intent-handler", callback: "http://so-smos:8000/intents", types: "RAN_SUBNETWORK", targetNames: "RANEnergyConsumption", scope: "RAN" });
@@ -177,6 +201,9 @@ function Handlers() {
   );
 }
 
+/**
+ * Admin tool that publishes a TS 28.312 intent report as the handling RMIH: a fulfilment status (FULFILLED or NOT_FULFILLED with its state) and optional conflicting intent ids.
+ */
 function PublishIntentReport({ intentId }: { intentId: string }) {
   const [status, setStatus] = useState("FULFILLED");
   const [conflicts, setConflicts] = useState("");
@@ -202,6 +229,9 @@ function PublishIntentReport({ intentId }: { intentId: string }) {
 
 // ---------------------------------------------------------------- HISTORY.md OI-6.3: rApp Autonomy Modes
 
+/**
+ * The autonomy dispatches tab (HISTORY.md OI-6.3): what each rApp instance's autonomy mode did with an inference outcome, filterable by status, with Resolve and Reject for a dispatch waiting in AWAITING_SCOPE.
+ */
 function AutonomyDispatches() {
   const [status, setStatus] = useState("");
   const dispatches = useSmo<AutonomyDispatch[]>("/intent-service/autonomy-dispatches", { status });
@@ -227,6 +257,10 @@ function AutonomyDispatches() {
   );
 }
 
+/**
+ * The form that simulates an rApp instance asking to enact an inference outcome. The chosen instance's own autonomy mode decides what happens: AUTONOMOUS creates an intent at once in its pre-configured region, ASSIST waits for an operator to give a region scope, SHADOW
+ * dispatches nothing; the text under the form says which applies.
+ */
 function CreateAutonomyDispatch() {
   const instances = useSmo<InstanceSummary[]>("/rapp-mgmt/instances");
   const handlers = useSmo<Rmih[]>("/intent-service/intent-handling-functions");
@@ -269,6 +303,9 @@ function CreateAutonomyDispatch() {
   );
 }
 
+/**
+ * The controls of a dispatch waiting for a scope: a region scope (JSON object) with Resolve, which creates the intent, and Reject with a reason. The BFF pins `rejectedBy` to the signed-in GUI user, so the value sent here is not authoritative.
+ */
 function ResolveAutonomyDispatch({ dispatch }: { dispatch: AutonomyDispatch }) {
   const [scope, setScope] = useState("{}");
   const [reason, setReason] = useState("");

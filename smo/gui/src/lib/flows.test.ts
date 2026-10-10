@@ -1,3 +1,8 @@
+/**
+ * Unit tests of the journey evaluators in `flows.ts`: the list of tracked flows, `settle`, and the step statuses of each flow for representative entity states. No DOM.
+ * Run: `cd gui && npx vitest run src/lib/flows.test.ts`.
+ */
+
 import { describe, expect, it } from "vitest";
 
 import type { ConfigJob, Instance, Model, ModelLifecycle, NfDeployment, O1Endpoint, Package, ServiceOrder } from "../api/types";
@@ -25,6 +30,7 @@ const lifecycle = (modelLifecycleState: string, runtimeLifecycleState = "NOT_DEP
 });
 
 describe("the ten documented flows", () => {
+  // The tracked flows are those of the call-flow documents (01 to 10 without 05), in order, and each points at the document that starts with its number.
   it("are all tracked, in order", () => {
     expect(FLOWS.map((f) => f.id)).toEqual(["01", "02", "03", "04", "06", "07", "08", "09", "10"]);
     expect(FLOWS.every((f) => f.doc.startsWith(f.id + "-") && f.doc.endsWith(".md"))).toBe(true);
@@ -32,6 +38,7 @@ describe("the ten documented flows", () => {
 });
 
 describe("settle", () => {
+  // `settle` marks the first open step current and, after a failure, blocks every step still to do.
   it("marks the first open step current and blocks everything after a failure", () => {
     const raw: FlowStep[] = ["done", "todo", "todo"].map((s, i) => ({ id: `${i}`, title: "", actor: "", status: s as FlowStep["status"] }));
     expect(statuses(settle(raw))).toEqual(["done", "current", "todo"]);
@@ -41,6 +48,7 @@ describe("settle", () => {
 });
 
 describe("flow 01 — rApp onboarding → running", () => {
+  // Flow 01 advances step by step from the package to a running instance, and is complete only at the end.
   it("walks the package through to a running instance", () => {
     expect(statuses(flow01(undefined, undefined, undefined))).toEqual(["current"]);
     expect(statuses(flow01(pkg("ONBOARDING"), undefined, undefined))).toEqual(["done", "current", "todo", "todo", "todo", "todo"]);
@@ -49,6 +57,7 @@ describe("flow 01 — rApp onboarding → running", () => {
     expect(progress(flow01(pkg("AVAILABLE"), instance("RUNNING"), dep)).complete).toBe(true);
   });
 
+  // A package that failed validation fails that step and blocks all that follow.
   it("stops at a validation failure", () => {
     const steps = flow01(pkg("FAILED"), undefined, undefined);
     expect(statuses(steps)).toEqual(["done", "failed", "blocked", "blocked", "blocked", "blocked"]);
@@ -57,6 +66,7 @@ describe("flow 01 — rApp onboarding → running", () => {
 });
 
 describe("flow 02 — AI/ML model", () => {
+  // Flow 02 follows the model lifecycle and the runtime lifecycle: each state makes the steps before it done and the next one current.
   it("follows the model FSM", () => {
     const at = (state: string, runtimeState = "NOT_DEPLOYED", groups: string[] = []) =>
       statuses(flow02(model(), lifecycle(state, runtimeState, groups), [], [], [], []));
@@ -65,6 +75,7 @@ describe("flow 02 — AI/ML model", () => {
     expect(at("PROMOTED", "ACTIVE", ["edge-a"]).slice(0, 9)).toEqual(["done", "done", "done", "done", "done", "done", "done", "done", "current"]);
   });
 
+  // A performance report under the guard floor is a warning (a retrain follows), not a failure, so the flow can still complete.
   it("flags a floor breach as a warning, not a failure", () => {
     const steps = flow02(model(), lifecycle("PROMOTED", "ACTIVE", ["g"]), [], [{ inferenceJobId: "j", modelId: "m1", status: "COMPLETED", notificationDestination: null, nfDeploymentId: null }],
       [{ subscriptionId: "s", modelId: "m1", metricTypes: ["acc"], dmeTypeId: "t", guardKpiFloor: { acc: 0.9 }, notificationDestination: null }],
@@ -76,6 +87,7 @@ describe("flow 02 — AI/ML model", () => {
 
 describe("flow 03 — config write", () => {
   const ep = (health: string): O1Endpoint => ({ endpointId: "e", managedElementRef: "ME-1", adaptorUri: "u", protocolSupport: ["NETCONF"], registeredVia: "x", healthStatus: health, lastHeartbeatAt: null });
+  // A job with some applied and some rejected changes ends in warnings, not in a failure.
   it("reports PARTIAL_SUCCESS as a warning", () => {
     const job: ConfigJob = { jobId: "j", status: "PARTIAL_SUCCESS", subChanges: [
       { managedElementRef: "ME-1", operation: "merge", status: "APPLIED", rejectionReason: null },
@@ -83,21 +95,25 @@ describe("flow 03 — config write", () => {
     const s = flow03([ep("ACTIVE")], job);
     expect(statuses(s)).toEqual(["done", "done", "done", "done", "warn", "warn"]);
   });
+  // While no endpoint is ACTIVE the health step is a warning that asks for a heartbeat.
   it("wants a heartbeat when no endpoint is ACTIVE", () => {
     expect(flow03([ep("DISCOVERED")], undefined)[1].status).toBe("warn");
   });
 });
 
 describe("flow 06 — the cascade-delete guard", () => {
+  // Active usage is shown as the failing guard step, so the delete step reads as blocked.
   it("shows active usage as what blocks delete", () => {
     const steps = flow06(pkg("DEPRECATED"), [{ registrationId: "r", consumerId: "i1", stoppedAt: null, active: true }], 1);
     expect(steps[4].status).toBe("failed");
     expect(steps[4].detail).toContain("delete is blocked");
     expect(steps[5].status).toBe("blocked");
   });
+  // A package that failed onboarding skips priming and deprecation and goes straight to delete.
   it("a FAILED package skips straight to delete", () => {
     expect(statuses(flow06(pkg("FAILED"), [], 0))).toEqual(["warn", "done", "done", "done", "done", "current"]);
   });
+  // Priming is optional, and a primed package is told to deprime before it is deprecated.
   it("priming is optional, and a primed package must be deprimed before it is deprecated", () => {
     expect(flow06(pkg("AVAILABLE"), [], 0)[1].detail).toBe("optional — not primed");
     const primed = flow06(pkg("PRIMED"), [], 1);
@@ -107,6 +123,7 @@ describe("flow 06 — the cascade-delete guard", () => {
 });
 
 describe("flow 07 — fault reporting", () => {
+  // A critical fault leaves the instance FAULTED as a warning (not a dead end), so RECOVER stays the actionable step.
   it("a critical fault leaves the instance FAULTED until recovered", () => {
     const crit = [{ faultId: "f", severity: "critical", description: null, reportedAt: "t" }];
     const perf = [{ reportId: "r", metrics: { x: 1 }, reportedAt: "t" }];
@@ -116,6 +133,7 @@ describe("flow 07 — fault reporting", () => {
     expect(faulted[4].status).toBe("current");   // RECOVER stays actionable
     expect(flow07(instance("RUNNING"), perf, faults)[4].status).toBe("done");
   });
+  // An upgrade in progress waits for resolve, naming the replacement instance, and terminating completes the journey.
   it("an upgrade awaits resolve, and terminate ends the journey", () => {
     const upgrading = flow07({ ...instance("UPGRADING"), pendingUpgradeInstanceId: "new-1" }, [], []);
     expect(upgrading[5]).toMatchObject({ status: "warn", detail: "awaiting upgrade/resolve (replacement new-1)" });
@@ -124,10 +142,12 @@ describe("flow 07 — fault reporting", () => {
 });
 
 describe("flow 09 — intents", () => {
+  // Once an intent exists the dispatch to the named handler counts as done, because the consumer chose a valid target when it created the intent.
   it("marks the named-RMIH dispatch step done once an intent exists (consumer-side selection guarantees a valid target)", () => {
     const intent = { intentId: "i", intentAdminState: "ACTIVATED", intentPriority: 1, rmioId: "smo-gui", intentMgmtPurpose: null, rmihId: "so-smos", userLabel: "t", attributes: {} };
     expect(flow09([], intent, [])[2].status).toBe("done");
   });
+  // Intent Service's own first RECEIVED report does not count as the handler having reported.
   it("counts only handler reports, not Intent Service's own initial RECEIVED report", () => {
     const intent = { intentId: "i", intentAdminState: "ACTIVATED", intentPriority: 1, rmioId: "smo-gui", intentMgmtPurpose: null, rmihId: "so-smos", userLabel: "t", attributes: {} };
     const report = (n: number) => ({ reportId: `r${n}`, intentId: "i", attributes: { lastUpdatedTime: "2026-01-01T00:00:00Z" } });
@@ -137,6 +157,7 @@ describe("flow 09 — intents", () => {
 });
 
 describe("flow 10 — SO multi-step", () => {
+  // An order step that fails blocks the later ones, as the order itself stops there without compensation.
   it("mirrors fail-fast: steps after a failure are blocked", () => {
     const order: ServiceOrder = { orderId: "o", scope: "s", homingDecision: null, rmihRegistration: "so-smos", steps: [
       { stepType: "INFRA", targetModule: "FOCOM", status: "COMPLETED" },

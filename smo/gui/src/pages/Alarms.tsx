@@ -1,3 +1,9 @@
+/**
+ * The Alarms page (route /alarms): the RAN NF alarms of RAN NF OAM (O1; filter, acknowledge, clear, a drawer of the 3GPP fault fields, FM subscriptions, and an admin tool to inject a test alarm) and the read-only
+ * O-Cloud alarms of FOCOM. Polls every 5 s (`POLL.alarms`). Every signed-in role may read; Ack, Unack and Clear need the operator role, the FM subscription form and Unsubscribe are drawn only when the permission table allows them, and the injection tool is admin only, all
+ * as the BFF's permission table says. The severity filter and the counts are computed in the browser from the full list.
+ */
+
 import { useMemo, useState } from "react";
 
 import { POLL, useSmo } from "../api/hooks";
@@ -7,6 +13,7 @@ import { countBySeverity, formatTime, SEVERITIES, sortAlarms } from "../lib/doma
 
 const TABS = ["ran", "ocloud"] as const;
 
+/** The page: header and the two tabs, RAN NF alarms and O-Cloud alarms (the tab is kept in the URL hash). */
 export function Alarms() {
   const [tab, setTab] = useHashTab(TABS, "ran");
   return (
@@ -18,6 +25,11 @@ export function Alarms() {
   );
 }
 
+/**
+ * The RAN alarm tab: severity counters (click to filter), the filtered and sorted list, the injection tool (admin), the FM subscriptions, and the drawer of the selected alarm.
+ * Two reads of the same path are kept on purpose: the filtered one feeds the table, the unfiltered one feeds the counters, the managed-element choices and the open drawer, so they do not change when a filter is set.
+ * Cleared alarms are hidden unless asked for or the severity filter is "cleared".
+ */
 function RanAlarms() {
   const [me, setMe] = useState("");
   const [severity, setSeverity] = useState("");
@@ -67,6 +79,10 @@ function RanAlarms() {
 
 // ---------------------------------------------------------------- FM → DME (HISTORY.md OI-6.7)
 
+/**
+ * The FM subscriptions of RAN NF OAM (HISTORY.md OI-6.7): the form to subscribe a managed element for fault records (push, pull or stream), and the list with Unsubscribe. A subscription only gives DME-mediated
+ * visibility of alarms; it never clears one.
+ */
 function FmSubscriptions() {
   const subs = useSmo<FmSubscription[]>("/ran-nf-oam/fm-subscriptions");
   const endpoints = useSmo<O1Endpoint[]>("/ran-nf-oam/o1-adaptor-endpoints");
@@ -97,6 +113,9 @@ function FmSubscriptions() {
   );
 }
 
+/**
+ * The row buttons of an alarm: Ack or Unack by its acknowledgement state, and Clear unless it is already cleared. Each is a PATCH of RAN NF OAM through the BFF and is drawn only when the role may make it.
+ */
 function AlarmActions({ alarm }: { alarm: Alarm }) {
   const base = `/ran-nf-oam/alarms/${alarm.alarmId}`;
   const cleared = alarm.severity === "cleared";
@@ -110,6 +129,9 @@ function AlarmActions({ alarm }: { alarm: Alarm }) {
   );
 }
 
+/**
+ * The detail drawer of one alarm: its TS 28.532 / 28.111 fault fields (as the field names the standards use) and its lifecycle (raised, acknowledged, changed and cleared times and users).
+ */
 function AlarmDrawer({ alarm, onClose }: { alarm: Alarm; onClose: () => void }) {
   return (
     <Drawer title={<>Alarm <Id value={alarm.alarmId} /></>} onClose={onClose}>
@@ -132,6 +154,10 @@ function AlarmDrawer({ alarm, onClose }: { alarm: Alarm; onClose: () => void }) 
   );
 }
 
+/**
+ * The admin tool that sends a test alarm as an element's NotifyNewAlarm would carry it (the element must already be registered). The button is enabled only with a managed element and a source alarm id;
+ * an empty managed function means the whole element.
+ */
 function InjectAlarm() {
   const [f, setF] = useState({ source_alarm_id: "", managed_element_ref: "", managed_function_ref: "", severity: "major", probable_cause: "", specific_problem: "", alarm_type: "COMMUNICATIONS_ALARM" });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
@@ -153,6 +179,7 @@ function InjectAlarm() {
   );
 }
 
+/** The FOCOM (O2ims) infrastructure alarms: severity, resource and alarm id, read-only, sorted by severity. */
 function OCloudAlarms() {
   const alarms = useSmo<OCloudAlarm[]>("/focom/alarms", undefined, { refetchInterval: POLL.alarms });
   return (

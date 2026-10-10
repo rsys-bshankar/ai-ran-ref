@@ -1,3 +1,10 @@
+/**
+ * The Infrastructure page (route /infrastructure): the workloads (NFO, O2dms), the O-Cloud inventory and topology (FOCOM, O2ims), O1 management of managed elements (RAN NF OAM: endpoints, CM write jobs, software jobs), the zero-touch onboarding of new elements
+ * (`Onboarding.tsx`), the software campaigns (`Campaigns.tsx`) and the SO SMOS service orders, as seven tabs. Every signed-in role may read. Config writes, endpoint registration and software jobs are operator calls; terminating a deployment, the endpoint heartbeat and
+ * O-Cloud provisioning are admin calls (the BFF's permission table, applied through `Can` and `ActionButton`; the BFF checks again). Several buttons simulate what a deployment manager, an element or a producer would report, and say so in their tooltip.
+ * `requestedBy` and `msacRole` of a config job are set by the BFF from the signed-in user, not sent from here. Covered in part by `Infrastructure.test.tsx` and, for the two tabs of their own, `Onboarding.test.tsx` and `Campaigns.test.tsx`.
+ */
+
 import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
@@ -14,6 +21,7 @@ import { describePlace, formatTime, parseJsonObject, splitList, stagedPayload, t
 
 const TABS = ["nfo", "ocloud", "topology", "o1", "onboarding", "campaigns", "orders"] as const;
 
+/** The page: header and the seven tabs, kept in the URL hash. */
 export function Infrastructure() {
   const [tab, setTab] = useHashTab(TABS, "nfo");
   return (
@@ -36,6 +44,9 @@ export function Infrastructure() {
 
 // ---------------------------------------------------------------- NFO
 
+/**
+ * The NF deployments tab: the deployments (filter by state) with Heal, Scale and Terminate, a drawer on a row click, and the NF descriptors. Deployments are created by rApp Management and SO SMOS, not here.
+ */
 function Deployments() {
   const [state, setState] = useState("");
   const deployments = useSmo<NfDeployment[]>("/nfo/deployments", { state });
@@ -60,6 +71,9 @@ function Deployments() {
   );
 }
 
+/**
+ * The NF deployment descriptors, which Onboarding's validation pipeline creates from each package's TOSCA definitions.
+ */
 function Descriptors() {
   const descriptors = useSmo<NfDescriptor[]>("/nfo/descriptors");
   return (
@@ -72,6 +86,9 @@ function Descriptors() {
   );
 }
 
+/**
+ * The buttons a deployment's state allows: Heal (RUNNING or ABNORMAL), Scale (RUNNING), Terminate, and Terminate (async), which leaves the deployment TERMINATING until the deployment manager reports (OI-3-nfo-abnormal).
+ */
 function DeploymentActions({ d }: { d: NfDeployment }) {
   const base = `/nfo/deployments/${d.nfDeploymentId}`;
   return (
@@ -90,6 +107,9 @@ const DMS_EVENTS: Record<string, string[]> = {
   INSTANTIATING: ["RUNTIME_FAILURE"], RUNNING: ["RUNTIME_FAILURE"], UPDATING: ["RUNTIME_FAILURE"],
 };
 
+/**
+ * Admin tool that reports what the O2 deployment manager would (no real deployment manager runs here): the events legal for the deployment's state (`DMS_EVENTS`), with an optional detail that explains a failure.
+ */
 function DmsReport({ d }: { d: NfDeployment }) {
   const events = DMS_EVENTS[d.state] ?? [];
   const [detail, setDetail] = useState("");
@@ -106,6 +126,9 @@ function DmsReport({ d }: { d: NfDeployment }) {
   );
 }
 
+/**
+ * The drawer of one deployment: its identifiers, placement, why it is abnormal (when it is), the deployment manager report tool (for roles that may), its LCM operations and the O-Cloud resources linked to it.
+ */
 function DeploymentDrawer({ d, onClose }: { d: NfDeployment; onClose: () => void }) {
   const resources = useSmo<NfResource[]>(`/nfo/deployments/${d.nfDeploymentId}/resources`);
   const ops = useSmo<LcmOperation[]>(`/nfo/deployments/${d.nfDeploymentId}/operations`);
@@ -133,6 +156,9 @@ function DeploymentDrawer({ d, onClose }: { d: NfDeployment; onClose: () => void
 
 // ---------------------------------------------------------------- FOCOM
 
+/**
+ * The O-Cloud inventory tab: resource pools (a click picks the pool whose resources are listed; the first by default), deployment managers, the resources with Deprovision and an admin provisioning tool, inventory subscriptions and the resource types.
+ */
 function OCloud() {
   const pools = useSmo<ResourcePool[]>("/focom/resource-pools");
   const types = useSmo<ResourceType[]>("/focom/resource-types");
@@ -184,6 +210,9 @@ function OCloud() {
   );
 }
 
+/**
+ * The inventory-change subscriptions (notified on provision and deprovision), with a form to add one and Unsubscribe.
+ */
 function InventorySubscriptions() {
   const subs = useSmo<InventorySubscription[]>("/focom/inventory/subscriptions");
   const [callback, setCallback] = useState("");
@@ -206,6 +235,9 @@ function InventorySubscriptions() {
   );
 }
 
+/**
+ * The O-Cloud topology as FOCOM exports it (a TEIV pull from its own inventory rows): the entities and the relationships, with the long ids shortened to their last two URN segments.
+ */
 function TopologyView() {
   const topo = useSmo<Topology>("/focom/topology");
   const entities = (topo.data?.entities ?? []).flatMap((group) => Object.entries(group).flatMap(([type, list]) => list.map((e) => ({ type: type.split(":").pop()!, ...e }))));
@@ -234,6 +266,9 @@ function TopologyView() {
 
 // ---------------------------------------------------------------- O1
 
+/**
+ * The O1 tab: the managed-element endpoints (with region and tenant, SEC-10.2, health discovery, heartbeat), the CM write jobs (a row opens `ConfigJobDrawer`) and the software management jobs with their phase buttons.
+ */
 function O1() {
   const endpoints = useSmo<O1Endpoint[]>("/ran-nf-oam/o1-adaptor-endpoints");
   const jobs = useSmo<ConfigJobSummary[]>("/ran-nf-oam/config-jobs");
@@ -288,6 +323,9 @@ function O1() {
   );
 }
 
+/**
+ * The dialog that registers an O1 adaptor endpoint (POST /ran-nf-oam/o1-adaptor-endpoints). Blank vendor, managed function, region and tenant are sent as null; a RESTCONF element can be registered but CM writes to it are rejected by the backend.
+ */
 function RegisterEndpoint({ onClose }: { onClose: () => void }) {
   const [f, setF] = useState({ managedElementRef: "", adaptorUri: "http://mock-o1-adaptor:8000/edit-config", protocolSupport: "NETCONF", o1Protocol: "NETCONF", entityType: "O-DU", vendorName: "", managedFunctionRef: "", region: "", tenant: "" });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
@@ -314,6 +352,10 @@ function RegisterEndpoint({ onClose }: { onClose: () => void }) {
   );
 }
 
+/**
+ * The dialog that submits one CM write job: managed elements, scope, operation and the attribute changes (JSON) applied to each element, with optional staged rollout (waves, pause, alarm gate) and a KPI guard, whose fields are built and checked by `stagedPayload`.
+ * The "entire-RAN" scope is flagged as admin only here as a hint; the BFF decides.
+ */
 function ConfigWrite({ endpoints, onClose }: { endpoints: O1Endpoint[]; onClose: () => void }) {
   const { role } = useAuth();
   const [scope, setScope] = useState("cell");
@@ -392,11 +434,8 @@ const STEP_TEMPLATES: Record<string, Record<string, unknown>> = {
   DEPLOY: { stepType: "DEPLOY", targetModule: "NFO", nfDeploymentDescriptorId: "<descriptor uuid>", name: "so-deploy-1" },
   INFRA: { stepType: "INFRA", targetModule: "FOCOM", spec: { description: "GPU node" } },
   TRAINING: { stepType: "TRAINING", targetModule: "AI_ML_WORKFLOW", modelId: "<model uuid>" },
-  // HISTORY.md OI-6.6, closed: previously only TRAINING had a
-  // dispatch entry, so this was the only AI/ML step an order could
-  // compose. MODEL_DEPLOY is deliberately its own key, distinct from
-  // DEPLOY above — same stepType ("DEPLOY"), different targetModule
-  // ("AIMGF" vs "NFO"), a certified model's own runtime rather than a
+  // HISTORY.md OI-6.6: the AI/ML steps an order can compose. MODEL_DEPLOY is deliberately its own key, distinct from
+  // DEPLOY above: the same stepType ("DEPLOY") but a different targetModule ("AIMGF" vs "NFO"), a certified model's own runtime rather than a
   // workload.
   VALIDATION: { stepType: "VALIDATION", targetModule: "AI_ML_WORKFLOW", modelId: "<model uuid>" },
   EMULATION: { stepType: "EMULATION", targetModule: "AI_ML_WORKFLOW", modelId: "<model uuid>" },
@@ -404,6 +443,9 @@ const STEP_TEMPLATES: Record<string, Record<string, unknown>> = {
   INFERENCE: { stepType: "INFERENCE", targetModule: "AI_ML_WORKFLOW", modelId: "<model uuid>" },
 };
 
+/**
+ * The service orders tab: the submit form (for roles that may), the orders with their steps (sequential and fail-fast: steps after a FAILED one stay PENDING) and Cancel pending, and a drawer on a row click.
+ */
 function Orders() {
   const orders = useSmo<ServiceOrder[]>("/so-smos/orders");
   const [selected, setSelected] = useState<ServiceOrder | null>(null);
@@ -422,6 +464,10 @@ function Orders() {
   );
 }
 
+/**
+ * The form that submits a service order: a scope and the steps as a JSON array. The "Add step" buttons append a template from `STEP_TEMPLATES`, prefilled with the newest model and, for a DEPLOY step, the newest NF descriptor that has no deployment yet
+ * (NFO accepts one deployment per descriptor) and a unique name, so the operator does not have to look the ids up.
+ */
 function SubmitOrder() {
   const [scope, setScope] = useState("");
   const [steps, setSteps] = useState(JSON.stringify([STEP_TEMPLATES.CONFIG], null, 2));

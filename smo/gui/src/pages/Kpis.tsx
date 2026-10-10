@@ -1,3 +1,9 @@
+/**
+ * The KPIs & Assurance page (route /kpis): tabs for rApp performance, PM subscriptions, KPI definitions (`KpiDefinitions.tsx`), model KPIs (MLMF, `Aiml.tsx`), RAN Analytics (MDAF), SA SMOS closed-loop assurance and O-Cloud performance.
+ * Every signed-in role may read; creating subscriptions, registering monitors and executing remedial actions need the operator role and the producer-side tools need admin, as the BFF's permission table says (`Can` and `ActionButton` hide
+ * what the role may not do). The tab is kept in the URL hash (the dashboard links to #assurance, #mlmf and #analytics).
+ */
+
 import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
@@ -13,6 +19,7 @@ import { KpiDefinitions } from "./KpiDefinitions";
 
 const TABS = ["rapp", "pm", "definitions", "mlmf", "analytics", "assurance", "ocloud"] as const;
 
+/** The page: header and the seven tabs (kept in the URL hash). */
 export function Kpis() {
   const [tab, setTab] = useHashTab(TABS, "rapp");
   return (
@@ -35,6 +42,9 @@ export function Kpis() {
 
 // ---------------------------------------------------------------- rApp performance
 
+/**
+ * The performance reports of one rApp instance (the first RUNNING one until another is chosen): a sparkline per numeric metric and the raw reports.
+ */
 function RappPerformance() {
   const instances = useSmo<InstanceSummary[]>("/rapp-mgmt/instances");
   const [id, setId] = useState("");
@@ -61,6 +71,9 @@ function RappPerformance() {
 
 // ---------------------------------------------------------------- PM
 
+/**
+ * The PM subscriptions of RAN NF OAM: the form to subscribe a managed element to a counter type (it registers a DME producer type; live file collection is out of scope) and the list with Unsubscribe.
+ */
 function PmSubscriptions() {
   const subs = useSmo<PmSubscription[]>("/ran-nf-oam/pm-subscriptions");
   const endpoints = useSmo<O1Endpoint[]>("/ran-nf-oam/o1-adaptor-endpoints");
@@ -97,6 +110,9 @@ function PmSubscriptions() {
 
 // ---------------------------------------------------------------- RAN Analytics
 
+/**
+ * The MDAF analytics tab: the reports (filterable by type, a click shows the output), the registered producers, the consumer subscriptions (poll-based, requested by `smo-gui`) and, for admins, the producer-side tools.
+ */
 function Analytics() {
   const [type, setType] = useState("");
   const reports = useSmo<AnalyticsReport[]>("/mdaf/reports", { analytics_type: type });
@@ -142,6 +158,9 @@ function Analytics() {
   );
 }
 
+/**
+ * Admin tools that act as an MDAF analytics producer (call flow 08): register a producer with its DME input types (which also registers `mdaf.<type>` with SME) and publish a report from a JSON output.
+ */
 function AnalyticsProducerTools({ types }: { types: string[] }) {
   const dmeTypes = useSmo<DmeType[]>("/dme/dme-types");
   const [producer, setProducer] = useState("rapp-mdaf-1");
@@ -189,6 +208,9 @@ function AnalyticsProducerTools({ types }: { types: string[] }) {
 
 // ---------------------------------------------------------------- SA SMOS
 
+/**
+ * The SA SMOS tab: the form to register a monitor, the monitors (a click opens `MonitorPanel`) and the remedial actions, newest first.
+ */
 function Assurance() {
   const monitors = useSmo<Monitor[]>("/sa-smos/monitors");
   const actions = useSmo<RemedialAction[]>("/sa-smos/remedial-actions");
@@ -223,6 +245,9 @@ function Assurance() {
   );
 }
 
+/**
+ * The form that registers an assurance monitor with metric floors (JSON) and a scope: an SO SMOS order, a model coordination group, an rApp instance, or none. The scope decides what a remedial action does (remediate NF deployments, retrain models, or roll the rApp back).
+ */
 function RegisterMonitor() {
   const orders = useSmo<ServiceOrder[]>("/so-smos/orders");
   const groups = useSmo<CoordinationGroup[]>("/mlmr/coordination-groups");
@@ -254,6 +279,9 @@ function RegisterMonitor() {
   );
 }
 
+/**
+ * The panel of one monitor: evaluate current metrics against its floors (shows the breaches), execute a remedial action of a chosen type, or escalate to an operator with a reason.
+ */
 function MonitorPanel({ monitor, onClose }: { monitor: Monitor; onClose: () => void }) {
   const [metrics, setMetrics] = useState(JSON.stringify(Object.fromEntries(Object.keys(monitor.thresholds).map((k) => [k, 0])), null, 0));
   const [breaches, setBreaches] = useState<Record<string, number> | null>(null);
@@ -294,6 +322,7 @@ function MonitorPanel({ monitor, onClose }: { monitor: Monitor; onClose: () => v
 
 // ---------------------------------------------------------------- FOCOM performance
 
+/** The FOCOM O-Cloud performance metrics, read-only. */
 function OCloudPerformance() {
   const metrics = useSmo<OCloudMetric[]>("/focom/performance");
   return (

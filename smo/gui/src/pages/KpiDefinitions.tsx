@@ -1,3 +1,9 @@
+/**
+ * The KPI definitions and schedules of RAN NF OAM (the "KPI definitions" tab of the KPIs page, `Kpis.tsx`): the formulas over PM counters, the add-the-standard-set action, and the schedules that publish a KPI to DME on a timer.
+ * Reading is open to every signed-in role; defining, editing and deleting KPIs and schedules are admin calls (the BFF's permission table), drawn through `Can` and `ActionButton`. The forms check their input with `lib/domain.ts`
+ * (`parseCounters`, `kpiNameProblem`, `schedulePayload`) before sending; RAN NF OAM validates again. The "Can" probes use a placeholder id (`.../x`) because the permission table is per route pattern, not per object.
+ */
+
 import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
@@ -61,6 +67,9 @@ export function KpiDefinitions() {
   );
 }
 
+/**
+ * The define or edit dialog of one KPI (PUT /kpi-definitions/<name>): name (fixed when editing), formula, unit, description and the counters as JSON. Save stays disabled while the name, the counters JSON or the formula has a problem.
+ */
 function DefineKpi({ current, onClose }: { current: KpiDef | null; onClose: () => void }) {
   const [name, setName] = useState(current?.name ?? "");
   const [formula, setFormula] = useState(current?.formula ?? "");
@@ -99,6 +108,9 @@ function DefineKpi({ current, onClose }: { current: KpiDef | null; onClose: () =
   );
 }
 
+/**
+ * The add or edit dialog of one KPI schedule (PUT /kpi-schedules/<id>): the schedule name (fixed when editing), the KPI, grouping, interval, look-back, optional element and cell, and whether it is enabled. The body is built and checked by `schedulePayload`.
+ */
 function EditSchedule({ current, kpis, onClose }: { current: KpiScheduleRow | null; kpis: KpiDef[]; onClose: () => void }) {
   const [id, setId] = useState(current?.scheduleId ?? "");
   const [form, setForm] = useState<ScheduleForm>({

@@ -1,4 +1,9 @@
-// A fake BFF for component tests: `fetch` answers by method and path (without /api), records every call, and a test mounts a component in the providers it needs.
+/**
+ * A fake BFF for component tests: `fetch` answers by method and path (without /api), records every call, and a test mounts a component in the providers it needs.
+ *
+ * `fakeBff(routes)` replaces the global `fetch` (the test must call `vi.unstubAllGlobals()` afterwards); `withProviders` / `mountWith` wrap a component in a query client (no retries),
+ * the toast provider and a memory router. Used by the component tests under components/ and pages/; not part of the production bundle.
+ */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
@@ -34,6 +39,9 @@ export function fakeBff(routes: Record<string, Handler | Reply>) {
 
 export const newClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
+/**
+ * Wraps `element` in what a page needs: a fresh query client without retries (so a failing fake answer shows at once), the toasts and a memory router starting at `at`, optionally under a `route` pattern so route parameters resolve.
+ */
 export function withProviders(element: ReactElement, opts: { at?: string; route?: string } = {}) {
   return (
     <QueryClientProvider client={newClient()}>

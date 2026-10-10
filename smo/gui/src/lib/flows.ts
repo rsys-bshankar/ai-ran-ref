@@ -1,11 +1,12 @@
-// The ten end-to-end journeys in smo/docs/call-flows, as pure functions from
-// live SMO state to step status. The Lifecycle page renders these; keeping
-// them pure keeps "is this step done?" testable without a browser.
-//
-// A step is `done` when the entity state proves it happened, `current` when it
-// is the next thing to do, `failed` when the state shows it went wrong, and
-// `todo` when it is further ahead. `blocked` marks a step an earlier failure
-// makes impossible.
+/**
+ * The end-to-end journeys of smo/docs/call-flows (numbered 01 to 10; there is no 05 here), as pure functions from live SMO state to step status. The Lifecycle page
+ * (`pages/Flows.tsx`) renders these; keeping them pure keeps "is this step done?" testable without a browser.
+ *
+ * A step is `done` when the entity state proves it happened, `current` when it is the next thing to do, `failed` when the state shows it went wrong, and `todo` when it is
+ * further ahead. `blocked` marks a step an earlier failure makes impossible, and `warn` a step that happened with a caveat (it counts as progress).
+ * Each `flowNN` takes the entities the page fetched (possibly undefined: not chosen or not found) and returns the steps already passed through `settle`.
+ * The step titles repeat the operation names of the call-flow document; change them together. Covered by `flows.test.ts`.
+ */
 
 import type {
   AnalyticsProducer, AnalyticsReport, AnalyticsSubscription, ConfigJob, FaultReport,
@@ -16,6 +17,9 @@ import { MODEL_PIPELINE, RUNTIME_PIPELINE } from "./domain";
 
 export type StepStatus = "done" | "current" | "todo" | "failed" | "blocked" | "warn";
 
+/**
+ * One step of a journey: a stable id, the operation (as the call-flow document names it), who performs it, its status and an optional detail line of facts from the live state.
+ */
 export interface FlowStep {
   id: string;
   title: string;
@@ -24,6 +28,9 @@ export interface FlowStep {
   detail?: string;
 }
 
+/**
+ * One journey the page can track: its number, title, the call-flow document under smo/docs/call-flows, what the operator picks to track (package, model, ...) and the modules involved.
+ */
 export interface FlowDef {
   id: string;
   number: string;
@@ -59,6 +66,9 @@ export function settle(steps: FlowStep[]): FlowStep[] {
   });
 }
 
+/**
+ * Counts the steps passed (done or warn) out of the total, whether any step failed, and whether every step is passed.
+ */
 export function progress(steps: FlowStep[]): { done: number; total: number; failed: boolean; complete: boolean } {
   const done = steps.filter((s) => s.status === "done" || s.status === "warn").length;
   return { done, total: steps.length, failed: steps.some((s) => s.status === "failed"), complete: done === steps.length };
@@ -71,6 +81,9 @@ const PKG_ONBOARDED = ["AVAILABLE", "PRIMING", "PRIMED", "DEPRIMING", "DEPRECATE
 
 // ---------------------------------------------------------------- 01
 
+/**
+ * Flow 01, rApp onboarding to a running instance: package onboarded and validated (FAILED is the failure), descriptor created, instance created, NFO deployment RUNNING (ABNORMAL is the failure), and the instance past bootstrap (RUNNING or UPGRADING; FAULTED is the failure).
+ */
 export function flow01(pkg: Package | undefined, instance: Instance | undefined, deployment: NfDeployment | undefined): FlowStep[] {
   if (!pkg) return settle([step("onboard", "OnboardPackage(location)", "Operator → Onboarding", false)]);
   const onboarded = PKG_ONBOARDED.includes(pkg.state);
@@ -101,6 +114,10 @@ const runtimeReached = (state: string | undefined, target: string) => {
   return RUNTIME_PIPELINE.indexOf(state as (typeof RUNTIME_PIPELINE)[number]) >= RUNTIME_PIPELINE.indexOf(target as (typeof RUNTIME_PIPELINE)[number]);
 };
 
+/**
+ * Flow 02, an AI/ML model from registration to performance monitoring, read from the model, its lifecycle row, training and inference jobs and MLMF subscriptions and reports.
+ * A floor breach is a warning (it triggers a retrain), not a failure; a model that left the pipeline counts as having passed every model step.
+ */
 export function flow02(model: Model | undefined, lifecycle: ModelLifecycle | undefined, jobs: TrainingJob[], inference: InferenceJob[], subs: MlmfSubscription[], reports: MlmfReport[]): FlowStep[] {
   if (!model) return settle([step("register", "RegisterModel(modelType, version)", "Producer → AI/ML", false)]);
   const s = lifecycle?.modelLifecycleState;
@@ -128,6 +145,9 @@ export function flow02(model: Model | undefined, lifecycle: ModelLifecycle | und
 
 // ---------------------------------------------------------------- 03
 
+/**
+ * Flow 03, a configuration write: O1 endpoints registered and healthy (none ACTIVE is a warning), the job created and past PENDING, the per-element sub-changes (all rejected is a failure, some rejected a warning) and the aggregate job status (PARTIAL_SUCCESS is a warning).
+ */
 export function flow03(endpoints: O1Endpoint[], job: ConfigJob | undefined): FlowStep[] {
   const healthy = endpoints.filter((e) => e.healthStatus === "ACTIVE");
   const subs = job?.subChanges ?? [];
@@ -149,6 +169,9 @@ export function flow03(endpoints: O1Endpoint[], job: ConfigJob | undefined): Flo
 
 // ---------------------------------------------------------------- 04
 
+/**
+ * Flow 04, closed-loop assurance: the order or coordination group the monitor targets, the monitor and its thresholds, the MDAF and MLMF reports that arrive, the remedial actions (resolved, or a warning when they did not resolve) and the escalation to the operator.
+ */
 export function flow04(monitor: Monitor | undefined, order: ServiceOrder | undefined, actions: RemedialAction[], analyticsReports: number, mlmfReports: number): FlowStep[] {
   const orderDone = order ? order.steps.every((s) => s.status === "COMPLETED") : false;
   const orderFailed = order?.steps.some((s) => s.status === "FAILED");
@@ -172,6 +195,9 @@ export function flow04(monitor: Monitor | undefined, order: ServiceOrder | undef
 
 // ---------------------------------------------------------------- 06
 
+/**
+ * Flow 06, the package lifecycle and the cascade-delete guard: priming is optional, and active usage registrations are shown as the failing guard step so that the delete step reads as blocked, not as next. A FAILED package skips straight to delete.
+ */
 export function flow06(pkg: Package | undefined, usage: PackageUsage[], instanceCount: number): FlowStep[] {
   if (!pkg) return settle([step("onboard", "OnboardPackage", "Operator → Onboarding", false)]);
   const active = usage.filter((u) => u.active).length;
@@ -197,6 +223,9 @@ export function flow06(pkg: Package | undefined, usage: PackageUsage[], instance
 
 // ---------------------------------------------------------------- 07
 
+/**
+ * Flow 07, the rApp instance lifecycle: performance and fault reports, a critical fault leaving the instance FAULTED (a warning, not a dead end, so RECOVER stays actionable), recovery, the optional upgrade and the terminate that ends the journey.
+ */
 export function flow07(instance: Instance | undefined, perf: PerfReport[], faults: FaultReport[]): FlowStep[] {
   if (!instance) return settle([step("running", "Instance RUNNING (call flow 01)", "rApp Mgmt", false)]);
   const critical = faults.filter((f) => f.severity === "critical");
@@ -225,6 +254,9 @@ export function flow07(instance: Instance | undefined, perf: PerfReport[], fault
 
 // ---------------------------------------------------------------- 08
 
+/**
+ * Flow 08, RAN Analytics data production for one analytics type: the producer, its SME registration (`mdaf.<type>`, a warning when the producer exists but SME does not list it), subscriptions, published reports and the pull query.
+ */
 export function flow08(type: string, producers: AnalyticsProducer[], subs: AnalyticsSubscription[], reports: AnalyticsReport[], smeServiceNames: string[]): FlowStep[] {
   const p = producers.filter((x) => x.analyticsType === type);
   const s = subs.filter((x) => x.analyticsType === type);
@@ -243,6 +275,9 @@ export function flow08(type: string, producers: AnalyticsProducer[], subs: Analy
 
 // ---------------------------------------------------------------- 09
 
+/**
+ * Flow 09, an intent: handler registered, intent created and dispatched to the named handler, the handler's reports (Intent Service writes the first, RECEIVED, report itself, so the handler has reported once there are two or more) and the admin state DEACTIVATED.
+ */
 export function flow09(handlers: Rmih[], intent: Intent | undefined, reports: IntentReport[]): FlowStep[] {
   return settle([
     step("rmih", "RegisterIntentHandlingFunction (framework-internal only)", "SO/SA SMOS → Intent Service", handlers.length > 0,
@@ -259,6 +294,9 @@ export function flow09(handlers: Rmih[], intent: Intent | undefined, reports: In
 
 // ---------------------------------------------------------------- 10
 
+/**
+ * Flow 10, an SO SMOS multi-step order: the submit step, then one step per order step in the order's own order. The order is fail-fast, so a failed step blocks the later ones (there is no compensation); a cancelled step is a warning.
+ */
 export function flow10(order: ServiceOrder | undefined): FlowStep[] {
   if (!order) return settle([step("submit", "SubmitServiceOrder(scope, steps[])", "Operator → SO SMOS", false)]);
   const steps: FlowStep[] = [step("submit", "SubmitServiceOrder(scope, steps[])", "Operator → SO SMOS", true, order.scope)];
