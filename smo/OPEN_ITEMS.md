@@ -177,7 +177,7 @@ and HA much later).
 | Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
 | AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
 | rApp ecosystem | `PR-RAPP` | RAPP-1 signing (done) · RAPP-2 sandbox (RAPP-2.2 open) · RAPP-3 conformance pack (done) · RAPP-4 Java and Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
-| GUI | `PR-GUI` | GUI-1 live updates · GUI-2 alarm console · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n · GUI-7 approval inbox · GUI-9 back-end asks of the console redesign |
+| GUI | `PR-GUI` | GUI-1 live updates · GUI-2 alarm console · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n · GUI-7 approval inbox · GUI-9 what is left of the console redesign |
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
 
@@ -1234,22 +1234,15 @@ Step 7.2 is built (the Approvals page lists pending rApp actions and decides the
 
 Nothing open.
 
-#### PR-GUI-9 — Console redesign: what the back end has to add (the console itself is built: `HISTORY.md` PR-GUI-9a)
+#### PR-GUI-9 — Console redesign: what is left (built: `HISTORY.md` PR-GUI-9a and PR-GUI-9b)
 
-The redesign (`gui/docs/redesign/`) was built on the data the backend serves; these need back-end work first, and each widget that needs one
-shows "—" or is left out until then (the page READMEs under `gui/src/pages/` name them).
+The console and the back-end routes it asked for are built. Left open:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| GUI-9.1 | BFF event stream (`/api/events?topics=alarms,approvals,health,decisions`), the GUI patching its cache, polling dropped to a 60 s safety refresh; a "12 new — show" bar on the alarm table; the alarm sound preference used | An alarm appears without a poll | GUI-1.1 |
-| GUI-9.2 | BFF cross-object typeahead (`/api/search?q=`, top 5 per type: elements, cells, rApps, alarms, models) behind the ⌘K box | Component test | – |
-| GUI-9.3 | Global scope picker (region → cluster → element) carried in the URL and on every query | Out-of-scope rows absent | GUI-5.2 |
-| GUI-9.4 | Group-by counts on the servers: alarms by severity × ack, cause, element, region and per hour; models by stage; links by reciprocity (the topology page reads the whole link list today) | One call per tile row | – |
-| GUI-9.5 | Keyset paging on alarms, decisions and audit; async CSV export of decisions and audit | Route test | DB-4.4 |
-| GUI-9.6 | One server-side "stop all rApp writes" (today a confirmed loop over the per-rApp stop) | Route test | – |
-| GUI-9.7 | BFF permission rules for the routes the new pages show read-only: intent negotiation feedback, MDA analysis requests, config-job KPI check, SSH host-key re-pin, managed-object refresh, MSAC writes | The buttons appear for the right role | – |
-| GUI-9.8 | Data the design shows and no module serves: network health score; site cluster on an element; worst-element ranking; mean time to acknowledge (an ack time); alarm root-cause correlation (PR-MGT-9); per-rApp headline KPI and cell-state history; training epoch/ETA; intent fulfilment percent and server-side conflicts; node utilisation; DME last delivery and LATE; sign-in history and user last-active; which recovery codes are used | Each widget shows a value | per item |
-| GUI-9.9 | The browser checks and screenshots against the compose stack with the new look (`scripts/gui_e2e.py` with themes × accents, `docs/screenshots`) | CI job green; screenshots refreshed | Docker |
+| GUI-9.3 | Global scope picker (region → site cluster → element) carried in the URL and applied to every query. Alarms and elements already filter by `region` and `site_cluster`; most other lists have no scope parameter yet | Out-of-scope rows absent on every page | GUI-5.2 |
+| GUI-9.5b | Asynchronous export jobs (today the decision and audit CSV exports stream within one request, bounded to 31 days and 1,000,000 rows); keyset paging of the Decisions table in the GUI (the route has it) | A month of 100k decisions/day exports without a held request | DB-4.4 |
+| GUI-9.8b | Data no module records: node utilisation (FOCOM has no CPU/memory measurement), per-cell state history of an rApp (the rApp's own data, behind its declared page), a Dashboard "needs attention" aggregate in one call | Each widget shows a value | per item |
 
 ### 5.14 Standards and compliance (`PR-STD`)
 
