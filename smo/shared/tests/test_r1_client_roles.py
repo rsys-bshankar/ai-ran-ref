@@ -1,5 +1,8 @@
 """PR-SEC-14: R1Client's identity kind: an SMO module presents the enrollment secret and asks for `smo-internal`; an rApp presents none and asks for
-`smo-rapp`, and keeps its identity under its own key."""
+`smo-rapp`, and keeps its identity under its own key.
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_r1_client_roles.py -q
+"""
 
 import pytest
 
@@ -11,6 +14,9 @@ from test_r1_client import R1, SME, FakeNetwork  # noqa: F401
 
 @pytest.fixture
 def net(monkeypatch):
+    """The fake R1 and SME of test_r1_client with a record of every request sent to SME (url, headers, body), a fresh module identity and the identity
+    environment variables cleared.
+    """
     fake = FakeNetwork()
     fake.sent = []                                         # (url, headers, json) of what goes to SME
     real_post = fake.post
@@ -37,6 +43,7 @@ def _grant(net):
 
 
 def test_a_module_presents_the_enrollment_secret_and_asks_for_the_internal_scope(net, monkeypatch):
+    """An SMO module registers with the enrollment secret in X-SMO-Enrollment, as a `smo-module` label, and asks for the `smo-internal` scope."""
     monkeypatch.setenv("SMO_ENROLLMENT_SECRET", "the-secret")
     R1Client(R1).get("/sme/health")
     assert _registration(net)[1]["X-SMO-Enrollment"] == "the-secret"
@@ -45,6 +52,7 @@ def test_a_module_presents_the_enrollment_secret_and_asks_for_the_internal_scope
 
 
 def test_the_secret_can_come_from_a_file(net, monkeypatch, tmp_path):
+    """The enrollment secret may come from SMO_ENROLLMENT_SECRET_FILE."""
     path = tmp_path / "enrollment_secret"
     path.write_text("file-secret\n")
     monkeypatch.setenv("SMO_ENROLLMENT_SECRET_FILE", str(path))
@@ -53,6 +61,9 @@ def test_the_secret_can_come_from_a_file(net, monkeypatch, tmp_path):
 
 
 def test_an_rapp_presents_nothing_even_if_it_somehow_has_the_secret(net, monkeypatch):
+    """A process whose identity kind is rapp never sends the enrollment secret, even if it has one, so it is registered as an rApp and asks for
+    `smo-rapp`.
+    """
     monkeypatch.setenv("SMO_IDENTITY_KIND", "rapp")
     monkeypatch.setenv("SMO_ENROLLMENT_SECRET", "the-secret")
     R1Client(R1).get("/sme/health")
@@ -62,11 +73,13 @@ def test_an_rapp_presents_nothing_even_if_it_somehow_has_the_secret(net, monkeyp
 
 
 def test_a_process_without_the_secret_registers_without_the_header(net):
+    """Without an enrollment secret the registration carries no enrollment header."""
     R1Client(R1).get("/sme/health")
     assert "X-SMO-Enrollment" not in _registration(net)[1]
 
 
 def test_an_rapps_identity_is_stored_under_its_own_key(net, monkeypatch):
+    """An rApp's identity is stored under the key `rapp:<module>`, separate from a module's."""
     stored = {}
 
     class Store:

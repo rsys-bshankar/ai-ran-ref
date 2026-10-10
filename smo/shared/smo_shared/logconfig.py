@@ -55,6 +55,11 @@ _SECRET_KEY = re.compile(r"(?i)^" + _SECRET_NAME + r"$|authorization|secret|pass
 
 
 def redact_text(text: str) -> str:
+    """Returns `text` with credentials replaced by `[REDACTED]`: Authorization/Bearer values, `password=`/`secret`/`token`/`api_key`-style pairs, and
+    the password of a `scheme://user:password@host` URL.
+
+    Pattern based, so it is a safety net: a secret in an unusual form passes through.
+    """
     for pattern, replacement in _PATTERNS:
         text = pattern.sub(replacement, text)
     return text
@@ -77,7 +82,17 @@ _STANDARD_ATTRIBUTES = frozenset(vars(logging.LogRecord("", 0, "", 0, "", (), No
 
 
 class RedactionFilter(logging.Filter):
+    """Logging filter, installed on the handler, that scrubs a record before any formatter sees it (so uvicorn's and third-party loggers are covered
+    too).
+
+    It never drops a record: `filter` always returns True.
+    """
     def filter(self, record: logging.LogRecord) -> bool:
+        """Scrubs the record in place: the formatted message, the exception text and every extra field; returns True.
+
+        The message is formatted first and `args` cleared, so `getMessage()` in any later formatter returns the scrubbed text. The traceback text is
+        rendered here (once, into `exc_text`) so that it can be scrubbed too.
+        """
         record.msg = redact_text(record.getMessage())
         record.args = None
         if record.exc_info and not record.exc_text:
@@ -90,11 +105,19 @@ class RedactionFilter(logging.Filter):
 
 
 class JsonFormatter(logging.Formatter):
+    """Formats a record as one JSON object per line: timestamp (UTC, milliseconds, `Z`), level, logger, service, message, then `correlationId` /
+    `traceId` when known, every extra field, and `exception` when there is one.
+    """
     def __init__(self, service: str | None = None):
         super().__init__()
         self.service = service
 
     def format(self, record: logging.LogRecord) -> str:
+        """Returns the JSON line for `record`.
+
+        `correlationId` and `traceId` come from the record's extras when given, else from the context of the request being handled. Extra fields
+        never overwrite the fixed keys. Values that are not JSON types are written with `str()` (`default=str`).
+        """
         moment = datetime.datetime.fromtimestamp(record.created, datetime.UTC)
         entry = {
             "timestamp": moment.strftime("%Y-%m-%dT%H:%M:%S.") + f"{moment.microsecond // 1000:03d}Z",

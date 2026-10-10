@@ -1,5 +1,8 @@
 """smo_shared.health — liveness and readiness probes (PR-ST-7). The database check also runs against real
-Postgres when `SMO_TEST_POSTGRES_URL` is set (CI's `migration-postgres` job)."""
+Postgres when `SMO_TEST_POSTGRES_URL` is set (CI's `migration-postgres` job).
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_health.py -q
+"""
 
 import os
 import time
@@ -15,6 +18,7 @@ from smo_shared.health import database_check, install_health, run_checks, sme_to
 
 
 def client(*checks) -> TestClient:
+    """Helper: a test client for an app with the health routes installed with the given readiness checks."""
     app = FastAPI()
     install_health(app, checks=checks)
     return TestClient(app)
@@ -33,22 +37,28 @@ def hanging():
 
 
 def test_live_and_the_health_alias_answer_200_whatever_the_checks_say():
+    """Liveness (and its /health alias) must not depend on any readiness check, or a database outage would restart every module."""
     c = client(failing)
     assert c.get("/live").json() == {"status": "live"}
     assert c.get("/health").json() == {"status": "healthy"}      # the alias existing callers use
 
 
 def test_ready_is_200_when_every_check_passes():
+    """When every check passes /ready is 200 and lists each check as ok."""
     resp = client(passing).get("/ready")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ready", "checks": {"passing": "ok"}}
 
 
 def test_ready_without_checks_is_200():
+    """A module with no readiness checks is ready."""
     assert client().get("/ready").json() == {"status": "ready", "checks": {}}
 
 
 def test_a_failing_check_makes_ready_503_and_names_the_check_but_not_the_error_text():
+    """A failing check makes /ready 503 and names the check and the error class only, so a connection string in the error text never reaches a probe
+    body.
+    """
     resp = client(passing, failing).get("/ready")
     assert resp.status_code == 503
     assert resp.json() == {"status": "not-ready", "checks": {"passing": "ok", "failing": "ConnectionError"}}
@@ -56,6 +66,7 @@ def test_a_failing_check_makes_ready_503_and_names_the_check_but_not_the_error_t
 
 
 def test_a_hung_check_is_reported_as_a_timeout_instead_of_hanging_the_probe(monkeypatch):
+    """A check that does not answer within the timeout is reported as `timeout` and the probe still returns promptly."""
     monkeypatch.setenv("READY_CHECK_TIMEOUT_SECONDS", "0.2")
     started = time.perf_counter()
     resp = client(hanging, passing).get("/ready")
@@ -64,6 +75,7 @@ def test_a_hung_check_is_reported_as_a_timeout_instead_of_hanging_the_probe(monk
 
 
 def test_checks_run_in_parallel():
+    """Two 0.4 s checks finish in well under 0.8 s, so several slow dependencies do not add up."""
     def slow_a():
         time.sleep(0.4)
 
@@ -79,6 +91,9 @@ def test_checks_run_in_parallel():
 
 @pytest.fixture(params=["sqlite", "postgres"])
 def database(request, tmp_path, monkeypatch):
+    """A database for the check tests: file SQLite, and real Postgres too when SMO_TEST_POSTGRES_URL is set (skipped otherwise); installed as the
+    shared engine for the test.
+    """
     if request.param == "postgres":
         if not os.environ.get("SMO_TEST_POSTGRES_URL"):
             pytest.skip("SMO_TEST_POSTGRES_URL not set")
@@ -92,11 +107,13 @@ def database(request, tmp_path, monkeypatch):
 
 
 def test_the_database_check_passes_on_a_reachable_database(database):
+    """database_check passes against a reachable database, directly and through /ready."""
     database_check()
     assert client(database_check).get("/ready").status_code == 200
 
 
 def test_a_down_database_makes_ready_503_while_live_stays_200(monkeypatch, tmp_path):
+    """An unreachable database makes /ready 503 naming database_check while /live stays 200."""
     monkeypatch.setattr(smo_db, "engine", create_engine(f"sqlite:///{tmp_path / 'no-such-dir' / 'x.db'}", future=True))
     c = client(database_check)
     assert c.get("/ready").status_code == 503
@@ -106,6 +123,7 @@ def test_a_down_database_makes_ready_503_while_live_stays_200(monkeypatch, tmp_p
 
 def test_a_postgres_that_is_down_is_not_ready(monkeypatch):
     # nothing listens on this port: the same failure as a stopped database container
+    """A Postgres that refuses connections (nothing listens on the port) makes /ready 503, as a stopped database container would."""
     monkeypatch.setattr(smo_db, "engine", create_engine(
         "postgresql+psycopg://smo:smo@127.0.0.1:1/smo", future=True, connect_args={"connect_timeout": 1}))
     resp = client(database_check).get("/ready")
@@ -113,6 +131,7 @@ def test_a_postgres_that_is_down_is_not_ready(monkeypatch):
 
 
 def test_the_sme_token_check_follows_whether_a_token_can_be_obtained(monkeypatch):
+    """sme_token_check passes when a module token can be had and raises when none can, which /ready reports as 503."""
     monkeypatch.setattr(r1_client, "_module_token", lambda base_url, refresh=False: "tok")
     sme_token_check()
     monkeypatch.setattr(r1_client, "_module_token", lambda base_url, refresh=False: None)
@@ -124,6 +143,7 @@ def test_the_sme_token_check_follows_whether_a_token_can_be_obtained(monkeypatch
 
 
 def test_version_reports_the_build_the_image_set(monkeypatch):
+    """/version returns the module, version, git SHA and build time from the image's environment, without consulting any readiness check."""
     monkeypatch.setenv("MODULE", "aimgf")
     monkeypatch.setenv("SMO_VERSION", "1.4.0")
     monkeypatch.setenv("SMO_BUILD_SHA", "0123abcd")
@@ -134,6 +154,7 @@ def test_version_reports_the_build_the_image_set(monkeypatch):
 
 
 def test_version_says_unknown_for_an_image_built_without_the_arguments(monkeypatch):
+    """Unset or empty build arguments are reported as `unknown`, and the module falls back to the app title."""
     for name in ("MODULE", "SMO_VERSION", "SMO_BUILD_SHA", "SMO_BUILT_AT"):
         monkeypatch.delenv(name, raising=False)
     body = client().get("/version").json()
@@ -143,5 +164,6 @@ def test_version_says_unknown_for_an_image_built_without_the_arguments(monkeypat
 
 
 def test_a_sample_rapps_module_name_drops_the_samples_prefix(monkeypatch):
+    """A `samples/` prefix on MODULE is dropped from the reported module name."""
     monkeypatch.setenv("MODULE", "samples/energy-saving-rapp")
     assert client().get("/version").json()["module"] == "energy-saving-rapp"

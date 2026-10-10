@@ -69,6 +69,12 @@ def _now() -> datetime.datetime:
 
 
 class NotificationOutbox(Base):
+    """One notification waiting to go to a caller-supplied URL (table `notification_outbox`).
+
+    `status` is PENDING (to send, or to retry when `next_attempt_at` is due), SENT or DEAD. `attempts` counts claims, `next_attempt_at` is both the
+    retry time and, while a send is in flight, the end of the lease that stops another replica sending it. `module` is the module that enqueued it
+    (the metrics and the worker filter on it); `method` is POST (payload is the body) or DELETE.
+    """
     __tablename__ = "notification_outbox"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -85,6 +91,12 @@ class NotificationOutbox(Base):
 
 def enqueue(db: Session, destination: str | None, payload: dict, module: str | None = None,
             method: str = "POST") -> NotificationOutbox | None:
+    """Adds a PENDING row to `db`'s transaction and returns it; sends nothing and flushes nothing.
+
+    Returns None (and logs a warning when a destination was given) when the SSRF guard refuses `destination`, so a bad destination never reaches the
+    table. Raises ValueError for a `method` other than POST or DELETE. The row's id is remembered on the session so the commit hook can drain
+    exactly the rows this transaction added; a rollback forgets them and removes the rows.
+    """
     if method not in METHODS:
         raise ValueError(f"outbox method must be one of {METHODS}, not {method!r}")
     if not webhook.is_safe_webhook_destination(destination):
@@ -136,6 +148,14 @@ def _send(destination: str, payload, method: str = "POST") -> tuple[bool, str | 
 
 
 def drain(engine, ids: list[uuid.UUID] | None = None, now: datetime.datetime | None = None, limit: int = 100) -> dict[str, int]:
+    """Sends due PENDING rows, oldest first, and records each outcome; returns {"sent": n, "retry": n, "dead": n}.
+
+    `ids` limits it to those rows (the inline drain after a commit); `None` drains every due row up to `limit` and then deletes SENT rows older than
+    `SMO_OUTBOX_SENT_RETENTION_SECONDS` (default 86400). Opens its own session on `engine`, so it never touches the caller's transaction. Each row
+    is claimed by an atomic UPDATE first (`_claim`); a row another replica claimed is skipped. Claimed rows are sent in parallel threads. Delivered
+    or refused with a 4xx: SENT. No answer or a 5xx: retried with backoff until MAX_ATTEMPTS, then DEAD; a destination the SSRF guard refuses at
+    send time is DEAD at once. Commits after each row's outcome, so a crash loses at most the rows still in flight, which return after their lease.
+    """
     result = {"sent": 0, "retry": 0, "dead": 0}
     now = now or _now()
     with Session(engine, expire_on_commit=False) as db:
@@ -145,6 +165,7 @@ def drain(engine, ids: list[uuid.UUID] | None = None, now: datetime.datetime | N
             query = query.where(NotificationOutbox.id.in_(ids))
         claimed = []
         for row_id in db.scalars(query).all():
+            # Another replica won the atomic claim: skip the row; it is not this process's to send.
             if not _claim(db, row_id, now):
                 continue                                    # another replica took it
             row = db.get(NotificationOutbox, row_id)
@@ -166,6 +187,7 @@ def drain(engine, ids: list[uuid.UUID] | None = None, now: datetime.datetime | N
                 result["dead"] += 1
                 log.warning("notification to %s is dead after %d attempt(s): %s", row.destination, row.attempts, error)
             db.commit()
+        # A full drain (the worker's or a recovery sweep) also purges old SENT rows; the inline drain after a commit does not, to stay cheap.
         if ids is None:
             retention = float(os.environ.get("SMO_OUTBOX_SENT_RETENTION_SECONDS", "86400"))
             db.execute(delete(NotificationOutbox).where(
@@ -181,6 +203,12 @@ def inline_drain_enabled() -> bool:
 
 @event.listens_for(Session, "after_commit")
 def _drain_what_this_commit_enqueued(session: Session) -> None:
+    """SQLAlchemy `after_commit` hook: sends the rows the just-committed transaction enqueued, in the committing thread.
+
+    Never raises (a failure is logged and the rows stay pending for a full drain), so a notification problem cannot fail the commit it follows. A
+    no-op when the transaction enqueued nothing or `SMO_OUTBOX_INLINE_DRAIN` is off. Registered on every `Session`, so merely importing this module
+    turns it on for the process.
+    """
     ids = session.info.pop(_PENDING_IDS_KEY, None)
     if not ids or not inline_drain_enabled():
         return

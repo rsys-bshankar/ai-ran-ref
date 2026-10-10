@@ -57,6 +57,8 @@ class FakeNetwork:
 
 @pytest.fixture
 def net(monkeypatch):
+    """Patches the R1 client's HTTP functions with a fake R1 and SME, and gives the process a fresh module identity; yields the fake to inspect calls.
+    """
     fake = FakeNetwork()
     monkeypatch.setattr(r1_client.httpx, "get", fake.get)
     monkeypatch.setattr(r1_client.httpx, "post", fake.post)
@@ -65,6 +67,7 @@ def net(monkeypatch):
 
 
 def test_internal_calls_carry_a_token_obtained_the_rapp_way(net):
+    """The first call bootstraps, registers an invoker at SME, fetches a token and then calls the target with it, in that order."""
     resp = R1Client(R1).get("/onboarding/packages/p/onboarding-status")
     assert resp.status_code == 200
     urls = [u for _, u, _ in net.calls]
@@ -74,12 +77,14 @@ def test_internal_calls_carry_a_token_obtained_the_rapp_way(net):
 
 
 def test_the_token_is_cached_across_clients_and_calls(net):
+    """Several clients and calls in one process share one invoker and one token."""
     R1Client(R1).post("/nfo/descriptors", json={})
     R1Client(R1).get("/focom/inventory")
     assert net.issued == ["tok-1"] and net.invokers == 1
 
 
 def test_a_revoked_token_is_refreshed_once_with_the_same_invoker(net):
+    """A 401 for a revoked token triggers one fresh token for the same invoker and a successful retry."""
     R1Client(R1).get("/focom/inventory")
     net.revoked.add("tok-1")
     assert R1Client(R1).get("/focom/inventory").status_code == 200
@@ -87,12 +92,14 @@ def test_a_revoked_token_is_refreshed_once_with_the_same_invoker(net):
 
 
 def test_an_explicit_bearer_token_is_used_as_is(net):
+    """A caller-supplied bearer token is used directly, with no bootstrap, registration or token call."""
     net.issued.append("callers-own")
     assert R1Client(R1, bearer_token="callers-own").get("/dme/dme-types").status_code == 200
     assert [u for _, u, _ in net.calls] == [f"{R1}/dme/dme-types"]
 
 
 def test_sme_down_sends_the_call_unauthenticated_rather_than_raising(net):
+    """With SME unreachable the call goes out without a token (R1 answers 401) instead of raising."""
     net.sme_up = False
     assert R1Client(R1).get("/focom/inventory").status_code == 401
 
@@ -131,6 +138,7 @@ def test_a_callers_own_headers_ride_along_with_the_token(net):
 
 
 def test_a_callers_own_headers_survive_the_401_refresh_retry(net):
+    """A caller's headers (Idempotency-Key) are sent again on the retry after a 401, with the refreshed token."""
     R1Client(R1).get("/focom/inventory")
     net.revoked.add("tok-1")
     R1Client(R1).post("/nfo/deployments", json={}, headers={"Idempotency-Key": "k-2"})
@@ -140,6 +148,7 @@ def test_a_callers_own_headers_survive_the_401_refresh_retry(net):
 
 
 def test_the_clients_own_authorization_wins_over_a_callers(net):
+    """A caller cannot override the client's Authorization header with its own."""
     R1Client(R1).get("/focom/inventory", headers={"Authorization": "Bearer attacker"})
     assert net.calls[-1][2]["Authorization"] == "Bearer tok-1"
 
@@ -160,6 +169,7 @@ def test_every_call_through_r1_has_an_explicit_timeout_not_httpxs_implicit_defau
 
 
 def test_bootstrap_is_asked_without_a_key_unless_one_is_configured(net, monkeypatch):
+    """With no SMO_BOOTSTRAP_KEY the bootstrap request carries no key header."""
     monkeypatch.delenv("SMO_BOOTSTRAP_KEY", raising=False)
     monkeypatch.delenv("SMO_BOOTSTRAP_KEY_FILE", raising=False)
     R1Client(R1).get("/focom/inventory")
@@ -167,6 +177,7 @@ def test_bootstrap_is_asked_without_a_key_unless_one_is_configured(net, monkeypa
 
 
 def test_the_bootstrap_key_is_sent_as_a_header_when_configured(net, monkeypatch):
+    """A configured SMO_BOOTSTRAP_KEY is sent as X-Bootstrap-Key on /bootstrap only."""
     monkeypatch.setenv("SMO_BOOTSTRAP_KEY", "shared-key")
     R1Client(R1).get("/focom/inventory")
     assert net.calls[0][2] == {"X-Bootstrap-Key": "shared-key"}
@@ -174,6 +185,7 @@ def test_the_bootstrap_key_is_sent_as_a_header_when_configured(net, monkeypatch)
 
 
 def test_the_bootstrap_key_may_be_a_file(net, monkeypatch, tmp_path):
+    """SMO_BOOTSTRAP_KEY_FILE is read, with its trailing newline removed."""
     keyfile = tmp_path / "bootstrap_key"
     keyfile.write_text("file-key\n")
     monkeypatch.delenv("SMO_BOOTSTRAP_KEY", raising=False)

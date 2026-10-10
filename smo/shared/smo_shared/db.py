@@ -1,3 +1,13 @@
+"""The database plumbing every module shares: the engine and session factory, the declarative `Base`, and the two ways to get a session.
+
+Where it sits: every module's `models.py` subclasses `Base`; request handlers take `get_session` as a FastAPI dependency, background code uses
+`session_scope()`. The URL comes from `SMO_DATABASE_URL` (or `SMO_DATABASE_URL_FILE`, with the password from `secretfile.read_secret`); see PR-DB-1
+and PR-ST-6 for the decisions. There is no default URL: a process without one raises `MissingDatabaseUrl` at import, except under pytest.
+
+What a maintainer must know: `engine` and `SessionLocal` are built when this module is first imported (the engine opens no connection until first
+use), so the environment must be complete before any `smo_shared.db` import. `session_scope` commits and `get_session` does not: a route that writes
+through `get_session` commits itself.
+"""
 import os
 import sys
 from collections.abc import Iterator
@@ -121,6 +131,7 @@ def engine_options(url: str, environ=os.environ) -> dict:
 
 
 def build_engine(url: str, environ=os.environ):
+    """Creates the SQLAlchemy engine for `url` with the options `engine_options` derives from `environ`. Opens no connection."""
     return create_engine(url, **engine_options(url, environ))
 
 
@@ -129,12 +140,15 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 
 
 class Base(DeclarativeBase):
+    """The declarative base of every module's ORM models; all tables share this one metadata."""
     pass
 
 
 @contextmanager
 def session_scope() -> Iterator[Session]:
-    """Provide a transactional scope for a single unit of work."""
+    """Context manager for one unit of work outside a request: commits when the block ends normally, rolls back and re-raises on any exception, always
+    closes.
+    """
     session = SessionLocal()
     try:
         yield session
@@ -147,7 +161,11 @@ def session_scope() -> Iterator[Session]:
 
 
 def get_session():
-    """FastAPI dependency — yields a session, always closes it."""
+    """FastAPI dependency that yields one `SessionLocal` session per request and always closes it.
+
+    It never commits: a handler that writes must call `commit()` itself, and an exception leaves the transaction to be rolled back when the session
+    closes.
+    """
     session = SessionLocal()
     try:
         yield session

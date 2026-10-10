@@ -32,6 +32,7 @@ _warned: dict[str, datetime.date] = {}
 
 
 def retention_days(variable: str) -> int:
+    """The days of retention in environment variable `variable`; 0 (keep every row) when it is unset, empty, negative or not a number."""
     try:
         return max(0, int(os.environ.get(variable, "0") or 0))
     except ValueError:

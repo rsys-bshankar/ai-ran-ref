@@ -1,4 +1,7 @@
-"""PR-SEC-14: an instance's credentials are written to its Kubernetes Secret, replaced on rotation and deleted on teardown, and nowhere else."""
+"""PR-SEC-14: an instance's credentials are written to its Kubernetes Secret, replaced on rotation and deleted on teardown, and nowhere else.
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_credential_delivery.py -q
+"""
 
 import httpx
 import pytest
@@ -42,6 +45,7 @@ class FakeApi:
 
 
 def test_the_default_is_off_and_does_nothing():
+    """With delivery off (unset, or any unknown value) deliver returns None, makes no API call, and withdraw reports SKIPPED."""
     api = FakeApi()
     assert cd.mode({}) == "none" and cd.mode({"RAPP_CREDENTIAL_DELIVERY": "typo"}) == "none"
     assert cd.deliver("i1", "inv", "s3cret", environ={}, client_factory=api.factory) is None and api.calls == []
@@ -49,6 +53,9 @@ def test_the_default_is_off_and_does_nothing():
 
 
 def test_the_credentials_are_written_to_a_secret_named_for_the_instance():
+    """deliver creates Secret `rapp-<instance>-credentials` holding exactly the three env keys, labelled as managed by rApp Management, using the
+    bearer token.
+    """
     api = FakeApi()
     assert cd.deliver("i1", "api-invoker-1", "s3cret", environ=ENV, client_factory=api.factory) == {"kubernetesSecret": "rapp-i1-credentials"}
     body = api.secrets[("smo", "rapp-i1-credentials")]
@@ -58,6 +65,7 @@ def test_the_credentials_are_written_to_a_secret_named_for_the_instance():
 
 
 def test_rotation_replaces_the_secret():
+    """A second deliver for the same instance gets 409 from POST and replaces the Secret with PUT, so the new secret wins."""
     api = FakeApi()
     cd.deliver("i1", "inv-1", "first", environ=ENV, client_factory=api.factory)
     cd.deliver("i1", "inv-2", "second", environ=ENV, client_factory=api.factory)
@@ -66,6 +74,7 @@ def test_rotation_replaces_the_secret():
 
 
 def test_withdraw_deletes_it_and_a_missing_one_is_done():
+    """withdraw deletes the Secret and treats an already-absent one (404) as DONE."""
     api = FakeApi()
     cd.deliver("i1", "inv", "s", environ=ENV, client_factory=api.factory)
     assert cd.withdraw("i1", environ=ENV, client_factory=api.factory) == "DONE" and api.secrets == {}
@@ -73,6 +82,7 @@ def test_withdraw_deletes_it_and_a_missing_one_is_done():
 
 
 def test_a_refusal_by_the_api_server_is_a_failure_to_deliver_and_a_failed_withdraw_never_raises():
+    """A 403 from the API server raises DeliveryFailed on deliver, while withdraw returns FAILED instead of raising so teardown continues."""
     api = FakeApi(fail_with=403)
     with pytest.raises(cd.DeliveryFailed, match="403"):
         cd.deliver("i1", "inv", "s", environ=ENV, client_factory=api.factory)
@@ -80,6 +90,7 @@ def test_a_refusal_by_the_api_server_is_a_failure_to_deliver_and_a_failed_withdr
 
 
 def test_an_unreachable_api_server_is_a_failure_to_deliver():
+    """A transport error raises DeliveryFailed ('could not be reached') on deliver and FAILED on withdraw."""
     def refuse(environ):
         return httpx.Client(base_url="https://k8s", transport=httpx.MockTransport(lambda r: (_ for _ in ()).throw(httpx.ConnectError("down")))), "smo"
     with pytest.raises(cd.DeliveryFailed, match="could not be reached"):
@@ -88,6 +99,7 @@ def test_an_unreachable_api_server_is_a_failure_to_deliver():
 
 
 def test_a_pod_without_kubernetes_access_says_what_is_missing(tmp_path):
+    """Missing Kubernetes settings, or an unreadable token file, produce a DeliveryFailed that names the cause."""
     with pytest.raises(cd.DeliveryFailed, match="no Kubernetes access configured"):
         cd.deliver("i1", "inv", "s", environ={"RAPP_CREDENTIAL_DELIVERY": "kubernetes"})
     with pytest.raises(cd.DeliveryFailed, match="cannot read the service-account token"):

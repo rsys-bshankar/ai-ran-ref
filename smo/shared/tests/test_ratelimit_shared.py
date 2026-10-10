@@ -2,6 +2,8 @@
 
 Runs on SQLite (the unit-test engine): the same upsert Postgres runs, with min/max for LEAST/GREATEST. The Postgres statement itself is exercised by
 tests_integration/test_rate_limit_postgres.py (skipped without SMO_TEST_POSTGRES_URL).
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_ratelimit_shared.py -q
 """
 
 import logging
@@ -18,6 +20,7 @@ from smo_shared.testing import make_test_engine
 
 
 class Clock:
+    """A settable fake clock: calling it returns `now`."""
     def __init__(self, now=1000.0):
         self.now = now
 
@@ -27,22 +30,27 @@ class Clock:
 
 @pytest.fixture
 def factory():
+    """A session factory on an in-memory SQLite database with every table created."""
     engine = make_test_engine()
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, autoflush=False, future=True)
 
 
 def shared(factory, rate=2.0, burst=4.0):
+    """Helper: a shared limiter with constant rate and burst, a wall clock and a monotonic clock, both fakes; returns the limiter and the two clocks.
+    """
     clock, ticks = Clock(), Clock()
     return SharedTokenBuckets(lambda: rate, lambda: burst, clock, factory, ticks), clock, ticks
 
 
 def _callers(factory):
+    """Helper: the sorted names of the callers that have a row in the store."""
     with factory() as db:
         return sorted(db.execute(select(RateBucket.caller)).scalars().all())
 
 
 def test_the_shared_bucket_is_the_same_token_bucket_as_the_in_process_one(factory):
+    """The database-backed limiter behaves like the in-process one: burst, refusal with a wait, refill at the rate, capped at the burst."""
     b, clock, _ = shared(factory, rate=2, burst=4)
     assert [b.take("a") for _ in range(4)] == [None] * 4
     assert b.take("a") == 1                                    # empty: half a second to the next token, rounded up
@@ -53,6 +61,7 @@ def test_the_shared_bucket_is_the_same_token_bucket_as_the_in_process_one(factor
 
 
 def test_a_refused_request_takes_nothing_and_retry_after_is_whole_seconds_to_the_next_token(factory):
+    """Repeated refused requests do not make the caller wait longer: a refusal takes nothing and the wait is the whole seconds to the next token."""
     b, clock, _ = shared(factory, rate=0.25, burst=1)
     assert b.take("a") is None
     assert [b.take("a") for _ in range(3)] == [4, 4, 4]        # hammering while empty does not dig the hole deeper
@@ -63,12 +72,14 @@ def test_a_refused_request_takes_nothing_and_retry_after_is_whole_seconds_to_the
 
 
 def test_callers_do_not_share_a_bucket(factory):
+    """Each caller has its own row, so one cannot use up another's budget."""
     b, _, _ = shared(factory, rate=1, burst=1)
     assert b.take("noisy") is None and b.take("noisy") is not None
     assert b.take("quiet") is None
 
 
 def test_two_limiters_over_one_database_share_one_budget(factory):
+    """Two limiters (replicas) over one database give a caller five requests in all, where two in-process limiters would give five each."""
     clock, ticks = Clock(), Clock()
     first = SharedTokenBuckets(lambda: 0.001, lambda: 5.0, clock, factory, ticks)
     second = SharedTokenBuckets(lambda: 0.001, lambda: 5.0, clock, factory, ticks)       # another replica
@@ -80,17 +91,20 @@ def test_two_limiters_over_one_database_share_one_budget(factory):
 
 
 def test_a_rate_of_zero_turns_the_shared_limiter_off_and_touches_nothing(factory):
+    """A rate of 0 passes every request without writing a row."""
     b, _, _ = shared(factory, rate=0, burst=1)
     assert all(b.take("a") is None for _ in range(20)) and len(b) == 0
 
 
 def test_a_burst_below_one_never_lets_a_request_through_as_in_memory(factory):
+    """A burst below one means no request is ever allowed, in the store and in memory alike."""
     b, _, _ = shared(factory, rate=1, burst=0.5)
     assert b.take("a") is not None and b.take("a") is not None
     assert TokenBuckets(lambda: 1.0, lambda: 0.5, Clock()).take("a") is not None
 
 
 def test_the_settings_are_read_on_every_call_and_a_clock_stepping_back_refills_nothing(factory):
+    """Settings are read on every call, and a clock that steps back refills nothing (no negative refill)."""
     state = {"rate": 1.0}
     clock, ticks = Clock(), Clock()
     b = SharedTokenBuckets(lambda: state["rate"], lambda: 1.0, clock, factory, ticks)
@@ -119,6 +133,7 @@ def test_a_statement_applied_out_of_order_does_not_refill_the_same_time_twice(fa
 
 
 def test_the_row_holds_the_bucket_state(factory):
+    """The row stores the caller, the tokens left, the time of the last refill and whether the last request was allowed."""
     b, clock, _ = shared(factory, rate=1, burst=3)
     b.take("a")
     b.take("a")
@@ -128,6 +143,7 @@ def test_the_row_holds_the_bucket_state(factory):
 
 
 def test_idle_buckets_are_purged_once_full_again(factory):
+    """purge deletes buckets that would be full again and keeps the ones in use."""
     b, clock, _ = shared(factory, rate=1, burst=2)
     b.take("busy")
     b.take("gone")
@@ -140,6 +156,7 @@ def test_idle_buckets_are_purged_once_full_again(factory):
 
 
 def test_take_purges_by_itself_at_most_once_per_interval(factory):
+    """take() purges idle buckets by itself, but only after the purge interval since the last purge."""
     b, clock, ticks = shared(factory, rate=1, burst=2)
     b.take("a")
     clock.now += 100                                            # a is full again
@@ -152,6 +169,7 @@ def test_take_purges_by_itself_at_most_once_per_interval(factory):
 
 
 def test_a_purge_that_fails_is_ignored(factory):
+    """A failing purge does not break the request that triggered it."""
     b, _, ticks = shared(factory)
     b.take("a")
     ticks.now += PURGE_INTERVAL_SECONDS + 1
@@ -171,6 +189,9 @@ def broken_factory():
 
 
 def test_when_the_store_fails_the_limiter_fails_open_to_the_replicas_own_bucket(caplog):
+    """When the store is down the limiter falls back to the replica's own bucket (bounded, not unlimited), counts one error and every fallback, and
+    logs the outage once.
+    """
     clock, ticks = Clock(), Clock()
     b = SharedTokenBuckets(lambda: 0.001, lambda: 2.0, clock, broken_factory, ticks)
     errors, fallbacks = metrics.RATE_STORE_ERRORS._value.get(), metrics.RATE_STORE_FALLBACKS._value.get()
@@ -183,6 +204,7 @@ def test_when_the_store_fails_the_limiter_fails_open_to_the_replicas_own_bucket(
 
 
 def test_the_store_is_tried_again_after_the_back_off(factory):
+    """After a failure the store is not tried for the back-off time, then is used again."""
     clock, ticks = Clock(), Clock()
     calls = {"n": 0}
 
@@ -200,6 +222,7 @@ def test_the_store_is_tried_again_after_the_back_off(factory):
 
 
 def test_the_store_setting_is_memory_unless_postgres_is_asked_for():
+    """R1_RATE_STORE is `memory` unless set to `postgres` (case and spaces ignored); any other value raises with the exact message."""
     assert store_from_environment({}) == "memory" and store_from_environment({"R1_RATE_STORE": ""}) == "memory"
     assert store_from_environment({"R1_RATE_STORE": " Postgres "}) == "postgres"
     assert store_from_environment({"R1_RATE_STORE": "  "}) == "memory" and store_from_environment({"R1_RATE_STORE": "MEMORY"}) == "memory"
@@ -209,6 +232,7 @@ def test_the_store_setting_is_memory_unless_postgres_is_asked_for():
 
 
 def test_clear_empties_the_store_and_the_fallback(factory):
+    """clear() removes every bucket from the store and the local fallback."""
     b, _, _ = shared(factory, rate=1, burst=1)
     b.take("a")
     b.clear()
@@ -216,12 +240,14 @@ def test_clear_empties_the_store_and_the_fallback(factory):
 
 
 def test_the_default_session_factory_is_the_shared_database(monkeypatch, factory):
+    """Without a session factory the limiter uses the process's shared database session."""
     monkeypatch.setattr("smo_shared.db.SessionLocal", factory)
     b = SharedTokenBuckets(lambda: 1.0, lambda: 1.0, Clock(), None, Clock())
     assert b.take("a") is None and b.take("a") is not None and _callers(factory) == ["a"]
 
 
 def test_the_statements_name_each_dialects_functions():
+    """The SQL uses LEAST/GREATEST for Postgres and min/max for SQLite, with the same upsert and RETURNING clause."""
     take_pg, purge_pg = ratelimit._statements("postgresql")
     take_lite, purge_lite = ratelimit._statements("sqlite")
     assert "LEAST(" in str(take_pg) and "GREATEST(" in str(take_pg) and "GREATEST(" in str(purge_pg)
@@ -230,6 +256,7 @@ def test_the_statements_name_each_dialects_functions():
 
 
 def test_concurrent_callers_never_get_more_than_the_burst_from_the_shared_store(tmp_path):
+    """Five threads on separate connections together get exactly the burst (30) from the store and no statement fails."""
     engine = create_engine(f"sqlite:///{tmp_path / 'limiter.db'}", connect_args={"timeout": 30})      # a file: real connections, one per thread
     Base.metadata.create_all(engine)
     b, _, _ = shared(sessionmaker(bind=engine, autoflush=False, future=True), rate=0.000001, burst=30)
@@ -251,6 +278,7 @@ def test_concurrent_callers_never_get_more_than_the_burst_from_the_shared_store(
 # --- found by the mutation pilot (V-2c): boundaries, exact counts, the fallback's clock, the log lines ---
 
 def flaky_once(factory, calls):
+    """Helper: a session factory that raises once on its first call and then works."""
     def make():
         calls.append(1)
         if len(calls) == 1:
@@ -260,6 +288,7 @@ def flaky_once(factory, calls):
 
 
 def test_the_purge_runs_exactly_when_an_interval_has_passed_and_the_interval_restarts_from_it(factory):
+    """The purge runs exactly at the interval boundary (not a hair before) and the next interval is counted from that purge."""
     b, clock, ticks = shared(factory, rate=1, burst=2)         # made at tick 1000
     b.take("a")
     clock.now += 100                                           # a would be full again, and so would anything idle from here on
@@ -279,6 +308,7 @@ def test_the_purge_runs_exactly_when_an_interval_has_passed_and_the_interval_res
 
 
 def test_purge_deletes_what_would_be_full_again_by_the_current_settings_and_counts_it(factory):
+    """purge uses the current burst setting and returns how many buckets it deleted."""
     state = {"burst": 3.0}
     clock, ticks = Clock(), Clock()
     b = SharedTokenBuckets(lambda: 1, lambda: state["burst"], clock, factory, ticks)
@@ -292,6 +322,7 @@ def test_purge_deletes_what_would_be_full_again_by_the_current_settings_and_coun
 
 
 def test_clear_counts_and_empties_the_store(factory):
+    """clear() leaves no rows in the store."""
     b, _, _ = shared(factory, rate=1, burst=3)
     for caller in ("a", "b", "c"):
         b.take(caller)
@@ -301,6 +332,7 @@ def test_clear_counts_and_empties_the_store(factory):
 
 
 def test_a_failed_purge_is_logged_at_debug_with_its_traceback(factory, caplog):
+    """A failing purge is logged at DEBUG with its traceback and not at a louder level."""
     b, _, ticks = shared(factory)
     b.take("a")
     ticks.now += PURGE_INTERVAL_SECONDS
@@ -320,6 +352,7 @@ def test_a_failed_purge_is_logged_at_debug_with_its_traceback(factory, caplog):
 
 
 def test_the_statements_are_built_for_the_connections_dialect(factory, monkeypatch):
+    """take and purge ask for the statements of the connection's own dialect."""
     seen = []
     real = ratelimit._statements
     monkeypatch.setattr(ratelimit, "_statements", lambda dialect: (seen.append(dialect), real(dialect))[1])
@@ -330,6 +363,7 @@ def test_the_statements_are_built_for_the_connections_dialect(factory, monkeypat
 
 
 def test_the_upsert_is_an_insert_the_purge_a_delete():
+    """The take statement is an INSERT ... ON CONFLICT upsert and the purge is a DELETE, in both dialects."""
     for dialect in ("postgresql", "sqlite"):
         take, purge = ratelimit._statements(dialect)
         assert str(take).startswith("INSERT INTO rate_bucket (caller, tokens, refilled_at, last_allowed) VALUES (:caller, :first_tokens, :now, :first_allowed) ON CONFLICT")
@@ -337,6 +371,7 @@ def test_the_upsert_is_an_insert_the_purge_a_delete():
 
 
 def test_a_new_caller_with_a_burst_below_one_starts_with_the_whole_burst_and_is_refused(factory):
+    """A first request with a burst below one is refused and stores the unchanged burst, because a refusal takes nothing."""
     b, _, _ = shared(factory, rate=1, burst=0.5)
     assert b.take("a") == 1                                    # (1 - 0.5) / 1 rounded up
     with factory() as db:
@@ -345,6 +380,7 @@ def test_a_new_caller_with_a_burst_below_one_starts_with_the_whole_burst_and_is_
 
 
 def test_the_fallback_bucket_refills_on_the_replicas_own_monotonic_clock():
+    """The fallback bucket refills on the replica's monotonic clock while the store is down."""
     clock, ticks = Clock(), Clock()
     b = SharedTokenBuckets(lambda: 1.0, lambda: 1.0, clock, broken_factory, ticks)
     assert b.take("a") is None and b.take("a") is not None     # the local bucket, empty
@@ -353,6 +389,7 @@ def test_the_fallback_bucket_refills_on_the_replicas_own_monotonic_clock():
 
 
 def test_a_limiter_starts_with_the_store_available_whatever_the_monotonic_clock_reads(factory):
+    """A new limiter tries the store at once even when the monotonic clock reads a small number."""
     clock, ticks = Clock(), Clock(0.5)                         # a monotonic clock is not epoch time: it may be small
     b = SharedTokenBuckets(lambda: 1.0, lambda: 1.0, clock, factory, ticks)
     assert b.take("a") is None
@@ -360,6 +397,7 @@ def test_a_limiter_starts_with_the_store_available_whatever_the_monotonic_clock_
 
 
 def test_clear_ends_a_back_off(factory):
+    """clear() ends a back-off, so the store is used again immediately."""
     calls = []
     clock, ticks = Clock(), Clock(0.5)
     b = SharedTokenBuckets(lambda: 1.0, lambda: 1.0, clock, flaky_once(factory, calls), ticks)
@@ -370,6 +408,7 @@ def test_clear_ends_a_back_off(factory):
 
 
 def test_the_back_off_lasts_exactly_FAIL_BACKOFF_SECONDS(factory):
+    """The back-off lasts exactly FAIL_BACKOFF_SECONDS: tried again at the boundary, not a hair before."""
     calls = []
     clock, ticks = Clock(), Clock()
     b = SharedTokenBuckets(lambda: 1.0, lambda: 5.0, clock, flaky_once(factory, calls), ticks)
@@ -384,6 +423,7 @@ def test_the_back_off_lasts_exactly_FAIL_BACKOFF_SECONDS(factory):
 
 
 def test_the_outage_is_logged_once_per_interval_with_the_error_named(caplog):
+    """The outage is logged once per log interval, naming the error class and message, not on every request."""
     clock, ticks = Clock(), Clock()
     b = SharedTokenBuckets(lambda: 1.0, lambda: 5.0, clock, broken_factory, ticks)
     with caplog.at_level(logging.WARNING, logger="smo_shared.ratelimit"):

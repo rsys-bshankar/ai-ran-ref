@@ -50,6 +50,11 @@ DEFAULT_HEARTBEAT_FILE = "/tmp/worker-heartbeat"  # noqa: S108 (a tmpfs inside t
 
 @dataclass(frozen=True)
 class Task:
+    """One periodic task a module declares in `app/tasks.py`: a `name` (unique within the module), how often it may run (`interval_seconds`, across all
+    replicas) and the function to call.
+
+    `shared=True` makes the claim database-wide instead of per module (used by the outbox sweep).
+    """
     name: str
     interval_seconds: float
     fn: Callable[[], None]
@@ -85,6 +90,9 @@ def tick(tasks: Iterable[Task], *, module: str = "", skip: Iterable[str] = (), s
 
 
 def load_tasks(import_path: str = "app.tasks") -> list[Task]:
+    """Imports `import_path` (default `app.tasks`) and returns its `TASKS` list. Raises ValueError for two tasks with the same name, and lets
+    ImportError/AttributeError through when the module or the list is missing.
+    """
     tasks = list(importlib.import_module(import_path).TASKS)
     names = [t.name for t in tasks]
     if len(names) != len(set(names)):
@@ -113,11 +121,19 @@ def outbox_sweep_task() -> Task | None:
 
 
 def main(tasks: list[Task] | None = None, *, module: str | None = None, stop: threading.Event | None = None) -> int:
+    """The worker process: ticks until told to stop; returns 0.
+
+    Configures logging, loads the module's tasks (unless given) and adds the outbox sweep, optionally starts the metrics port, installs
+    SIGTERM/SIGINT handlers that end the loop after the current tick, then every tick offers the tasks (`tick`), backs off a task that failed for
+    `SMO_WORKER_FAILURE_BACKOFF_SECONDS` and touches the heartbeat file the container health check reads. `tasks`, `module` and `stop` are for
+    tests.
+    """
     from .logconfig import configure_logging
     module = module or os.environ.get("MODULE", "")
     configure_logging(f"{module}-worker")
     tasks = load_tasks() if tasks is None else tasks
     sweep = outbox_sweep_task()
+    # The sweep is added to every worker unless the module already declared a task of that name.
     if sweep is not None and all(t.name != sweep.name for t in tasks):
         tasks = [*tasks, sweep]
     port = os.environ.get("SMO_WORKER_METRICS_PORT", "").strip()

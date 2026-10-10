@@ -1,4 +1,8 @@
-"""PR-SEC-11: the audit chain detects an edited, deleted, inserted or truncated row, and numbering holds under concurrent writers."""
+"""PR-SEC-11: the audit chain detects an edited, deleted, inserted or truncated row, and numbering holds under concurrent writers.
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_audit.py -q
+Tests that take a Postgres engine run on real Postgres too when SMO_TEST_POSTGRES_URL is set (skipped otherwise).
+"""
 
 import datetime
 import io
@@ -18,6 +22,7 @@ T0 = datetime.datetime(2026, 10, 4, 12, 0, tzinfo=datetime.timezone.utc)
 
 @pytest.fixture
 def db():
+    """An in-memory SQLite session with every table created; each test gets its own empty database."""
     engine = make_test_engine()
     Base.metadata.create_all(engine)
     with Session(engine) as session:
@@ -32,10 +37,13 @@ def _fill(db, n=5):
 
 
 def test_an_empty_chain_is_intact(db):
+    """A database with no audit rows is not a broken chain."""
     assert audit.verify(db) is None
 
 
 def test_rows_are_numbered_and_linked(db):
+    """Rows are numbered 1, 2, 3 and each row's prev_hash is the hash of the row before (the first links to GENESIS); the action is stored upper-case.
+    """
     _fill(db, 3)
     rows = db.query(audit.AuditEntry).order_by(audit.AuditEntry.seq).all()
     assert [r.seq for r in rows] == [1, 2, 3]
@@ -45,6 +53,7 @@ def test_rows_are_numbered_and_linked(db):
 
 
 def test_an_edited_row_is_found_at_that_row(db):
+    """Changing one field of a stored row makes verify name that row and say its hash no longer matches."""
     _fill(db)
     db.execute(update(audit.AuditEntry).where(audit.AuditEntry.seq == 3).values(actor="someone-else"))
     db.commit()
@@ -52,6 +61,7 @@ def test_an_edited_row_is_found_at_that_row(db):
 
 
 def test_a_deleted_row_is_found(db):
+    """Deleting a row from the middle is reported as a missing row at that number."""
     _fill(db)
     db.execute(delete(audit.AuditEntry).where(audit.AuditEntry.seq == 2))
     db.commit()
@@ -60,6 +70,7 @@ def test_a_deleted_row_is_found(db):
 
 
 def test_a_removed_tail_is_found_through_the_head(db):
+    """Deleting the last rows leaves a valid prefix, so only the head row (which still names a later seq) reveals the truncation."""
     _fill(db)
     db.execute(delete(audit.AuditEntry).where(audit.AuditEntry.seq.in_([4, 5])))
     db.commit()
@@ -103,6 +114,7 @@ def _before_the_second_head_read(db, action):
 
 
 def test_a_first_head_that_names_a_row_with_another_hash_is_found_even_when_the_head_moves_on(db):
+    """A head whose hash does not match the row it names is still caught when a writer moves the head between verify's two reads."""
     _fill(db, 3)
     db.execute(update(audit.AuditHead).where(audit.AuditHead.head_id == 1).values(last_seq=2, last_hash="f" * 64))
     db.commit()
@@ -111,6 +123,7 @@ def test_a_first_head_that_names_a_row_with_another_hash_is_found_even_when_the_
 
 
 def test_an_empty_chain_with_a_head_at_zero_is_intact(db):
+    """Rows purged together with a head reset to zero and GENESIS is a consistent, empty chain."""
     _fill(db, 2)
     db.execute(delete(audit.AuditEntry))
     db.execute(update(audit.AuditHead).where(audit.AuditHead.head_id == 1).values(last_seq=0, last_hash=audit.GENESIS))
@@ -119,6 +132,7 @@ def test_an_empty_chain_with_a_head_at_zero_is_intact(db):
 
 
 def test_a_head_that_appears_while_the_rows_are_read_is_not_a_break(db):
+    """A head row created by a writer after the first read but before the second does not make verify report a break."""
     _fill(db, 3)
     head = db.get(audit.AuditHead, 1)
     seq, last_hash = head.last_seq, head.last_hash
@@ -161,6 +175,7 @@ def test_the_second_head_read_is_fresh_not_the_first_reads_identity_mapped_copy(
 
 
 def test_rows_past_the_head_are_found(db):
+    """Rows that exist beyond the seq the head names are reported at the last row."""
     _fill(db)
     db.execute(update(audit.AuditHead).where(audit.AuditHead.head_id == 1).values(last_seq=3, last_hash=db.get(audit.AuditEntry, 3).hash))
     db.commit()
@@ -168,6 +183,7 @@ def test_rows_past_the_head_are_found(db):
 
 
 def test_a_row_with_a_forged_link_is_found(db):
+    """A forger who recomputes a row's own hash after changing its prev_hash is still caught, by the link to the row before."""
     _fill(db)
     row = db.get(audit.AuditEntry, 3)
     row.prev_hash = "f" * 64
@@ -178,6 +194,7 @@ def test_a_row_with_a_forged_link_is_found(db):
 
 
 def test_a_failed_transaction_leaves_no_gap(db):
+    """A rolled-back record() does not consume a number: the next row takes it, so the numbering stays gapless."""
     _fill(db, 2)
     audit.record(db, actor="a", action="DELETE", target="/x", result="204")
     db.rollback()
@@ -188,6 +205,7 @@ def test_a_failed_transaction_leaves_no_gap(db):
 
 
 def test_the_timestamp_survives_a_round_trip_without_its_zone(db):
+    """A row's hash still verifies after the timestamp is read back from SQLite without its time zone."""
     audit.record(db, actor="a", action="PUT", target="/x", result="200", now=datetime.datetime(2026, 1, 2, 3, 4, 5, 678901, tzinfo=datetime.timezone.utc))
     db.commit()
     db.expire_all()
@@ -195,6 +213,7 @@ def test_the_timestamp_survives_a_round_trip_without_its_zone(db):
 
 
 def test_the_export_ends_with_the_head_and_syslog_wraps_each_row(db):
+    """The export lists rows in order and ends with the head anchor line; the syslog format wraps each row in an RFC 5424 line and honours `since`."""
     _fill(db, 3)
     out = io.StringIO()
     audit.export(db, out=out)
@@ -208,6 +227,7 @@ def test_the_export_ends_with_the_head_and_syslog_wraps_each_row(db):
 
 
 def test_write_audit_never_raises_and_counts(monkeypatch):
+    """A failing database makes write_audit return False and count a failed write, never raise into the request it describes."""
     from prometheus_client import REGISTRY
     monkeypatch.setattr("smo_shared.db.SessionLocal", lambda: (_ for _ in ()).throw(RuntimeError("database down")))
     before = REGISTRY.get_sample_value("smo_audit_writes_total", {"outcome": "failed"}) or 0
@@ -216,12 +236,16 @@ def test_write_audit_never_raises_and_counts(monkeypatch):
 
 
 def test_the_switch():
+    """R1_AUDIT is on unless set to off, false, 0 or no."""
     assert audit.audit_enabled({}) and audit.audit_enabled({"R1_AUDIT": "on"})
     assert not audit.audit_enabled({"R1_AUDIT": "off"}) and not audit.audit_enabled({"R1_AUDIT": "0"})
 
 
 @pytest.fixture(params=["sqlite", "postgres"])
 def shared_engine(request, tmp_path):
+    """Engine for the concurrency test: a file-based SQLite database, and Postgres as well when SMO_TEST_POSTGRES_URL is set (skipped otherwise); the
+    audit tables are created with the head row seeded and dropped afterwards.
+    """
     import os
     from sqlalchemy import create_engine
     if request.param == "postgres":
@@ -241,6 +265,9 @@ def shared_engine(request, tmp_path):
 
 
 def test_concurrent_writers_never_fork_the_chain(shared_engine, monkeypatch):
+    """Four threads writing at once leave a gapless 1..n chain that verifies (on Postgres all 60 writes succeed): writers must not fork or skip
+    numbers.
+    """
     from sqlalchemy.orm import sessionmaker
     monkeypatch.setattr("smo_shared.db.SessionLocal", sessionmaker(bind=shared_engine, autoflush=False, future=True))
     # Postgres locks the head row, so writers queue; SQLite does not, so a lost race is a duplicate number that the primary key refuses

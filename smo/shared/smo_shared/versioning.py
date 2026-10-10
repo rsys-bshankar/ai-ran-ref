@@ -44,6 +44,11 @@ class Versioned:
 
 
 def concurrent_modification_response(exc: Exception | None = None) -> JSONResponse:
+    """Builds the 409 CONCURRENT_MODIFICATION answer (a JSONResponse, not an exception) in the same `{"detail": ProblemDetails}` envelope
+    `errors.problem()` produces.
+
+    `exc` is accepted so it can be used directly as an exception handler body; it is not read.
+    """
     title, status = FrameworkError.CONCURRENT_MODIFICATION
     detail = "the resource was modified by another request while this one was running; repeat the request"
     body = ProblemDetails(title=title, status=status, detail=detail).model_dump()

@@ -1,5 +1,8 @@
 """smo_shared.worker — the periodic-work loop (PR-MSG-4). The claim itself is tested in test_single_runner.py; here: what a tick does with a
-list of tasks, and the loop's own handling of failures, the heartbeat and the stop signal."""
+list of tasks, and the loop's own handling of failures, the heartbeat and the stop signal.
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_worker.py -q
+"""
 
 import datetime
 import threading
@@ -17,11 +20,13 @@ T0 = datetime.datetime(2026, 1, 1, 12, 0, tzinfo=datetime.UTC)
 
 
 def at(seconds: float) -> datetime.datetime:
+    """Helper: the test epoch T0 plus `seconds`."""
     return T0 + datetime.timedelta(seconds=seconds)
 
 
 @pytest.fixture
 def db(tmp_path):
+    """A file SQLite database with the periodic_run table; yields the engine and a session factory."""
     engine = create_engine(f"sqlite:///{tmp_path / 'worker.db'}", future=True)
     Base.metadata.create_all(engine, tables=[PeriodicRun.__table__])
     yield engine, sessionmaker(bind=engine)
@@ -29,11 +34,13 @@ def db(tmp_path):
 
 
 def run_tick(db, tasks, now, **kw):
+    """Helper: runs one worker tick for module `m` on the test database at a fixed time."""
     engine, factory = db
     return tick(tasks, module="m", session_factory=factory, engine=engine, now=now, **kw)
 
 
 def test_a_task_runs_once_per_interval_however_often_it_is_offered(db):
+    """A task offered on every tick runs only once per interval."""
     calls = []
     tasks = [Task("t", 60, lambda: calls.append(1))]
     assert run_tick(db, tasks, at(0)) == {"t": "ran"}
@@ -44,6 +51,7 @@ def test_a_task_runs_once_per_interval_however_often_it_is_offered(db):
 
 
 def test_two_workers_offering_the_same_task_run_it_once(db):
+    """Two workers offering a task at the same instant run it once."""
     calls = []
     tasks = [Task("t", 60, lambda: calls.append(1))]
     first = run_tick(db, tasks, at(0))
@@ -52,6 +60,7 @@ def test_two_workers_offering_the_same_task_run_it_once(db):
 
 
 def test_a_failing_task_does_not_stop_the_others_and_gives_its_claim_back(db):
+    """A task that raises is reported as failed without stopping the others, and its claim is returned so it is offered again at once."""
     seen = []
 
     def boom():
@@ -63,12 +72,14 @@ def test_a_failing_task_does_not_stop_the_others_and_gives_its_claim_back(db):
 
 
 def test_a_task_in_skip_is_not_offered(db):
+    """A task named in `skip` is not run."""
     calls = []
     tasks = [Task("t", 60, lambda: calls.append(1))]
     assert run_tick(db, tasks, at(0), skip=["t"]) == {"t": "skipped"} and calls == []
 
 
 def test_tasks_of_two_modules_with_the_same_name_do_not_share_a_claim(db):
+    """Claims are per module, so two modules' tasks with one name both run."""
     engine, factory = db
     calls = []
     tasks = [Task("purge", 60, lambda: calls.append(1))]
@@ -78,6 +89,7 @@ def test_tasks_of_two_modules_with_the_same_name_do_not_share_a_claim(db):
 
 
 def test_load_tasks_refuses_duplicate_names(monkeypatch):
+    """Two tasks with the same name in one module's TASKS raise ValueError."""
     class Fake:
         TASKS = [Task("x", 1, lambda: None), Task("x", 2, lambda: None)]
 
@@ -87,6 +99,7 @@ def test_load_tasks_refuses_duplicate_names(monkeypatch):
 
 
 def test_the_loop_touches_the_heartbeat_backs_off_a_failure_and_stops_on_the_event(db, monkeypatch, tmp_path):
+    """The loop writes the heartbeat file every tick, skips a task that failed for the back-off time, and ends when the stop event is set."""
     engine, factory = db
     offered = []
     stop = threading.Event()
@@ -110,6 +123,7 @@ def test_the_loop_touches_the_heartbeat_backs_off_a_failure_and_stops_on_the_eve
 # --- the delivery sweep (PR-MSG-2) -------------------------------------------------------------------------------------------------------------
 
 def test_the_sweep_is_one_task_for_the_whole_database_whichever_module_offers_it(db):
+    """The outbox sweep is a shared task: only one module's worker runs it per interval."""
     calls = []
     sweep = Task("outbox-sweep", 5, lambda: calls.append(1), shared=True)
     engine, factory = db
@@ -119,6 +133,7 @@ def test_the_sweep_is_one_task_for_the_whole_database_whichever_module_offers_it
 
 
 def test_a_task_that_is_not_shared_is_claimed_per_module(db):
+    """An ordinary task is claimed per module."""
     calls = []
     task = Task("t", 60, lambda: calls.append(1))
     engine, factory = db
@@ -127,6 +142,7 @@ def test_a_task_that_is_not_shared_is_claimed_per_module(db):
 
 
 def test_the_sweep_sends_what_a_dead_sender_left_and_what_failed_before(tmp_path, monkeypatch):
+    """Running the sweep task delivers outbox rows that are still pending."""
     import httpx
 
     from smo_shared import outbox, webhook
@@ -146,6 +162,7 @@ def test_the_sweep_sends_what_a_dead_sender_left_and_what_failed_before(tmp_path
 
 
 def test_the_sweep_can_be_turned_off_and_is_added_once(monkeypatch):
+    """SMO_OUTBOX_SWEEP=false removes the sweep task, and SMO_OUTBOX_SWEEP_SECONDS sets its interval."""
     monkeypatch.setenv("SMO_OUTBOX_SWEEP", "false")
     assert worker.outbox_sweep_task() is None
     monkeypatch.setenv("SMO_OUTBOX_SWEEP", "true")
