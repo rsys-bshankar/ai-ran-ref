@@ -9,7 +9,7 @@
 | Depends on (over R1) | rApp Management (`GET /rapp-mgmt/instances/{id}`, autonomy dispatch only); outbound webhooks to RMIHs, report recipients and operator destinations |
 | Called by | rApps via `sdk.intent`; GUI BFF (intents, autonomy dispatches); SA SMOS O1-CM handler (reads intents, publishes reports, registers as RMIH `sa-smos`, see [`../sa-smos/README.md`](../sa-smos/README.md)); SO SMOS identity may register as an RMIH |
 | Database tables | `intent`, `intent_utility_formula`, `intent_report`, `intent_handling_function`, `autonomy_dispatch` |
-| Unit tests | 77 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 89 passed (`tests/`, SQLite, standalone) |
 | Status | Done. The 8 value datatypes are checked by structure (`SA-INTENT-partial`, closed); `GeoArea` is the one `ValueRangeType` alternative with a documented simplification (1.2) |
 
 ## 1. High-level design (HLD)
@@ -120,6 +120,14 @@ The mode is snapshotted onto the dispatch at request time and never rewritten by
 - **Initial report.** Creation writes an `IntentReport` (fulfilment `NOT_FULFILLED` / `RECEIVED`, plus
   conflict/feasibility when present) that becomes `intentReportReference`. Every later report replaces that
   reference.
+- **Fulfilment and conflict summary (`GUI-9.8`).** Every report this module stores updates three columns of the
+  intent (`_apply_report`): a fulfilment report sets `fulfilmentPercent` (the share of its targets that are
+  `FULFILLED`; of its expectations when it lists no targets; 0 or 100 from the intent's own verdict when it lists
+  neither; one decimal) and `fulfilled` (the intent's own `intentFulfilmentInfo.fulfilmentStatus`); a report that
+  carries conflict reports sets `inConflict` (an empty list clears it; the conflicts found at creation count). They
+  are columns, not computed from the JSON at read time, so `GET /intents?fulfilled=&in_conflict=` filters in SQL.
+  Revision `0035` filled them for the intents that existed before; a report written by the previous release during
+  a rolling upgrade does not update them until the next one.
 - **Region scope bounds, never widens.** For an autonomy-created intent the region scope fills a missing
   `objectInstance` (a different one is rejected) and its `cells` become the expectation's `Cell` context; an
   expectation that already names cells is intersected with the region, and an empty intersection is rejected.
@@ -162,6 +170,7 @@ The mode is snapshotted onto the dispatch at request time and never rewritten by
 | `rmih_id` | FK `intent_handling_function.rmih_id`, `ON DELETE CASCADE`, not null |
 | `intent_report_reference` | Bare UUID of the current `intent_report` (no FK: avoids a cycle) |
 | `intent_utility_formula_id` | FK `intent_utility_formula`, `ON DELETE SET NULL` |
+| `fulfilment_percent`, `fulfilled`, `in_conflict` | Nullable summary of the newest fulfilment and conflict reports (1.5, `GUI-9.8`, revision `0035`) |
 | other | `user_label`, `context_selectivity`, `expectation_selectivity`, `consumer_satisfaction_index_threshold`, `intent_contexts`, `intent_report_control`, `implicit_intent_index`, `guarantee_periods`, `intent_handling_info`, `intent_interpretation_assistance_info`, `intent_preemption_capability` |
 
 `intent_report`: `id` PK; `intent_id` FK `intent` `ON DELETE CASCADE`; one nullable JSON column per report kind
@@ -221,8 +230,8 @@ Intents
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
 | POST | `/intents` | Create (201 `{intentId, intentReportReference}`). Body is the strict Intent plus `rmihId`, `rmioId`, `intentHandlingScope`. | 404 `INTENT_HANDLING_FUNCTION_NOT_FOUND`; 422 `RMIH_CAPABILITY_MISMATCH`; 404 `NRM_OBJECT_NOT_FOUND` (unknown utility formula); 422 schema |
-| GET | `/intents` | List (`admin_state`, paging) | |
-| GET | `/intents/{intent_id}` | Read (`attributes` carries the full TS 28.312 Intent) | 404 `INTENT_NOT_FOUND` |
+| GET | `/intents` | List (`admin_state`, paging; `fulfilled` true/false, an intent with no fulfilment report matching neither; `in_conflict` true/false) | |
+| GET | `/intents/{intent_id}` | Read (`attributes` carries the full TS 28.312 Intent; every intent view also carries `fulfilmentPercent`, `fulfilled` (null until a fulfilment report) and `inConflict`) | 404 `INTENT_NOT_FOUND` |
 | PATCH | `/intents/{intent_id}/admin-state` | `{newState, requesterId}` | 404; 409 `SERVICE_NAME_CONFLICT` when `requesterId` is not the creator |
 | DELETE | `/intents/{intent_id}` | Retract (204, idempotent; reports cascade) | |
 | POST | `/intents/{intent_id}/negotiation-feedback` | Pick a `possibleIntentOutcomeId` from the latest negotiation report | 404 `INTENT_NOT_FOUND`; 404 `NRM_OBJECT_NOT_FOUND` (no negotiation report); 422 `SCHEMA_VALIDATION_FAILED` (unknown outcome id) |
@@ -320,6 +329,7 @@ cd smo/intent-service && PYTHONPATH=.:../shared python -m pytest tests/ -q
 |---|---|---|
 | `tests/test_main.py` | Create/query/delete intents, admin-state (creator only, SUSPENDED report), RMIH registration (external-caller rejection, capability validation, list, deregister), scope and capability matching, dispatch to the named RMIH (and unreachable callback), strict spec shapes and family constraints, feasibility (reject vs report), purpose/negotiation gating, initial report and conflicts, report-control delivery, all report kinds, negotiation feedback, utility formula IOC, autonomy dispatch (AUTONOMOUS, ASSIST resolve/reject, SHADOW, up-front RMIH validation, operator notification and its SSRF scheme guard, unknown instance/RMIH, list/get, region-scope folding and bounding), `/health` | 56 |
 | `tests/test_business_metrics.py` | `smo_intents` counts intents by admin state, both states present at zero | 1 |
+| `tests/test_fulfilment_and_conflict.py` | `GUI-9.8`: a new intent is 0 % and not in conflict, the percent follows the newest fulfilment report, a handler's conflict report sets `inConflict` and an empty one clears it, a conflict found at creation shows, deactivation resets the percent, the `fulfilled` / `in_conflict` list filters both ways, and the percent rule on six report shapes | 12 |
 
 ### 3.3 What is not covered here
 

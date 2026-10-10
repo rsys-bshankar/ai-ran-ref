@@ -313,6 +313,11 @@ class TrainingJob(Base):
     # job's `status` (main.py's `_training_steps`), so the job-level status
     # stays the single source of truth for how the run ended.
     current_step: Mapped[str] = mapped_column(String, nullable=False, default="DATA_EXTRACTION")
+    # GUI-9.8 (revision 0035): the epoch the run has reached and how many it will run, as its runtime last reported them (`POST .../progress`, or an
+    # `epoch`/`totalEpochs` pair in the metrics writeback), and when. Null until reported; `main._eta_seconds` derives the ETA from them and `started_at`.
+    epoch: Mapped[int | None] = mapped_column(Integer)
+    total_epochs: Mapped[int | None] = mapped_column(Integer)
+    progress_updated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 # OI-5-aiml-trainingjob-steps: the reference Training Manager's steps

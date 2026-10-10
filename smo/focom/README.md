@@ -172,6 +172,10 @@ Returned as `{"detail": {"type": "about:blank", "title": <code>, "status", "deta
 - **Provisioning model.** Built at the model level (`SA-FOCOM-7`, closed): FOCOM deploys no real cluster; `provision` takes an untyped dict.
 - **Stubbed health.** `GET /resources/{id}/status` is a constant; no hardware telemetry populates the resource tree (only the `parent_id` shape exists).
 - **No topology push.** `/topology` is a pull; no Kafka / CRD integration.
+- **No node utilisation (PR-GUI-9.8).** A per-resource CPU / memory read (`/resources/{id}/utilisation`) is not offered: FOCOM collects nothing, the
+  performance records it stores are whatever a producer ingests under a free `performanceMeasurementDefinitionId`, no measurement dictionary names a
+  CPU or memory measurement, and no component ingests one. Serving such a read would mean inventing the measurement names; it needs a collector and
+  a defined dictionary first.
 
 ## 3. Unit tests
 

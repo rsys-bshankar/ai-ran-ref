@@ -41,6 +41,8 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/ran-nf-oam", ("PUT", "DELETE"), r"^/rapp-kill/[^/]+$"),
         ("/ran-nf-oam", ("GET",), r"^/rapp-kill$"),
         ("/rapp-mgmt", ("PUT", "DELETE"), r"^/instances/[^/]+/kill$"),
+        # GUI-9.6: the global stop of every rApp, its lift, and how many are stopped
+        ("/rapp-mgmt", ("PUT", "DELETE", "GET"), r"^/kill-all$"),
         # MGT-11.6/11.7: seeding the standard KPIs, and pushing results to DME (the reads stay open)
         ("/ran-nf-oam", ("POST",), r"^/kpi-definitions/standard$"),
         ("/ran-nf-oam", ("POST",), r"^/kpis/[^/]+/publish$"),

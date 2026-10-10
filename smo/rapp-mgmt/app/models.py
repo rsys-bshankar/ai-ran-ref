@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Uuid, false
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Uuid, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -117,6 +117,8 @@ class RAppFaultReport(Base):
 
 class RAppPerformanceReport(Base):
     __tablename__ = "rapp_performance_report"
+    # GUI-9.8: the newest report per instance (GET /instances/{id}/performance/latest and its batched form) and the newest-first list read; revision 0035.
+    __table_args__ = (Index("ix_rapp_performance_report_instance_reported", "instance_id", "reported_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     instance_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("rapp_instance.instance_id", ondelete="CASCADE"))  # NEW section 5: delete_instance's cascade

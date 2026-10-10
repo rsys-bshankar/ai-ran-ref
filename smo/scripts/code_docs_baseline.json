@@ -11,9 +11,9 @@
     "aimgf": {
       "files_without_description": 0,
       "functions_without_description": 0,
-      "items_requiring_description": 258,
-      "source_files": 10,
-      "tests": 186,
+      "items_requiring_description": 262,
+      "source_files": 11,
+      "tests": 195,
       "tests_without_docstring": 0
     },
     "backup": {
@@ -42,10 +42,10 @@
     },
     "dme": {
       "files_without_description": 1,
-      "functions_without_description": 32,
-      "items_requiring_description": 58,
-      "source_files": 3,
-      "tests": 94,
+      "functions_without_description": 30,
+      "items_requiring_description": 61,
+      "source_files": 4,
+      "tests": 100,
       "tests_without_docstring": 55
     },
     "focom": {
@@ -74,11 +74,11 @@
     },
     "gui-bff": {
       "files_without_description": 0,
-      "functions_without_description": 96,
-      "items_requiring_description": 195,
-      "source_files": 27,
-      "tests": 298,
-      "tests_without_docstring": 273
+      "functions_without_description": 95,
+      "items_requiring_description": 215,
+      "source_files": 30,
+      "tests": 328,
+      "tests_without_docstring": 272
     },
     "gui/src": {
       "files_without_description": 28,
@@ -91,9 +91,9 @@
     "intent-service": {
       "files_without_description": 0,
       "functions_without_description": 0,
-      "items_requiring_description": 117,
-      "source_files": 8,
-      "tests": 64,
+      "items_requiring_description": 120,
+      "source_files": 9,
+      "tests": 71,
       "tests_without_docstring": 0
     },
     "mdaf": {
@@ -195,9 +195,9 @@
     "rapp-mgmt": {
       "files_without_description": 1,
       "functions_without_description": 27,
-      "items_requiring_description": 87,
-      "source_files": 13,
-      "tests": 124,
+      "items_requiring_description": 97,
+      "source_files": 14,
+      "tests": 137,
       "tests_without_docstring": 90
     },
     "sa-smos": {

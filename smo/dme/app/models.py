@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, ForeignKey, JSON, String, UniqueConstraint, Uuid
+from sqlalchemy import ARRAY, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -116,6 +116,13 @@ class DataJob(Base):
     # Wave 3: which AI/ML lifecycle stage this job's data is for — drives
     # the Digital-Twin-excluded-from-inference eligibility check in main.py.
     lifecycle_stage: Mapped[str | None] = mapped_column(String)
+    # GUI-9.8 (revision 0035): delivery health. `expected_interval_seconds` is how often the consumer expects data (declared on the job, optional);
+    # `last_delivery_at` is when a producer last delivered a record for the job (POST /data-jobs/{id}/records; revision 0035 filled it from
+    # data_record); `late_after` is when the job turns LATE, two intervals after the last delivery (or after the job was declared, before the first
+    # one), kept as a column so `GET /data-jobs?late=` is a plain comparison in SQL. All null for a job that declares no interval.
+    expected_interval_seconds: Mapped[int | None] = mapped_column(Integer)
+    last_delivery_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    late_after: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class DataOffer(Base):

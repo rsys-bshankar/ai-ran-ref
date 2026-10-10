@@ -10,7 +10,7 @@
 | Called by | Operators and GUI BFF; the rApp container itself (`bootstrap-complete`, `performance` and `operator-api`, each for its own instance only, and reads of its own `config`; the gateway refuses an rApp the other changes, `PUT config` and `fault`, which are an operator's); R1 Termination (`GET operator-api`, to resolve `/rapps/{instanceId}/operator/...`); Intent Service (reads an instance's `autonomyMode` and `regionScope`); SA SMOS (`rollback`, `versions`); the reference rApps (read their own instance) |
 | Database tables | `rapp_instance` (versioned), `rapp_instance_version`, `rapp_fault_report`, `rapp_performance_report` |
 | Idempotency | `POST /instances` accept an `Idempotency-Key` header (`smo_shared/idempotency.py`; the `idempotency_key` table is shared, not this module's) |
-| Unit tests | 147 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 198 passed (`tests/`, SQLite, standalone) |
 | Status | Done. No open item in [`../OPEN_ITEMS.md`](../OPEN_ITEMS.md) names this module; limits in 2.8 |
 | Time-driven behaviour | On request, never on a timer: an overdue upgrade is rolled back the next time either row is touched |
 
@@ -141,7 +141,7 @@ Every mode notifies the operator, best effort.
 | `committed_at` | |
 
 **`rapp_fault_report`**: `id`, `instance_id` (FK cascade), `severity`, `description`, `reported_at`.
-**`rapp_performance_report`**: `id`, `instance_id` (FK cascade), `metrics` (JSON), `reported_at`.
+**`rapp_performance_report`**: `id`, `instance_id` (FK cascade), `metrics` (JSON), `reported_at`; index `ix_rapp_performance_report_instance_reported` on `(instance_id, reported_at)` (revision `0035`) serves the newest report per instance.
 
 ### 2.3 State machines
 
@@ -180,6 +180,9 @@ Upgrade choreography (`upgrade.py`):
 | POST | `/instances/{id}/recover` | `FAULTED → DEPLOYING` | 409 |
 | GET | `/instances/{id}/safeguards` | what holds this instance in check at RAN NF OAM, in one read, for the GUI: `{instanceId, invokerId, killed, kill?, limits?, approvalPolicy?}` (limits include `configJobsLastHour`); a terminated instance has `invokerId` null; 503 when RAN NF OAM cannot answer, never reported as "not stopped" | 404; 503 |
 | PUT / DELETE | `/instances/{id}/kill` | `{requestedBy, reason?}`: throws / lifts the per-rApp kill switch at RAN NF OAM for this instance's `oauthClientId` (`AI-10.4`); the instance keeps running; 503 if RAN NF OAM cannot be told, 404 once terminated. Internal-only at R1 | 404; 503 |
+| PUT | `/kill-all` | `GUI-9.6`, the global stop: `{requestedBy, reason?}` throws the kill switch of every instance that is not `UNDEPLOYED`, one at a time through the same RAN NF OAM call as the per-instance `PUT .../kill`. An instance already stopped keeps its first stop (author, reason, time). Answers `{stopped, alreadyStopped, failed: [{instanceId, error}]}`: one refusal does not undo or block the others. Reads RAN NF OAM's paged `GET /rapp-kill` first; 503 when it cannot, and then nothing was changed. Internal-only at R1 | 503 |
+| DELETE | `/kill-all` | Lifts the switch of every stopped instance that is not `UNDEPLOYED` (the per-instance lift, for each); a stopped invoker that is not one of this module's instances is left alone. `{resumed, failed: [{instanceId, error}]}`. Internal-only at R1 | 503 |
+| GET | `/kill-all` | `{stopped, instances}`: how many instances that are not `UNDEPLOYED` are stopped now, out of how many. Internal-only at R1 | 503 (never reported as 0) |
 | POST | `/instances/{id}/credentials` | `{instanceId, oauthClientId, oauthClientSecret}`, issued once (`Cache-Control: no-store`, not an idempotent command, the secret is not stored); a new call rotates. DEPLOYING only. With `RAPP_CREDENTIAL_DELIVERY=kubernetes` the secret goes to the instance's Kubernetes Secret instead and the answer is `{instanceId, oauthClientId, credentialSecret: <name>}` | 404; 409; 503 (SME) |
 | POST | `/instances/{id}/upgrade` | `{newPackageId}` → `{newInstanceId, oldInstanceState, oauthClientId}` | 409; 404/409 from provisioning |
 | POST | `/instances/{id}/upgrade/resolve?succeeded=` | Commit or roll back; answers `{instanceId, state, packageId}` of the survivor | 404 (none pending); 409 `LIFECYCLE_ILLEGAL_TRANSITION`; 409 `RAPP_UPGRADE_TIMED_OUT` |
@@ -190,6 +193,8 @@ Upgrade choreography (`upgrade.py`):
 | GET, PUT | `/instances/{id}/config` | Read, replace `configuration` (any JSON object) | 404 |
 | POST | `/instances/{id}/performance` | Record a metrics object. Own instance only for an rApp, as `bootstrap-complete` | 403 `NOT_THIS_INSTANCE`; 404 |
 | GET | `/instances/{id}/performance` | Paged, newest first | 404 |
+| GET | `/instances/{id}/performance/latest` | `GUI-9.8`, the rApp's headline KPI: `{instanceId, at, metrics: {name: number}}`, the numeric top-level values of its newest report. Never 404: `at` null and `metrics` `{}` when there is no report or no such instance | |
+| GET | `/instances/performance/latest?ids=a,b,c` | The same for up to 50 instances in one query: `{items: [...]}` one per id, in the order given, duplicates once | 422 `SCHEMA_VALIDATION_FAILED` (more than 50 ids, or one that is not a UUID) |
 | POST | `/instances/{id}/fault?severity=&description=` | Record; `severity=critical` fires `CRASH` | 409 (critical on a non-`RUNNING` instance) |
 | GET | `/instances/{id}/faults` | Paged, newest first | 404 |
 
@@ -265,7 +270,8 @@ cd smo/rapp-mgmt && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Upgrade orchestration: complete replacement, refused packages (409, 404), refused non-running instance before provisioning, commit retires old, commit of an already bootstrapped replacement, commit refused for a crashed replacement, auto rollback, lazy timeout, NFO failure recorded not raised | 11 |
 | `tests/test_approval_policy.py` | `AI-11.4`: an `ASSIST` instance with a policy has it pushed under its client id at bootstrap (nothing before), the defaults are the conservative ones, a policy on `AUTONOMOUS` or `SHADOW` is a 422, bounds, an instance without a policy behaves as before in every mode, a policy that cannot be put in force keeps the instance `DEPLOYING` (never running and writing at once), terminate removes it, an upgrade keeps it and the version snapshot holds it | 16 |
 | `tests/test_business_metrics.py` | `smo_rapp_instances` counts instances by state with every `InstanceState` present | 1 |
-| | Total | 89 |
+| `tests/test_global_stop_and_latest_kpi.py` | `GUI-9.6` global stop: every live instance stopped through the per-instance call, an already stopped one keeps its first stop, a terminated one is left out, a refusal is listed while the others stay stopped, an unreadable stop list (500, unreachable) changes nothing on stop, resume and count, the list is read page by page, resume lifts only this module's stopped instances and lists a refusal, the count. `GUI-9.8` latest KPI: the newest report's numbers only, no report and no instance are an empty answer (never 404), the batched read in the given order, more than 50 or malformed ids are 422 | 15 |
+| | Total | 104 |
 
 ### 3.3 What is not covered here
 
