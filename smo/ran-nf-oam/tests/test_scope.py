@@ -194,7 +194,8 @@ def test_the_scope_is_checked_before_the_rate_limit_counts_the_job(client, place
 # ---- SEC-10.4: rollback
 
 def test_a_rollback_needs_every_element_the_job_wrote_to(client, places):
-    original = _write(client, ["ME-1", "ME-3"], GUI).json()["jobId"]            # an operator wrote to an eu and a us element
+    allowed = {**UNSCOPED, SCOPE_HEADER: claim(regions=["eu", "us"])}
+    original = _write(client, ["ME-1", "ME-3"], allowed).json()["jobId"]         # the same rApp, with a wider claim, wrote to an eu and a us element (PR-SEC-10.11: its own job)
     before = _jobs(places)
     refused = client.post(f"/config-jobs/{original}/rollback", headers=EU, json={"requestedBy": "es-rapp"})
     assert refused.status_code == 403 and _title(refused) == "SCOPE_DENIED"
@@ -202,7 +203,6 @@ def test_a_rollback_needs_every_element_the_job_wrote_to(client, places):
     assert client.post(f"/config-jobs/{original}/rollback", headers=EU, json={"requestedBy": "es-rapp", "dryRun": True}).status_code == 403
     assert _jobs(places) == before and places["values"]["ME-1"] == "20"
     assert client.get("/safeguard-refusals").json()["items"][0]["refusal"] == "SCOPE_DENIED"
-    allowed = {**UNSCOPED, SCOPE_HEADER: claim(regions=["eu", "us"])}
     assert client.post(f"/config-jobs/{original}/rollback", headers=allowed, json={"requestedBy": "es-rapp"}).status_code == 202
     assert places["values"]["ME-1"] == "10" and places["values"]["ME-3"] == "10"
 
@@ -298,9 +298,10 @@ def test_the_element_views_are_scoped(client, places):
 
 
 def test_the_jobs_a_caller_sees_are_the_ones_inside_its_scope(client, places):
-    inside = _write(client, ["ME-1", "ME-2"], GUI).json()["jobId"]
-    mixed = _write(client, ["ME-1", "ME-3"], GUI).json()["jobId"]
-    outside = _write(client, ["ME-3"], GUI).json()["jobId"]
+    wide = {**UNSCOPED, SCOPE_HEADER: claim(regions=["eu", "us"])}                  # the same rApp, with a wider claim: the jobs are its own (PR-SEC-10.11), only the scope hides them
+    inside = _write(client, ["ME-1", "ME-2"], wide).json()["jobId"]
+    mixed = _write(client, ["ME-1", "ME-3"], wide).json()["jobId"]
+    outside = _write(client, ["ME-3"], wide).json()["jobId"]
     listed = lambda headers: {j["jobId"] for j in client.get("/config-jobs", headers=headers).json()["items"]}      # noqa: E731
     assert listed({}) == {inside, mixed, outside} and listed(EU) == {inside}
     assert client.get(f"/config-jobs/{inside}", headers=EU).status_code == 200

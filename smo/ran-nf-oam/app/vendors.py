@@ -48,7 +48,7 @@ from smo_shared import scope as authz_scope
 from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
 from smo_shared.webhook import get_webhook
 
-from . import scoping
+from . import msac, scoping
 from .ldn import leaf_class
 from .leafcheck import check_value
 from .models import CMSchemaCache, ManagedEntity, O1AdaptorEndpoint, VendorCapability
@@ -152,18 +152,40 @@ def load_cm_schema(body: CMSchemaBody, db: Session = Depends(get_session)):
     return _schema_view(row.schema_name, row.revision, row.type, row.location, row.descriptor, builtin=False)
 
 
+def _visible_schema_keys(db: Session, scope: authz_scope.Scope | None) -> set[tuple[str, str]] | None:
+    """PR-SEC-10.9: the loaded CM schemas a caller with a scope claim may read, as (name, revision): the ones the capability entries of its elements' vendors name (the
+    vendor's own and the spec one). `None`: every one (an unscoped caller). The schemas bundled with the service are the 3GPP and O-RAN models, the same for every
+    deployment and about no element, and are shown to every caller."""
+    if scope is None:
+        return None
+    caps = db.scalars(select(VendorCapability).where(VendorCapability.vendor_name.in_(scoping.visible_vendor_names(scope)))).all()
+    keys: set[tuple[str, str]] = set()
+    for cap in caps:
+        if cap.schema_name:
+            keys.add((cap.schema_name, cap.schema_revision or ""))
+        if cap.spec_schema_name:
+            keys.add((cap.spec_schema_name, cap.spec_schema_revision or ""))
+    return keys
+
+
 @router.get("/cm-schemas")
-def list_cm_schemas(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+def list_cm_schemas(request: Request, limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    """The CM schemas, the ones bundled with the service and the ones loaded. PR-SEC-10.9: a caller with a scope claim sees the loaded ones its elements' vendors use."""
+    visible = _visible_schema_keys(db, scoping.request_scope(request))
     rows = [_schema_view(r.schema_name, r.revision, r.type, r.location, r.descriptor, builtin=False)
-            for r in db.scalars(select(CMSchemaCache).order_by(CMSchemaCache.schema_name, CMSchemaCache.revision))]
+            for r in db.scalars(select(CMSchemaCache).order_by(CMSchemaCache.schema_name, CMSchemaCache.revision))
+            if visible is None or (r.schema_name, r.revision) in visible]
     builtins = [_schema_view(n, rev, d["type"], d["location"], d, builtin=True) for (n, rev), d in _builtin_schemas().items()]
     return paginate_list(builtins + rows, limit, offset)
 
 
 @router.get("/cm-schemas/{schema_name}")
-def get_cm_schema(schema_name: str, revision: str = "", db: Session = Depends(get_session)):
+def get_cm_schema(schema_name: str, request: Request, revision: str = "", db: Session = Depends(get_session)):
+    """One schema with its descriptor. PR-SEC-10.9: a loaded schema that is not one of a caller's elements' vendors is a 404 for a caller with a scope claim (a bundled
+    schema of the same name and revision, when there is one, is shown in its place)."""
+    visible = _visible_schema_keys(db, scoping.request_scope(request))
     row = db.get(CMSchemaCache, (schema_name, revision))
-    if row is not None:
+    if row is not None and (visible is None or (schema_name, revision) in visible):
         return _schema_view(row.schema_name, row.revision, row.type, row.location, row.descriptor, builtin=False, full=True)
     builtin = _builtin_schemas().get((schema_name, revision))
     if builtin is None:
@@ -228,15 +250,23 @@ def declare_vendor_capability(vendor_name: str, body: VendorCapabilityBody, db: 
     return _capability_view(cap)
 
 
+def _vendor_capabilities(scope: authz_scope.Scope | None):
+    """The capability entries a caller may read: every one for an unscoped caller; for one with a scope claim (PR-SEC-10.9) the entries of the vendors of its own
+    elements. The registry has no element, region or tenant of its own, so this is derived: an entry that no element in the caller's scope uses is not shown."""
+    stmt = select(VendorCapability)
+    return stmt if scope is None else stmt.where(VendorCapability.vendor_name.in_(scoping.visible_vendor_names(scope)))
+
+
 @router.get("/vendor-capabilities")
-def list_vendor_capabilities(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
-    page = paginate(db, select(VendorCapability).order_by(VendorCapability.vendor_name), limit, offset)
+def list_vendor_capabilities(request: Request, limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    page = paginate(db, _vendor_capabilities(scoping.request_scope(request)).order_by(VendorCapability.vendor_name), limit, offset)
     return {**page, "items": [_capability_view(c) for c in page["items"]]}
 
 
 @router.get("/vendor-capabilities/{vendor_name}")
-def get_vendor_capability(vendor_name: str, db: Session = Depends(get_session)):
-    cap = db.get(VendorCapability, vendor_name)
+def get_vendor_capability(vendor_name: str, request: Request, db: Session = Depends(get_session)):
+    """One vendor's capability entry. PR-SEC-10.9: for a caller with a scope claim, 404 when none of its elements is of that vendor, as if there were no entry."""
+    cap = db.scalars(_vendor_capabilities(scoping.request_scope(request)).where(VendorCapability.vendor_name == vendor_name)).one_or_none()
     if cap is None:
         raise framework_error(FrameworkError.VENDOR_CAPABILITY_NOT_FOUND, detail=f"no capability registered for vendor {vendor_name!r}")
     return _capability_view(cap)
@@ -251,10 +281,10 @@ def delete_vendor_capability(vendor_name: str, db: Session = Depends(get_session
 
 
 @router.get("/capabilities")
-def o1_capabilities(db: Session = Depends(get_session)):
+def o1_capabilities(request: Request, db: Session = Depends(get_session)):
     """What this RAN NF OAM can drive across every registered vendor —
-    `supportedVendorModes` is the union of the vendors' declared modes."""
-    caps = db.scalars(select(VendorCapability)).all()
+    `supportedVendorModes` is the union of the vendors' declared modes. PR-SEC-10.9: for a caller with a scope claim, across the vendors of its own elements."""
+    caps = db.scalars(_vendor_capabilities(scoping.request_scope(request))).all()
     return {"supportedVendorModes": sorted({m for c in caps for m in c.supported_vendor_modes}),
             "mnsServices": MNS_SERVICES,
             "vendors": [{"vendorName": c.vendor_name, "supportedVendorModes": c.supported_vendor_modes,
@@ -441,6 +471,7 @@ def list_managed_entities(request: Request, vendor_name: str | None = None, regi
     """The registered managed elements. `region` and `tenant` narrow the list (PR-SEC-10.2). A caller with a scope claim sees only the elements inside it
     (PR-SEC-10.6: the list is filtered, never refused)."""
     stmt = scoping.scoped_to_elements(select(ManagedEntity), scoping.request_scope(request), ManagedEntity.managed_element_ref).order_by(ManagedEntity.managed_element_ref)
+    stmt = msac.readable(stmt, db, request, ManagedEntity.managed_element_ref)                       # MGT-2.6: the elements the caller's access rules do not let it read are left out
     if region:
         stmt = stmt.where(ManagedEntity.region == region)
     if tenant:
@@ -483,7 +514,8 @@ def set_managed_entity_scope(managed_element_ref: str, body: ScopeBody, db: Sess
 
 
 @router.put("/managed-entities/{managed_element_ref}/cells/{cell_id}/guards")
-def set_cell_guards(managed_element_ref: str, cell_id: str, body: CellGuardBody, db: Session = Depends(get_session)):
+def set_cell_guards(managed_element_ref: str, cell_id: str, body: CellGuardBody, request: Request, db: Session = Depends(get_session)):
+    scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])        # PR-SEC-10.9: 403 SCOPE_DENIED outside the caller's scope
     me = _get_me(db, managed_element_ref)
     me.cell_guards = {**(me.cell_guards or {}), cell_id: body.model_dump()}  # reassign: JSON columns don't track in-place edits
     db.commit()
@@ -491,7 +523,8 @@ def set_cell_guards(managed_element_ref: str, cell_id: str, body: CellGuardBody,
 
 
 @router.delete("/managed-entities/{managed_element_ref}/cells/{cell_id}/guards", status_code=204)
-def delete_cell_guards(managed_element_ref: str, cell_id: str, db: Session = Depends(get_session)):
+def delete_cell_guards(managed_element_ref: str, cell_id: str, request: Request, db: Session = Depends(get_session)):
+    scoping.require_elements(db, scoping.request_scope(request), [managed_element_ref])        # PR-SEC-10.9: 403 SCOPE_DENIED outside the caller's scope
     me = _get_me(db, managed_element_ref)
     if cell_id in (me.cell_guards or {}):
         me.cell_guards = {k: v for k, v in me.cell_guards.items() if k != cell_id}
@@ -505,6 +538,7 @@ def query_cell_guards(request: Request, managed_element_ref: str | None = None, 
     """The guard query any rApp uses (e.g. the EnergySaving rApp never
     sleeps an EMERGENCY cell, nor two cells of one sectorGroup at once). PR-SEC-10.6: only the elements inside the caller's scope claim."""
     stmt = scoping.scoped_to_elements(select(ManagedEntity), scoping.request_scope(request), ManagedEntity.managed_element_ref).order_by(ManagedEntity.managed_element_ref)
+    stmt = msac.readable(stmt, db, request, ManagedEntity.managed_element_ref)                       # MGT-2.6
     if managed_element_ref:
         stmt = stmt.where(ManagedEntity.managed_element_ref == managed_element_ref)
     items = []

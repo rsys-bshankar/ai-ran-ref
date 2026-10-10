@@ -28,13 +28,15 @@ import re
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import Select
 
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
+from smo_shared.invoker import invoker_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .ldn import parse_ldn
@@ -108,6 +110,48 @@ def authorize(db: Session, roles: list[MsacRole], target: str, operation: str) -
     if any(r.actions == "DENY" for r in matched):
         return False
     return any(r.actions == "ALLOW" for r in matched)
+
+
+def reach_on() -> bool:
+    """MGT-2: `RAN_NF_OAM_MSAC_REACH` (off by default): the access rules that guard CM writes also guard the reads and the other changes of `MGT-2`. Read at each call."""
+    return os.environ.get("RAN_NF_OAM_MSAC_REACH", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _managed_roles(db: Session, request: Request) -> tuple[str | None, list[MsacRole]] | None:
+    """(the caller's invoker id, its roles) when the switch is on and the caller is a registered Identity; `None` for every caller that is not asked."""
+    if not reach_on():
+        return None
+    requester = invoker_id(request)
+    managed, roles = resolve_roles(db, requester, None) if requester else (False, [])
+    return (requester, roles) if managed else None
+
+
+def unreadable_elements(db: Session, request: Request, column) -> list[str]:
+    """MGT-2.5/2.6: the elements named in `column` (of the rows a route would list) that a managed caller may not `read`; none for a caller that is not asked
+    (switch off, not a registered Identity, not through the gateway). A list route leaves out the rows of these elements: filtered, never refused, as the scope is."""
+    asked = _managed_roles(db, request)
+    if asked is None:
+        return []
+    _, roles = asked
+    return [ref for ref in db.scalars(select(column).distinct()).all() if not authorize(db, roles, target_path(ref, None), "read")]
+
+
+def readable(stmt: Select, db: Session, request: Request, column) -> Select:
+    """`stmt` without the rows whose element (`column`) a managed caller may not `read` (MGT-2.6); unchanged for a caller that is not asked."""
+    hidden = unreadable_elements(db, request, column)
+    return stmt.where(column.not_in(hidden)) if hidden else stmt
+
+
+def may_read_everywhere(db: Session, request: Request) -> bool:
+    """MGT-2.5/2.6: whether a caller may `read` the whole network (the root, which only a rule on `/*` selects); true for a caller that is not asked."""
+    asked = _managed_roles(db, request)
+    return asked is None or authorize(db, asked[1], "/", "read")
+
+
+def may_read(db: Session, request: Request, managed_element_ref: str) -> bool:
+    """MGT-2.6: whether a managed caller may `read` the element (true for a caller that is not asked). For the quiet routes (a delete answers 204 either way)."""
+    asked = _managed_roles(db, request)
+    return asked is None or authorize(db, asked[1], target_path(managed_element_ref, None), "read")
 
 
 # ---------------------------------------------------------------- resources
