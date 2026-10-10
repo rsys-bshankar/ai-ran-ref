@@ -8,6 +8,9 @@ SMO = Path(__file__).resolve().parent.parent
 
 
 def _routes_of_the_router() -> set[str]:
+    """The page paths the GUI's router declares (read from `gui/src/main.tsx`), plus the index page and without the login page, which the browser
+    check covers on its own.
+    """
     source = (SMO / "gui" / "src" / "main.tsx").read_text()
     routes = {"/" + path for path in re.findall(r'<Route path="([a-z][a-z0-9-]*)"', source)}
     routes.add("/")                                    # the index route (the dashboard)
@@ -16,6 +19,9 @@ def _routes_of_the_router() -> set[str]:
 
 
 def test_every_page_of_the_router_is_in_the_browser_check():
+    """The browser check's page list is exactly the router's pages, with no duplicate, so a page added to the GUI is added to the check and a
+    removed one is dropped. Playwright is stubbed because only the list is needed.
+    """
     import sys
     sys.modules.setdefault("playwright", type(sys)("playwright"))        # the script imports Playwright at the top; the page list needs none of it
     for name in ("playwright.sync_api",):

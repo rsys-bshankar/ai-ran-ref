@@ -19,12 +19,14 @@ def write(directory, name, vulns, result_type="debian"):
 
 
 def test_a_clean_scan_reports_nothing_and_passes_the_gate(tmp_path, capsys):
+    """Findings below HIGH are not reported, and with `--gate` a scan with no HIGH or CRITICAL finding passes."""
     write(tmp_path, "sme", [vuln("CVE-1", "libx", "MEDIUM"), vuln("CVE-2", "liby", "LOW")])      # below the line: not reported
     assert scan.main(["scan_summary.py", str(tmp_path), "--gate"]) == 0
     assert "No HIGH or CRITICAL finding" in capsys.readouterr().out
 
 
 def test_a_high_finding_with_a_fix_fails_the_gate_but_not_the_report(tmp_path, capsys):
+    """A HIGH finding with a fix is listed with its package and fixed version, and fails the exit status only with `--gate`."""
     write(tmp_path, "sme", [vuln("CVE-9", "libz", "HIGH")])
     assert scan.main(["scan_summary.py", str(tmp_path)]) == 0
     assert scan.main(["scan_summary.py", str(tmp_path), "--gate"]) == 1
@@ -33,6 +35,7 @@ def test_a_high_finding_with_a_fix_fails_the_gate_but_not_the_report(tmp_path, c
 
 
 def test_the_same_finding_in_many_images_is_listed_once_with_where_it_is(tmp_path):
+    """The same finding in many images is listed once with the images it is in, truncated with `and N more`."""
     for name in ("a", "b", "c", "d", "e", "f"):
         write(tmp_path, name, [vuln("CVE-5", "openssl", "CRITICAL")])
     out = scan.report(scan.load(tmp_path))
@@ -40,10 +43,12 @@ def test_the_same_finding_in_many_images_is_listed_once_with_where_it_is(tmp_pat
 
 
 def test_critical_sorts_before_high(tmp_path):
+    """Critical findings are listed before high ones whatever the package names."""
     write(tmp_path, "sme", [vuln("CVE-H", "aaa", "HIGH"), vuln("CVE-C", "zzz", "CRITICAL")])
     out = scan.report(scan.load(tmp_path))
     assert out.index("CVE-C") < out.index("CVE-H")
 
 
 def test_no_results_is_an_error_not_a_pass(tmp_path):
+    """A directory with no scan results exits 2, so a missing scan cannot pass the gate."""
     assert scan.main(["scan_summary.py", str(tmp_path), "--gate"]) == 2

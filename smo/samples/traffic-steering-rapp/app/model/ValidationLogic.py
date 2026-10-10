@@ -13,6 +13,12 @@ MAX_RMSE = 3.0
 
 def validate(model: SteeringModel, records: list[dict], layers: dict[str, str],
              holdout_fraction: float = 0.25) -> tuple[bool, dict]:
+    """Scores the forecast on the last `holdout_fraction` of each cell's windows, using only hours in which no bias changed, and returns (passed,
+    metrics).
+
+    Passes when the share of windows whose forecast band (CONGESTED, HOLD, NORMAL) matches the next hour's is at least PASS_THRESHOLD and the
+    RMSE is at most MAX_RMSE. Returns (False, {"reason": ...}) when no such row exists.
+    """
     held: list = []
     for series in by_cell(records).values():
         cut = int(len(series) * (1 - holdout_fraction))

@@ -8,6 +8,7 @@ from .series import Series, attempts, counters, dominant_cause, mro_rate, value_
 
 
 def infer(model: MobilityModel, relation: str, series: Series) -> dict | None:
+    """One prediction for a relation from its latest window and the window an hour earlier; None when the series is empty."""
     if not series:
         return None
     t, p = series[-1]

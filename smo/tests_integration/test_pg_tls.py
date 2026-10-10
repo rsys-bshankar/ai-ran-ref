@@ -43,6 +43,9 @@ def _rules(text: str) -> list[list[str]]:
 # ---------------------------------------------------------------------------------------------------------------------------- the overlay
 
 def test_the_overlay_reaches_every_service_that_opens_a_database_connection_and_no_other():
+    """The pgtls compose overlay lists every service that has `SMO_DATABASE_URL` and no other besides postgres and pgbouncer, so a service added to
+    compose cannot be left on plain text.
+    """
     base = yaml.safe_load(COMPOSE.read_text())["services"]
     uses_database = {name for name, spec in base.items() if "SMO_DATABASE_URL" in (spec.get("environment") or {})}
     overlay = yaml.safe_load(OVERLAY.read_text())["services"]
@@ -51,6 +54,9 @@ def test_the_overlay_reaches_every_service_that_opens_a_database_connection_and_
 
 
 def test_a_client_verifies_the_certificate_by_default_and_reads_the_ca_read_only():
+    """Every database client in the overlay verifies the certificate and its name (`verify-full`, overridable with `SMO_DB_SSLMODE`) against a CA
+    file mounted read-only, and pgbouncer verifies its server connection the same way.
+    """
     overlay = yaml.safe_load(OVERLAY.read_text())["services"]
     for name, spec in overlay.items():
         if name in ("postgres", "pgbouncer"):
@@ -63,6 +69,9 @@ def test_a_client_verifies_the_certificate_by_default_and_reads_the_ca_read_only
 
 
 def test_the_overlay_does_not_put_a_weaker_mode_in_any_url_or_turn_verification_off():
+    """The overlay's code (comments aside) names no weaker SSL mode and carries no database URL, which stay in docker-compose.yml: libpq reads
+    `PGSSLMODE` and `PGSSLROOTCERT` instead.
+    """
     text = OVERLAY.read_text()
     code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
     for weaker in ("sslmode=disable", "sslmode=allow", "sslmode=prefer", "sslmode=require", "PGSSLMODE: disable", "PGSSLMODE: require", "PGSSLMODE: prefer"):
@@ -71,6 +80,9 @@ def test_the_overlay_does_not_put_a_weaker_mode_in_any_url_or_turn_verification_
 
 
 def test_postgres_serves_tls_only_with_the_hba_file_and_a_key_only_it_can_read():
+    """The overlay starts Postgres with TLS on, TLS 1.2 or later, its certificate and key, the pg_hba file, and a copy of the key that only the
+    postgres user can read; it also keeps the slow-statement setting, because the overlay's command replaces the base command.
+    """
     overlay = yaml.safe_load(OVERLAY.read_text())["services"]["postgres"]
     command = " ".join(overlay["command"])
     for needed in ("ssl=on", "ssl_cert_file=/run/pgtls/tls.crt", "ssl_key_file=/run/pgtls/tls.key", "hba_file=/etc/smo/pg_hba.conf", "ssl_min_protocol_version=TLSv1.2",
@@ -82,15 +94,20 @@ def test_postgres_serves_tls_only_with_the_hba_file_and_a_key_only_it_can_read()
 
 
 def test_the_hba_file_accepts_the_network_only_as_tls():
+    """pg_hba.conf allows local sockets, requires TLS and a SCRAM password for network connections, and rejects network connections that are not
+    TLS.
+    """
     rules = _rules(HBA.read_text())
     assert rules == [["local", "all", "all", "trust"], ["hostssl", "all", "all", "all", "scram-sha-256"], ["host", "all", "all", "all", "reject"]]
 
 
 def test_the_default_stack_is_unchanged():
+    """The default compose file does not mention the overlay or any `PGSSL` setting, so TLS is on only when the overlay is added."""
     assert "pgtls" not in COMPOSE.read_text() and "PGSSL" not in COMPOSE.read_text()
 
 
 def test_pgbouncer_refuses_to_verify_without_a_ca_and_keeps_prefer_by_default():
+    """The pgbouncer entrypoint keeps `prefer` as its default server TLS mode and exits when a verifying mode is asked for without a CA file."""
     entrypoint = (SMO_ROOT / "pgbouncer" / "entrypoint.sh").read_text()
     assert "server_tls_sslmode = ${PGBOUNCER_SERVER_TLS_SSLMODE:-prefer}" in entrypoint
     assert "verify-ca|verify-full) [ -n \"$server_ca_line\" ]" in entrypoint and "exit 1" in entrypoint
@@ -99,6 +116,9 @@ def test_pgbouncer_refuses_to_verify_without_a_ca_and_keeps_prefer_by_default():
 # ---------------------------------------------------------------------------------------------------------------------------- the certificate
 
 def test_the_script_makes_the_database_a_server_certificate_that_names_postgres(tmp_path):
+    """The certificate script gives the database a server certificate from the CA, valid for `postgres` and `localhost`, with the CA file beside
+    it; `postgres` is deliberately not in the lists the mTLS overlay and its tests enumerate.
+    """
     from cryptography import x509
     from cryptography.x509.oid import ExtendedKeyUsageOID
     certs.init(tmp_path, 30)
@@ -119,6 +139,9 @@ def test_the_script_makes_the_database_a_server_certificate_that_names_postgres(
 # ---------------------------------------------------------------------------------------------------------------------------- libpq's variables from the URL
 
 def test_pg_env_takes_sslrootcert_from_the_url_and_leaves_the_environment_alone_without_one(tmp_path):
+    """`smo_pg_env` takes the SSL mode and root certificate from the database URL's parameters, and leaves values already in the environment alone
+    when the URL has none.
+    """
     script = tmp_path / "t.sh"
     script.write_text(f'. "{SMO_ROOT / "scripts" / "pg_env.sh"}"\nsmo_pg_env || exit 1\necho "mode=${{PGSSLMODE:-}} root=${{PGSSLROOTCERT:-}}"\n')
     run = lambda url, **env: subprocess.run(["bash", str(script)], capture_output=True, text=True, env={"PATH": os.environ["PATH"], "SMO_DATABASE_URL": url, **env})  # noqa: E731
@@ -135,6 +158,9 @@ needs_postgres = pytest.mark.skipif(checker.find_pg_bin() is None, reason="no in
 
 @needs_postgres
 def test_against_a_real_postgres_the_right_ca_connects_and_a_wrong_ca_or_name_or_plain_is_refused():
+    """Against a real Postgres started for the test, a client with the right CA connects and one with another CA, the wrong host name or no TLS is
+    refused (four checks). Needs the Postgres binaries.
+    """
     results = checker.spawn_and_check()
     failed = [text for ok, text in results if not ok]
     assert not failed, failed
@@ -158,6 +184,9 @@ TLS_ON = ("--set", "postgres.tls.enabled=true", "--set", "postgres.tls.certManag
 
 @helm
 def test_chart_default_has_no_postgres_tls_and_no_url_parameter():
+    """Rendered with default values the chart has no pg_hba ConfigMap, no certificate, no Postgres arguments and no TLS parameter in any URL. Needs
+    helm.
+    """
     docs = _render()
     assert not _by(docs, "ConfigMap", "postgres-hba") and not [d for d in docs if d["kind"] == "Certificate"]
     sts = _by(docs, "StatefulSet", "postgres")[0]
@@ -168,6 +197,9 @@ def test_chart_default_has_no_postgres_tls_and_no_url_parameter():
 
 @helm
 def test_chart_tls_on_postgres_serves_tls_only_with_a_certificate_from_the_issuer():
+    """With TLS on, the Postgres StatefulSet starts with the TLS options, mounts the `postgres-tls` Secret group-readable with the matching
+    fsGroup, and uses the same pg_hba rules as the compose overlay. Needs helm.
+    """
     docs = _render(*TLS_ON)
     sts = _by(docs, "StatefulSet", "postgres")[0]["spec"]["template"]["spec"]
     args = " ".join(sts["containers"][0]["args"])
@@ -185,6 +217,9 @@ def test_chart_tls_on_postgres_serves_tls_only_with_a_certificate_from_the_issue
 
 @helm
 def test_chart_tls_on_every_database_client_verifies_and_mounts_only_the_ca():
+    """With TLS on, every container that opens a database connection has a URL that verifies the certificate against the mounted CA, and mounts
+    only the CA, not the server key. Needs helm.
+    """
     docs = _render(*TLS_ON)
     checked = 0
     for doc in _by(docs, "Deployment") + _by(docs, "Job"):
@@ -204,6 +239,9 @@ def test_chart_tls_on_every_database_client_verifies_and_mounts_only_the_ca():
 
 @helm
 def test_chart_tls_with_cert_manager_needs_an_issuer_and_does_not_touch_an_external_postgres():
+    """cert-manager mode without an issuer name fails to render, and with an external Postgres the chart sets up no TLS of its own and passes the
+    external SSL mode through. Needs helm.
+    """
     result = subprocess.run(["helm", "template", "smo", str(CHART), "-n", "smo", "--kube-version", "1.30.0", "--set", "postgres.tls.enabled=true", "--set", "postgres.tls.certManager.enabled=true"],
                             capture_output=True, text=True)
     assert result.returncode != 0 and "issuerRef.name" in result.stderr

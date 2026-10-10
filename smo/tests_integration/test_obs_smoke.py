@@ -20,6 +20,9 @@ TID = "4bf92f3577b34da6a3ce929d0e0e4736"
 
 
 def test_trace_id_and_traceparent_are_valid_w3c():
+    """A new trace id is 32 hex characters and not all zero, and the traceparent header has the W3C shape with a non-zero span id and the sampled
+    flag.
+    """
     tid = obs.new_trace_id()
     assert re.fullmatch(r"[0-9a-f]{32}", tid) and int(tid, 16)
     header = obs.make_traceparent(tid)
@@ -28,6 +31,7 @@ def test_trace_id_and_traceparent_are_valid_w3c():
 
 
 def test_count_spans_reads_v1_and_v2_envelopes_and_ignores_the_rest():
+    """The span counter reads both Tempo answer shapes and counts nothing for an empty, missing or malformed answer."""
     v1 = {"batches": [{"scopeSpans": [{"spans": [{"name": "a"}, {"name": "b"}]}]}, {"scopeSpans": [{"spans": [{"name": "c"}]}]}]}
     v2 = {"trace": {"resourceSpans": [{"scopeSpans": [{"spans": [{"name": "a"}]}]}]}}
     assert obs.count_spans(v1) == 3 and obs.count_spans(v2) == 1
@@ -36,12 +40,14 @@ def test_count_spans_reads_v1_and_v2_envelopes_and_ignores_the_rest():
 
 
 def test_ready_needs_200_and_the_word_ready():
+    """A Tempo or Loki readiness answer counts only as 200 with the word `ready`, so a 503 whose message contains `ready` does not."""
     assert obs.is_ready(200, "ready\n") and obs.is_ready(200, "Ready")
     assert not obs.is_ready(503, "Ingester not ready: waiting for 15s after being ready")
     assert not obs.is_ready(200, "starting") and not obs.is_ready(0, "URLError")
 
 
 def test_loki_query_is_the_documented_one():
+    """The Loki query is the documented one, selecting job `smo`, parsing JSON and matching the trace id."""
     assert obs.loki_query(TID) == '{job="smo"} | json | traceId="' + TID + '"'
 
 
@@ -52,6 +58,9 @@ def _loki_answer(*lines, result_type="streams"):
 
 
 def test_find_request_line_requires_the_line_itself_to_carry_the_trace_id():
+    """A log line matches only when its own `traceId` field is the id and it is a JSON object in a streams answer; a line that merely mentions the
+    id, and a broken answer, are not a match.
+    """
     mine = json.dumps({"logger": "smo.access", "traceId": TID, "status": 200})
     other = json.dumps({"logger": "smo.access", "traceId": "0" * 31 + "1"})
     assert obs.find_request_line(_loki_answer(other, "not json", mine), TID)["status"] == 200
@@ -64,10 +73,12 @@ def test_find_request_line_requires_the_line_itself_to_carry_the_trace_id():
 
 
 def test_tempo_echo():
+    """The Tempo echo check needs 200 and a body."""
     assert obs.tempo_echo_ok(200, "echo\n") and not obs.tempo_echo_ok(200, "") and not obs.tempo_echo_ok(502, "echo")
 
 
 def test_grafana_checks():
+    """Grafana's data source check needs 200 and an OK status, and its health check needs 200 and a working database."""
     assert obs.datasource_ok(200, {"status": "OK", "message": "Data source is working"})
     assert not obs.datasource_ok(200, {"status": "ERROR"}) and not obs.datasource_ok(500, {"status": "OK"})
     assert not obs.datasource_ok(200, None) and not obs.datasource_ok(404, {"message": "not found"})
@@ -76,6 +87,7 @@ def test_grafana_checks():
 
 
 def test_retry_until_stops_at_success_and_at_the_deadline():
+    """`retry_until` stops at the first success, and otherwise keeps trying at the interval until the deadline and returns the last failure."""
     now = [0.0]
     slept = []
 
@@ -135,6 +147,7 @@ class FakeStack:
 
 
 def run(monkeypatch, capsys, stack):
+    """Runs the smoke script's `main` against a fake HTTP layer with no sleeping and a zero deadline, and returns (exit code, printed output)."""
     monkeypatch.setattr(obs, "http", stack.http)
     monkeypatch.setattr(obs, "http_json", stack.http_json)
     monkeypatch.setattr(obs.time, "sleep", lambda s: None)
@@ -143,18 +156,21 @@ def run(monkeypatch, capsys, stack):
 
 
 def test_a_healthy_stack_passes_and_the_output_holds_no_header_or_body(monkeypatch, capsys):
+    """A healthy fake stack passes and the output holds no request header or response body."""
     code, out = run(monkeypatch, capsys, FakeStack())
     assert code == 0 and "all observability checks passed" in out and "FAIL" not in out
     assert "traceparent" not in out.lower() and "database" not in out
 
 
 def test_each_missing_part_fails_the_run(monkeypatch, capsys):
+    """Each missing part (no trace, no log line, Tempo not reachable from Grafana) fails the run with its own message."""
     for kwargs, name in (({"spans": False}, "trace is found"), ({"log": False}, "log line"), ({"tempo_source": "ERROR"}, "reaches Tempo")):
         code, out = run(monkeypatch, capsys, FakeStack(**kwargs))
         assert code == 1 and "FAIL" in out and name in out, (kwargs, out)
 
 
 def test_a_gateway_that_does_not_answer_fails_before_the_lookups(monkeypatch, capsys):
+    """A gateway that answers 401 fails the run before any trace lookup is made."""
     stack = FakeStack(gateway=401)
     code, out = run(monkeypatch, capsys, stack)
     assert code == 1 and "answered 401" in out
@@ -162,6 +178,9 @@ def test_a_gateway_that_does_not_answer_fails_before_the_lookups(monkeypatch, ca
 
 
 def test_the_ci_job_runs_this_script_against_both_profiles_and_dumps_the_three_services_on_failure():
+    """The `obs-stack` CI job runs this script against the tracing and logging profiles, dumps the four services' logs on failure and pins every
+    action by commit hash.
+    """
     workflow = yaml.safe_load((SMO_ROOT.parent / ".github" / "workflows" / "smo-tests.yml").read_text())
     job = workflow["jobs"]["obs-stack"]
     text = yaml.safe_dump(job)
@@ -175,6 +194,9 @@ def test_the_ci_job_runs_this_script_against_both_profiles_and_dumps_the_three_s
 
 
 def test_the_compose_services_the_script_talks_to_exist_with_the_ports_it_assumes():
+    """Tempo, Loki and Grafana are in the compose profiles the script assumes, on the ports it uses (3200 and 3100), with the two data source ids
+    it looks up.
+    """
     compose = yaml.safe_load((SMO_ROOT / "docker-compose.yml").read_text())["services"]
     assert compose["tempo"]["profiles"] == ["tracing"] and set(compose["loki"]["profiles"]) == {"logging"}
     assert set(compose["grafana"]["profiles"]) == {"tracing", "logging"}

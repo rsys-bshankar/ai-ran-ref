@@ -17,6 +17,9 @@ HOUR = datetime.timedelta(hours=1)
 
 
 def _deltas(series: Series, t: datetime.datetime) -> tuple[dict, dict] | None:
+    """How the cell's CIO and priority biases changed between the window at `t` and the one an hour later, as ({target: dCIO}, {layer: dPriority});
+    None when either window is missing.
+    """
     before, after = at(series, t), at(series, t + HOUR)
     if before is None or after is None:
         return None
@@ -56,6 +59,7 @@ def transitions(records: list[dict], layers: dict[str, str]) -> list[dict]:
 
 
 def profile(rows: list[dict]) -> list[float]:
+    """The mean change of the score from each hour to the next (24 values, 0 for an hour with no rows), over rows in which no bias changed."""
     by_hour = defaultdict(list)
     for r in rows:
         if r["xc"] == 0 and r["xi"] == 0:
@@ -64,6 +68,10 @@ def profile(rows: list[dict]) -> list[float]:
 
 
 def train(records: list[dict], layers: dict[str, str], version: str = "1.0.0") -> tuple[SteeringModel, dict]:
+    """Learns the profile, the forecast weights and the transfer per CIO dB and per priority step and returns the model with its metrics; raises
+    ValueError (the route answers 422 TRAINING_FAILED) when there are fewer than 24 rows or fewer than 6 in which a bias changed, because the
+    transfer cannot be told apart then.
+    """
     rows = transitions(records, layers)
     steered = [r for r in rows if r["xc"] or r["xi"]]
     if len(rows) < 24 or len(steered) < 6:

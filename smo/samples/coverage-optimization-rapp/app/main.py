@@ -71,6 +71,7 @@ KNOBS = {"digitalTilt": ("CommonBeamformingFunction", TILT_TARGET),
 
 
 class RappError(Exception):
+    """An error this rApp raises on purpose; `_rapp_error` answers it as `{detail: {title, status, detail}}` with `status` as the HTTP status."""
     def __init__(self, status: int, title: str, detail: str):
         self.status, self.title, self.detail = status, title, detail
 
@@ -98,6 +99,7 @@ def _instance(db: Session, instance_id: uuid.UUID) -> CoverageInstance:
 
 
 def _cells(db: Session, inst: CoverageInstance) -> dict[str, CoverageCell]:
+    """Returns the instance's cell rows by cell id, adding (not committing) a row for any configured cell that has none yet; the caller commits."""
     rows = {r.cell_id: r for r in db.scalars(select(CoverageCell).where(CoverageCell.instance_id == inst.instance_id))}
     for cell in inst.cells:
         if cell not in rows:
@@ -159,6 +161,10 @@ def _decision(inst, execution_id: str, reason: str) -> dict:
 
 
 def _execute_direct(inst: CoverageInstance, settings: dict[str, dict], execution_id: str, reason: str) -> dict:
+    """Sends one write straight to DME `/actions` with a fresh actionId and returns {path, actionId, status, ...}.
+
+    A platform error is returned as status REJECTED with the error body, not raised, so the caller's verification read decides what happened.
+    """
     action_id = str(uuid.uuid4())
     try:
         result = sdk.platform.execute_action(
@@ -211,6 +217,9 @@ def _changed_knob(d: CoverageDecision) -> tuple[str, int]:
 
 
 def _expectation(inst: CoverageInstance, d: CoverageDecision) -> dict:
+    """Builds the one TS 28.312 DELIVER expectation for a decision: the cell, and the knob that changes with its new value as an IS_EQUAL_TO
+    target. Its id (`cco-<cell>-<first 8 of the execution id>`) is how the Intent's fulfilment report is matched back to the cell.
+    """
     knob, value = _changed_knob(d)
     return {"expectationId": f"cco-{d.cell_id}-{d.execution_id[:8]}", "expectationVerb": "DELIVER",
             "expectationObject": {"objectType": "RAN_SUBNETWORK", "objectInstance": inst.managed_element_ref,
@@ -268,6 +277,11 @@ def _follow_dispatch(db: Session, inst: CoverageInstance, rows: dict[str, Covera
 
 
 def _reconcile(db: Session, inst: CoverageInstance) -> list[dict]:
+    """Settles the instance's pending ASSIST dispatch once the operator has resolved it.
+
+    Returns [] when nothing is pending or the dispatch is still AWAITING_SCOPE; otherwise follows the dispatch (verify, roll back, start
+    observing), commits, and returns one summary with each cell's outcome.
+    """
     pending = inst.pending_dispatch
     if not pending:
         return []
@@ -324,15 +338,18 @@ def start_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.get("/instances")
 def list_instances(db: Session = Depends(get_session)):
+    # Lists every started instance, oldest first.
     return {"items": [_instance_view(i) for i in db.scalars(select(CoverageInstance).order_by(CoverageInstance.created_at))]}
 
 
 @app.get("/instances/{instance_id}")
 def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Returns one instance; 404 INSTANCE_NOT_STARTED when `start` was never called for it.
     return _instance_view(_instance(db, instance_id))
 
 
 def _instance_view(i: CoverageInstance) -> dict:
+    """The JSON shape of an instance on every route that returns one."""
     return {"instanceId": str(i.instance_id), "packageId": str(i.package_id) if i.package_id else None,
             "managedElementRef": i.managed_element_ref, "cells": i.cells, "baselineTilt": i.baseline_tilt,
             "baselinePower": i.baseline_power, "autonomyMode": i.autonomy_mode, "rmihId": i.rmih_id,
@@ -386,6 +403,8 @@ def train(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.post("/instances/{instance_id}/lifecycle/validate")
 def validate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # VALIDATION on MLVF: scores the stored model on the held-out part of the TRAINING dataset and records the job. Needs a trained model
+    # (`inst.model_params`); 404 INSTANCE_NOT_STARTED for an unknown instance.
     inst = _instance(db, instance_id)
     job = sdk.lifecycle.start_validation(inst.model_id, RAPP_ID, package_id=inst.package_id,
                                          training_job_id=(inst.lifecycle_jobs or {}).get("training"),
@@ -470,6 +489,9 @@ def _critical_alarms(inst: CoverageInstance) -> AlarmScope:
 
 
 def _record(db, inst, execution_id, cell, state, **kw) -> CoverageDecision:
+    """Adds one audit row (CoverageDecision) for a cell, taking the observed time, report count and shares from its latest window; `outcome` starts
+    as NONE and the caller sets it once the write is known. Not committed here.
+    """
     s = state.get(cell) or {}
     d = CoverageDecision(execution_id=execution_id, instance_id=inst.instance_id, cell_id=cell, observed_at=s.get("observedAt"),
                          reports=s.get("total"), shares=s.get("shares"), outcome="NONE", **kw)
@@ -617,12 +639,15 @@ def _plan_pass(db, inst, rows, state, model, now, execution_id, out) -> dict[str
 
 @app.post("/instances/{instance_id}/reconcile")
 def reconcile(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Settles a pending ASSIST dispatch now (the same step `evaluate` runs first); returns {settled: [...]}, empty when there is nothing to
+    # settle.
     return {"settled": _reconcile(db, _instance(db, instance_id))}
 
 
 # ---------------------------------------------------------------- audit + dashboard
 
 def _decision_view(d: CoverageDecision) -> dict:
+    """The JSON shape of one audit row, as the decisions list, the evaluate answer and the dashboard return it."""
     return {"decisionId": str(d.decision_id), "executionId": d.execution_id, "cellId": d.cell_id,
             "observedAt": d.observed_at.isoformat() if d.observed_at else None, "reports": d.reports, "shares": d.shares,
             "prediction": d.prediction, "safety": d.safety, "decision": d.decision, "reason": d.reason,
@@ -634,6 +659,7 @@ def _decision_view(d: CoverageDecision) -> dict:
 @app.get("/instances/{instance_id}/decisions")
 def list_decisions(instance_id: uuid.UUID, cell_id: str | None = None, execution_id: str | None = None,
                    limit: int = 100, db: Session = Depends(get_session)):
+    # Audit rows of an instance, newest first; filtered by cell_id and execution_id when given; `limit` is capped at 500.
     stmt = select(CoverageDecision).where(CoverageDecision.instance_id == instance_id)
     if cell_id:
         stmt = stmt.where(CoverageDecision.cell_id == cell_id)
@@ -650,6 +676,8 @@ def _cell_view(r: CoverageCell) -> dict:
 
 @app.get("/instances/{instance_id}/cells")
 def list_cells(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # The instance's cells with their state and tilt/power; creates the missing rows and commits, so a freshly started instance lists all its
+    # cells.
     inst = _instance(db, instance_id)
     rows = _cells(db, inst)
     db.commit()
@@ -681,11 +709,13 @@ def dashboard(instance_id: uuid.UUID, points: int = 48, db: Session = Depends(ge
 
 @app.post("/sim-producer/register", status_code=201)
 def register_sim_producer():
+    # Registers the COVERAGE_PERFORMANCE_SIM data type at DME with this rApp as the Digital Twin producer (201).
     return register_sim_type(sdk)
 
 
 @app.post("/sim-producer/publish")
 def publish_sim_data(body: SimPublishRequest):
+    # Generates the requested clusters' windows and delivers them to every data job of the sim type.
     return publish_sim(sdk, body)
 
 

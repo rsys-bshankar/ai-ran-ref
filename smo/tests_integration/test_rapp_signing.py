@@ -33,12 +33,17 @@ def cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
 
 
 def test_there_are_four_committed_sample_packages():
+    """The committed sample packages are exactly the four expected, so one cannot be added or dropped unnoticed."""
     assert [c.name for c in COMMITTED] == ["coverage-optimization-rapp.csar", "energy-saving-rapp.csar", "mobility-optimization-rapp.csar",
                                            "traffic-steering-rapp.csar"]
 
 
+# One case per committed package.
 @pytest.mark.parametrize("csar", COMMITTED, ids=lambda p: p.stem)
 def test_each_committed_package_is_signed_and_equals_a_rebuild_from_its_sources(csar):
+    """Each committed package equals a rebuild from its sources, is signed by the demo publisher and holds the digest and signature files; a stale
+    package fails here with the rebuild command.
+    """
     assert _builder().build_bytes(csar.stem) == csar.read_bytes(), f"rebuild: python3 samples/build_csar.py {csar.stem}"
     verified = cs.verify_csar(csar.read_bytes(), cs.load_trust_store(DEMO_DIR))
     assert verified.publisher == "demo-publisher"
@@ -47,12 +52,14 @@ def test_each_committed_package_is_signed_and_equals_a_rebuild_from_its_sources(
 
 
 def test_a_sample_is_rejected_by_a_trust_store_that_does_not_hold_the_demo_key(tmp_path):
+    """A sample is rejected as an unknown publisher by a trust store that lacks the demo key."""
     (tmp_path / "someone-else.pub").write_bytes(cs.generate_keypair()[1])
     with pytest.raises(cs.SignatureError, match="unknown publisher"):
         cs.verify_csar(COMMITTED[0].read_bytes(), cs.load_trust_store(tmp_path))
 
 
 def test_an_unsigned_build_has_neither_entry_and_a_build_with_another_key_names_that_key(tmp_path):
+    """An unsigned build has no signing files, and a build with another key verifies as that publisher and differs from the committed package."""
     builder = _builder()
     with zipfile.ZipFile(io.BytesIO(builder.build_bytes("energy-saving-rapp", sign=False))) as z:
         assert not cs.is_signed(z.namelist())
@@ -69,12 +76,16 @@ def test_an_unsigned_build_has_neither_entry_and_a_build_with_another_key_names_
 # ------------------------------------------------------------------------------------------------------------------------------ the CLI
 
 def test_the_cli_verifies_the_samples_against_the_demo_trust_store():
+    """The CLI verifies all four samples against the demo trust store and names the demo publisher."""
     done = cli("verify", *map(str, COMMITTED), "--trust", str(DEMO_DIR))
     assert done.returncode == 0, done.stderr
     assert done.stdout.count("OK ") == 4 and "signed by demo-publisher" in done.stdout
 
 
 def test_the_cli_round_trip_keygen_sign_verify_and_a_tampered_copy_is_rejected(tmp_path):
+    """The CLI makes a key pair (the private key owner-only, never overwritten), reports an unsigned package, signs it and verifies it as the new
+    publisher.
+    """
     prefix = str(tmp_path / "me")
     assert cli("keygen", "--out", prefix).returncode == 0
     assert (tmp_path / "me.key.pem").stat().st_mode & 0o077 == 0                  # the private key is for its owner only
@@ -100,6 +111,9 @@ def test_the_cli_round_trip_keygen_sign_verify_and_a_tampered_copy_is_rejected(t
 
 
 def test_the_cli_signs_in_place_when_no_out_is_given_and_digests_lists_the_files(tmp_path):
+    """Without `--out` the CLI signs the file in place, and `digests` reports whether the package is signed and lists the file digests without the
+    signing files.
+    """
     prefix = str(tmp_path / "me")
     cli("keygen", "--out", prefix)
     package = tmp_path / "pkg.csar"
@@ -112,6 +126,9 @@ def test_the_cli_signs_in_place_when_no_out_is_given_and_digests_lists_the_files
 
 
 def test_the_cli_reports_usage_and_file_problems_with_status_2_and_no_traceback(tmp_path):
+    """Missing files, a missing trust store, a missing or invalid key and a file that is not a zip each exit 2 with a one-line error and no
+    traceback, and the invalid key's content is not printed.
+    """
     for args in (("verify", str(tmp_path / "missing.csar"), "--trust", str(DEMO_DIR)),
                  ("verify", str(COMMITTED[0]), "--trust", str(tmp_path / "no-such-store")),
                  ("sign", str(COMMITTED[0]), "--key", str(tmp_path / "nokey")),
@@ -130,6 +147,7 @@ def test_the_cli_reports_usage_and_file_problems_with_status_2_and_no_traceback(
 # --------------------------------------------------------------------------------------------------------------------- the one private key
 
 def test_the_demo_private_key_is_the_only_private_key_in_the_repository():
+    """The only file under smo/ that holds a private key (PEM or seed line) is the demo publisher's seed."""
     seed_line = re.compile(r"ed25519-seed:[A-Za-z0-9+/]{43}=")
     pem = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
     holders = []
@@ -146,6 +164,9 @@ def test_the_demo_private_key_is_the_only_private_key_in_the_repository():
 
 
 def test_the_demo_key_files_say_what_they_are():
+    """The demo key files and their README say they are demo material not to be used for anything real, and the seed belongs to the public key in
+    the trust store.
+    """
     seed = (DEMO_DIR / "demo-publisher.seed").read_text()
     assert seed.startswith("# DEMO MATERIAL") and "NEVER" in seed
     assert "NEVER" in (DEMO_DIR / "demo-publisher.pub").read_text()

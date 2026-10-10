@@ -6,6 +6,8 @@
 # By default this brings its own Postgres and generates its own secrets. To use a Postgres you run, set postgres.enabled=false and postgres.external.*,
 # and create the password Secret yourself (secrets.existingSecret). See deploy/helm/smo/README.md.
 
+# Where the SMO images are pulled from: <registry>/<prefix><name>:<tag>. `<name>` is a module's `image` below, and the names are the ones scripts/release_images.py
+# publishes (tests_integration/test_helm_chart.py checks that). The database image is set under `postgres` and is not affected by pullPolicy.
 image:
   registry: ghcr.io/rsys-bshankar/ai-ran-smo   # <registry>/<prefix><name>:<tag>, as the release workflow publishes them
   prefix: smo-
@@ -144,6 +146,7 @@ persistence:
   enabled: true
   storageClassName: ""
 
+# Ingress objects for the operator GUI and for the R1 gateway, each rendered only when its host is set; off by default (templates/ingress.yaml).
 ingress:
   enabled: false
   className: ""
@@ -204,7 +207,7 @@ mtls:
 podDisruptionBudget:
   enabled: false
   minAvailable: 1
-autoscaling:
+autoscaling:           # a HorizontalPodAutoscaler for every service module that has no volume; `replicas` is then left to it (templates/pdb-hpa.yaml)
   enabled: false
   minReplicas: 2
   maxReplicas: 6
@@ -292,7 +295,9 @@ moduleDefaults:
     requests: { cpu: 50m, memory: 128Mi }
     limits: { memory: 512Mi }
 
-# The modules. `image` is the image name after the prefix (smo-<image>); the services are named by the key.
+# The modules. `image` is the image name after the prefix (smo-<image>); the services are named by the key. An entry sets only what differs from moduleDefaults
+# above; a worker entry is the same image as its service started with `kind: worker`. tests_integration/test_helm_chart.py checks that this list, each module's
+# image, secrets and environment agree with docker-compose.yml, so a service added to one is added to the other.
 modules:
   r1-termination: { image: r1-termination, databaseRole: r1-termination, enrollment: false, scratch: /srv/scratch, env: { R1_KILL_SWITCH_SCHEMA: ran_nf_oam, R1_RATE_STORE: memory, R1_INTROSPECTION_CACHE_SECONDS: "0", R1_INTROSPECTION_CACHE_MAX_ENTRIES: "10000" }, resources: { requests: { cpu: 50m, memory: 192Mi }, limits: { memory: 512Mi } } }   # CPU-bound at about one core per 39 requests/s: values-sized.yaml asks for 500m, scale by replicas (docs/SIZING.md)
   sme: { image: sme, databaseRole: sme, resources: { requests: { cpu: 50m, memory: 480Mi }, limits: { memory: 768Mi } } }   # the largest module: 361 MiB at its peak (docs/SIZING.md); values-sized.yaml asks for 250m

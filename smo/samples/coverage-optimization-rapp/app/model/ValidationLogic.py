@@ -15,6 +15,11 @@ MIN_DIRECTION = 0.85
 
 
 def validate(model: CoverageModel, records: list[dict], holdout_fraction: float = 0.25) -> tuple[bool, dict]:
+    """Scores the model on the last `holdout_fraction` of each cell's windows and returns (passed, metrics).
+
+    Passes when the RMSE of the predicted share changes is at most MAX_RMSE and the predicted direction is right in at least MIN_DIRECTION of
+    the cases where the share moved by a point or more. Returns (False, {"reason": ...}) when there are no held-out rows.
+    """
     cut: dict[str, datetime.datetime | None] = {}
     for cell, series in by_cell(records).items():
         cut[cell] = series[int(len(series) * (1 - holdout_fraction))][0] if series else None

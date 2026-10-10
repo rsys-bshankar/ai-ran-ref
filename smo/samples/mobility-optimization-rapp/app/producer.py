@@ -38,6 +38,7 @@ _LOAD = [(0, 0.05), (5, 0.05), (8, 0.8), (12, 0.9), (18, 1.0), (22, 0.4), (24, 0
 
 
 def load(hour: float) -> float:
+    """The sample traffic load (0.05 to 1.0) at an hour of the day, interpolated between the points of the daily curve."""
     for (h0, v0), (h1, v1) in zip(_LOAD, _LOAD[1:]):
         if h0 <= hour <= h1:
             return v0 + (v1 - v0) * (hour - h0) / (h1 - h0)
@@ -49,6 +50,9 @@ def _jitter(key: str, t: datetime.datetime) -> float:
 
 
 def relation_counters(relation: str, t: datetime.datetime, scenario: str = "HEALTHY", attempts: int | None = None) -> dict:
+    """One relation's handover counters for the window at `t` in a scenario: the attempts follow the daily load and each failure counter is the
+    scenario's rate times the attempts, with a small deterministic jitter.
+    """
     att = attempts if attempts is not None else int(60 + 240 * load(t.hour + t.minute / 60))
     rates = SCENARIOS[scenario]
     out = {ATTEMPTS: att}
@@ -68,6 +72,8 @@ def pm_report(managed_element_ref: str, measurements: list[dict]) -> dict:
 
 # ---------------------------------------------------------------- Digital Twin producer (DME callbacks)
 
+# Request body of POST /sim-producer/publish: the managed element, the relations to publish with the scenario injected in each, the first
+# window and the number of hourly windows.
 class SimPublishRequest(BaseModel):
     managedElementRef: str
     relations: dict[str, str]  # relation id -> injected scenario
@@ -76,6 +82,7 @@ class SimPublishRequest(BaseModel):
 
 
 def register_sim_type(sdk) -> dict:
+    """Registers the sim data type at DME as source domain DIGITAL_TWIN, with this rApp's health and job callback URLs."""
     return sdk.data.register_type(
         SIM_TYPE["namespace"], SIM_TYPE["name"], SIM_TYPE["version"], SIM_TYPE["typeName"], SIM_PRODUCER_ID,
         data_production_schema={}, producer_health_callback_url=f"{SELF_URL}/sim-producer/health",
@@ -84,6 +91,7 @@ def register_sim_type(sdk) -> dict:
 
 
 def publish_sim(sdk, body: SimPublishRequest) -> dict:
+    """Delivers the sim windows to every data job of the sim type and returns {dmeTypeId, dataJobs, recordsDelivered}."""
     type_id = next(t["dmeTypeId"] for t in sdk.data.discover_types("RAN") if t["dmeTypeIdStruct"]["name"] == SIM_TYPE["name"])
     jobs = sdk.data.list_data_jobs(dme_type_id=type_id)
     count = 0
@@ -99,14 +107,17 @@ def publish_sim(sdk, body: SimPublishRequest) -> dict:
 
 @router.get("/sim-producer/health")
 def sim_producer_health():
+    # DME's producer health callback: always healthy.
     return {"status": "healthy"}
 
 
 @router.post("/sim-producer/jobs")
 def sim_producer_job(body: dict):
+    # DME's callback when a data job for the sim type is created: accepts and ignores it, since records are pushed by `publish`.
     return {"status": "accepted"}
 
 
 @router.delete("/sim-producer/jobs/{data_job_id}", status_code=204)
 def sim_producer_job_stop(data_job_id: str):
+    # DME's callback when a data job is stopped: nothing to clean up (204).
     pass

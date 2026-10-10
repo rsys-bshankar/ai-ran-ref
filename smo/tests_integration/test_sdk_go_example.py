@@ -24,6 +24,7 @@ WORKFLOW = SMO.parent / ".github" / "workflows" / "smo-tests.yml"
 
 
 def _build_csar_module():
+    """Loads the example rApp's own `build_csar.py` as a module so the test can call its `build_bytes`."""
     spec = importlib.util.spec_from_file_location("hello_rapp_build_csar", EXAMPLE / "build_csar.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -38,6 +39,10 @@ def _package() -> dict[str, bytes]:
 
 
 def test_the_example_package_is_a_csar_onboarding_accepts():
+    """The example's package has the six expected files including the signing files, an entry definition, the application descriptor keys, a valid
+    manifest whose runtime profiles name declared execution modes, and a capability that consumes the `data` namespace, which are the things
+    Onboarding checks.
+    """
     files = _package()
     # the shared build helper adds the digest list and its signature (PR-RAPP-1)
     assert sorted(files) == ["Definitions/asd.yaml", "TOSCA-Metadata/DIGESTS.sha256", "TOSCA-Metadata/DIGESTS.sha256.sig", "TOSCA-Metadata/TOSCA.meta", "capabilities.yaml", "manifest.yaml"]
@@ -53,10 +58,12 @@ def test_the_example_package_is_a_csar_onboarding_accepts():
 
 
 def test_the_rebuild_is_byte_identical_like_the_samples():
+    """Building the example package twice gives the same bytes, as for the sample packages."""
     assert _build_csar_module().build_bytes() == _build_csar_module().build_bytes()
 
 
 def test_the_declared_page_is_valid_and_every_route_it_reads_or_changes_is_served_by_main_go():
+    """The example's operator page validates and every route it reads or changes is one `main.go` registers."""
     declared = validate_operator_ui(yaml.safe_load(_package()["manifest.yaml"])["operatorUi"])
     served = set(re.findall(r'mux\.HandleFunc\("(GET|POST|PUT|PATCH|DELETE) (/instances/\{instanceId\}[^"]*)"', (EXAMPLE / "main.go").read_text()))
     assert served, "main.go registers no operator route"
@@ -64,6 +71,7 @@ def test_the_declared_page_is_valid_and_every_route_it_reads_or_changes_is_serve
 
 
 def test_the_example_registers_the_operator_api_the_role_policy_lets_an_rapp_register():
+    """The role policy lets an rApp register and clear its operator API at rApp Management, and the example's `main.go` calls both."""
     assert roles.rapp_may_change("/rapp-mgmt", "PUT", "/instances/abc/operator-api")
     assert roles.rapp_may_change("/rapp-mgmt", "DELETE", "/instances/abc/operator-api")
     main = (EXAMPLE / "main.go").read_text()
@@ -76,6 +84,7 @@ def _sdk_routes() -> list[tuple[str, str, str]]:
 
 
 def test_the_routes_the_sdk_calls_through_r1_are_open_to_an_rapp():
+    """Every route the Go SDK calls through R1 is one the role policy lets an rApp change, so the SDK cannot ship a call the gateway would refuse."""
     routes = _sdk_routes()
     assert len(routes) >= 10
     refused = {(m, p) for module, m, p in routes if not roles.rapp_may_change(module, m, p)}
@@ -84,6 +93,9 @@ def test_the_routes_the_sdk_calls_through_r1_are_open_to_an_rapp():
 
 
 def test_the_sdk_has_no_third_party_module_and_no_go_sum_to_drift():
+    """The SDK's `go.mod` has no requirement or replacement, there is no `go.sum`, and no Go file imports outside the standard library and the SDK
+    itself.
+    """
     mod = (SDK_GO / "go.mod").read_text()
     assert "require" not in mod and "replace" not in mod
     assert not (SDK_GO / "go.sum").exists()
@@ -93,6 +105,7 @@ def test_the_sdk_has_no_third_party_module_and_no_go_sum_to_drift():
 
 
 def test_the_example_image_is_pinned_and_does_not_run_as_root():
+    """The example's Dockerfile pins every base image by digest (or uses `scratch`), ends as a non-root user and has a health check."""
     lines = [ln for ln in (EXAMPLE / "Dockerfile").read_text().splitlines() if ln.strip() and not ln.startswith("#")]
     froms = [ln for ln in lines if ln.startswith("FROM ")]
     assert froms and all("@sha256:" in ln or ln.split()[1] == "scratch" for ln in froms), froms
@@ -102,6 +115,7 @@ def test_the_example_image_is_pinned_and_does_not_run_as_root():
 
 
 def test_ci_builds_the_go_sdk_with_a_sha_pinned_setup_go():
+    """The workflow sets up Go with an action pinned by commit hash and runs `go vet`, `go test -race` and `go build` for `sdk-go`."""
     text = WORKFLOW.read_text()
     assert re.search(r"uses: actions/setup-go@[0-9a-f]{40} # v\d", text)
     for step in ("go vet ./...", "go test -race", "go build"):

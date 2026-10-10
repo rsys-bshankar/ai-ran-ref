@@ -33,10 +33,12 @@ def rules(new):
 
 
 def test_an_identical_spec_has_no_break():
+    """A spec compared with an identical copy has no break."""
     assert rules(copy.deepcopy(BASE)) == []
 
 
 def test_compatible_changes_are_not_breaks():
+    """A new path, an optional parameter, a widened enum or limit, a newly documented response and new response properties are not breaks."""
     new = copy.deepcopy(BASE)
     new["paths"]["/new"] = {"get": {"responses": {"200": {"description": "ok"}}}}
     new["paths"]["/things"]["get"]["parameters"].append({"name": "extra", "in": "query", "required": False, "schema": {"type": "string"}})
@@ -49,6 +51,9 @@ def test_compatible_changes_are_not_breaks():
 
 
 def test_each_kind_of_break_is_found():
+    """Each kind of break is found: a removed operation, a new required parameter, a narrowed limit or enum, a new required field, a changed type,
+    a removed response property or response and a request body that became required.
+    """
     new = copy.deepcopy(BASE)
     del new["paths"]["/gone"]
     get = new["paths"]["/things"]["get"]
@@ -73,5 +78,6 @@ def test_each_kind_of_break_is_found():
 
 
 def test_the_committed_waivers_are_well_formed():
+    """Every committed waiver carries a reason of more than 20 characters."""
     waivers = json.loads((SMO / "scripts" / "breaking_change_waivers.json").read_text())
     assert all(isinstance(reason, str) and len(reason) > 20 for reason in waivers.values())

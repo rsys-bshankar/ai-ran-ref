@@ -14,6 +14,11 @@ MAX_RMSE = 5.0
 
 
 def validate(model: EnergyModel, records: list[dict], holdout_fraction: float = 0.25) -> tuple[bool, dict]:
+    """Scores the model on the latest `holdout_fraction` of each cell's history and returns (passed, metrics).
+
+    Passes when the share of hours whose recommended class matches the class the next hour called for is at least PASS_THRESHOLD and the PRB
+    RMSE is at most MAX_RMSE. Returns (False, {"reason": ...}) when no hour has both neighbours.
+    """
     rows = []
     for series in by_cell(records).values():
         cut = int(len(series) * (1 - holdout_fraction))

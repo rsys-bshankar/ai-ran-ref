@@ -41,6 +41,9 @@ smo_introspection_cache_total{result="miss"} 50.0
 
 
 def test_metric_sum_adds_the_matching_series_and_only_those():
+    """`metric_sum` adds the series that match the given labels, gives 0 for none, excludes the gateway's own routes when asked, and reads the
+    cache counter by result.
+    """
     assert load_run.metric_sum(SME_PAGE, "smo_http_requests_total", route="/oauth2/introspect") == 125.0
     assert load_run.metric_sum(SME_PAGE, "smo_http_requests_total", route="/oauth2/introspect", status="401") == 5.0
     assert load_run.metric_sum(SME_PAGE, "smo_http_requests_total", route="/nothing") == 0.0, "no such series is zero, not an error"
@@ -53,6 +56,9 @@ def _counters(introspect, requests, hit=0, miss=0):
 
 
 def test_the_summary_counts_calls_by_the_gateway_and_falls_back_to_the_ones_the_runner_saw():
+    """The summary counts introspections per 100 calls from the gateway's own counter (the runner's count only when the gateway's is absent),
+    reports the cache hit ratio, and leaves the part out when a metrics page could not be read.
+    """
     off = load_run.introspection_summary(_counters(1000, 5000), _counters(1500, 5500), gateway_calls=480)
     assert off == {"sme_introspections": 500, "gateway_calls": 500, "introspections_per_100_calls": 100.0, "cache_hits": 0, "cache_misses": 0, "cache_hit_ratio": None}
     on = load_run.introspection_summary(_counters(1500, 5500, 0, 0), _counters(1503, 6500, 990, 10), gateway_calls=1000)
@@ -69,10 +75,12 @@ def _run(per_100, hits=0, misses=0, errors=0, calls=1000, with_intro=True):
 
 
 def test_a_cache_that_cuts_the_introspections_passes():
+    """A run with the cache that cuts the introspections by at least the required share, with cache hits counted, passes."""
     problems, findings = compare.verdict(_run(99.0), _run(1.0, hits=990, misses=10), 0.5)
     assert problems == [] and "99.0% fewer" in findings[0]
 
 
+# One row per comparison and the problem text it must contain.
 @pytest.mark.parametrize("off, on, message", [
     (_run(99.0), _run(60.0, hits=400, misses=600), "cut the introspections by 39%"),
     (_run(99.0), _run(99.0), "counted no cache lookups"),
@@ -83,11 +91,17 @@ def test_a_cache_that_cuts_the_introspections_passes():
     (_run(99.0, with_intro=False), _run(1.0, hits=990, misses=10), "no introspection counters"),
 ])
 def test_a_comparison_that_does_not_show_what_it_says_fails(off, on, message):
+    """A comparison fails when the cache did not cut enough, counted no lookups, the baseline was already low or had the cache on, either run had
+    errors, or the counters are missing.
+    """
     problems, _ = compare.verdict(off, on, 0.5)
     assert any(message in p for p in problems), problems
 
 
 def test_main_reads_the_two_directories_writes_the_table_and_exits_by_the_verdict(tmp_path, capsys):
+    """The command reads the two result directories, writes the comparison table, exits 0 for a good comparison and 1 with a PROBLEM line for a bad
+    one.
+    """
     for name, run in (("off", _run(99.0)), ("on", _run(1.0, hits=990, misses=10))):
         (tmp_path / name).mkdir()
         (tmp_path / name / "load-results.json").write_text(json.dumps(run))
