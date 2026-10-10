@@ -2357,3 +2357,36 @@ a list is narrowed by the caller's scope claim, then by its MSAC read rules, the
   badge join `/software`, rather than reviving main's two Infrastructure tabs; the failure notices (`LifecycleWatchers`) show on both. Main's tests
   moved with them. `lib/lifecycle.ts`'s campaign helpers stay tested but unused: the Software page keeps its own (`data/form.ts`), so a change to
   the campaign rules is made in both until one is removed.
+
+### PR-GUI-1, 2 and 6 steps closed by the redesign; one set of campaign rules; SEC-5.5's row narrowed
+
+Bookkeeping after PR-GUI-9 (#430), checked against the code before each step was closed.
+
+- **GUI-1.1 to 1.4, live updates.** `GET /api/events` is the Server-Sent Events endpoint on the BFF; one poller per process recomputes the
+  subscribed summary pages server-side and sends only what changed (1.1). `src/data/events.ts` and `shell/LiveEvents.tsx` are the client, with
+  reconnect and back-off, tested with a fake `EventSource` (1.2). The alarm console shows "N new alarms — show" and refetches its list when an
+  alarm count changes (1.3). Instance and deployment state: the `rapps` and `infrastructure` summaries count instances and NF deployments per
+  state, and a changed count refetches `/rapp-mgmt/instances` or `/nfo/deployments` (`LIST_PATHS`), so a state change appears without a reload
+  (1.4). GUI-1.5 (the event bus as the source) stays open.
+- **GUI-2.1 and 2.2, the alarm console.** The list filters on the server (severity, ack state, open only, probable cause, time, region, site
+  cluster; keyset paging), and Acknowledge / Clear are `rbac.py` rules (`PATCH /ran-nf-oam/alarms/{id}/ack` and `/clear`, operator). GUI-2.3 and
+  2.4 wait on MGT-8; GUI-2.5 (an alarm CSV export) does not depend on MGT-8 any more and stays open.
+- **MGT-8.4, the alarm list filters.** `GET /ran-nf-oam/alarms` filters by `severity`, `ack_state`, `open_only` (the state), `since` / `until`
+  (raisedAt; the time range) and `managed_element_ref`, in SQL, built for the alarm console (PR-GUI-9b, 9.4); route tests in
+  `ran-nf-oam/tests/test_console_reads.py` and `test_main.py`. The rest of PR-MGT-8 (history, comments, repeats, aging, suppression) stays open.
+- **GUI-6.1 and 6.2, accessibility.** `scripts/gui_e2e.py` runs axe (WCAG 2 AA) over every page, and over four pages in both themes with every
+  accent, in CI ("Every page of the GUI opens, and passes the accessibility checks"); the findings were fixed to zero serious or critical. i18n
+  (6.3, 6.4) stays open.
+- **Not closed.** GUI-3 (the Topology page draws neighbour relations from cell guards, not the containment tree, and has no alarm overlay; a note
+  says so in `OPEN_ITEMS.md`), GUI-4 (no KPI series over time; the KPI route takes no region, so the scope picker does not reach it), GUI-5 (the
+  scope picker narrows what is shown; it is not a scope claim in the session), GUI-7.1 and 7.3.
+- **One set of campaign rules.** #402 brought `lib/lifecycle.ts`'s campaign helpers while the redesign's Software page had its own
+  (`pages/software/data/form.ts`, `data/types.ts`), so a rule change had to be made twice. The unused copy is gone (`CAMPAIGN_MEANING`,
+  `HALT_MEANING`, `describeHalt`, the campaign form and payload, `campaignActions`, `waveProgress`, `describeSelector`, `describeSettings`);
+  `lib/lifecycle.ts` keeps the onboarding rules. The Software page's form gained the backend's two length limits and the 5000-element cap it
+  lacked (`CampaignRequest` in `ran-nf-oam/app/lifecycle.py`); the former copy's wave-size, pause and alarm caps were not carried over, because
+  the backend has none and they would have refused requests it accepts. Its two test tables (every campaign state, every invalid form) now run
+  against the kept functions.
+- **SEC-5.5.** The cache default was decided in #399 (30 s, PR-SEC-5.5) but its row still read as the owner's open decision; the row now holds
+  only what is still open there, a revocation broadcast between gateway replicas.
+

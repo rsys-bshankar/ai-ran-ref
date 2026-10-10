@@ -337,6 +337,7 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | Screen | What it shows |
 |---|---|
 | [Approvals](docs/screenshots/pages/approvals.png) | rApp changes waiting for a person, with the lapse countdown, and the decided ones |
+| [Approvals → two people](docs/screenshots/pages/approvals-two-person.png) | A request whose rApp's policy asks two different people: "1 of 2 approvals" on its card, who approved so far, and the decision box saying the next approval is the last one needed (`PR-AI-11` follow-up) |
 | [Decisions](docs/screenshots/pages/decisions.png) | Why each rApp change was made: filters, tiles and the decision records, with the chain inputs → model → config job → approval |
 | [Safeguards](docs/screenshots/pages/safeguards.png) | Stop all rApp writes, per-rApp limits, refusals and watchers |
 
@@ -426,7 +427,9 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 |---|---|
 | [RAN topology](docs/screenshots/pages/topology.png) | Relation tiles, the cell graph and the problem table (relations not reciprocal, external, ambiguous) |
 | [Configuration](docs/screenshots/pages/configuration.png) | CM write jobs with staged waves, halts, rollback and KPI guards; the Element onboarding tab (`MGT-14.6`, `MGT-14.7`) has the onboarding templates (admin), each element's onboarding with **Apply** / **Select…** where the state allows (operator), and who is told when an onboarding fails (no screenshot of that tab yet) |
+| [Configuration → Element onboarding](docs/screenshots/pages/configuration-onboarding.png) | Onboarding templates (`MGT-14.6`: applies to type · vendor, changes, baseline, auto-apply; admin edits) and each element's onboarding row with Apply / Select as its state allows (`MGT-14.7` failure notices below) |
 | [Software](docs/screenshots/pages/software.png) | Software campaigns in waves with their gates; a campaign's job timeout and rollback order (`MGT-15.6`, `MGT-15.7`), jobs marked "timed out", and who is told when a campaign halts or a rollback fails (not in the screenshot yet) |
+| [Software → New campaign](docs/screenshots/pages/software-new.png) | The new-campaign form: selector or element list, waves, pause, health gate, job timeout (`MGT-15.6`) and rollback order (`MGT-15.7`, last wave first by default); dry run before Start |
 | [Element](docs/screenshots/pages/element.png) | One managed element (`gnb-du-demo-01`): overview, alarms, cells and guards |
 | [Element: managed objects](docs/screenshots/pages/element-mos.png) | The same element's managed-object tree |
 

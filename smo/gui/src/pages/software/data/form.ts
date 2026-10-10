@@ -1,9 +1,14 @@
 /** The new-campaign form of the Software page and the body of `POST /software-campaigns` it builds, with the backend's own bounds
- * (lifecycle.py `CampaignRequest`: a name, the elements named or selected (one of the two), a selector naming at least one key, whole
- * numbers for the wave size (≥ 1), pause (≥ 0), gate (≥ 0) and the optional job timeout (1 s to 7 days, MGT-15.6), `halt` or `rollback`
- * on a failed gate, and the rollback order `all` or `reverse` (MGT-15.7)). Pure, so it is unit-tested. A limit changed in RAN NF OAM's
- * validation must be changed here too (and in `lib/lifecycle.ts`), or the form accepts what the backend then refuses. */
-import { MAX_JOB_TIMEOUT_SECONDS } from "../../../lib/lifecycle";
+ * (lifecycle.py `CampaignRequest`: a name of at most 200 characters, a software version of at most 100, the elements named (at most
+ * `MAX_CAMPAIGN_ELEMENTS`) or selected (one of the two), a selector naming at least one key, whole numbers for the wave size (≥ 1), pause
+ * (≥ 0), gate (≥ 0) and the optional job timeout (1 s to 7 days, MGT-15.6), `halt` or `rollback` on a failed gate, and the rollback order
+ * `all` or `reverse` (MGT-15.7)). The one place the GUI states these rules. Pure, so it is unit-tested. A limit changed in RAN NF OAM's
+ * validation must be changed here too, or the form accepts what the backend then refuses. */
+
+/** The longest job timeout RAN NF OAM accepts, in seconds (seven days). */
+export const MAX_JOB_TIMEOUT_SECONDS = 7 * 86400;
+/** The most elements one campaign may name (lifecycle.py `MAX_CAMPAIGN_ELEMENTS`). */
+export const MAX_CAMPAIGN_ELEMENTS = 5000;
 
 /** The form's raw values (text as typed). */
 export interface CampaignForm {
@@ -26,6 +31,8 @@ export const EMPTY_FORM: CampaignForm = {
 /** The request body, or the first problem to show. `requestedBy` is left out: the GUI BFF sets it from the signed-in user. */
 export function campaignBody(f: CampaignForm): { ok: true; body: Record<string, unknown> } | { ok: false; error: string } {
   if (!f.name.trim()) return { ok: false, error: "Give the campaign a name" };
+  if (f.name.trim().length > 200) return { ok: false, error: "The name is at most 200 characters" };
+  if (f.softwareVersion.trim().length > 100) return { ok: false, error: "The software version is at most 100 characters" };
   const body: Record<string, unknown> = { name: f.name.trim(), onGateFailure: f.onGateFailure, rollbackOrder: f.rollbackOrder };
   if (f.softwareVersion.trim()) body.softwareVersion = f.softwareVersion.trim();
   if (f.mode === "selector") {
@@ -36,6 +43,7 @@ export function campaignBody(f: CampaignForm): { ok: true; body: Record<string, 
   } else {
     const refs = [...new Set(f.elements.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean))];
     if (refs.length === 0) return { ok: false, error: "List at least one managed element" };
+    if (refs.length > MAX_CAMPAIGN_ELEMENTS) return { ok: false, error: `A campaign names at most ${MAX_CAMPAIGN_ELEMENTS} elements; select them by type, vendor, region or tenant instead` };
     body.managedElementRefs = refs;
   }
   const whole = (text: string, label: string, min: number, key: string, optional: boolean, max = Infinity): string | null => {

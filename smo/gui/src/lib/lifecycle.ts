@@ -1,15 +1,14 @@
 /**
- * What the onboarding and software campaign pages (MGT-14.6, MGT-15.5) decide without a screen: the wording of each state, which actions a state allows (the
- * ones RAN NF OAM's state machines allow, so a button is never offered that the backend would refuse as an illegal transition), and the forms turned into the
- * request bodies RAN NF OAM validates (the same limits, so a mistake is shown before the call). Who asked (`requestedBy`) is never sent: the GUI backend sets it.
- * The onboarding part is used by Configuration → Element onboarding (pages/configuration/sections/OnboardingTemplates.tsx, ElementOnboarding.tsx,
- * OnboardingDialogs.tsx). The Software page (pages/software) builds its campaign body and offers its actions with its own data/form.ts and data/types.ts
- * (which take `MAX_JOB_TIMEOUT_SECONDS` from here); the campaign helpers below state the same backend rules and stay unit-tested, so a change to RAN NF OAM's
- * campaign rules is made in both places. Pure functions only, no network and no React, so lifecycle.test.ts covers it without a screen.
+ * What the onboarding screens (MGT-14.6) decide without a screen: the wording of each onboarding state, which actions a state allows (the ones RAN NF OAM's
+ * state machine allows, so a button is never offered that the backend would refuse as an illegal transition), and the template form turned into the request
+ * body RAN NF OAM validates (the same limits, so a mistake is shown before the call). Who asked (`requestedBy`) is never sent: the GUI backend sets it.
+ * Used by Configuration → Element onboarding (pages/configuration/sections/OnboardingTemplates.tsx, ElementOnboarding.tsx, OnboardingDialogs.tsx).
+ * Software campaigns (MGT-15.5 to 15.7) have one set of rules, on the Software page (pages/software/data/form.ts, data/types.ts).
+ * Pure functions only, no network and no React, so lifecycle.test.ts covers it without a screen.
  * A limit changed in RAN NF OAM's validation must be changed here as well, or the form accepts what the backend then refuses.
  */
 
-import type { CampaignStatus, OnboardingStatus, OnboardingTemplate, TemplateChange } from "../api/types";
+import type { OnboardingStatus, OnboardingTemplate, TemplateChange } from "../api/types";
 
 export const ONBOARDING_MEANING: Record<OnboardingStatus, string> = {
   DISCOVERED: "Registered; not yet matched against the templates",
@@ -19,28 +18,6 @@ export const ONBOARDING_MEANING: Record<OnboardingStatus, string> = {
   ONBOARDED: "The template was written",
   FAILED: "The template could not be written; the detail says why",
 };
-
-export const CAMPAIGN_MEANING: Record<CampaignStatus, string> = {
-  PENDING: "Created, not started",
-  RUNNING: "A wave is in progress; the next starts when every job of this one has ended and the health gate passes",
-  HALTED: "Held between waves; an operator decides what happens next",
-  COMPLETED: "Every wave ran and the last gate passed or was overridden",
-  ABORTED: "Ended by an operator before the last wave; the waves that ran stay as they are",
-  ROLLING_BACK: "Revert jobs are running",
-  ROLLED_BACK: "Every completed job has been reverted",
-  ROLLBACK_FAILED: "A revert job failed; roll back again to retry those",
-};
-
-export const HALT_MEANING: Record<string, string> = {
-  GATE_FAILED: "A health gate failed: a software job failed or timed out, or more new critical or major alarms than allowed",
-  WAVE_PAUSE: "The pause between waves; it continues by itself when the time has passed",
-  OPERATOR_HALT: "An operator halted it",
-};
-
-/** The text of a halted campaign's reason for a table cell: the meaning when it is a known one. */
-export function describeHalt(reason: string | null | undefined): string {
-  return reason ? HALT_MEANING[reason] ?? reason : "";
-}
 
 // ---------------------------------------------------------------- onboarding of an element
 
@@ -117,105 +94,4 @@ export function templatePayload(form: TemplateForm, editing: boolean): { ok: tru
       softwareBaseline: baseline || null, requireBaseline: form.requireBaseline, autoApply: form.autoApply, enabled: form.enabled,
     },
   };
-}
-
-// ---------------------------------------------------------------- software campaigns
-
-/** The start-campaign form's fields as text and flags; `mode` says whether `refs` (named elements) or the type, vendor, region and tenant fields (a selector) choose the elements. */
-export interface CampaignForm {
-  name: string; softwareVersion: string; mode: "named" | "selector"; refs: string[];
-  entityType: string; vendorName: string; region: string; tenant: string;
-  waveSize: string; wavePauseSeconds: string; gateMaxNewAlarms: string; onGateFailure: "halt" | "rollback"; jobTimeoutSeconds: string; rollbackOrder: "all" | "reverse";
-}
-
-/** The GUI starts with the rollback order the platform recommends for a rollout in waves (last wave first); the API's own default stays "all". */
-export function blankCampaign(): CampaignForm {
-  return {
-    name: "", softwareVersion: "", mode: "named", refs: [], entityType: "", vendorName: "", region: "", tenant: "",
-    waveSize: "", wavePauseSeconds: "0", gateMaxNewAlarms: "0", onGateFailure: "halt", jobTimeoutSeconds: "", rollbackOrder: "reverse",
-  };
-}
-
-/**
- * Reads a whole-number field: a blank is accepted as "not set" (`value: null`), anything else must be an integer within `min` to `max`, or the error names the
- * field (`name`) and the limit. Has no side effect.
- */
-function whole(text: string, name: string, min: number, max: number): { ok: true; value: number | null } | { ok: false; error: string } {
-  const raw = text.trim();
-  if (raw === "") return { ok: true, value: null };
-  const n = Number(raw);
-  if (!Number.isInteger(n)) return { ok: false, error: `${name} must be a whole number` };
-  if (n < min || n > max) return { ok: false, error: `${name} must be between ${min} and ${max}` };
-  return { ok: true, value: n };
-}
-
-export const MAX_JOB_TIMEOUT_SECONDS = 7 * 86400;
-
-/** The body of POST /ran-nf-oam/software-campaigns, or the problem to show. `dryRun` asks for the waves only. */
-export function campaignPayload(form: CampaignForm, dryRun = false): { ok: true; body: Record<string, unknown> } | { ok: false; error: string } {
-  const name = form.name.trim();
-  if (!name) return { ok: false, error: "The campaign needs a name" };
-  if (name.length > 200) return { ok: false, error: "The name is at most 200 characters" };
-  if (form.softwareVersion.trim().length > 100) return { ok: false, error: "The software version is at most 100 characters" };
-  const size = whole(form.waveSize, "Wave size", 1, 5000);
-  const pause = whole(form.wavePauseSeconds, "The pause between waves", 0, 30 * 86400);
-  const alarms = whole(form.gateMaxNewAlarms, "The alarms allowed", 0, 100000);
-  const timeout = whole(form.jobTimeoutSeconds, "The job timeout", 1, MAX_JOB_TIMEOUT_SECONDS);
-  if (!size.ok) return size;
-  if (!pause.ok) return pause;
-  if (!alarms.ok) return alarms;
-  if (!timeout.ok) return timeout;
-  const body: Record<string, unknown> = { name, wavePauseSeconds: pause.value ?? 0, gateMaxNewAlarms: alarms.value ?? 0, onGateFailure: form.onGateFailure, rollbackOrder: form.rollbackOrder };
-  if (form.softwareVersion.trim()) body.softwareVersion = form.softwareVersion.trim();
-  if (size.value !== null) body.waveSize = size.value;
-  if (timeout.value !== null) body.jobTimeoutSeconds = timeout.value;
-  if (form.mode === "named") {
-    if (form.refs.length === 0) return { ok: false, error: "Choose at least one managed element, or select them by type, vendor, region or tenant" };
-    body.managedElementRefs = form.refs;
-  } else {
-    const selector = Object.fromEntries(([["entityType", form.entityType], ["vendorName", form.vendorName], ["region", form.region], ["tenant", form.tenant]] as const)
-      .map(([k, v]) => [k, v.trim()] as const).filter(([, v]) => v));
-    if (Object.keys(selector).length === 0) return { ok: false, error: "A selector names at least one of entity type, vendor, region and tenant" };
-    body.selector = selector;
-  }
-  if (dryRun) body.dryRun = true;
-  return { ok: true, body };
-}
-
-export interface CampaignActionsAllowed { halt: boolean; continue: boolean; abort: boolean; rollback: boolean; /** continue has a pause to skip */ canForce: boolean }
-
-/** Which of halt, continue, abort and roll back RAN NF OAM accepts for a campaign in this state (anything else is an illegal transition). A halt of a campaign
- * held by its pause turns the pause into an operator's halt; a halt of one held for another reason changes nothing, so it is not offered. */
-export function campaignActions(status: CampaignStatus, haltedReason: string | null | undefined): CampaignActionsAllowed {
-  const halted = status === "HALTED";
-  return {
-    halt: status === "RUNNING" || (halted && haltedReason === "WAVE_PAUSE"),
-    continue: halted,
-    abort: halted,
-    rollback: halted || status === "COMPLETED" || status === "ABORTED" || status === "ROLLBACK_FAILED",
-    canForce: halted && haltedReason === "WAVE_PAUSE",
-  };
-}
-
-/** "wave 2 of 4" for a table cell; a campaign that has not started a wave shows "not started". */
-export function waveProgress(c: { wave: number; waveCount: number }): string {
-  return c.wave > 0 ? `wave ${c.wave} of ${c.waveCount}` : "not started";
-}
-
-/** A campaign's selector in one line ("region eu · tenant acme"); a campaign that names its elements has no selector and reads "named elements". */
-export function describeSelector(selector: Record<string, string> | null | undefined): string {
-  const parts = Object.entries(selector ?? {}).map(([k, v]) => `${k} ${v}`);
-  return parts.length ? parts.join(" · ") : "named elements";
-}
-
-/** A campaign's wave settings in one line, for the detail view. */
-export function describeSettings(c: { waveSize: number | null; wavePauseSeconds: number; gateMaxNewAlarms: number; onGateFailure: string; jobTimeoutSeconds: number | null; rollbackOrder: string }): string {
-  return [
-    c.waveSize ? `${c.waveSize} per wave` : "one wave",
-    c.wavePauseSeconds ? `${c.wavePauseSeconds} s pause` : "no pause",
-    `${c.gateMaxNewAlarms} new alarm(s) allowed`,
-    c.onGateFailure === "rollback" ? "a failed gate rolls back" : "a failed gate halts",
-    c.jobTimeoutSeconds ? `a job times out after ${c.jobTimeoutSeconds} s` : "no job timeout",
-    c.rollbackOrder === "reverse" ? "rollback last wave first" : "rollback all at once",
-  ].join(" · ");
 }
