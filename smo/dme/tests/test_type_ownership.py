@@ -1,7 +1,7 @@
 """SEC-15.10: only the producer that registered a DME type first (or an SMO module / the operator) may change its definition.
 
 Covers `POST /production-capabilities` on a type that already exists: the same definition is a join or an idempotent re-registration for anyone; a different definition (name,
-schema, collection spec, source) needs the original caller, an `internal` role or a call that did not come through the gateway; a type registered before revision 0039 (no
+schema, collection spec, source) needs the original caller, an `internal` role or a call that did not come through the gateway; a type registered before revision 0040 (no
 `registered_by`) is open to the producers linked to it. Fixtures (`client`) and `register_type_body` come from `test_main.py`. Run with
 `PYTHONPATH=.:../shared python -m pytest tests/test_type_ownership.py -q`.
 """
@@ -79,7 +79,7 @@ def test_a_rapp_without_an_invoker_id_cannot_overwrite(client):
 
 
 def test_a_type_from_before_the_owner_was_recorded_is_open_to_its_linked_producers_only(client):
-    """With `registered_by` NULL (a row from before revision 0039) a producer linked to the type may redefine it and another rApp may not."""
+    """With `registered_by` NULL (a row from before revision 0040) a producer linked to the type may redefine it and another rApp may not."""
     client.post("/production-capabilities", json=_body("rapp-alice"), headers=ALICE)
     with Session(app_engine(client)) as db:
         db.query(DMEType).one().registered_by = None

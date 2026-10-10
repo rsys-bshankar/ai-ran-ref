@@ -120,7 +120,7 @@ Cross-module references are bare UUIDs or strings; there are none to other modul
 | `data_production_schema` (JSON) | JSON Schema a job's `productionJobDefinition` must satisfy |
 | `collection_spec` (JSON, null) | |
 | `source_domain` (null), `source_context` (JSON, null) | provenance; `source_domain` is `LIVE_RAN` or `DIGITAL_TWIN` |
-| `registered_by` (null) | `SEC-15.10`, revision `0039`: the invoker id the gateway vouched for when the type was first registered (the `producerId` of the request when the call did not come through the gateway). NULL for a type registered before the revision |
+| `registered_by` (null) | `SEC-15.10`, revision `0040`: the invoker id the gateway vouched for when the type was first registered (the `producerId` of the request when the call did not come through the gateway). NULL for a type registered before the revision |
 
 **`dme_producer_type`**: PK `(producer_id, dme_type_id)`; both FKs `ON DELETE CASCADE`.
 

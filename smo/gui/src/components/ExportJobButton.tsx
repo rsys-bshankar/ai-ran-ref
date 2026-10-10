@@ -1,6 +1,6 @@
 /** "Export…" (GUI-9.5b): the button that turns a page's current filters into an asynchronous export job (`data/exports.ts`). It opens a dialog
  * that lists what the file will hold (and which of the page's filters it cannot take), starts the job, and then points to the Exports page,
- * where the file is downloaded when it is written. Used by the Decisions page and Admin → Audit log. */
+ * where the file is downloaded when it is written. Used by the Decisions page, the alarm table (GUI-2.5) and Admin → Audit log. */
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
@@ -10,7 +10,8 @@ import { KeyValue, Modal } from "./ui";
 /** The labels of the request fields the dialog lists. */
 const LABELS: [keyof ExportRequest, string][] = [
   ["since", "From"], ["until", "Until"], ["invokerId", "rApp"], ["disposition", "Outcome"], ["region", "Region"], ["siteCluster", "Site cluster"],
-  ["username", "User"], ["action", "Event"],
+  ["username", "User"], ["action", "Event"], ["severity", "Severity"], ["ackState", "Ack state"], ["openOnly", "Open alarms only"],
+  ["probableCause", "Probable cause"], ["managedElementRef", "Managed element"], ["managedFunctionRef", "Managed function"],
 ];
 
 /** Props: the request the page's filters make, the button's title, and a note on the filters the export does not take (null: none). */
@@ -23,7 +24,7 @@ export function ExportJobButton({ request, what, note }: ExportJobButtonProps) {
   const [job, setJob] = useState<ExportJob | null>(null);
   const close = () => { setOpen(false); setJob(null); create.reset(); };
   const start = () => create.mutate(request, { onSuccess: (j) => setJob(j) });
-  const rows = LABELS.filter(([k]) => request[k]).map(([k, label]) => [label, k === "since" && request.since.startsWith("1970-") ? "the first record" : String(request[k])] as [string, string]);
+  const rows = LABELS.filter(([k]) => request[k]).map(([k, label]) => [label, k === "since" && request.since.startsWith("1970-") ? "the first record" : request[k] === true ? "yes" : String(request[k])] as [string, string]);
   if (!request.until) rows.splice(1, 0, ["Until", "now (when the job starts)"]);
   return (
     <>

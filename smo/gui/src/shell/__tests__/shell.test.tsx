@@ -10,7 +10,7 @@ import { cleanup, settle } from "../../testing/dom";
 import { jumpsFor } from "../GlobalSearch";
 import { crumbOf, NAV, NAV_GROUPS } from "../nav";
 import { ScopeProvider } from "../ScopeProvider";
-import { Sidebar } from "../Sidebar";
+import { badgeCount, Sidebar } from "../Sidebar";
 
 afterEach(cleanup);
 
@@ -59,6 +59,16 @@ describe("Sidebar", () => {
     const counts = Array.from(container.querySelectorAll(".nav-count")).map((n) => n.textContent);
     expect(counts).toEqual(["18", "999+"]);
     expect(container.querySelectorAll(".nav-group .eyebrow")).toHaveLength(4);
+  });
+
+  // GUI-7.3: the Approvals badge adds the model gates when the BFF serves that count, and still shows the rApp requests from a BFF that does not.
+  it("adds the model gates to the Approvals badge only when they are known", () => {
+    const badge = { keys: ["approvals.PENDING"], extra: ["modelGates.waiting"], tone: "warn" as const, title: "" };
+    const at = (counts: Record<string, number | null>) => badgeCount({ page: "nav", computedAt: "", partial: [], counts }, badge);
+    expect(at({ "approvals.PENDING": 18, "modelGates.waiting": 4 })).toBe(22);
+    expect(at({ "approvals.PENDING": 18 })).toBe(18);
+    expect(at({ "approvals.PENDING": 18, "modelGates.waiting": null })).toBe(18);
+    expect(at({ "approvals.PENDING": null, "modelGates.waiting": 4 })).toBeNull();
   });
 
   // GUI-9.3 / 9.5b: under a scope every link keeps it and the badges are the scoped counts; Exports is in Account for an operator, not a viewer

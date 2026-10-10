@@ -45,6 +45,23 @@ export function completionRoute(stage: CompletionStage): { jobsPath: string; run
   }
 }
 
+/** GUI-7.3: the governance decision a model waits for, by its lifecycle state, in words; the same rule as AIMgF's `awaiting_decision` filter
+ * (TRAINED and VALIDATED wait only until their gate is approved). */
+export const GATE_DECISION: Record<string, string> = {
+  TRAINED: "Training finished: approve it before validation can start",
+  VALIDATED: "Validation finished: approve it before emulation can start",
+  EMULATED: "Emulation finished: submit it for approval",
+  PENDING_APPROVAL: "Submitted: approve or reject it",
+  APPROVED: "Approved: certify it, so it can be promoted",
+};
+
+/** Whether a lifecycle waits for a person's governance decision (the AI/ML page's "Waiting for governance" card and the Approvals inbox). */
+export function awaitsDecision(l: { modelLifecycleState: string; trainingApproved: boolean; validationApproved: boolean }): boolean {
+  if (l.modelLifecycleState === "TRAINED") return !l.trainingApproved;
+  if (l.modelLifecycleState === "VALIDATED") return !l.validationApproved;
+  return l.modelLifecycleState in GATE_DECISION;
+}
+
 /** The operator actions legal from a ModelLifecycleState. TRAIN/VALIDATE/
  * EMULATE and their completions go through their own job routes, not a
  * bare advance (AIMgF refuses job-driven events there), so a

@@ -144,7 +144,7 @@ def _may_redefine_type(db: Session, request: Request, t: DMEType) -> bool:
 
     Allowed: a call that did not come through the gateway (no role: a test or an in-process call, trusted as elsewhere in this module); an SMO module or the operator's console
     (role `internal`: the GUI BFF lets only an admin register a type, and RAN NF OAM registers its own KPI types); and the caller that registered the type first
-    (`registered_by` equals the invoker id the gateway vouched for). Any other rApp is refused. For a type registered before revision 0039 (`registered_by` is NULL) the
+    (`registered_by` equals the invoker id the gateway vouched for). Any other rApp is refused. For a type registered before revision 0040 (`registered_by` is NULL) the
     producers linked to the type stand in for the first one, which is the best this build knows.
     """
     role = role_of(request)

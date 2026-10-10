@@ -8,13 +8,13 @@ Expand only: a nullable column with no default and no constraint, which the prev
 is rewritten: a type registered before this revision keeps NULL, and for those the code lets a producer linked to the type stand in for the first one. The table is in the `dme`
 schema (revision 0025) and needs no grant of its own: the module role's default privileges on its schema cover a column.
 
-Revision ID: 0039
-Revises: 0038
+Revision ID: 0040
+Revises: 0039
 """
 from alembic import op
 
-revision = "0039"
-down_revision = "0038"
+revision = "0040"
+down_revision = "0039"
 branch_labels = None
 depends_on = None
 

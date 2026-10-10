@@ -263,4 +263,38 @@ describe("two-person approval (opt-in; a request that needs one approval looks a
     await settle();
     expect(container.querySelector("tbody tr")!.textContent).toContain("smo-gui:bob, smo-gui:ana");
   });
+
+  // GUI-7.3: the Model gates tab lists AIMgF's lifecycles waiting for a decision (asked with awaiting_decision=true), counts them from the
+  // summary, says what is decided, and offers each role only the decisions the BFF lets it make (approve training: operator; approve: admin).
+  it("lists the model gates with their decision, and the buttons each role may use", async () => {
+    const gates = {
+      "GET /summary/approvals": { page: "approvals", computedAt: "", counts: { "approvals.PENDING": 0, "modelGates.waiting": 2 }, partial: [] },
+      "GET /smo/aimgf/model-lifecycles": { items: [
+        { modelId: "m-1", modelLifecycleState: "TRAINED", runtimeLifecycleState: "NOT_DEPLOYED", trainingApproved: false, validationApproved: false, trainingJobId: null, clearedNodeGroups: [], nfDeploymentDescriptorId: null, nfDeploymentId: null },
+        { modelId: "m-2", modelLifecycleState: "PENDING_APPROVAL", runtimeLifecycleState: "NOT_DEPLOYED", trainingApproved: true, validationApproved: true, trainingJobId: null, clearedNodeGroups: [], nfDeploymentDescriptorId: null, nfDeploymentId: null },
+      ], total: 2, limit: 25, offset: 0 },
+      "GET /smo/mlmr/models": { items: [{ modelId: "m-1", modelType: "coverage-model", version: "1.2" }, { modelId: "m-2", modelType: "es-model", version: "3.0" }], total: 2, limit: 200, offset: 0 },
+    };
+    const calls = bff("operator", gates);
+    window.location.hash = "#models";
+    const { container } = await open();
+    await settle();
+    expect(byText(container, "button", /Model gates/)!.textContent).toContain("2");
+    const section = container.querySelector("[data-section='approvals.models']") as HTMLElement;
+    expect(calls.find((c) => c.path === "/smo/aimgf/model-lifecycles")!.query.get("awaiting_decision")).toBe("true");
+    const rows = Array.from(section.querySelectorAll("tbody tr"));
+    expect(rows[0].textContent).toContain("coverage-model 1.2");
+    expect(rows[0].textContent).toContain("Training finished: approve it before validation can start");
+    expect(byText(rows[0] as HTMLElement, "button", "Approve training")).toBeTruthy();
+    expect(rows[1].textContent).toContain("Submitted: approve or reject it");
+    expect(byText(rows[1] as HTMLElement, "button", "Approve")).toBeFalsy();         // admin-only
+    cleanup();
+    bff("admin", gates);
+    window.location.hash = "#models";
+    const admin = await open();
+    await settle();
+    const adminRows = admin.container.querySelectorAll("[data-section='approvals.models'] tbody tr");
+    expect(byText(adminRows[1] as HTMLElement, "button", "Approve")).toBeTruthy();
+    expect(byText(adminRows[1] as HTMLElement, "button", "Reject")).toBeTruthy();
+  });
 });

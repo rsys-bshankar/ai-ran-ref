@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../../../auth/AuthContext";
 import rules from "../../../auth/permissions.fixture.json";
-import { ALL_SINCE, auditExport, decisionsExport, EXPORT_POLL, exportPoll, formatBytes } from "../../../data/exports";
+import { alarmsExport, ALL_SINCE, auditExport, decisionsExport, EXPORT_POLL, exportPoll, formatBytes } from "../../../data/exports";
 import { fakeBff, mountWith, type Call } from "../../../testing/bff";
 import { byText, cleanup, click, settle, type } from "../../../testing/dom";
 import { Exports } from "../index";
@@ -92,6 +92,15 @@ describe("export requests", () => {
     expect(decisionsExport({}, { region: null, cluster: null })).toEqual({ kind: "decisions", since: ALL_SINCE });
     expect(auditExport({ username: "", action: "LOGIN", since: null, until: "2026-10-02T00:00:00Z" }))
       .toEqual({ kind: "audit", since: ALL_SINCE, until: "2026-10-02T00:00:00Z", action: "LOGIN" });
+  });
+
+  // GUI-2.5: the alarm table's query and the scope become an alarms job; open_only only when set; the scope's region wins over the table's
+  it("builds the alarms request from the alarm table's filters", () => {
+    expect(alarmsExport({ severity: "major", ack_state: "ACKNOWLEDGED", open_only: true, probable_cause: "LOS", managed_element_ref: "ME-1",
+      managed_function_ref: undefined }, { region: "north", cluster: "c1" }))
+      .toEqual({ kind: "alarms", since: ALL_SINCE, severity: "major", ackState: "ACKNOWLEDGED", openOnly: true, probableCause: "LOS",
+        managedElementRef: "ME-1", region: "north", siteCluster: "c1" });
+    expect(alarmsExport({ open_only: undefined }, { region: null, cluster: null })).toEqual({ kind: "alarms", since: ALL_SINCE });
   });
 
   // sizes and the summaries of a job's parameters

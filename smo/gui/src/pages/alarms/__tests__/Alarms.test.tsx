@@ -13,7 +13,7 @@ import rules from "../../../auth/permissions.fixture.json";
 import { ToastProvider } from "../../../components/Toast";
 import { KEYS } from "../../../data/keys";
 import { fakeBff, mountWith, newClient, type Call } from "../../../testing/bff";
-import { byText, cleanup, click, mount, settle } from "../../../testing/dom";
+import { byText, cleanup, click, mount, settle, typeArea } from "../../../testing/dom";
 import { Alarms } from "..";
 import { formatDuration, ranAlarmFilters, withDelta } from "../data/queries";
 import { newSince } from "../sections/AlarmTable";
@@ -125,6 +125,45 @@ describe("the alarm page", () => {
     expect(patch.query.get("new_state")).toBe("ACKNOWLEDGED");
   });
 
+  // GUI-2.4 / 2.3: the detail shows the server's history (who did what) and the comments; an operator adds one (the text sent, the box emptied),
+  // a viewer reads them with no box.
+  it("shows the alarm's history and comments, and lets an operator add a comment", async () => {
+    const notes = {
+      "GET /smo/ran-nf-oam/alarms/a-1/history": { items: [
+        { at: plus(0), event: "RAISED", from: null, to: "critical", by: null },
+        { at: plus(60), event: "ACKNOWLEDGED", from: "UNACKNOWLEDGED", to: "ACKNOWLEDGED", by: "bob" },
+        { at: plus(90), event: "SEVERITY_CHANGED", from: "critical", to: "major", by: null },
+      ], total: 3, limit: 100, offset: 0 },
+      "GET /smo/ran-nf-oam/alarms/a-1/comments": { items: [{ commentId: "c-1", alarmId: "a-1", createdAt: plus(70), author: "bob", text: "fibre cut, crew sent" }], total: 1, limit: 100, offset: 0 },
+      "POST /smo/ran-nf-oam/alarms/a-1/comments": { status: 201, body: { commentId: "c-2", alarmId: "a-1", createdAt: plus(100), author: "ana", text: "crew on site" } },
+    };
+    const calls = bff("operator", notes);
+    const { container } = await open();
+    await settle();
+    await click(container.querySelector("tbody tr") as HTMLElement);
+    await settle();
+    const history = container.querySelector("[data-section='alarms.history']") as HTMLElement;
+    const lines = Array.from(history.querySelectorAll("li > span:first-child")).map((n) => n.textContent);
+    expect(lines).toEqual(["Raised as critical", "Acknowledged · by bob", "Severity critical → major"]);
+    const comments = container.querySelector("[data-section='alarms.comments']") as HTMLElement;
+    expect(comments.textContent).toContain("fibre cut, crew sent");
+    const box = comments.querySelector("textarea") as HTMLTextAreaElement;
+    await typeArea(box, "  crew on site ");
+    await click(byText(comments, "button", "Add comment")!);
+    await settle();
+    expect(calls.find((c) => c.method === "POST" && c.path === "/smo/ran-nf-oam/alarms/a-1/comments")!.body).toEqual({ author: "smo-gui", text: "crew on site" });
+    expect(box.value).toBe("");
+    cleanup();
+    bff("viewer", notes);
+    const viewer = await open();
+    await settle();
+    await click(viewer.container.querySelector("tbody tr") as HTMLElement);
+    await settle();
+    const readOnly = viewer.container.querySelector("[data-section='alarms.comments']") as HTMLElement;
+    expect(readOnly.textContent).toContain("fibre cut, crew sent");
+    expect(readOnly.querySelector("textarea")).toBeNull();
+  });
+
   // Pins down: a viewer sees alarms but no Ack/Clear button.
   it("shows a viewer no Ack or Clear", async () => {
     bff("viewer");
@@ -147,6 +186,26 @@ describe("the alarm page", () => {
     await settle();
     expect(tableCalls(calls).at(-1)!.query.get("open_only")).toBeNull();
     expect(ranAlarmFilters({ severity: "", managedElement: "", managedFunction: "", probableCause: " LOS " }).probable_cause).toBe("LOS");
+  });
+
+  // GUI-2.5: an operator's Export… starts an alarms export job with the table's filters (open only, ack state); a viewer is not offered one.
+  it("exports what the filters select as an alarms job, for an operator only", async () => {
+    const calls = bff("operator", { "POST /exports": { status: 202, body: { id: "j-1", kind: "alarms", state: "QUEUED", params: {} } } });
+    const { container } = await open();
+    await settle();
+    await choose(container, "Ack state", "UNACKNOWLEDGED");
+    await click(byText(container, "button", "Export…")!);
+    const dialog = document.querySelector("[role=dialog]") as HTMLElement;
+    expect(dialog.textContent).toContain("Open alarms only");
+    await click(byText(dialog, "button", "Start export")!);
+    await settle();
+    expect(calls.find((c) => c.method === "POST" && c.path === "/exports")!.body).toEqual({ kind: "alarms", since: "1970-01-01T00:00:00.000Z", ackState: "UNACKNOWLEDGED", openOnly: true });
+    expect(document.querySelector("[role=dialog]")?.textContent).toContain("queued");
+    cleanup();
+    bff("viewer");
+    const viewer = await open();
+    await settle();
+    expect(byText(viewer.container, "button", "Export…")).toBeFalsy();
   });
 
   // Pins down: Next asks the page after the previous answer's cursor; Previous goes back to the first page without a new cursor.
