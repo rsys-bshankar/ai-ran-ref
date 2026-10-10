@@ -92,6 +92,7 @@ HOP_BY_HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authoriza
               "trailers", "transfer-encoding", "upgrade"}
 _NEVER_FORWARD_RESPONSE = HOP_BY_HOP | {"content-length", "content-encoding", "set-cookie", "server", "date"}
 _FORWARD_REQUEST = {"content-type", "accept"}
+ACTING_USER_HEADER = "X-R1-Acting-User"      # smo_shared/invoker.py's header (the BFF's image does not install smo_shared): who is signed in, for the modules that must name a person
 
 # Everything the BFF itself serves is JSON: nothing may frame, sniff or run it.
 SECURITY_HEADERS = {
@@ -884,6 +885,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             body = json.dumps({**payload, **rule.json_overrides(session.user)}).encode()
 
         headers = {k: v for k, v in request.headers.items() if k.lower() in _FORWARD_REQUEST}
+        # SEC-15.8: every module sees the BFF as the caller, so the signed-in person goes with each call in `X-R1-Acting-User` (the same `smo-gui:<username>` the rules write into
+        # `requestedBy` and `decidedBy`). R1 Termination forwards it to a module because the BFF's token is `internal`; the two-person approval takes the decider from it instead
+        # of from the body. Set after the browser's headers were filtered above, so the browser cannot choose it.
+        headers[ACTING_USER_HEADER] = f"smo-gui:{session.user.username}"
         try:
             upstream = await app.state.gateway.request(request.method, path, params=params, content=body or None, headers=headers)
         except SmoAuthError as exc:

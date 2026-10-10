@@ -427,6 +427,17 @@ Done (`HISTORY.md`, PR-SEC-10; decision `docs/adr/0005-tenant-region-authorizati
 |---|---|---|---|
 | SEC-13.4 | Same settings in the Helm chart | `kubectl` shows them | OPS-2.2 |
 
+#### PR-SEC-15 (part 2) — what the ownership and identity change leaves open
+
+`HISTORY.md` "PR-SEC-15 (part 2)" closes SEC-15.1, 15.4, 15.7, 15.8, 15.9 and the type overwrite of 15.10. When the table of `PR-SEC-15` is merged in (it comes with the shared-library hardening change), those rows are removed from it and these stay:
+
+| ID | What | Done when | Needs |
+|---|---|---|---|
+| SEC-15.1b | The gateway's allow-list (`roles.RAPP_MAY_CHANGE`, `/aimgf`) still names `POST /models/{id}/advance`, so the SDK's `advance_model_lifecycle` reaches AIMgF and is refused there; remove the entry and retire the method for rApps | `r1-termination/tests/test_roles.py` shows the gateway refusing it and the SDK no longer offering it to an rApp | The shared-library hardening change merged (it edits `roles.py`) |
+| SEC-15.8b | The deprecated body field `decidedBy` of `POST /rapp-approvals/{id}/approve|reject` is accepted for one minor release; drop it. Other places that take a person from the body or a query (AIMgF's `decided_by`, `requestedBy` forced by the console) can read `X-R1-Acting-User` the same way | The next minor release: the field is gone from the schema and `check_breaking_changes.py` carries a waiver for it | A release |
+| SEC-15.10b | DME `producerId` is the caller's own word: a rApp can name another producer's id and replace that producer's callback URLs on `POST /production-capabilities`. A check that an rApp's `producerId` is its own invoker id would break producers that register under a name of their own (RAN NF OAM) | An rApp-role caller can only use its own id; `internal` callers keep their names | A decision on how SMO modules name themselves |
+| SEC-15.7b | `DELETE` and `PUT /vendor-capabilities/{vendor}` act on a registry entry that is global: a scoped caller whose elements use a vendor can change what the elements of other tenants of that vendor are checked against | Either an admin-only rule for the registry or a per-tenant entry | A decision |
+
 #### PR-SEC-14 — Threat model
 
 | Step | What | Done when | Needs |

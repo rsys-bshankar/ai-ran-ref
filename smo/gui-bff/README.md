@@ -199,6 +199,8 @@ All routes are under `/api`, except `GET /.well-known/jwks.json` (below). OpenAP
 
 Rule evaluation (`decide`): rules are scanned in order; a rule matches on method, a fully anchored path regex (`{id}` = `[^/]+`, so ids cannot span segments) and every `query_match` pair. The first match decides: allowed iff the caller's rank is at least the rule's role. No match: refused with no required role. The single `viewer` rule is the final catch-all `GET /(<modules>)(/.*)?`; the one sensitive read before it (`GET /aimgf/feature-groups` and `/aimgf/feature-groups/{name}`, which carry datalake tokens) requires operator. Of the 132 rules, 70 require operator, 61 admin, 1 viewer. For the per-role summary see [`../gui/README.md`](../gui/README.md#roles); the rule list in `rbac.py` is the source of truth.
 
+Every forwarded call also carries `X-R1-Acting-User: smo-gui:<username>` (`ACTING_USER_HEADER`, `SEC-15.8`; set after the browser's own headers were filtered, so the browser cannot choose it). The BFF's SMO token is one `internal` invoker for all users, so this header is how a module learns which signed-in person is behind a call; R1 Termination forwards it from an `internal` caller only. RAN NF OAM uses it to name who decided an approval; no other module reads it yet.
+
 Override rules (`Rule.query_overrides` / `json_overrides`), applied before forwarding:
 
 | Route | Forced from the session |
@@ -208,7 +210,7 @@ Override rules (`Rule.query_overrides` / `json_overrides`), applied before forwa
 | `POST /dme/actions` | body `requestedBy` = `smo-gui:<user>` |
 | `POST /intent-service/intents`, `PATCH .../intents/{id}/admin-state` | body `rmioId` / `requesterId` = `smo-gui` |
 | `POST /intent-service/autonomy-dispatches/{id}/reject` | body `rejectedBy` = `smo-gui:<user>` |
-| `POST /ran-nf-oam/rapp-approvals/{id}/approve` and `.../reject` | body `decidedBy` = `smo-gui:<user>` (`AI-11`: operator; the sweep `rapp-approvals/expire-due` is not exposed) |
+| `POST /ran-nf-oam/rapp-approvals/{id}/approve` and `.../reject` | body `decidedBy` = `smo-gui:<user>` (`AI-11`: operator; the sweep `rapp-approvals/expire-due` is not exposed). Since `SEC-15.8` RAN NF OAM takes the decider from the `X-R1-Acting-User` header below and treats the body field as deprecated (it is still sent, equal to the header, for one minor release so that an older RAN NF OAM keeps working) |
 | `PUT /ran-nf-oam/rapp-approval-policy/{id}` | body `requestedBy` = `smo-gui:<user>` (admin; so is `DELETE` and the approval subscriptions); `requiredApprovals` (1 or 2) is passed through. For the approve and reject routes above, `decidedBy` is what makes two approvals two people: it is always the signed-in user, never the browser's value |
 | `PUT /ran-nf-oam/managed-entities/{id}/scope`, `PUT /sme/invoker-registrations/{id}/authz-scope` | nothing forced (admin only): the `region` and `tenant` of a managed element, and the scope claim of an invoker (`PR-SEC-10`). The BFF itself is an unscoped `internal` caller; scoping the console's users is `GUI-5.1` |
 | `POST /sa-smos/monitors/{id}/remedial-actions` | query `requester_is_admin` = `true` for admins else `false` |
