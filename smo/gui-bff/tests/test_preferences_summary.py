@@ -180,6 +180,17 @@ def test_the_number_of_stopped_rapps_is_on_the_rapps_and_dashboard_pages(app, sm
     assert viewer.get("/api/summary/dashboard").json()["counts"]["rappsStopped"] == 2
 
 
+def test_the_model_gates_waiting_are_counted_on_the_nav_approvals_and_aiml_pages(app, smo):
+    """GUI-7.3: `modelGates.waiting` is the total of AIMgF's lifecycles with `awaiting_decision=true`, the inbox's model gates and the sidebar's
+    Approvals badge with the rApp requests."""
+    smo.totals[("/aimgf/model-lifecycles", "awaiting_decision=true")] = 4
+    viewer = login(app, "viewer")
+    for page in ("nav", "approvals", "aiml"):
+        assert viewer.get(f"/api/summary/{page}").json()["counts"]["modelGates.waiting"] == 4
+    asked = [c for c in smo.count_calls if c.url.path == "/aimgf/model-lifecycles"]
+    assert asked and all(c.url.params.get("awaiting_decision") == "true" for c in asked)
+
+
 # ------------------------------------------------------------------ dashboard panels (GUI-9.11)
 
 PANEL_ANSWERS = {

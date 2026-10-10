@@ -2407,3 +2407,23 @@ Bookkeeping after PR-GUI-9 (#430), checked against the code before each step was
   keeps the two the same. A time filter on the table: the export takes `since` / `until`, but the table has none, so the button exports from the
   first alarm; the 10,000,000-row limit bounds it.
 
+### GUI-7.3 — model gates in the Approvals inbox
+
+- **What.** The Approvals page has a third tab, **Model gates**: the models whose next step is a governance decision (approve a finished
+  training or validation, submit an emulated model, approve or reject a submitted one, certify an approved one), each with the decision in
+  words, the AI/ML page's own decision buttons (`ModelActions`, exported by the AI/ML page as `ApprovalDrawer` is by Approvals) and a link to
+  the model (`/aiml?model=<id>#models`, which the Models tab now opens first). The sidebar's Approvals badge adds them to the rApp requests.
+- **Where the rule lives.** AIMgF answers `GET /model-lifecycles?awaiting_decision=true` in SQL (`_awaiting_decision`: TRAINED or VALIDATED
+  until APPROVE_TRAINING / APPROVE_VALIDATION set the gate flag of OI-6.1, EMULATED, PENDING_APPROVAL, APPROVED), so the tab is server-paged and
+  its `total` is true past one page; the BFF counts it as `modelGates.waiting` on the nav, approvals and AI/ML summaries, and a change of it
+  refetches the list (`LIST_PATHS`). The GUI's own copy of the rule (`lib/domain.ts` awaitsDecision, used by the AI/ML "Waiting for
+  governance" card over the lifecycles it already holds) is now one function instead of a set inline in the card.
+- **A badge an older BFF cannot hide.** The badge sums its counts and shows nothing when one is unknown; the model gates are an `extra` addend
+  (`shell/nav.ts` NavBadge, `Sidebar.tsx` badgeCount) that adds only when known, so during a rolling upgrade a BFF without the new count
+  still shows the rApp requests.
+- **Tests.** AIMgF: the filter by state and gate flag (`test_training_progress_and_counts.py`). BFF: the count on the three pages, asked with
+  the filter. GUI: the tab, the decision text, the buttons per role (approve training for an operator; approve and reject for an admin only),
+  the badge's sum.
+- **Not taken.** Moving the decisions into the inbox's detail panel (the AI/ML page already shows a model's metrics and history beside its
+  buttons, so the row links there); a separate approval queue table in AIMgF (the lifecycle state and the gate flags already are the queue).
+

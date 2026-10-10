@@ -1,5 +1,6 @@
 """GUI-9.8 and GUI-9.4 in AIMgF: a training run's epoch progress and ETA (`epoch`/`totalEpochs` on `POST /training-jobs/{id}/progress` and in the
-metrics writeback, `etaSeconds` on every job answer) and the count of models per lifecycle state (`GET /model-lifecycles/counts`).
+metrics writeback, `etaSeconds` on every job answer), the count of models per lifecycle state (`GET /model-lifecycles/counts`) and, for GUI-7.3,
+the lifecycles waiting for a governance decision (`GET /model-lifecycles?awaiting_decision=`).
 
 Fixtures `client`, `mlmr` and `db_session_factory` come from `test_main.py` (SQLite, the MLMR and NFO doubles); a run is started through
 `POST /training-jobs` and its start time moved back in the database where a test needs elapsed time. Run:
@@ -105,3 +106,26 @@ def test_models_are_counted_by_lifecycle_state(client, db_session_factory):
 def test_no_lifecycles_count_as_no_groups(client):
     """An AIMgF that has acted on no model answers an empty list, not an error."""
     assert client.get("/model-lifecycles/counts").json() == {"groups": []}
+
+
+# GUI-7.3: the Approvals inbox's model gates. Table of lifecycles (state, training approved, validation approved) and whether a person must decide.
+GATES = [("TRAINED", False, False, True), ("TRAINED", True, False, False), ("VALIDATED", True, False, True), ("VALIDATED", True, True, False),
+         ("EMULATED", True, True, True), ("PENDING_APPROVAL", True, True, True), ("APPROVED", True, True, True), ("CERTIFIED", True, True, False),
+         ("TRAINING", False, False, False), ("PROMOTED", True, True, False)]
+
+
+def test_awaiting_decision_keeps_the_models_a_person_must_decide_on(client, db_session_factory):
+    """`awaiting_decision=true` keeps TRAINED or VALIDATED until their gate is approved, and EMULATED, PENDING_APPROVAL and APPROVED; `false`
+    keeps the rest; the page's `total` counts only what the filter keeps, so the inbox's count is true past one page."""
+    ids = {}
+    with db_session_factory() as db:
+        for i, (state, trained_ok, validated_ok, _) in enumerate(GATES):
+            ids[i] = uuid.uuid4()
+            db.add(ModelLifecycle(model_id=ids[i], model_lifecycle_state=state, training_approved=trained_ok, validation_approved=validated_ok))
+        db.commit()
+    waiting = {i for i, gate in enumerate(GATES) if gate[3]}
+    got = client.get("/model-lifecycles", params={"awaiting_decision": "true", "limit": 100}).json()
+    assert {item["modelId"] for item in got["items"]} == {str(ids[i]) for i in waiting} and got["total"] == len(waiting)
+    rest = client.get("/model-lifecycles", params={"awaiting_decision": "false", "limit": 100}).json()
+    assert {item["modelId"] for item in rest["items"]} == {str(ids[i]) for i in range(len(GATES)) if i not in waiting}
+    assert client.get("/model-lifecycles", params={"limit": 100}).json()["total"] == len(GATES)

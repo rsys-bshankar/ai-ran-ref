@@ -5,7 +5,10 @@ import type { Role } from "../auth/rbac";
 import type { IconName } from "../kit/icons";
 
 /** One sidebar entry. `badge` names summary counts (gui-bff/app/summary.py, page "nav") whose sum the badge shows, in `tone`. */
-export interface NavItem { to: string; label: string; icon: IconName; minRole?: Role; badge?: { keys: string[]; tone: "bad" | "warn"; title: string } }
+/** A sidebar badge: the sum of the summary counts `keys` (hidden when one is unknown, so a partial sum never reads as the total), plus the counts
+ * `extra` that are known (a count a BFF of an older build does not serve yet adds nothing, rather than hiding the badge). */
+export interface NavBadge { keys: string[]; extra?: string[]; tone: "bad" | "warn"; title: string }
+export interface NavItem { to: string; label: string; icon: IconName; minRole?: Role; badge?: NavBadge }
 
 /** One titled group of entries. */
 export interface NavGroup { title: string; items: NavItem[] }
@@ -18,7 +21,7 @@ export const NAV_GROUPS: NavGroup[] = [
   ] },
   { title: "Automation", items: [
     { to: "/rapps", label: "rApps", icon: "rapps" },
-    { to: "/approvals", label: "Approvals", icon: "approvals", badge: { keys: ["approvals.PENDING"], tone: "warn", title: "approval requests waiting" } },
+    { to: "/approvals", label: "Approvals", icon: "approvals", badge: { keys: ["approvals.PENDING"], extra: ["modelGates.waiting"], tone: "warn", title: "approval requests and model gates waiting" } },
     { to: "/decisions", label: "Decisions", icon: "decisions" },
     { to: "/safeguards", label: "Safeguards", icon: "safeguards" },
     { to: "/aiml", label: "AI/ML", icon: "aiml" },

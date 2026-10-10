@@ -1247,12 +1247,11 @@ GUI-6.1 and 6.2 are done by the console redesign (same `HISTORY.md` entry). What
 
 #### PR-GUI-7 — Approval inbox
 
-Step 7.2 is built (the Approvals page lists pending rApp actions and decides them: `HISTORY.md` PR-AI-11, PR-AI-13); 7.1 and 7.3 are not, and the page says so.
+Steps 7.2 and 7.3 are built (the Approvals page lists pending rApp actions and decides them: `HISTORY.md` PR-AI-11, PR-AI-13; its Model gates tab: `HISTORY.md` GUI-7.3); 7.1 is not, and the page says so.
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | GUI-7.1 | Inbox page listing pending change-window approvals | Component test | MGT-4.3 |
-| GUI-7.3 | Add model gate approvals | Component test | – |
 
 #### PR-GUI-8 — rApp directory and declared pages (done: `HISTORY.md` PR-GUI-8a, PR-GUI-8b and PR-GUI-8c)
 

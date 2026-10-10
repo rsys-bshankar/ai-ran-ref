@@ -5,6 +5,7 @@
 import type { TrainingJob } from "../../../api/types";
 import { Card, StateBadge } from "../../../components/ui";
 import { Empty, ErrorRetry, Skeleton } from "../../../kit/states";
+import { awaitsDecision } from "../../../lib/domain";
 import { useLifecycleIndex, useModelIndex, useModelNames, useRunningTraining } from "../data/queries";
 import { ModelActions } from "./ModelActions";
 import { TrainingProgress } from "./TrainingTable";
@@ -36,15 +37,11 @@ export function TrainingNow({ onSelect, onSeeAll }: { onSelect: (id: string) => 
   );
 }
 
-/** The states whose next step is a governance decision. */
-const WAITING = new Set(["TRAINED", "VALIDATED", "EMULATED", "PENDING_APPROVAL", "APPROVED"]);
-
 /** "Waiting for governance": up to five models, with the count. */
 export function WaitingForGovernance({ onSelect }: { onSelect: (id: string) => void }) {
   const lifecycles = useLifecycleIndex();
   const models = useModelIndex();
-  const waiting = (lifecycles.data?.items ?? []).filter((l) => WAITING.has(l.modelLifecycleState)
-    && !(l.modelLifecycleState === "TRAINED" && l.trainingApproved) && !(l.modelLifecycleState === "VALIDATED" && l.validationApproved));
+  const waiting = (lifecycles.data?.items ?? []).filter(awaitsDecision);
   return (
     <Card section="aiml.waiting" title="Waiting for governance" sub={lifecycles.data ? `${waiting.length} model${waiting.length === 1 ? "" : "s"}` : undefined}>
       {lifecycles.error && !lifecycles.data ? <ErrorRetry error={lifecycles.error} onRetry={() => void lifecycles.refetch()} />
