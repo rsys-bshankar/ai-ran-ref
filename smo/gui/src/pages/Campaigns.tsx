@@ -1,3 +1,9 @@
+/**
+ * The "Software campaigns" tab of the Onboarding page (MGT-15.5): the list of campaigns, the form that starts one (or previews its waves), and the drawer that shows
+ * one campaign and offers halt, continue, abort and roll back. It is mounted by pages/Onboarding.tsx and calls RAN NF OAM through the GUI backend under
+ * /ran-nf-oam/software-campaigns. The rules for what to offer and what to send live in lib/lifecycle.ts, not here; the screen only shows them. Covered by
+ * Campaigns.test.tsx and LifecycleA11y.test.tsx.
+ */
 import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
@@ -48,6 +54,11 @@ export function CampaignsTab() {
 
 // ---------------------------------------------------------------- start
 
+/**
+ * The modal that starts a campaign. Validates the form with `campaignPayload` before any call; "Preview waves" posts the same body with `dryRun` and shows the waves
+ * without starting anything, and any edit drops that preview as stale; "Start" posts it for real and, on success, calls `onStarted` with the new campaign's id
+ * (null when the answer carries none) so the page opens its detail. A refusal by the backend is shown as a toast by `useSmoAction`. `onClose` closes it without a call.
+ */
 function StartCampaign({ onClose, onStarted }: { onClose: () => void; onStarted: (campaignId: string | null) => void }) {
   const endpoints = useSmo<O1Endpoint[]>("/ran-nf-oam/o1-adaptor-endpoints", { limit: 200 });
   const [form, setForm] = useState<CampaignForm>(blankCampaign());
@@ -178,6 +189,11 @@ export function CampaignDrawer({ id, onClose }: { id: string; onClose: () => voi
   );
 }
 
+/**
+ * The buttons of the drawer: those of `campaignActions` for the campaign's state and halted reason, and none (renders nothing) when the state allows none. Each posts to the
+ * campaign's /halt, /continue, /abort or /rollback with an empty body, except that continue sends `force: true` when the person ticks the box that skips a wave pause. Abort,
+ * roll back and continue after a failed gate ask for confirmation first; declining makes no call. `onDone` runs after a successful action so the report is read again.
+ */
 function CampaignActions({ campaign, onDone }: { campaign: CampaignReport; onDone: () => void }) {
   const allowed = campaignActions(campaign.status, campaign.haltedReason);
   const base = `${CAMPAIGNS}/${campaign.campaignId}`;

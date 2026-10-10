@@ -1,4 +1,9 @@
 // @vitest-environment jsdom
+/**
+ * Component tests of the onboarding tab (pages/Onboarding.tsx) and its watcher card: the template list and editor, the element rows with apply and select, the detail drawer,
+ * the watchers, and the Infrastructure page's tabs, for a viewer, an operator and an admin. The backend is a fake `fakeBff` (testing/bff.ts) answering by method and
+ * path under /smo, and the permissions come from auth/permissions.fixture.json; jsdom, no server. Run: `cd gui && npx vitest run src/pages/Onboarding.test.tsx`.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../auth/AuthContext";
@@ -12,15 +17,18 @@ import { OnboardingTab } from "./Onboarding";
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 beforeEach(() => { document.body.innerHTML = ""; window.location.hash = ""; });
 
+/** A stored onboarding template as RAN NF OAM returns it (an enabled O-DU template with one change); `over` replaces fields. */
 const template = (over: Record<string, unknown> = {}) => ({
   name: "du-basic", description: "basic DU", entityType: "O-DU", vendorName: null, softwareBaseline: "2.1", requireBaseline: false, autoApply: false, enabled: true,
   changes: [{ managedFunctionRef: "NRCellDU=1", attributeChanges: { txPower: 20 }, operation: "merge" }], createdAt: "2026-10-01T10:00:00Z", updatedAt: "2026-10-01T10:00:00Z", ...over,
 });
+/** An element's onboarding row, by default in TEMPLATE_SELECTED with a matching software version; `over` replaces fields. */
 const row = (ref: string, over: Record<string, unknown> = {}) => ({
   managedElementRef: ref, status: "TEMPLATE_SELECTED", templateName: "du-basic", softwareVersion: "2.1", softwareBaseline: "2.1", softwareCheck: "MATCH", configJobId: null, detail: null,
   createdAt: "2026-10-01T10:00:00Z", updatedAt: "2026-10-01T10:05:00Z", ...over,
 });
 
+/** Installs the fake backend for a signed-in `role`: two templates (one disabled), five elements in different states, one watcher, one endpoint; `overrides` replace or add routes. Returns the recorded calls. */
 function bff(role: "viewer" | "operator" | "admin", overrides: Record<string, unknown> = {}) {
   return fakeBff({
     "GET /me": { username: "ana", role, csrfToken: "c", local: true, totpEnrolled: true, mfaEnrolmentRequired: false },
@@ -40,6 +48,7 @@ const open = () => mountWith(<AuthProvider><OnboardingTab /></AuthProvider>);
 const rowOf = (container: HTMLElement, text: string) => Array.from(container.querySelectorAll("tbody tr")).find((r) => r.textContent?.includes(text)) as HTMLElement;
 
 describe("the onboarding templates", () => {
+  // A template row shows what it applies to, its baseline, how it is applied and whether it is enabled, and an empty list says no template is defined.
   it("lists each template with what it applies to, and says when none is defined", async () => {
     const { container } = await (bff("viewer"), open());
     await settle();
@@ -59,6 +68,7 @@ describe("the onboarding templates", () => {
     expect(empty.container.textContent).toContain("No template is defined");
   });
 
+  // A viewer sees no New, Edit or Delete button, and a click on a template opens a read-only view without the editing form.
   it("gives a viewer nothing to change: no new, edit or delete, and the row opens a read-only view", async () => {
     bff("viewer");
     const { container } = await open();
@@ -74,6 +84,7 @@ describe("the onboarding templates", () => {
     expect(dialog.querySelector("ul[aria-label='Template changes']")?.textContent).toContain("merge NRCellDU=1");
   });
 
+  // An admin's new template is PUT under its name with the fields in the form RAN NF OAM takes (blank vendor as null, parsed changes), and the form closes.
   it("makes a template as an admin, with the name in the path and the fields as RAN NF OAM takes them", async () => {
     const calls = bff("admin", { "PUT /smo/ran-nf-oam/onboarding-templates/cu-basic": { body: template({ name: "cu-basic" }) } });
     const { container } = await open();
@@ -95,6 +106,7 @@ describe("the onboarding templates", () => {
     expect(document.querySelector("[role=dialog]")).toBeNull();                                   // closed after saving
   });
 
+  // A bad name, a missing entity type or a change that names a managedElementRef is shown as a message and nothing is sent.
   it("shows what is wrong with a template before sending it", async () => {
     const calls = bff("admin");
     const { container } = await open();
@@ -115,6 +127,7 @@ describe("the onboarding templates", () => {
     expect(calls.some((c) => c.method === "PUT")).toBe(false);
   });
 
+  // Editing keeps the name read-only and PUTs to it, and deleting asks for confirmation before the DELETE.
   it("edits a template under its own name and deletes one after asking", async () => {
     const calls = bff("admin", { "PUT /smo/ran-nf-oam/onboarding-templates/du-basic": { body: template() }, "DELETE /smo/ran-nf-oam/onboarding-templates/du-acme": { status: 204 } });
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -136,6 +149,7 @@ describe("the onboarding templates", () => {
 });
 
 describe("the onboarding of elements", () => {
+  // An element row shows its state, software version against the baseline with the check result, and the detail of a failure, so a failed onboarding says why.
   it("lists each element with its state, template, software check and why it failed", async () => {
     bff("viewer");
     const { container } = await open();
@@ -151,6 +165,7 @@ describe("the onboarding of elements", () => {
     expect(rowOf(container, "ME-5").textContent).toContain("not reported");
   });
 
+  // A viewer sees no Apply, Select or select-for-an-element button.
   it("gives a viewer no apply or select", async () => {
     bff("viewer");
     const { container } = await open();
@@ -160,6 +175,7 @@ describe("the onboarding of elements", () => {
     expect(byText(container, "button", "Select a template for an element…")).toBeNull();
   });
 
+  // Each state offers only the buttons the backend's state machine accepts: nothing while APPLYING, and Apply again after a failure or a success.
   it("offers apply and select only where the state machine allows them", async () => {
     bff("operator");
     const { container } = await open();
@@ -172,6 +188,7 @@ describe("the onboarding of elements", () => {
     expect(buttons("ME-5")).toEqual(["Select…"]);                       // NO_TEMPLATE
   });
 
+  // Apply is pre-filled with the version the row knows, posts the edited version and no requestedBy (the backend sets it), and closes.
   it("applies a template with the version the element runs, and sends no name for who applied it", async () => {
     const calls = bff("operator", { "POST /smo/ran-nf-oam/element-onboarding/ME-1/apply": { status: 202, body: row("ME-1", { status: "ONBOARDED" }) } });
     const { container } = await open();
@@ -190,6 +207,7 @@ describe("the onboarding of elements", () => {
     expect(document.querySelector("[role=dialog]")).toBeNull();
   });
 
+  // Selecting offers only enabled templates, sends an empty body for the best match and the template and version when they are given.
   it("selects a template for an element again, naming one or taking the best match", async () => {
     const calls = bff("operator", { "POST /smo/ran-nf-oam/element-onboarding/ME-5/select": row("ME-5") });
     const { container } = await open();
@@ -212,6 +230,7 @@ describe("the onboarding of elements", () => {
     expect(calls.filter((c) => c.method === "POST")[1].body).toEqual({ template: "du-basic", softwareVersion: "2.1" });
   });
 
+  // An element with no row can be chosen from the registered endpoints, and Select stays disabled until one is chosen.
   it("selects a template for an element that has no row yet", async () => {
     const calls = bff("operator", { "POST /smo/ran-nf-oam/element-onboarding/ME-9/select": row("ME-9") });
     const { container } = await open();
@@ -226,6 +245,7 @@ describe("the onboarding of elements", () => {
     expect(calls.find((c) => c.method === "POST")!.path).toBe("/smo/ran-nf-oam/element-onboarding/ME-9/select");
   });
 
+  // The detail of a failed row shows its meaning and detail and opens the config job of the failed apply from a second drawer.
   it("opens the detail of a row, with the config job of a failed apply", async () => {
     bff("viewer", { "GET /smo/ran-nf-oam/element-onboarding/ME-2": row("ME-2", { status: "FAILED", detail: "config job j-1 ended FAILED: NETCONF_RPC_FAILED", configJobId: "7a2c9f1b-2222-4b3c-8d4e-bbbbbbbbbbbb" }),
       "GET /smo/ran-nf-oam/config-jobs/7a2c9f1b-2222-4b3c-8d4e-bbbbbbbbbbbb": { jobId: "7a2c9f1b-2222-4b3c-8d4e-bbbbbbbbbbbb", status: "FAILED", subChanges: [] } });
@@ -242,6 +262,7 @@ describe("the onboarding of elements", () => {
     expect(document.querySelectorAll("[role=dialog]").length).toBe(2);
   });
 
+  // The state filter is sent to the backend, and a failed read shows its error and not an empty table.
   it("filters by state and shows an error instead of an empty table", async () => {
     const calls = bff("viewer");
     const { container } = await open();
@@ -258,6 +279,7 @@ describe("the onboarding of elements", () => {
 });
 
 describe("who is told", () => {
+  // An admin adds a watcher with the trimmed URL and only the ticked events, and removes one with a DELETE of its id.
   it("lists the watchers, and an admin adds one for chosen events and removes one", async () => {
     const calls = bff("admin", { "POST /smo/ran-nf-oam/lifecycle-subscriptions": { status: 201, body: {} }, "DELETE /smo/ran-nf-oam/lifecycle-subscriptions/s-1": { status: 204 } });
     vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -277,6 +299,7 @@ describe("who is told", () => {
     expect(calls.find((c) => c.method === "DELETE")!.path).toBe("/smo/ran-nf-oam/lifecycle-subscriptions/s-1");
   });
 
+  // An operator sees the watchers but no Add or Remove button.
   it("gives an operator the list and no way to change it", async () => {
     bff("operator");
     const { container } = await open();
@@ -288,6 +311,7 @@ describe("who is told", () => {
 });
 
 describe("the Infrastructure page", () => {
+  // The Infrastructure page has the Onboarding and Software campaigns tabs, opens on the one in the address, and switches between them.
   it("has the onboarding and campaign tabs, and opens on them from the address", async () => {
     bff("viewer", { "GET /smo/ran-nf-oam/software-campaigns": { items: [], limit: 200, offset: 0 } });
     window.location.hash = "#onboarding";

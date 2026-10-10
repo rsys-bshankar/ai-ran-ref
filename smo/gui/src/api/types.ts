@@ -279,20 +279,24 @@ export interface Page<T> { items: T[]; limit: number; offset: number; total?: nu
 export type OnboardingStatus = "DISCOVERED" | "NO_TEMPLATE" | "TEMPLATE_SELECTED" | "APPLYING" | "ONBOARDED" | "FAILED";
 export type SoftwareCheck = "NOT_CHECKED" | "MATCH" | "MISMATCH";
 export interface TemplateChange { managedFunctionRef?: string | null; attributeChanges: Record<string, unknown>; operation: string }
+/** A stored onboarding template as RAN NF OAM returns it: what is written to a newly discovered element of this type and vendor, and when it applies by itself. */
 export interface OnboardingTemplate {
   name: string; description: string | null; entityType: string; vendorName: string | null; softwareBaseline: string | null; requireBaseline: boolean;
   autoApply: boolean; enabled: boolean; changes: TemplateChange[]; createdAt: string | null; updatedAt: string | null;
 }
+/** One element's onboarding record: its state, the template chosen, the software version it reported with the baseline check, and the config job of the last apply. */
 export interface ElementOnboarding {
   managedElementRef: string; status: OnboardingStatus; templateName: string | null; softwareVersion: string | null; softwareBaseline: string | null;
   softwareCheck: SoftwareCheck; configJobId: string | null; detail: string | null; createdAt: string | null; updatedAt: string | null;
 }
 export type CampaignStatus = "PENDING" | "RUNNING" | "HALTED" | "COMPLETED" | "ABORTED" | "ROLLING_BACK" | "ROLLED_BACK" | "ROLLBACK_FAILED";
+/** A software campaign as the list shows it: its state, the wave it has reached out of the wave count and, for a halted one, why it is held (`name`, `softwareVersion` and `createdAt` come with the list rows). */
 export interface CampaignSummary {
   campaignId: string; status: CampaignStatus; wave: number; waveCount: number; haltedReason: string | null; name?: string; softwareVersion?: string | null; createdAt?: string | null;
 }
 export interface CampaignEvent { at: string; event: string; wave: number; detail: string | null; by: string | null; job?: string }
 export interface CampaignJob { managedElementRef: string; jobId: string; phase: string; status: string; revert: "COMPLETED" | "IN_PROGRESS" | "FAILED" | null; timedOut?: boolean }
+/** The full report of one campaign (the drawer): its settings, the event log, the totals, each wave with the element jobs, and the elements that need attention. */
 export interface CampaignReport extends CampaignSummary {
   name: string; requestedBy: string; softwareVersion: string | null; selector: Record<string, string> | null; elements: string[]; waveSize: number | null;
   wavePauseSeconds: number; gateMaxNewAlarms: number; onGateFailure: "halt" | "rollback"; jobTimeoutSeconds: number | null; rollbackOrder: "all" | "reverse";

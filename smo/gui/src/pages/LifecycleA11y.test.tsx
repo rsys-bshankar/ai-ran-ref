@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
-// axe-core on the onboarding and campaign tabs, their forms and the campaign drawer, in jsdom. The browser check of every page (scripts/gui_e2e.py) runs axe in Chromium
+/**
+ * axe-core on the onboarding and campaign tabs, their forms and the campaign drawer, in jsdom. The browser check of every page (scripts/gui_e2e.py) runs axe in Chromium
 // against the compose stack; this catches the structural rules (labels, names, roles, tables) where the pages are written. Colour contrast needs a real renderer
 // and is left to that check.
+ * The backend is `fakeBff` (testing/bff.ts) answering as an admin, so every form and button is shown. Run: `cd gui && npx vitest run src/pages/LifecycleA11y.test.tsx`.
+ */
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -17,6 +20,7 @@ beforeEach(() => { document.body.innerHTML = ""; window.location.hash = ""; });
 
 const CID = "4b6f1c2e-3333-4d4e-9f5a-cccccccccccc";
 
+/** Installs the fake backend for an admin: one template, one element ready to apply, one watcher, one endpoint and one halted campaign with its report. */
 function bff() {
   return fakeBff({
     "GET /me": { username: "ana", role: "admin", csrfToken: "c", local: true, totpEnrolled: true, mfaEnrolmentRequired: false },
@@ -36,6 +40,7 @@ function bff() {
   });
 }
 
+/** Runs axe on `root` (colour contrast off: jsdom cannot render it) and returns the moderate, serious and critical findings as "rule: help (targets)" lines; empty means clean. */
 async function violations(root: Element): Promise<string[]> {
   const result = await axe.run(root, { rules: { "color-contrast": { enabled: false } }, runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "best-practice"] } });
   return result.violations.filter((v) => v.impact === "serious" || v.impact === "critical" || v.impact === "moderate")
@@ -43,6 +48,7 @@ async function violations(root: Element): Promise<string[]> {
 }
 
 describe("accessibility of the onboarding and campaign pages", () => {
+  // The onboarding tab, the new-template form and the apply form have no labelling, role or table violation, so a keyboard or screen-reader user can use them.
   it("has no structural violation on the onboarding tab, its template form and its apply form", async () => {
     bff();
     const { container } = await mountWith(<AuthProvider><OnboardingTab /></AuthProvider>);
@@ -57,6 +63,7 @@ describe("accessibility of the onboarding and campaign pages", () => {
     expect(await violations(document.querySelector("[role=dialog]")!)).toEqual([]);
   });
 
+  // The campaign list, the start form and the drawer of a halted campaign have no labelling, role or table violation.
   it("has none on the campaign list, the start form and the campaign drawer", async () => {
     bff();
     const { container } = await mountWith(<AuthProvider><CampaignsTab /></AuthProvider>);

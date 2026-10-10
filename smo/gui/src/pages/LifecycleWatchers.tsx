@@ -1,3 +1,8 @@
+/**
+ * The "Who is told about failures" card (PR-MGT-14.7, MGT-15.6), shown under both the onboarding and the campaign tab: the list of lifecycle watchers (webhooks) and the form
+ * that adds one. It reads and writes /ran-nf-oam/lifecycle-subscriptions through the GUI backend; the Add and Remove buttons appear only to a role that may POST and DELETE there. The
+ * event names in `LIFECYCLE_EVENTS` are the ones RAN NF OAM accepts (app/lifecycle.py); a new event there must be added here. Mounted by pages/Onboarding.tsx and pages/Campaigns.tsx.
+ */
 import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
@@ -34,6 +39,10 @@ export function LifecycleWatchers() {
   );
 }
 
+/**
+ * The modal that adds a watcher: a callback URL and the events to be told about (none ticked means all). Posts to the subscriptions route and, on success, closes through `onClose`;
+ * the button stays disabled while the URL is blank or a call is pending. The URL is only trimmed here: RAN NF OAM refuses an unusable or internal address and the refusal is shown as a toast.
+ */
 function AddWatcher({ onClose }: { onClose: () => void }) {
   const [uri, setUri] = useState("");
   const [events, setEvents] = useState<string[]>([]);

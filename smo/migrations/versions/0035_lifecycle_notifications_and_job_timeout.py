@@ -22,6 +22,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Adds the `ran_nf_oam.lifecycle_subscription` table and the `job_timeout_seconds` and `rollback_order` columns of `software_campaign`.
+
+    Every statement is guarded (`IF NOT EXISTS`) so a second run changes nothing. The `rollback_order` column is NOT NULL with the default 'all' and a CHECK that limits it to
+    'all' or 'reverse', so existing campaigns and inserts that do not name it keep the rollback they had. Nothing is read or backfilled.
+    """
     op.execute("""
         CREATE TABLE IF NOT EXISTS ran_nf_oam.lifecycle_subscription (
             subscription_id UUID PRIMARY KEY,
@@ -38,6 +43,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drops what `upgrade` added: the `rollback_order` and `job_timeout_seconds` columns of `software_campaign` and the `lifecycle_subscription` table.
+
+    The subscriptions, the campaigns' timeouts and their rollback order are lost; the campaigns themselves and their jobs stay. Each drop is guarded (`IF EXISTS`), so it can be run again.
+    """
     op.execute("ALTER TABLE ran_nf_oam.software_campaign DROP COLUMN IF EXISTS rollback_order")
     op.execute("ALTER TABLE ran_nf_oam.software_campaign DROP COLUMN IF EXISTS job_timeout_seconds")
     op.execute("DROP TABLE IF EXISTS ran_nf_oam.lifecycle_subscription")

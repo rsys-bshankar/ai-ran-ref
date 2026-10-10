@@ -1,3 +1,8 @@
+/**
+ * Unit tests of lib/lifecycle.ts: the button rules of onboarding and campaigns, the template and campaign forms turned into request bodies with their
+ * validation messages, and the one-line wordings. Pure functions, no fixtures and no network.
+ * Run: `cd gui && npx vitest run src/lib/lifecycle.test.ts`.
+ */
 import { describe, expect, it } from "vitest";
 
 import type { CampaignStatus, OnboardingStatus, OnboardingTemplate } from "../api/types";
@@ -10,6 +15,7 @@ const template = (over: Partial<TemplateForm> = {}): TemplateForm => ({ ...blank
 const campaign = (over: Partial<CampaignForm> = {}): CampaignForm => ({ ...blankCampaign(), name: "r3", refs: ["ME-1", "ME-2"], ...over });
 
 describe("onboardingActions", () => {
+  // A button the backend would refuse as an illegal transition is never offered: nothing while APPLYING, apply only once a template is chosen or an apply has ended.
   it("offers what the onboarding state machine allows and nothing while the template is being written", () => {
     const table: Record<OnboardingStatus, { apply: boolean; select: boolean }> = {
       DISCOVERED: { apply: false, select: true }, NO_TEMPLATE: { apply: false, select: true }, TEMPLATE_SELECTED: { apply: true, select: true },
@@ -20,6 +26,7 @@ describe("onboardingActions", () => {
 });
 
 describe("parseChanges", () => {
+  // A valid change list is accepted and a missing operation defaults to merge, as RAN NF OAM does.
   it("accepts a list of changes and fills in the operation", () => {
     const r = parseChanges('[{"managedFunctionRef": "NRCellDU=1", "attributeChanges": {"txPower": 20}}, {"attributeChanges": {"adminState": "unlocked"}, "operation": "replace"}]');
     expect(r).toEqual({ ok: true, value: [
@@ -28,6 +35,7 @@ describe("parseChanges", () => {
     ] });
   });
 
+  // Table of malformed change lists (text, fragment of the message): each is refused and the message names the problem.
   it.each([
     ["not json", "not JSON"],
     ["{}", "JSON list"],
@@ -44,6 +52,7 @@ describe("parseChanges", () => {
     expect(r.ok ? "" : r.error).toContain(fragment);
   });
 
+  // A template with more than 200 changes is refused before the call, the same limit RAN NF OAM enforces.
   it("refuses more than 200 changes", () => {
     const r = parseChanges(JSON.stringify(Array.from({ length: 201 }, () => ({ attributeChanges: {} }))));
     expect(r).toEqual({ ok: false, error: "at most 200 changes" });
@@ -51,6 +60,7 @@ describe("parseChanges", () => {
 });
 
 describe("templatePayload", () => {
+  // The template form becomes the PUT body with trimmed values and blank vendor and description sent as null, not as empty text.
   it("builds the body RAN NF OAM takes, with blanks as null", () => {
     const r = templatePayload(template({ vendorName: " acme ", softwareBaseline: "2.1", requireBaseline: true, autoApply: true }), false);
     expect(r.ok && r.name).toBe("du-basic");
@@ -58,6 +68,7 @@ describe("templatePayload", () => {
     expect(r.ok && (r.body.changes as unknown[]).length).toBe(1);
   });
 
+  // The name is validated only when creating (when editing it is the key), and a missing type, a required baseline without a baseline, or no changes is refused.
   it("checks the name only when making a template, and needs a type and, for a required baseline, a baseline", () => {
     expect(templatePayload(template({ name: "-bad" }), false).ok).toBe(false);
     expect(templatePayload(template({ name: "has space" }), false).ok).toBe(false);
@@ -67,6 +78,7 @@ describe("templatePayload", () => {
     expect(templatePayload(template({ changes: "[]" }), false).ok).toBe(false);
   });
 
+  // Loading a stored template into the form and saving it unchanged sends back the same values, so an edit does not silently alter a field.
   it("round-trips a stored template through the form", () => {
     const stored: OnboardingTemplate = {
       name: "du", description: "basic", entityType: "O-DU", vendorName: null, softwareBaseline: "1.0", requireBaseline: false, autoApply: true, enabled: false,
@@ -79,16 +91,19 @@ describe("templatePayload", () => {
 });
 
 describe("campaignPayload", () => {
+  // A named-elements campaign carries the GUI defaults and never a requestedBy, which the GUI backend sets from the signed-in user.
   it("builds a named-elements request with the GUI's defaults and no requestedBy", () => {
     const r = campaignPayload(campaign({ softwareVersion: " 3.0 ", waveSize: "2" }));
     expect(r).toEqual({ ok: true, body: { name: "r3", softwareVersion: "3.0", waveSize: 2, wavePauseSeconds: 0, gateMaxNewAlarms: 0, onGateFailure: "halt", rollbackOrder: "reverse", managedElementRefs: ["ME-1", "ME-2"] } });
   });
 
+  // A selector campaign sends only the non-blank selector keys, trimmed, and the dry-run flag when asked, so a preview starts nothing.
   it("builds a selector request from the keys given and leaves out what is blank", () => {
     const r = campaignPayload(campaign({ mode: "selector", refs: [], region: "eu", tenant: " acme ", jobTimeoutSeconds: "900", onGateFailure: "rollback", rollbackOrder: "all" }), true);
     expect(r).toEqual({ ok: true, body: { name: "r3", wavePauseSeconds: 0, gateMaxNewAlarms: 0, onGateFailure: "rollback", rollbackOrder: "all", jobTimeoutSeconds: 900, selector: { region: "eu", tenant: "acme" }, dryRun: true } });
   });
 
+  // Table of invalid campaign forms (fields changed from a valid form, fragment of the message): each is refused with a message naming the field or limit.
   it.each<[Partial<CampaignForm>, string]>([
     [{ name: " " }, "needs a name"],
     [{ name: "x".repeat(201) }, "at most 200"],
@@ -121,12 +136,14 @@ describe("campaignActions", () => {
     ["ROLLED_BACK", null, { halt: false, continue: false, abort: false, rollback: false, canForce: false }],
     ["ROLLBACK_FAILED", null, { halt: false, continue: false, abort: false, rollback: true, canForce: false }],
   ];
+  // Table of (state, halted reason) with the five flags: only the actions RAN NF OAM accepts in that state are offered, and skipping the pause only while the pause holds it.
   it.each(table)("%s (%s)", (status, reason, expected) => {
     expect(campaignActions(status, reason)).toEqual(expected);
   });
 });
 
 describe("the one-line descriptions", () => {
+  // The progress and selector wordings read "not started" before the first wave and "named elements" when no selector is given.
   it("say where a campaign is", () => {
     expect(waveProgress({ wave: 0, waveCount: 3 })).toBe("not started");
     expect(waveProgress({ wave: 2, waveCount: 3 })).toBe("wave 2 of 3");
@@ -134,12 +151,14 @@ describe("the one-line descriptions", () => {
     expect(describeSelector(null)).toBe("named elements");
   });
 
+  // A known halt reason shows its meaning, and an unknown code is shown as it is rather than hidden, so a new backend reason is still visible.
   it("say why a campaign is held, with the code when it is not a known one", () => {
     expect(describeHalt("GATE_FAILED")).toContain("health gate failed");
     expect(describeHalt("SOMETHING_NEW")).toBe("SOMETHING_NEW");
     expect(describeHalt(null)).toBe("");
   });
 
+  // The settings line states every wave setting, with the plain wording for the unset values (one wave, no pause, no job timeout).
   it("list the settings of a campaign", () => {
     expect(describeSettings({ waveSize: 2, wavePauseSeconds: 60, gateMaxNewAlarms: 1, onGateFailure: "rollback", jobTimeoutSeconds: 900, rollbackOrder: "reverse" }))
       .toBe("2 per wave · 60 s pause · 1 new alarm(s) allowed · a failed gate rolls back · a job times out after 900 s · rollback last wave first");

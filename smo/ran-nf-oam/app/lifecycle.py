@@ -105,6 +105,9 @@ def _raise_alarm(db: Session, ref: str, source_id: str, severity: str, alarm_typ
 
 # ---------------------------------------------------------------- notifications (MGT-14.7, MGT-15.6)
 
+# The body of POST /lifecycle-subscriptions: where to send the notices (`callbackUri`, 1 to 2000 characters; whether it is an acceptable destination is checked by the route, not here)
+# and which events, a list of the three event names (an unknown name is a 422; empty means all three). Unknown fields are refused. It has no docstring on purpose: a
+# docstring would be published in docs/openapi.
 class LifecycleSubscriptionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     callbackUri: str = Field(min_length=1, max_length=2000)
@@ -130,12 +133,16 @@ def subscribe_to_lifecycle_events(body: LifecycleSubscriptionRequest, db: Sessio
 
 @router.get("/lifecycle-subscriptions")
 def list_lifecycle_subscriptions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Answers the page envelope (`items`, `limit`, `offset` and `total` or `hasMore`) of the subscriptions, oldest first, each as `_subscription_view` shows it: the callback, the events
+    # (an empty list means all three) and when it was made. An empty page when nobody subscribed. Reads only; no write, no commit and no outbox row.
     page = paginate(db, select(LifecycleSubscription).order_by(LifecycleSubscription.created_at), limit, offset)
     return {**page, "items": [_subscription_view(s) for s in page["items"]]}
 
 
 @router.delete("/lifecycle-subscriptions/{subscription_id}", status_code=204)
 def unsubscribe_from_lifecycle_events(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Deletes the subscription and commits, answering 204 with no body; notices already in the outbox for it are still delivered. An id that does not exist is a 404
+    # LIFECYCLE_SUBSCRIPTION_NOT_FOUND (and nothing is written); an id that is not a UUID is a 422 from the path validation.
     sub = db.get(LifecycleSubscription, subscription_id)
     if sub is None:
         raise framework_error(LIFECYCLE_SUBSCRIPTION_NOT_FOUND, detail=f"no subscription {subscription_id}")

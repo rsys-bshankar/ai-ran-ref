@@ -52,6 +52,8 @@ def _sweep(client):
 # ---- the subscription (14.7, 15.6)
 
 def test_a_subscription_is_made_listed_and_removed_and_a_bad_destination_or_event_is_refused(client):
+    """A subscription is stored with its events de-duplicated, listed oldest first and deleted once (a second delete is a 404); a private destination, an unknown event
+    or an unknown field is refused with 422, so a bad watcher fails at the door and not silently later."""
     made = _subscribe(client, events=["CAMPAIGN_HALTED", "CAMPAIGN_HALTED"])
     assert made["callbackUri"] == WATCHER and made["events"] == ["CAMPAIGN_HALTED"] and made["createdAt"]
     all_events = _subscribe(client, OTHER)
@@ -69,6 +71,8 @@ def test_a_subscription_is_made_listed_and_removed_and_a_bad_destination_or_even
 # ---- 14.7 a failed onboarding
 
 def test_a_failed_onboarding_tells_each_subscriber_that_wants_it_and_nobody_else(client, db_session_factory, nf):
+    """A FAILED onboarding enqueues one ONBOARDING_FAILED notice per subscriber that wants that event, carrying the element, template, job and detail, and a later
+    success tells nobody."""
     _subscribe(client)
     _subscribe(client, OTHER, events=["CAMPAIGN_HALTED"])
     _template(client)
@@ -86,6 +90,7 @@ def test_a_failed_onboarding_tells_each_subscriber_that_wants_it_and_nobody_else
 
 
 def test_a_baseline_that_stops_the_apply_is_a_failed_onboarding_too(client, db_session_factory, nf):
+    """A required software baseline that does not match fails the onboarding before any config job exists, and that failure is announced too (with no job id)."""
     _subscribe(client)
     _template(client, softwareBaseline="2.0", requireBaseline=True)
     _register(client, softwareVersion="1.0")
@@ -95,6 +100,7 @@ def test_a_baseline_that_stops_the_apply_is_a_failed_onboarding_too(client, db_s
 
 
 def test_an_unexpected_error_is_announced_without_its_text(client, db_session_factory, monkeypatch):
+    """An unexpected exception while applying is announced by its class name only: the notice must not leak the exception's text to an external webhook."""
     _subscribe(client)
     _template(client)
     _register(client)
@@ -110,6 +116,7 @@ def test_an_unexpected_error_is_announced_without_its_text(client, db_session_fa
 
 
 def test_without_a_subscription_a_failed_onboarding_enqueues_nothing(client, db_session_factory, nf):
+    """With nobody subscribed a failed onboarding adds no outbox row: the feature is opt in and costs nothing when unused."""
     _template(client)
     _register(client)
     nf["fail"] = True
@@ -121,6 +128,7 @@ def test_without_a_subscription_a_failed_onboarding_enqueues_nothing(client, db_
 # ---- 15.6 a halted campaign, a failed rollback
 
 def test_a_failed_gate_that_halts_the_campaign_is_announced(client, db_session_factory, fleet):
+    """A campaign halted by a failed health gate enqueues one CAMPAIGN_HALTED notice with the campaign, the reason GATE_FAILED, the wave and the link to it."""
     _subscribe(client)
     cid = _campaign(client, waveSize=2)
     _run_wave(client, cid, 1, fail={"ME-2"})
@@ -132,6 +140,8 @@ def test_a_failed_gate_that_halts_the_campaign_is_announced(client, db_session_f
 
 
 def test_an_operator_halt_is_announced_and_the_routine_pause_between_waves_is_not(client, db_session_factory, fleet):
+    """An operator's halt (of a running campaign, or of one held by its wave pause) is announced, but the routine pause between waves and a repeated halt of an
+    already halted campaign are not."""
     _subscribe(client, events=["CAMPAIGN_HALTED"])
     paused = _campaign(client, waveSize=2, wavePauseSeconds=3600)
     _run_wave(client, paused, 1)
@@ -148,6 +158,7 @@ def test_an_operator_halt_is_announced_and_the_routine_pause_between_waves_is_no
 
 
 def test_a_gate_failure_that_rolls_back_by_itself_announces_only_a_failed_rollback(client, db_session_factory, fleet):
+    """When a failed gate starts a rollback itself nothing is announced, and a revert job that then fails announces CAMPAIGN_ROLLBACK_FAILED once; a successful retry adds no notice."""
     _subscribe(client)
     cid = _campaign(client, waveSize=2, onGateFailure="rollback")
     _run_wave(client, cid, 1, fail={"ME-2"})
@@ -162,6 +173,7 @@ def test_a_gate_failure_that_rolls_back_by_itself_announces_only_a_failed_rollba
 
 
 def test_without_a_subscription_a_halt_enqueues_nothing(client, db_session_factory, fleet):
+    """With nobody subscribed a halted campaign adds no outbox row."""
     cid = _campaign(client, waveSize=2)
     _run_wave(client, cid, 1, fail={"ME-1"})
     assert _view(client, cid)["status"] == "HALTED"
@@ -172,6 +184,7 @@ def test_without_a_subscription_a_halt_enqueues_nothing(client, db_session_facto
 # ---- 15.7 a job that never reports
 
 def test_a_campaign_made_without_a_timeout_waits_for_its_jobs_however_long(client, db_session_factory, fleet):
+    """A campaign without jobTimeoutSeconds (default rollbackOrder "all") is never touched by the sweep, however old its wave, so existing campaigns keep their behaviour."""
     cid = _campaign(client, waveSize=2)
     assert _view(client, cid)["jobTimeoutSeconds"] is None and _view(client, cid)["rollbackOrder"] == "all"
     _age_wave(db_session_factory, cid, 10 * 86400)
@@ -179,6 +192,8 @@ def test_a_campaign_made_without_a_timeout_waits_for_its_jobs_however_long(clien
 
 
 def test_a_job_that_never_reports_is_failed_by_the_sweep_and_the_gate_halts_the_campaign(client, db_session_factory, fleet):
+    """Once the wave is older than jobTimeoutSeconds the sweep fails the job that never finished (marked timed out, in its phase) and the gate halts the campaign; a late report
+    cannot revive the job and the next sweep has nothing to do."""
     _subscribe(client)
     cid = _campaign(client, waveSize=2, jobTimeoutSeconds=600)
     first, second = _wave_jobs(client, cid, 1)
@@ -201,6 +216,7 @@ def test_a_job_that_never_reports_is_failed_by_the_sweep_and_the_gate_halts_the_
 
 
 def test_a_timeout_with_the_rollback_policy_undoes_the_completed_jobs(client, db_session_factory, fleet):
+    """A timed-out job under onGateFailure "rollback" starts the rollback of the jobs that completed, and only of those."""
     cid = _campaign(client, waveSize=2, jobTimeoutSeconds=60, onGateFailure="rollback")
     first, _second = _wave_jobs(client, cid, 1)
     _complete(client, first["jobId"])
@@ -210,6 +226,7 @@ def test_a_timeout_with_the_rollback_policy_undoes_the_completed_jobs(client, db
 
 
 def test_a_revert_job_that_never_reports_fails_the_rollback(client, db_session_factory, fleet):
+    """The timeout also covers a rollback: revert jobs still running after jobTimeoutSeconds are failed, the campaign ends ROLLBACK_FAILED and that is announced."""
     _subscribe(client, events=["CAMPAIGN_ROLLBACK_FAILED"])
     cid = _campaign(client, waveSize=2, jobTimeoutSeconds=60)
     _run_wave(client, cid, 1)
@@ -225,6 +242,7 @@ def test_a_revert_job_that_never_reports_fails_the_rollback(client, db_session_f
 
 
 def test_a_sweep_that_loses_a_race_with_a_job_report_leaves_it_to_the_next_sweep(client, db_session_factory, fleet, monkeypatch):
+    """When a job report changes the campaign while the sweep expires its jobs (a stale-data conflict), the sweep skips that campaign without an error and the next sweep handles it."""
     cid = _campaign(client, ["ME-1"], jobTimeoutSeconds=60)
     _age_wave(db_session_factory, cid, 120)
     from sqlalchemy.orm.exc import StaleDataError
@@ -243,8 +261,10 @@ def test_a_sweep_that_loses_a_race_with_a_job_report_leaves_it_to_the_next_sweep
     assert [a["status"] for a in _sweep(client)] == ["HALTED"]
 
 
+# Table of bodies that must be refused: a timeout of 0, a negative one, one over seven days, and a rollback order that is neither "all" nor "reverse".
 @pytest.mark.parametrize("body", [{"jobTimeoutSeconds": 0}, {"jobTimeoutSeconds": -5}, {"jobTimeoutSeconds": 8 * 86400}, {"rollbackOrder": "sideways"}])
 def test_a_timeout_or_rollback_order_that_makes_no_sense_is_refused(client, fleet, body):
+    """A zero, negative or over-a-week timeout or an unknown rollback order is refused with 422 and no campaign is made."""
     resp = client.post("/software-campaigns", json={"requestedBy": "a", "name": "n", "managedElementRefs": ["ME-1"], **body})
     assert resp.status_code == 422
     assert client.get("/software-campaigns").json()["items"] == []
@@ -267,6 +287,8 @@ def _in_progress(client, cid):
 
 
 def test_a_reverse_rollback_undoes_the_last_wave_first_and_the_next_when_it_has_ended(client, fleet):
+    """With rollbackOrder "reverse" the revert jobs of the last wave start first, an earlier wave starts only when every revert of the one after it has ended, and the
+    event log shows that order."""
     cid = _campaign(client, waveSize=2, rollbackOrder="reverse")
     assert _view(client, cid)["rollbackOrder"] == "reverse"
     _finish_all(client, cid, 2)
@@ -285,6 +307,7 @@ def test_a_reverse_rollback_undoes_the_last_wave_first_and_the_next_when_it_has_
 
 
 def test_a_failed_revert_stops_a_reverse_rollback_and_a_retry_goes_on_from_there(client, fleet):
+    """A failed revert stops a reverse rollback (ROLLBACK_FAILED) without touching the earlier waves, and rolling back again resumes at the failed element and goes on down the waves."""
     cid = _campaign(client, waveSize=1, rollbackOrder="reverse")
     for wave in range(1, 5):
         _run_wave(client, cid, wave)
@@ -305,6 +328,7 @@ def test_a_failed_revert_stops_a_reverse_rollback_and_a_retry_goes_on_from_there
 
 
 def test_a_gate_failure_can_roll_back_in_reverse_and_waves_with_nothing_completed_are_skipped(client, fleet):
+    """A gate failure under the "rollback" policy can roll back in reverse, and a wave in which nothing completed (the failed one) has no revert job and is skipped."""
     cid = _campaign(client, waveSize=1, rollbackOrder="reverse", onGateFailure="rollback")
     _run_wave(client, cid, 1)
     _run_wave(client, cid, 2)
@@ -317,6 +341,7 @@ def test_a_gate_failure_can_roll_back_in_reverse_and_waves_with_nothing_complete
 
 
 def test_the_default_rollback_still_starts_every_revert_job_at_once(client, fleet):
+    """Without rollbackOrder every revert job starts at once, as before, and no per-wave rollback event is logged."""
     cid = _campaign(client, waveSize=2)
     _finish_all(client, cid, 2)
     client.post(f"/software-campaigns/{cid}/rollback", json={"requestedBy": "bob"})

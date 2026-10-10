@@ -1,3 +1,9 @@
+/**
+ * The "Onboarding" tab of the Infrastructure page (MGT-14.6): the onboarding templates, one row per element showing where it is in its onboarding, and the watcher card.
+ * It reads and writes /ran-nf-oam/onboarding-templates and /ran-nf-oam/element-onboarding through the GUI backend; which buttons appear follows the signed-in role
+ * (`Can`) and the state machine in lib/lifecycle.ts. It owns no onboarding logic: matching, applying and the baseline check happen in RAN NF OAM. Mounted by
+ * pages/Infrastructure.tsx next to Campaigns.tsx; covered by Onboarding.test.tsx and LifecycleA11y.test.tsx.
+ */
 import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
@@ -27,6 +33,7 @@ export function OnboardingTab() {
 
 // ---------------------------------------------------------------- templates
 
+/** The templates card: a table of the templates and, for an admin, the New and Edit buttons; a click on a row opens the editor (or a read-only view for a role that may not change it). Delete asks first. */
 function Templates() {
   const templates = useSmo<OnboardingTemplate[]>(TEMPLATES, { limit: 200 });
   const [editing, setEditing] = useState<OnboardingTemplate | "new" | null>(null);
@@ -57,6 +64,10 @@ function Templates() {
   );
 }
 
+/**
+ * The modal that makes (`template` null) or edits a template. The form is checked by `templatePayload` before anything is sent; a problem is shown and no call is made. Saving PUTs
+ * to the template's name (the key: read-only when editing) and closes on success. A role that may not PUT the template is shown `TemplateDetails` instead of the form.
+ */
 function TemplateEditor({ template, onClose }: { template: OnboardingTemplate | null; onClose: () => void }) {
   const { can } = useAuth();
   const [form, setForm] = useState<TemplateForm>(template ? templateForm(template) : blankTemplate());
@@ -114,6 +125,7 @@ function TemplateDetails({ template }: { template: OnboardingTemplate }) {
 
 // ---------------------------------------------------------------- the elements
 
+/** The elements card: one row per onboarding record, refreshed every five seconds, filtered by state; it owns which of the apply, select and detail views is open. */
 function Elements() {
   const [status, setStatus] = useState<OnboardingStatus | "">("");
   const rows = useSmo<ElementOnboarding[]>(ONBOARDING, { status: status || undefined, limit: 200 }, { refetchInterval: 5_000 });
@@ -144,6 +156,7 @@ function Elements() {
   );
 }
 
+/** The Apply (or Apply again) and Select buttons of a row: only those `onboardingActions` allows for its state, and only to a role that may POST them. Their clicks do not open the row's detail. */
 function RowActions({ row, onApply, onSelect }: { row: ElementOnboarding; onApply: () => void; onSelect: () => void }) {
   const allowed = onboardingActions(row.status);
   return (
@@ -154,6 +167,10 @@ function RowActions({ row, onApply, onSelect }: { row: ElementOnboarding; onAppl
   );
 }
 
+/**
+ * The modal that applies the row's template: asks for the software version the element runs (pre-filled with the one the row knows; blank sends an empty body), posts to
+ * the element's /apply route and closes on success. The apply is a config job on the element; who asked is set by the backend, not sent from here.
+ */
 function ApplyModal({ row, onClose }: { row: ElementOnboarding; onClose: () => void }) {
   const [version, setVersion] = useState(row.softwareVersion ?? "");
   const action = useSmoAction();
@@ -214,6 +231,7 @@ function SelectModal({ element, onClose }: { element: string | null; onClose: ()
   );
 }
 
+/** The detail of one element's onboarding: its state with the meaning, template, software check, detail, and the config job of the last apply (a click opens it). Re-reads the row every five seconds and shows `row` until that answers. */
 function OnboardingDrawer({ row, onClose }: { row: ElementOnboarding; onClose: () => void }) {
   const live = useSmo<ElementOnboarding>(`${ONBOARDING}/${row.managedElementRef}`, undefined, { refetchInterval: 5_000 });
   const data = live.data ?? row;

@@ -1,6 +1,10 @@
-// What the onboarding and software campaign pages (MGT-14.6, MGT-15.5) decide without a screen: the wording of each state, which actions a state allows (the
-// ones RAN NF OAM's state machines allow, so a button is never offered that the backend would refuse as an illegal transition), and the forms turned into the
-// request bodies RAN NF OAM validates (the same limits, so a mistake is shown before the call). Who asked (`requestedBy`) is never sent: the GUI backend sets it.
+/**
+ * What the onboarding and software campaign pages (MGT-14.6, MGT-15.5) decide without a screen: the wording of each state, which actions a state allows (the
+ * ones RAN NF OAM's state machines allow, so a button is never offered that the backend would refuse as an illegal transition), and the forms turned into the
+ * request bodies RAN NF OAM validates (the same limits, so a mistake is shown before the call). Who asked (`requestedBy`) is never sent: the GUI backend sets it.
+ * Used by pages/Onboarding.tsx and pages/Campaigns.tsx; pure functions only, no network and no React, so lifecycle.test.ts covers it without a screen.
+ * A limit changed in RAN NF OAM's validation must be changed here as well, or the form accepts what the backend then refuses.
+ */
 
 import type { CampaignStatus, OnboardingStatus, OnboardingTemplate, TemplateChange } from "../api/types";
 
@@ -48,6 +52,7 @@ export function onboardingActions(status: OnboardingStatus): { apply: boolean; s
 export const TEMPLATE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const OPERATIONS = ["merge", "replace", "create", "delete", "remove"];
 
+/** The template editor's fields as the form holds them: every field is text or a flag, and `changes` is the JSON the person edits, not yet parsed. */
 export interface TemplateForm {
   name: string; entityType: string; vendorName: string; description: string; softwareBaseline: string;
   requireBaseline: boolean; autoApply: boolean; enabled: boolean; changes: string;
@@ -59,6 +64,7 @@ export function blankTemplate(): TemplateForm {
   return { name: "", entityType: "", vendorName: "", description: "", softwareBaseline: "", requireBaseline: false, autoApply: false, enabled: true, changes: STARTER_CHANGES };
 }
 
+/** Turns a stored template into the editor's fields (null becomes a blank, the changes become indented JSON), so editing a template and saving it unchanged sends back what it held. */
 export function templateForm(t: OnboardingTemplate): TemplateForm {
   return {
     name: t.name, entityType: t.entityType, vendorName: t.vendorName ?? "", description: t.description ?? "", softwareBaseline: t.softwareBaseline ?? "",
@@ -112,6 +118,7 @@ export function templatePayload(form: TemplateForm, editing: boolean): { ok: tru
 
 // ---------------------------------------------------------------- software campaigns
 
+/** The start-campaign form's fields as text and flags; `mode` says whether `refs` (named elements) or the type, vendor, region and tenant fields (a selector) choose the elements. */
 export interface CampaignForm {
   name: string; softwareVersion: string; mode: "named" | "selector"; refs: string[];
   entityType: string; vendorName: string; region: string; tenant: string;
@@ -126,6 +133,10 @@ export function blankCampaign(): CampaignForm {
   };
 }
 
+/**
+ * Reads a whole-number field: a blank is accepted as "not set" (`value: null`), anything else must be an integer within `min` to `max`, or the error names the
+ * field (`name`) and the limit. Has no side effect.
+ */
 function whole(text: string, name: string, min: number, max: number): { ok: true; value: number | null } | { ok: false; error: string } {
   const raw = text.trim();
   if (raw === "") return { ok: true, value: null };
@@ -188,6 +199,7 @@ export function waveProgress(c: { wave: number; waveCount: number }): string {
   return c.wave > 0 ? `wave ${c.wave} of ${c.waveCount}` : "not started";
 }
 
+/** A campaign's selector in one line ("region eu · tenant acme"); a campaign that names its elements has no selector and reads "named elements". */
 export function describeSelector(selector: Record<string, string> | null | undefined): string {
   const parts = Object.entries(selector ?? {}).map(([k, v]) => `${k} ${v}`);
   return parts.length ? parts.join(" · ") : "named elements";

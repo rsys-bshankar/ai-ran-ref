@@ -1,4 +1,9 @@
 // @vitest-environment jsdom
+/**
+ * Component tests of the campaigns tab (pages/Campaigns.tsx): the list and its filter, the start form with its preview and its refusals, and the drawer with the actions
+ * each campaign state offers, for a viewer and an operator. The backend is a fake `fakeBff` (testing/bff.ts) answering by method and path under /smo, and the
+ * permissions come from auth/permissions.fixture.json; jsdom, no server. Run: `cd gui && npx vitest run src/pages/Campaigns.test.tsx`.
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../auth/AuthContext";
@@ -17,6 +22,7 @@ const summary = (id: string, over: Record<string, unknown> = {}) => ({
   campaignId: id, status: "RUNNING", wave: 1, waveCount: 2, haltedReason: null, name: id === CID ? "r3-upgrade" : "r4-upgrade", softwareVersion: "3.0", createdAt: "2026-10-09T10:00:00Z", ...over,
 });
 const job = (ref: string, over: Record<string, unknown> = {}) => ({ managedElementRef: ref, jobId: `job-${ref}`, phase: "ACTIVATE", status: "COMPLETED", revert: null, ...over });
+/** A campaign report as RAN NF OAM returns it: a running two-wave campaign of four elements, the first wave completed; `over` replaces fields. */
 const report = (over: Record<string, unknown> = {}) => ({
   ...summary(CID), requestedBy: "smo-gui:ana", selector: null, elements: ["ME-1", "ME-2", "ME-3", "ME-4"], waveSize: 2, wavePauseSeconds: 0, gateMaxNewAlarms: 0, onGateFailure: "halt",
   jobTimeoutSeconds: 900, rollbackOrder: "reverse", haltedDetail: null, nextWaveAt: null, finishedAt: null,
@@ -26,6 +32,7 @@ const report = (over: Record<string, unknown> = {}) => ({
   attention: [], ...over,
 });
 
+/** Installs the fake backend for a signed-in `role`: the two campaigns of the list, `detail` as the report of campaign CID, no watchers, three endpoints; `overrides` replace or add routes. Returns the recorded calls. */
 function bff(role: "viewer" | "operator" | "admin", detail: Record<string, unknown> = report(), overrides: Record<string, unknown> = {}) {
   return fakeBff({
     "GET /me": { username: "ana", role, csrfToken: "c", local: true, totpEnrolled: true, mfaEnrolmentRequired: false },
@@ -43,6 +50,7 @@ const rowOf = (container: HTMLElement, text: string) => Array.from(container.que
 const posts = (calls: Call[]) => calls.filter((c) => c.method === "POST");
 
 describe("the campaign list", () => {
+  // A campaign row shows its state, wave progress and software, and a halted one says in words why it is held, not just the code.
   it("lists each campaign with its state, progress and why a halted one is held", async () => {
     bff("viewer");
     const { container } = await open();
@@ -56,6 +64,7 @@ describe("the campaign list", () => {
     expect(halted.textContent).toContain("A health gate failed");
   });
 
+  // An empty list says so, a failed read shows its error and not an empty table, and the state filter is sent to the backend.
   it("says when there is none, shows an error rather than an empty list, and filters by state", async () => {
     const calls = bff("viewer", report(), { "GET /smo/ran-nf-oam/software-campaigns": { items: [], limit: 200, offset: 0 } });
     const { container } = await open();
@@ -71,6 +80,7 @@ describe("the campaign list", () => {
     expect(broken.container.textContent).toContain("RAN NF OAM is down");
   });
 
+  // A viewer, who may not POST campaigns, is not offered the Start button.
   it("gives a viewer no way to start one", async () => {
     bff("viewer");
     const { container } = await open();
@@ -89,6 +99,7 @@ describe("starting a campaign", () => {
     return { container, dialog: document.querySelector("[role=dialog]") as HTMLElement };
   };
 
+  // Starting for named elements posts the chosen settings without requestedBy or dryRun (the backend sets who asked) and then opens the new campaign's detail.
   it("starts one for named elements, sends the settings and not who asked, and opens the new campaign", async () => {
     const calls = bff("operator", report(), { "POST /smo/ran-nf-oam/software-campaigns": { status: 202, body: summary(CID) } });
     const { dialog } = await start();
@@ -110,6 +121,7 @@ describe("starting a campaign", () => {
     expect(document.body.textContent).toContain("Campaign r3-upgrade");                           // the detail of the campaign it made is open
   });
 
+  // A selector preview posts with dryRun, shows the waves, leaves the form open (nothing started), and a later edit removes the now stale preview.
   it("selects elements by type, vendor, region or tenant and previews the waves without starting anything", async () => {
     const calls = bff("operator", report(), { "POST /smo/ran-nf-oam/software-campaigns": (c: Call) => (c.body as { dryRun?: boolean }).dryRun
       ? { body: { dryRun: true, status: "VALIDATED", waveCount: 2, waves: [["ME-1", "ME-2"], ["ME-3"]] } } : { status: 202, body: summary(CID) } });
@@ -131,6 +143,7 @@ describe("starting a campaign", () => {
     expect(dialog.querySelector("[aria-label=Waves]")).toBeNull();
   });
 
+  // An invalid form is stopped with a message and no call, and a refusal by the backend (a job already running) reaches the person as a message.
   it("says what is wrong before sending, and shows the refusal of the backend", async () => {
     const calls = bff("operator", report(), { "POST /smo/ran-nf-oam/software-campaigns": { status: 409, body: { title: "SERVICE_NAME_CONFLICT", detail: "a software job is already running on: ME-1" } } });
     const { dialog } = await start();
@@ -160,6 +173,7 @@ describe("one campaign", () => {
     return { calls, drawer: document.querySelector("[role=dialog]") as HTMLElement };
   };
 
+  // The drawer of a halted campaign shows the reason and detail, the settings, the elements needing attention, each wave's jobs (a timed-out one marked, an unstarted wave waiting) and the events.
   it("shows the waves with each element's job, the totals, the settings and the event log", async () => {
     const { drawer } = await openDetail("viewer", report({
       status: "HALTED", haltedReason: "GATE_FAILED", haltedDetail: "1 software job(s) of wave 1 failed (first: ME-2, in phase INSTALL)", attention: [{ managedElementRef: "ME-2", problem: "software job timed out in phase INSTALL: the element did not report" }],
@@ -180,11 +194,13 @@ describe("one campaign", () => {
     expect(drawer.querySelector("ol[aria-label='Campaign events']")?.textContent).toContain("WAVE_STARTED (wave 1): 2 element(s)");
   });
 
+  // A viewer sees the campaign but gets no action buttons, even after a failed gate.
   it("gives a viewer no action", async () => {
     const { drawer } = await openDetail("viewer", report({ status: "HALTED", haltedReason: "GATE_FAILED" }));
     expect(drawer.querySelector("[aria-label='Campaign actions']")).toBeNull();
   });
 
+  // A running campaign offers only Halt, and halting posts an empty body because the backend records who halted it.
   it("offers halt to a running campaign and nothing else", async () => {
     const { calls, drawer } = await openDetail("operator", report(), { [`POST /smo/ran-nf-oam/software-campaigns/${CID}/halt`]: summary(CID, { status: "HALTED" }) });
     const buttons = Array.from(drawer.querySelectorAll("[aria-label='Campaign actions'] button")).map((b) => b.textContent);
@@ -195,6 +211,7 @@ describe("one campaign", () => {
     expect(posts(calls)[0].body).toEqual({});                                                      // who halted it is the backend's to set
   });
 
+  // After a failed gate the drawer offers continue, abort and roll back, asks before continuing anyway and before rolling back, and offers no pause to skip.
   it("after a failed gate offers continue (asking first), abort and roll back", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const { calls, drawer } = await openDetail("operator", report({ status: "HALTED", haltedReason: "GATE_FAILED" }), {
@@ -216,6 +233,7 @@ describe("one campaign", () => {
     expect(posts(calls)[0].body).toEqual({});
   });
 
+  // Declining the confirmation of an action makes no call.
   it("does not run an action the person declines", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
     const { calls, drawer } = await openDetail("operator", report({ status: "HALTED", haltedReason: "OPERATOR_HALT" }));
@@ -224,6 +242,7 @@ describe("one campaign", () => {
     expect(posts(calls)).toHaveLength(0);
   });
 
+  // A campaign held by its wave pause also offers Halt and a box to skip the pause: Continue sends an empty body unless it is ticked, then force true.
   it("lets an operator skip the pause between waves, and halt it", async () => {
     const { calls, drawer } = await openDetail("operator", report({ status: "HALTED", haltedReason: "WAVE_PAUSE", nextWaveAt: "2026-10-09T12:00:00Z" }), {
       [`POST /smo/ran-nf-oam/software-campaigns/${CID}/continue`]: summary(CID) });
@@ -239,6 +258,7 @@ describe("one campaign", () => {
     expect(posts(calls)[1].body).toEqual({ force: true });
   });
 
+  // A failed rollback can be retried, and a rolled-back campaign offers no action.
   it("offers a rollback again after one failed, and nothing once it has been rolled back", async () => {
     const failed = await openDetail("operator", report({ status: "ROLLBACK_FAILED", rollbackOrder: "all" }));
     expect(Array.from(failed.drawer.querySelectorAll("[aria-label='Campaign actions'] button")).map((b) => b.textContent)).toEqual(["Roll back"]);
@@ -247,6 +267,7 @@ describe("one campaign", () => {
     expect(done.drawer.querySelector("[aria-label='Campaign actions']")).toBeNull();
   });
 
+  // A rolled-back campaign shows each job's revert result and lists the failed revert and the elements never reached as needing attention.
   it("shows the reverts of a rolled back campaign and the elements never reached", async () => {
     const { drawer } = await openDetail("viewer", report({
       status: "ROLLED_BACK", waves: [{ wave: 1, elements: ["ME-1", "ME-2"], started: true, jobs: [job("ME-1", { revert: "COMPLETED" }), job("ME-2", { revert: "FAILED" })] }, { wave: 2, elements: ["ME-3", "ME-4"], started: false, jobs: [] }],
@@ -259,6 +280,7 @@ describe("one campaign", () => {
     expect(drawer.querySelector("ul[aria-label='Needs attention']")?.textContent).toContain("never reached");
   });
 
+  // A report that cannot be read shows the backend's message in the drawer instead of an empty one.
   it("shows the error when the report cannot be read", async () => {
     const calls = bff("viewer", { status: 404, body: { title: "SOFTWARE_CAMPAIGN_NOT_FOUND", detail: "no software campaign" } } as never);
     void calls;
