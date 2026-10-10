@@ -177,7 +177,7 @@ and HA much later).
 | Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
 | AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
 | rApp ecosystem | `PR-RAPP` | RAPP-1 signing (done) · RAPP-2 sandbox (RAPP-2.2 open) · RAPP-3 conformance pack (done) · RAPP-4 Java and Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
-| GUI | `PR-GUI` | GUI-1 live updates · GUI-2 alarm console · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n · GUI-7 approval inbox · GUI-9 what is left of the console redesign |
+| GUI | `PR-GUI` | GUI-1 live updates · GUI-2 alarm console · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n · GUI-7 approval inbox · GUI-9/10 console redesign (done; two follow-ups) |
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
 
@@ -1234,34 +1234,14 @@ Step 7.2 is built (the Approvals page lists pending rApp actions and decides the
 
 Nothing open.
 
-#### PR-GUI-9 — Console redesign: what is left (built: `HISTORY.md` PR-GUI-9a and PR-GUI-9b)
+#### PR-GUI-9 and PR-GUI-10 — console redesign and its review findings (done: `HISTORY.md` PR-GUI-9a, 9b, 9c and PR-GUI-10)
 
-The console and the back-end routes it asked for are built. Left open:
+Nothing of the redesign's own scope is open. Two follow-ups it surfaced, neither needed by the console today:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| GUI-9.3 | Global scope picker (region → site cluster → element) carried in the URL and applied to every query. Alarms and elements already filter by `region` and `site_cluster`; most other lists have no scope parameter yet | Out-of-scope rows absent on every page | GUI-5.2 |
-| GUI-9.5b | Asynchronous export jobs (today the decision and audit CSV exports stream within one request, bounded to 31 days and 1,000,000 rows); keyset paging of the Decisions table in the GUI (the route has it) | A month of 100k decisions/day exports without a held request | DB-4.4 |
-| GUI-9.8b | Data no module records: node utilisation (FOCOM has no CPU/memory measurement), per-cell state history of an rApp (the rApp's own data, behind its declared page), a Dashboard "needs attention" aggregate in one call | Each widget shows a value | per item |
-
-#### PR-GUI-10 — GUI defects found in review (to do after the PR-GUI-9 round)
-
-From a review of the console (October 2026), re-checked against the redesigned code: three were already fixed by the redesign (the Safeguards
-dialogs now render inside a table cell's component, not a bare `<tr>`; the Dashboard reads true counts from `/api/summary/dashboard` with no
-hard-coded module total; the flows test title matches what it asserts). Still open:
-
-| Step | What | Where now | Done when |
-|---|---|---|---|
-| GUI-10.1 | The FM subscription form and the FM and PM Unsubscribe buttons are never drawn: `POST`/`DELETE /ran-nf-oam/fm-subscriptions(/{id})` and `DELETE /ran-nf-oam/pm-subscriptions/{id}` have no BFF permission rule | `gui-bff/app/rbac.py`, `pages/alarms/sections/FmSubscriptions.tsx`, `pages/kpis/sections/PmSubscriptions.tsx` | Rules added (operator), fixture regenerated, buttons shown to operators |
-| GUI-10.2 | The package drawer says "verified (dev cert)" for any signed package, in production too | `pages/rapps/sections/PackageDrawer.tsx` | Says what Onboarding reports (verified / unverified, and the trust-store mode when served) |
-| GUI-10.3 | A blank "Regression allowed, %" in the KPI guard form is read as 0 and accepted; a whitespace-only number in a declared action is read as 0 | `lib/domain.ts` (`stagedPayload`), `lib/operatorUi.ts` | Blank and whitespace-only refused or left out, with tests |
-| GUI-10.4 | The Admin role matrix and the audit-action filter are fixed text and can drift from `gui-bff/app/rbac.py` and the audit actions the BFF writes | `pages/admin/sections/RoleMatrix.tsx`, `pages/admin/data/queries.ts` | Built from `/api/permissions` and a served list of audit actions (or a test that fails on drift) |
-| GUI-10.5 | Two exported types are both named `StepStatus` | `lib/domain.ts`, `lib/flows.ts` | One renamed |
-| GUI-10.6 | The latest artifact version is parsed from the last `:` part of `artifactLocation` | `pages/aiml/data/board.ts` (`artifactVersions`) | Read from MLMR's own version data, or parsed with a documented, tested pattern |
-| GUI-10.7 | `logout` has no `catch`: a failed `POST /logout` is an unhandled rejection | `auth/AuthContext.tsx` | Caught; the user is signed out locally and told |
-| GUI-10.8 | `Id`'s clipboard copy does not handle a rejected promise | `components/ui.tsx` | Caught, with feedback |
-| GUI-10.9 | `useHashTab`'s effect has no dependency list and re-subscribes on every render | `components/ui.tsx` | Subscribed once (stable `read`) |
-| GUI-10.10 | The toast dismiss timers are not cleared on unmount | `components/Toast.tsx` | Timers tracked and cleared |
+| GUI-9.10 | GPU utilisation of O-Cloud nodes: no module or producer measures it (CPU and memory are served, GUI-9.8b) | A `GPU_UTILIZATION` entry in FOCOM's dictionary and a producer that sends it | a GPU-capable O-Cloud |
+| GUI-9.11 | The Dashboard's first load is 6 calls (SCALE.md's target was 3): folding the latest decisions, the health map, the worst elements and the hourly alarm counts into `/api/summary/dashboard` would reach it | First-load call test at 3 | – |
 
 ### 5.14 Standards and compliance (`PR-STD`)
 

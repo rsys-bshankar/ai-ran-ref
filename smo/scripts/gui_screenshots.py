@@ -88,6 +88,8 @@ PAGES = [
     ("pages/security", "admin", "/security", "dark"),
     ("pages/admin-users", "admin", "/admin#users", "dark"), ("generic/admin-audit-log", "admin", "/admin#audit", "dark"),
     ("pages/admin-msac", "admin", "/admin#msac", "dark"),
+    ("pages/exports", "admin", "/exports", "dark"), ("pages/dashboard-scoped", "admin", "/?region=eu-west", "dark"),
+    ("pages/alarms-scoped", "admin", "/alarms?region=eu-west&cluster=metro-a#ran", "dark"),
     ("pages/element", "admin", f"/elements/{DEMO_ME}", "dark"), ("pages/element-mos", "admin", f"/elements/{DEMO_ME}#mos", "dark"),
 ]
 ROLE_PAGES = [
@@ -1049,9 +1051,50 @@ def lcm_data(w: Walk):
 # ============================================================ pages, roles, flows, generic
 
 
+# The places the demo elements are given so the scope picker has something to offer: the first two elements in eu-west, each in its own site
+# cluster, the rest in eu-central (the demos register their elements with no region).
+DEMO_PLACES = [("eu-west", "metro-a"), ("eu-west", "metro-b"), ("eu-central", "rural-1"), ("eu-central", "rural-1")]
+
+# Plays the O-Cloud's collector (DEMO_RUNBOOK.md, FOCOM FCAPS): a CPU and a memory reading for every FOCOM resource and the Phase 1 cluster.
+UTILISATION_PRODUCER = """
+import httpx
+f = 'http://focom:8000'
+ids = ['phase1-degenerate-cluster']
+for pool in httpx.get(f + '/resource-pools', params={'limit': 500}).json().get('items', []):
+    rs = httpx.get(f + '/resource-pools/' + pool['resourcePoolId'] + '/resources', params={'limit': 500}).json()
+    ids += [r['resourceId'] for r in (rs.get('items', []) if isinstance(rs, dict) else rs)]
+for i, rid in enumerate(ids):
+    for name, value in (('CPU_UTILIZATION', 35 + (i * 17) % 60), ('MEMORY_UTILIZATION', 28 + (i * 23) % 55)):
+        httpx.post(f + '/performance/ingest', json={'resourceId': rid, 'performanceMeasurementDefinitionId': name, 'measurementValue': value}).raise_for_status()
+print(len(ids))
+"""
+
+
+def seed_console(w: Walk):
+    """Gives the stack what the console's later features read and the demos do not make: a region and a site cluster on each demo element
+    (`PUT /managed-entities/{me}/scope` and `/site-cluster`, admin), utilisation readings for the FOCOM resources (`UTILISATION_PRODUCER`,
+    run inside r1-termination as the runbook does), and one decisions export job (`POST /api/exports`) so the Exports page has a row."""
+    elements = w.items("/ran-nf-oam/managed-entities")
+    for entity, (region, cluster) in zip(elements, DEMO_PLACES * (len(elements) // len(DEMO_PLACES) + 1)):
+        ref = entity["managedElementRef"]
+        w.api("PUT", f"/ran-nf-oam/managed-entities/{ref}/scope", json={"region": region, "tenant": entity.get("tenant")})
+        w.api("PUT", f"/ran-nf-oam/managed-entities/{ref}/site-cluster", json={"siteCluster": cluster})
+    done = subprocess.run([*w.compose, "exec", "-T", "r1-termination", "python3", "-c", UTILISATION_PRODUCER], cwd=SMO, capture_output=True, text=True)
+    if done.returncode != 0:
+        raise RuntimeError(f"utilisation producer failed: {done.stderr[-300:]}")
+    page = w.page()
+    csrf = next((c["value"] for c in page.context.cookies() if c["name"] == "smo_csrf"), "")
+    since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 7 * 86400))
+    resp = page.request.post(w.base + "/api/exports", data={"kind": "decisions", "since": since}, headers={"X-CSRF-Token": csrf})
+    if resp.status >= 400:
+        raise RuntimeError(f"POST /api/exports → {resp.status}: {resp.text()[:200]}")
+    time.sleep(3)          # let the job finish, so the Exports screenshot shows a DONE row with its size
+
+
 def capture_pages(w: Walk):
     """Every page and tab in `PAGES` (admin, dark unless the name says light), the three sample-rApp page screens, the relation drawer and the
     pinned rApp in the sidebar (README: each module's tab rows, "rApp directory and declared pages", the new pages and the light theme)."""
+    w.step("seed-console", seed_console, w)
     for name, user, path, theme in PAGES:
         p = w.page(user, theme)
 
