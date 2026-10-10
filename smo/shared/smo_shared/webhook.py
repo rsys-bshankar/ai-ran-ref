@@ -61,7 +61,7 @@ _NAT64_PREFIX = ipaddress.ip_network("64:ff9b::/96")
 def _canonical_host(host: str) -> str:
     """The host as a resolver sees it: lower case, compatibility-folded (full-width digits, ideographic dots) and without trailing dots, so `LOCALHOST.`
     and `localhost` are the same name."""
-    return unicodedata.normalize("NFKC", host).translate(_DOT_VARIANTS).lower().rstrip(".")
+    return unicodedata.normalize("NFKC", host).translate(_DOT_VARIANTS).rstrip(".").lower()
 
 
 def _parse_inet_aton(host: str) -> ipaddress.IPv4Address | None:
@@ -81,10 +81,10 @@ def _parse_inet_aton(host: str) -> ipaddress.IPv4Address | None:
         try:
             if label[:2] in ("0x", "0X"):
                 numbers.append(int(label[2:] or "0", 16))
-            elif len(label) > 1 and label[0] == "0":
+            elif label.startswith("0"):                  # "0" itself reads the same in base 8
                 numbers.append(int(label, 8))
             else:
-                numbers.append(int(label, 10))
+                numbers.append(int(label))
         except ValueError as exc:                     # a digit 8 or 9 in an octal-looking label
             raise ValueError("bad numeric label") from exc
     *leading, last = numbers
@@ -105,7 +105,7 @@ def _literal_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | No
     host = _canonical_host(host)
     if ":" in host:
         try:
-            return ipaddress.ip_address(host.split("%", 1)[0])
+            return ipaddress.ip_address(host.partition("%")[0])
         except ValueError as exc:
             raise ValueError("not an IPv6 address") from exc
     return _parse_inet_aton(host)
@@ -113,11 +113,13 @@ def _literal_ip(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | No
 
 def _is_blocked_address(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """True for an address that is never a legitimate callback target: loopback, link-local (including 169.254.169.254), multicast, unspecified or
-    reserved. An IPv6 address that carries an IPv4 one (IPv4-mapped `::ffff:a.b.c.d`, 6to4 `2002::/16`, NAT64 `64:ff9b::/96`) is judged by the IPv4
-    address inside it. Private ranges are not blocked: real deployments' containers sit in them."""
+    reserved. An IPv6 address that carries an IPv4 one (IPv4-mapped `::ffff:a.b.c.d`, 6to4 `2002::/16`) is judged by the IPv4 address inside it, and the NAT64
+    prefix `64:ff9b::/96` is blocked whole (a translator in front of a NAT64 gateway can reach loopback and the metadata address through it). Private ranges are not blocked: real deployments' containers sit in them."""
     if isinstance(ip, ipaddress.IPv6Address):
-        embedded = ip.ipv4_mapped or ip.sixtofour or (ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF) if ip in _NAT64_PREFIX else None)
+        embedded = ip.ipv4_mapped or ip.sixtofour
         if embedded is not None and _is_blocked_address(embedded):
+            return True
+        if ip in _NAT64_PREFIX:                       # the whole translation prefix (inside the reserved ::/8 range on today's Python; stated here so it does not depend on that)
             return True
     return ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved
 
@@ -150,7 +152,7 @@ def _resolved_addresses(host: str, port: int | None) -> list[ipaddress.IPv4Addre
     found = []
     for info in infos:
         try:
-            found.append(ipaddress.ip_address(str(info[4][0]).split("%", 1)[0]))
+            found.append(ipaddress.ip_address(str(info[4][0]).partition("%")[0]))
         except ValueError:
             continue
     return found
@@ -160,8 +162,10 @@ def _resolves_to_blocked_address(destination: str | None) -> bool:
     """True when the host of `destination` resolves to at least one blocked address. Every address counts, not the first: a name with one public and one
     loopback record could be connected to on either. A literal IP needs no lookup (the literal check has judged it), and a name that does not resolve is
     not blocked here."""
+    if not destination:
+        return True
     try:
-        parts = urlsplit(destination or "")
+        parts = urlsplit(destination)
         host, port = parts.hostname, parts.port
     except ValueError:
         return True
