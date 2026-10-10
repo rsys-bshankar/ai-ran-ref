@@ -185,7 +185,7 @@ services:
       R1_BOOTSTRAP_KEY: ${R1_BOOTSTRAP_KEY:-}
       # PR-SEC-5.4: seconds the gateway reuses SME's answer about a token (0 = off: every request asks SME, as before). A token revoked at SME is honoured for at most
       # this long (at once on the replica the revocation went through); r1-termination/README.md "Introspection cache".
-      R1_INTROSPECTION_CACHE_SECONDS: ${R1_INTROSPECTION_CACHE_SECONDS:-0}
+      R1_INTROSPECTION_CACHE_SECONDS: ${R1_INTROSPECTION_CACHE_SECONDS:-30}
       R1_INTROSPECTION_CACHE_MAX_ENTRIES: ${R1_INTROSPECTION_CACHE_MAX_ENTRIES:-10000}
       SME_URL: http://sme:8000
       DME_URL: http://dme:8000

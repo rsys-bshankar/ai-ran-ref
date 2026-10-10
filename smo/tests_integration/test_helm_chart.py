@@ -464,11 +464,13 @@ def test_the_chart_has_a_key_secret_reference_for_the_gui_and_documents_it():
     assert "jwtKeySecretRef" in (CHART / "README.md").read_text()
 
 
-def test_the_gateways_introspection_cache_is_off_in_the_chart_and_in_compose_by_default():
-    """The gateway's introspection cache is off (0 seconds) by default in both the chart and compose, with the same maximum entry count."""
+def test_the_gateways_introspection_cache_is_on_at_30_seconds_in_the_chart_and_in_compose_by_default():
+    """The gateway's introspection cache is on (30 seconds, the owner's decision, PR-SEC-5.5) by default in both the chart and compose, with the same
+    maximum entry count.
+    """
     chart_env = _modules()["r1-termination"]["env"]
     compose_env = COMPOSE["services"]["r1-termination"]["environment"]
-    assert chart_env["R1_INTROSPECTION_CACHE_SECONDS"] == "0" and compose_env["R1_INTROSPECTION_CACHE_SECONDS"] == "${R1_INTROSPECTION_CACHE_SECONDS:-0}"
+    assert chart_env["R1_INTROSPECTION_CACHE_SECONDS"] == "30" and compose_env["R1_INTROSPECTION_CACHE_SECONDS"] == "${R1_INTROSPECTION_CACHE_SECONDS:-30}"
     assert chart_env["R1_INTROSPECTION_CACHE_MAX_ENTRIES"] == "10000" and compose_env["R1_INTROSPECTION_CACHE_MAX_ENTRIES"] == "${R1_INTROSPECTION_CACHE_MAX_ENTRIES:-10000}"
 
 

@@ -162,7 +162,7 @@ Request-time order: route lookup (404) → bearer header present and non-empty (
 | `R1_OPERATOR_API_CACHE_SECONDS` | `5` | How long the gateway keeps the operator API base a rApp instance registered (GUI-8.3): the delay between a registration, a change or the end of the instance and the gateway acting on it. `0` asks rApp Management on every call |
 | `R1_AUDIT` | `on` | `off` records nothing in the audit chain (PR-SEC-11). On, the gateway needs `SMO_DATABASE_URL` like a module does; a write that fails is logged and counted (`smo_audit_writes_total{outcome="failed"}`) and never fails the call |
 | `R1_INTROSPECT_TIMEOUT_SECONDS` | `5` | How long it waits for SME's token introspection (a timeout fails closed: 401) |
-| `R1_INTROSPECTION_CACHE_SECONDS` | `0` (off) | PR-SEC-5.4: seconds an answer of SME about a token is reused instead of asking again. Read on every call. A bad or negative value leaves it off. See "Introspection cache" |
+| `R1_INTROSPECTION_CACHE_SECONDS` | `30` in compose and the chart (`0` in the code: off) | PR-SEC-5.4: seconds an answer of SME about a token is reused instead of asking again. Read on every call. A bad or negative value leaves it off. See "Introspection cache" |
 | `R1_INTROSPECTION_CACHE_MAX_ENTRIES` | `10000` | PR-SEC-5.4: most answers held (read once at start); the oldest goes first |
 
 `SME_URL` is also the target of introspection and of the URIs in `/bootstrap`.
@@ -229,7 +229,7 @@ cd smo/r1-termination && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 ## Introspection cache (PR-SEC-5.4)
 
-Off by default (`R1_INTROSPECTION_CACHE_SECONDS=0`): the gateway then asks SME on every request, exactly as before, and the code below is never reached. The default is off because a cache trades the instant effect of a revocation for fewer SME calls, and that trade is the owner's to make; it is not an upgrade surprise.
+On at 30 seconds in the compose file and the chart (`R1_INTROSPECTION_CACHE_SECONDS=30`; decided by the owner for release 0.8.0, `HISTORY.md` PR-SEC-5.5): a revoked or re-scoped token is honoured for up to 30 seconds longer on every gateway replica except the one that carried the change. Set it to `0` and the gateway asks SME on every request, exactly as before, and the code below is never reached; the code's own default (nothing set) is also `0`. The load measurement behind the choice (98.4 introspections per 100 calls without the cache, 0.9 with it) is in `docs/PERFORMANCE.md`.
 
 With `R1_INTROSPECTION_CACHE_SECONDS=N` (N seconds, fractions allowed) the gateway keeps SME's answer about a token for N seconds, so a burst of calls with one token costs SME one lookup. `app/introspection_cache.py`:
 
