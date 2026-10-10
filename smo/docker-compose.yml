@@ -683,7 +683,7 @@ services:
   #   docker compose --profile logging up -d
   tempo:
     profiles: ["tracing"]
-    image: grafana/tempo:2.8.2
+    image: grafana/tempo:3.1.0
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     restart: unless-stopped
     cap_drop: [ALL]
