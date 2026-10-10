@@ -1,4 +1,4 @@
-import { StrictMode, type ReactNode } from "react";
+import { lazy, StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
@@ -10,27 +10,8 @@ import { mustEnrol } from "./lib/mfa";
 import { Layout } from "./shell/Layout";
 import { ThemeProvider, usePreferences } from "./shell/ThemeProvider";
 import { ToastProvider } from "./components/Toast";
-import { Admin } from "./pages/Admin";
-import { Aiml } from "./pages/Aiml";
-import { Approvals } from "./pages/Approvals";
-import { Alarms } from "./pages/Alarms";
-import { Dashboard } from "./pages/Dashboard";
-import { DecisionDetail, Decisions } from "./pages/Decisions";
-import { Data } from "./pages/Data";
-import { Flows } from "./pages/Flows";
-import { Infrastructure } from "./pages/Infrastructure";
-import { Kpis } from "./pages/Kpis";
-import { Login } from "./pages/Login";
-import { Policy } from "./pages/Policy";
-import { Rapps } from "./pages/Rapps";
-import { RappDetail } from "./pages/RappDetail";
-import { Safeguards } from "./pages/Safeguards";
-import { Security } from "./pages/Security";
-import { Preferences } from "./pages/preferences";
-import { Topology } from "./pages/topology";
-import { Configuration } from "./pages/configuration";
-import { Software } from "./pages/software";
-import { ElementDetail } from "./pages/element";
+import { Dashboard } from "./pages/dashboard";
+import { Login } from "./pages/login";
 // Self-hosted fonts (the CSP allows fonts from 'self' only): IBM Plex Sans for text, Space Grotesk for headings and numbers, JetBrains Mono for ids.
 import "@fontsource/ibm-plex-sans/latin-400.css";
 import "@fontsource/ibm-plex-sans/latin-500.css";
@@ -42,6 +23,29 @@ import "@fontsource/jetbrains-mono/latin-400.css";
 import "@fontsource/jetbrains-mono/latin-600.css";
 import "@fontsource/jetbrains-mono/latin-700.css";
 import "./styles.css";
+
+// Every page but the Dashboard and the sign-in is its own chunk, loaded when first opened: the shell and the first page paint from a small
+// bundle (SCALE.md §0, "shell painted ≤ 300 ms"); the Dashboard and Login stay in it because one of them is always the first page.
+const Admin = lazy(() => import("./pages/admin").then((m) => ({ default: m.Admin })));
+const Aiml = lazy(() => import("./pages/aiml").then((m) => ({ default: m.Aiml })));
+const Approvals = lazy(() => import("./pages/approvals").then((m) => ({ default: m.Approvals })));
+const Alarms = lazy(() => import("./pages/alarms").then((m) => ({ default: m.Alarms })));
+const Data = lazy(() => import("./pages/data").then((m) => ({ default: m.Data })));
+const Flows = lazy(() => import("./pages/flows").then((m) => ({ default: m.Flows })));
+const Infrastructure = lazy(() => import("./pages/infrastructure").then((m) => ({ default: m.Infrastructure })));
+const Kpis = lazy(() => import("./pages/kpis").then((m) => ({ default: m.Kpis })));
+const Policy = lazy(() => import("./pages/intents").then((m) => ({ default: m.Policy })));
+const Rapps = lazy(() => import("./pages/rapps").then((m) => ({ default: m.Rapps })));
+const RappDetail = lazy(() => import("./pages/rapp-detail").then((m) => ({ default: m.RappDetail })));
+const Safeguards = lazy(() => import("./pages/safeguards").then((m) => ({ default: m.Safeguards })));
+const Security = lazy(() => import("./pages/security").then((m) => ({ default: m.Security })));
+const Preferences = lazy(() => import("./pages/preferences").then((m) => ({ default: m.Preferences })));
+const Topology = lazy(() => import("./pages/topology").then((m) => ({ default: m.Topology })));
+const Configuration = lazy(() => import("./pages/configuration").then((m) => ({ default: m.Configuration })));
+const Software = lazy(() => import("./pages/software").then((m) => ({ default: m.Software })));
+const ElementDetail = lazy(() => import("./pages/element").then((m) => ({ default: m.ElementDetail })));
+const Decisions = lazy(() => import("./pages/decisions").then((m) => ({ default: m.Decisions })));
+const DecisionDetail = lazy(() => import("./pages/decisions").then((m) => ({ default: m.DecisionDetail })));
 
 const queryClient = new QueryClient({
   defaultOptions: {

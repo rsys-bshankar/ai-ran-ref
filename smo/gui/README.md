@@ -20,7 +20,25 @@ Browser ──► gui (nginx :3000) ──/api──► gui-bff ──Bearer (SM
   FastAPI endpoints (`../docs/openapi/<module>.json`) and doesn't
   reimplement any lifecycle logic.
 
-Screenshots of the pages, tabs and lifecycle flows: [Screenshots](#screenshots).
+Screenshots of the pages, tabs and lifecycle flows: [Screenshots](#screenshots) (taken before the redesign below; they show the
+same data and actions in the earlier look).
+
+## Look, structure and scale (the "Signal" redesign, `PR-GUI-9`)
+
+The console follows the design hand-off kept in [`docs/redesign/`](docs/redesign/README.md): a dark-first theme with a light theme, five
+accent colours and four text sizes, chosen per user on **Account → Preferences** and stored by the BFF (`/api/me/preferences`). Code layout:
+
+| Folder | What lives there |
+|---|---|
+| `src/shell/` | The frame: `Layout`, `Sidebar` (grouped navigation, count badges, pinned rApps, user card), `TopBar` (breadcrumb, ⌘K jump box, notifications, preferences, help), `ThemeProvider`, `nav.ts` (the one navigation table) |
+| `src/kit/` | Shared primitives, one per file: `Kpi`, `Meter`, `Segmented`, `Badge`, `Callout`, `Diff`, `Timeline`/`Steps`, `states` (skeleton, empty, error with retry, stale), `SectionBoundary`, `ServerTable` + `Pager`, `icons` |
+| `src/data/` | `summary.ts` (true counts from `GET /api/summary/{page}`), `keys.ts` (which reads an action refreshes), `preferences.ts` |
+| `src/pages/<page>/` | One folder per page: `index.tsx` (layout only), `sections/` (one box each, wrapped in a `SectionBoundary` so a crash stays in its box), `data/queries.ts` (the page's API paths and polling), `README.md` (the page's maintenance sheet: sections, calls, known limits, troubleshooting), `__tests__/` |
+
+Rules every page keeps (SCALE.md in the hand-off): a list is paged by the backend (`kit/ServerTable`: "Showing 1–50 of N", 25/50/100
+rows), never cut at the backend's default 100 rows and never counted in the browser; a tile, badge or meter reads the summary counts; a
+value the backend does not serve shows "—" and the page README says so; only the visible tab loads; every page but the Dashboard and the
+sign-in is loaded when first opened.
 
 ## Run it
 
@@ -148,11 +166,23 @@ the admin state of exactly the intents it created).
 | **rApps** (the directory and `/rapps/<instance>`, `PR-GUI-8`) | BFF `GET /api/rapps` (search, `state`, `owner`, `hasPage`, `pinned`), `GET /api/rapps/{instance}`, `/api/rapps/{instance}/operator/...` (only the routes the rApp's package declares), `/api/me/pins`; platform overview of the page: `/rapp-mgmt/instances/{id}` (+ `performance`, `faults`, `safeguards`, `versions`, and the lifecycle buttons); see "The rApp directory and the declared pages" below |
 | **Infrastructure** | `/nfo/deployments` (+ `heal`, `scale`, `resources`, `operations`, `DELETE`), `/nfo/descriptors` · `/focom/resource-pools` (+ `resources`), `resource-types`, `deployment-managers`, `topology`, `resources/provision`, `inventory/subscriptions` · `/ran-nf-oam/o1-adaptor-endpoints` (+ `discover`, `heartbeat`), `config-jobs` (several MEs per job), `software-management-jobs` (+ `advance`) · `/so-smos/orders` (+ `cancel`) |
 | **Data & Exposure** (call flows 01, 08) | `/dme/dme-types`, `production-capabilities`, `data-jobs`, `offers` (+ `notify`), `type-subscriptions` · `/sme/provider-registrations`, `published-apis/v1/{apf}/service-apis`, `invoker-registrations`, `trusted-invokers`, `service-apis/v1/allServiceAPIs`, `capif-events/v1/{subscriber}/subscriptions` |
-| **Admin** | BFF `/api/admin/users`, `/api/admin/audit` |
+| **Admin** | BFF `/api/admin/users`, `/api/admin/audit` · RAN access control tab: `/ran-nf-oam/msac/roles`, `/identities`, `/access-rules` (read-only: the BFF has no rule for MSAC writes) |
+| **RAN topology** (`/topology`) | `/ran-nf-oam/topology/links` (counts, the focus element's neighbour graph, relations that need attention), `/topology/relation?a&b`, `/topology` (TEIV export), `/managed-entities`, `/cell-guards` |
+| **Configuration** (`/configuration`) | `/ran-nf-oam/config-jobs` (+ `halt`, `continue`, `abort`, `rollback`; `kpi-check` is shown read-only: no BFF rule), `/vendor-capabilities`, `/cm-schemas`, `/o1-adaptor-endpoints/{id}/host-keys` (read-only: no BFF rule for re-pinning), `/element-onboarding` (+ `select`, `apply`) |
+| **Software** (`/software`) | `/ran-nf-oam/software-campaigns` (+ `{id}`, `report`, `continue`, `halt`, `abort`, `rollback`; a new campaign is dry-run first), `/software-management-jobs` |
+| **Element detail** (`/elements/<managed element>`) | `/ran-nf-oam/managed-entities/{me}` (+ `config-history`, `config-history/diff`, `managed-objects/{dn}`, `children`, `subtree`, `cells/{cell}/guards`), `/cell-guards`, `/alarms?managed_element_ref=` |
+| **Preferences** (`/preferences`) | BFF `GET`/`PUT /api/me/preferences` |
 
-Polling: alarms every 5 s, module health every 10 s, lists every 15 s
-(TanStack Query). Any lifecycle action refetches every SMO read, since one
-call often changes another module's state.
+Every page also reads the BFF's `GET /api/summary/{page}` for its counts, and the sidebar `GET /api/summary/nav` for its badges. The AI/ML
+page adds a **Registry** tab (`/mlmr/ml-model-repositories`, `/storages`) and a model's governance and lifecycle history
+(`/aimgf/models/{id}/governance-history`, `/lifecycle-history`); Intents adds **Utility formulas** (`/intent-service/intent-utility-formulas`);
+KPIs adds MDA functions, requests and report files (`/mdaf/mda-functions`, `/mda-requests`, `/mda-reports/{id}/file`). Negotiation
+feedback on an intent and requesting an MDA analysis are drawn but have no button yet: the BFF's permission table does not allow those two
+routes (`OPEN_ITEMS.md` `PR-GUI-9`).
+
+Polling: alarms every 5 s, module health every 10 s, lists every 15 s, summary counts every 15 s (the sidebar's every 30 s), inventory every
+60 s, and only while the tab is visible (TanStack Query). An action refetches the reads of its own module, of the modules a call there is known
+to change too (`src/data/keys.ts`, `CROSS_MODULE`: a rApp instantiation also changes NFO and Onboarding), and the counts.
 
 ## The rApp directory and the declared pages
 

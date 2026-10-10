@@ -75,18 +75,18 @@
     "gui-bff": {
       "files_without_description": 0,
       "functions_without_description": 96,
-      "items_requiring_description": 183,
-      "source_files": 24,
-      "tests": 288,
+      "items_requiring_description": 195,
+      "source_files": 27,
+      "tests": 298,
       "tests_without_docstring": 273
     },
     "gui/src": {
-      "files_without_description": 57,
-      "functions_without_description": 245,
-      "items_requiring_description": 323,
-      "source_files": 57,
-      "tests": 199,
-      "tests_without_docstring": 199
+      "files_without_description": 28,
+      "functions_without_description": 87,
+      "items_requiring_description": 656,
+      "source_files": 339,
+      "tests": 349,
+      "tests_without_docstring": 135
     },
     "intent-service": {
       "files_without_description": 0,
@@ -251,7 +251,7 @@
     "scripts": {
       "files_without_description": 0,
       "functions_without_description": 2,
-      "items_requiring_description": 353,
+      "items_requiring_description": 354,
       "source_files": 78,
       "tests": 0,
       "tests_without_docstring": 0
@@ -309,7 +309,7 @@
       "functions_without_description": 90,
       "items_requiring_description": 151,
       "source_files": 83,
-      "tests": 575,
+      "tests": 576,
       "tests_without_docstring": 484
     }
   }

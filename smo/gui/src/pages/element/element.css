@@ -1,0 +1,11 @@
+/* Element detail page (pages/element): the managed-object tree. Tokens only (styles.css); no hex colours. */
+
+.mo-tree, .mo-tree ul { list-style: none; margin: 0; padding: 0; }
+.mo-tree { max-height: 560px; overflow: auto; }
+.mo-row { display: flex; align-items: center; gap: 6px; padding-top: 3px; padding-bottom: 3px; border-radius: var(--r-sm); }
+.mo-row.on { background: var(--volt-soft); }
+.mo-row:hover { background: var(--hover); }
+.mo-toggle, .mo-label { border: 0; background: none; color: var(--text); font: inherit; cursor: pointer; padding: 2px 4px; border-radius: 4px; text-align: left; }
+.mo-toggle { width: 22px; color: var(--muted); }
+.mo-toggle:focus-visible, .mo-label:focus-visible { outline: 2px solid var(--volt); outline-offset: 1px; }
+.mo-row.on .mo-label { color: var(--volt-text); }

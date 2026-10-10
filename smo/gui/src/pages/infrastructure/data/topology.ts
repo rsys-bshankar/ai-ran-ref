@@ -46,12 +46,13 @@ function tail(urn: string): string {
 
 /** Every entity of one TEIV type (`o-ran-smo-teiv-cloud:ResourcePool` → "ResourcePool") in the export. */
 function entitiesOf(topo: Topology, type: string) {
-  return topo.entities.flatMap((g) => Object.entries(g).filter(([k]) => k.split(":").pop() === type).flatMap(([, list]) => list));
+  // a missing or non-list `entities` (an older FOCOM, a proxy error page) reads as an empty export, never a crash
+  return (Array.isArray(topo?.entities) ? topo.entities : []).flatMap((g) => Object.entries(g).filter(([k]) => k.split(":").pop() === type).flatMap(([, list]) => list));
 }
 
 /** Every relationship of one TEIV type in the export. */
 function relationshipsOf(topo: Topology, type: string) {
-  return topo.relationships.flatMap((g) => Object.entries(g).filter(([k]) => k.split(":").pop() === type).flatMap(([, list]) => list));
+  return (Array.isArray(topo?.relationships) ? topo.relationships : []).flatMap((g) => Object.entries(g).filter(([k]) => k.split(":").pop() === type).flatMap(([, list]) => list));
 }
 
 /** Inputs of {@link buildTopology}; `workloadsCut` / `alarmsCut` say the list was cut at its limit (a note under the graph says so). */

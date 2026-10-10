@@ -33,7 +33,7 @@ export function Infrastructure() {
         { id: "o1", label: "O1 endpoints & jobs" },
         { id: "orders", label: "Service orders" },
       ]} />
-      {tab === "topology" && <TopologyTab />}
+      {tab === "topology" && <SectionBoundary id="infrastructure.topology"><TopologyTab /></SectionBoundary>}
       {tab === "nfo" && <div className="stack">
         <SectionBoundary id="infrastructure.deployments"><NfDeployments /></SectionBoundary>
         <SectionBoundary id="infrastructure.descriptors"><NfDescriptors /></SectionBoundary>

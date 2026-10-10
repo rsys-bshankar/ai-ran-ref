@@ -1,12 +1,13 @@
 /** The signed-in console frame: sidebar, top bar and the routed page (BRIEF §2). Below 800 px the sidebar stacks above the content
  * (styles.css). Also owns the change-password dialog the sidebar opens. */
-import { useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent } from "react";
 import { Outlet } from "react-router-dom";
 
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Field, Modal } from "../components/ui";
 import { useToast } from "../components/Toast";
+import { Skeleton } from "../kit/states";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
@@ -20,7 +21,7 @@ export function Layout() {
       <Sidebar onChangePassword={() => setPwOpen(true)} />
       <div className="main">
         <TopBar />
-        <main className="content" id="main"><Outlet /></main>
+        <main className="content" id="main"><Suspense fallback={<Skeleton lines={6} />}><Outlet /></Suspense></main>
       </div>
       {pwOpen && <ChangePassword onClose={() => setPwOpen(false)} />}
     </div>
