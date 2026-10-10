@@ -31,6 +31,11 @@ def load(results_dir: Path) -> dict[str, list[dict]]:
 
 
 def report(images: dict[str, list[dict]]) -> str:
+    """The markdown report: a per-image count of CRITICAL and HIGH findings, then one row per distinct finding.
+
+        Findings are grouped by (vulnerability id, package, installed version) and the images they appear in are listed (the first four, then "and n more"), ordered by
+        severity then package. When there are none the report says so.
+    """
     lines = ["## Image vulnerability scan", "",
              "HIGH and CRITICAL findings that have a fix (unfixed ones are not listed). One row per image:", "",
              "| Image | Critical | High |", "|---|---:|---:|"]
@@ -56,6 +61,9 @@ def report(images: dict[str, list[dict]]) -> str:
 
 
 def main(argv: list[str]) -> int:
+    """Prints the report for the directory in the one non-option argument. With `--gate` returns 1 when any image has a finding; exit 2 for a wrong argument count or an
+        empty directory. Without `--gate` it never fails on findings.
+    """
     args = [a for a in argv[1:] if not a.startswith("--")]
     if len(args) != 1:
         print(__doc__)

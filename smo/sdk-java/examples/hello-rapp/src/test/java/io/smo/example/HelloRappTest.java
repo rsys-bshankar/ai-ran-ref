@@ -39,6 +39,11 @@ class HelloRappTest {
     private HelloRapp app;
     private final HttpClient http = HttpClient.newHttpClient();
 
+    /**
+     * Starts the stand-in platform on a free loopback port and builds the rApp against it (no retries, operator API on a free
+     * port, a one-hour heartbeat period, so a test sees the first beat and the one at close). The platform records every call and body and answers 401 to a
+     * call without the issued token.
+     */
     @BeforeEach
     void startPlatform() throws Exception {
         platform = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -80,12 +85,18 @@ class HelloRappTest {
         platform.stop(0);
     }
 
+    /**
+     * Calls the rApp's own operator API.
+     */
     private HttpResponse<String> call(String method, String path, String body) throws Exception {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + app.operatorPort() + path)).timeout(Duration.ofSeconds(10));
         b.method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    /**
+     * Waits up to five seconds for the platform to have received {@code key} ("METHOD path"), since the heartbeat runs on another thread.
+     */
     private void awaitCall(String key) throws InterruptedException {
         for (int i = 0; i < 100 && !calls.contains(key); i++) {
             Thread.sleep(50);
@@ -93,6 +104,9 @@ class HelloRappTest {
         assertTrue(calls.contains(key), "expected " + key + " in " + calls);
     }
 
+    /**
+     * Pins that start registers the operator API base, sends a heartbeat with state RUNNING, and the health routes answer 200.
+     */
     @Test
     void startRegistersTheOperatorApiAndSendsAHeartbeat() throws Exception {
         app.start();
@@ -107,6 +121,9 @@ class HelloRappTest {
         app.close();
     }
 
+    /**
+     * Pins that a run reads DME and MLMR, answers 202 with the counts, and the status and runs routes show it.
+     */
     @Test
     void aRunReadsADataRouteAndAnAiRouteAndTheOperatorPageSeesIt() throws Exception {
         app.start();
@@ -128,6 +145,9 @@ class HelloRappTest {
         app.close();
     }
 
+    /**
+     * Pins that another instance's id or an unknown path is 404 and a wrong method is 405.
+     */
     @Test
     void routesOfAnotherInstanceAndWrongMethodsAreRefused() throws Exception {
         app.start();
@@ -138,6 +158,9 @@ class HelloRappTest {
         app.close();
     }
 
+    /**
+     * Pins that a platform failure during a run is answered as 502 PLATFORM_ERROR and the rApp keeps serving.
+     */
     @Test
     void aPlatformFailureDuringARunIsA502NotACrash() throws Exception {
         app.start();
@@ -152,6 +175,9 @@ class HelloRappTest {
         app.close();
     }
 
+    /**
+     * Pins that closing withdraws the operator API registration and deregisters the invoker the SDK enrolled.
+     */
     @Test
     void closeClearsTheOperatorApiAndDeregistersTheInvoker() throws Exception {
         app.start();
@@ -161,6 +187,9 @@ class HelloRappTest {
         assertTrue(calls.contains("DELETE /sme/invoker-registrations/inv"));
     }
 
+    /**
+     * Pins the settings: defaults, and an error when the instance id or the operator API base is missing.
+     */
     @Test
     void settingsComeFromTheEnvironmentAndTheRequiredOnesAreRequired() {
         HelloRapp.Settings s = HelloRapp.Settings.fromEnv(Map.of("SMO_INSTANCE_ID", "i", "HELLO_OPERATOR_API_BASE", "http://h:8000", "PORT", "9000")::get);

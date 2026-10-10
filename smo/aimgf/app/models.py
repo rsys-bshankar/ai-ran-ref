@@ -1,3 +1,24 @@
+"""AIMgF's SQLAlchemy tables: the model and runtime lifecycle row, the training / validation / emulation / inference job tables, governance and audit records,
+MLMF subscriptions, feature groups, and the TS 28.105 NRM tables.
+
+What it is: every table AIMgF owns (the list is in `aimgf/README.md` 2.2). A job row doubles as its TS 28.105 request (`TrainingJob` is the
+MLTrainingRequest, `ValidationJob` the MLTestingRequest), so there is no parallel bookkeeping table for them; the NRM functions, processes, reports, loading
+and update resources that have no job equivalent are tables of their own at the end of the file (`docs/STANDARDS.md` decision D-9, flat resources).
+
+Where it sits: read and written by `main.py` and `nrm.py` only. The schema itself is the Alembic history in `migrations/`; this file must agree with it
+(`scripts/check_migration_matches_models.py` compares them against Postgres). The unit tests build their SQLite schema from every `Base` class defined in this
+module (`tests/test_main.py`, fixture `db_session_factory`), so a new table is picked up there without a test change.
+
+Owns: AIMgF's tables. Does not own: models, repositories and coordination groups (MLMR), deployments and descriptors (NFO), data jobs (DME), the shared
+`idempotency_key` and outbox tables (`smo_shared`). A reference to another module's row is a bare UUID column, not an ORM `ForeignKey`: that module runs in its own
+process and its tables are not in this metadata (flushing would raise NoReferencedTableError). Migration 0022 also dropped the database-level foreign keys across
+module boundaries, so nothing but the owning module's API (called through R1) checks that such an id exists.
+
+Before editing: a column change is a schema revision, not just an edit here (`smo/CLAUDE.md`, "Schema changes are revisions"). Arrays and JSON use a SQLite
+`with_variant` so the unit tests run without Postgres. A `DateTime(timezone=True)` read back from SQLite is naive, so elapsed-time maths on `started_at` goes
+through `main._aware`.
+"""
+
 import datetime
 import uuid
 
@@ -9,21 +30,17 @@ from smo_shared.versioning import Versioned
 
 
 class ModelLifecycle(Versioned, Base):
-    """Wave 2's own lifecycle-state truth (docs/ARCHITECTURE.md (AIMgF),
-    docs/ARCHITECTURE.md: "Lifecycle state: AIMgF
-    ✅, MLMR ❌"). Replaces Wave 1's `PATCH /mlmr/models/{id}/lifecycle`
-    (which left state/trainingJobId/clearedNodeGroups on MLMR's own row as
-    a structural shortcut) — AIMgF now owns this row outright, one per
-    model, created alongside every model's first TrainingJob.
+    """AIMgF's lifecycle state for one model: where it is on the certification path and in its serving runtime. One row per model, keyed by the MLMR model id.
 
-    `nf_deployment_descriptor_id`/`nf_deployment_id` are AIMgF's own
-    handles onto NFO's runtime — bare UUIDs, not ORM ForeignKeys: NFO
-    runs in its own process, where this module's metadata never has
-    `nf_deployment_descriptor`/`nf_deployment` declared (NoReferencedTableError
-    on flush otherwise), the same cross-module-reference shape already used
-    throughout this build (e.g. onboarding's own `nf_deployment_descriptor_id`).
-    Referential integrity is enforced at the DB level instead
-    (migrations/001_init.sql's own FK on the descriptor column).
+    The row is created lazily by `main._get_or_create_lifecycle` the first time AIMgF is asked about a model (MLMR has no hook into AIMgF), at REGISTERED /
+    NOT_DEPLOYED. `model_lifecycle_state` and `runtime_lifecycle_state` are the two independent FSMs of `statemachine.py`. `training_job_id` is the model's current
+    training run, which is how a cancel tells whether the run it ends is still the model's current one. `cleared_node_groups` is written by MLLF through
+    `PATCH /models/{id}/runtime/node-groups`. `nf_deployment_descriptor_id` and `nf_deployment_id` are the handles onto the serving runtime NFO created, and
+    `runtime_profile` is the INFERENCE profile it was sized with. `training_approved` and `validation_approved` are the operator gate flags set by the
+    APPROVE_TRAINING and APPROVE_VALIDATION events and reset by every CREATE_TRAINING (HISTORY.md OI-6.1).
+
+    `Versioned` adds `row_version`: every UPDATE is conditional on the version it loaded, so two replicas that move the same model race into a 409
+    `CONCURRENT_MODIFICATION` instead of both winning (PR-ST-2).
     """
     __tablename__ = "model_lifecycle"
 
@@ -46,10 +63,12 @@ class ModelLifecycle(Versioned, Base):
 
 
 class ValidationJob(Base):
-    """New this wave — AIMgF's own "Create Validation" request/tracking
-    aggregate (docs/ARCHITECTURE.md's AIMgF "Owns" list), split out
-    from being folded silently into TrainingJob's own TRAINING_COMPLETE ->
-    TESTED transition in Wave 1's flat FSM.
+    """One validation (TS 28.105 MLTestingRequest) run. The row is the request: `GET /ml-testing-requests/{id}` renders it.
+
+    Exactly one of `model_id` and `model_coordination_group_id` is set (CHECK `validation_exactly_one_target`, same shape as `training_job`); a group-targeted run
+    tests the group as a unit and drives no single model's lifecycle. `status` is RUNNING, SUSPENDED, COMPLETED, FAILED or CANCELLED. `started_at` plus
+    `timeout_seconds` is the deadline `_expire_overdue_jobs` enforces (SUSPENDED runs never expire; resume restarts the clock). The `nf_deployment_*` pair is the
+    transient NFO execution runtime, set when the run starts and cleared once it is torn down.
     """
     __tablename__ = "validation_job"
 
@@ -104,9 +123,10 @@ class ValidationJob(Base):
 
 
 class EmulationJob(Base):
-    """New this wave — AIMgF's own "Create Emulation" request/tracking
-    aggregate, split out from Wave 1's flat VALIDATION_COMPLETE -> EMULATED
-    transition the same way ValidationJob is.
+    """One emulation run for a model (the MLEF stage). Always model-targeted.
+
+    `status` is RUNNING, COMPLETED or FAILED. Same deadline and NFO execution-runtime columns as `ValidationJob`. `aiml_inference_emulation_function_id` is the
+    optional AIMLInferenceEmulationFunction hosting the run; a successful completion writes an AIMLInferenceReport under it.
     """
     __tablename__ = "emulation_job"
 
@@ -137,11 +157,10 @@ class EmulationJob(Base):
 
 
 class CertificationRecord(Base):
-    """New this wave — a real, queryable record for every governance
-    decision (docs/ARCHITECTURE.md's AIMgF Governance list: Approval,
-    Certification, Promotion, Rollback — plus the submit/reject pair
-    framing approval), written by `advance_model_lifecycle` whenever the
-    fired event is one of `statemachine.GOVERNANCE_EVENTS`.
+    """The audit record of one governance decision on a model: the event (`decision`), who decided (`decided_by`, required) and an optional rationale.
+
+    Written by `main._fire_model_event` for every event in `statemachine.GOVERNANCE_EVENTS`, in the same transaction as the lifecycle change, and read by
+    `GET /models/{id}/governance-history`. DEPRECATE and RETIRE are not governance events and leave no record.
     """
     __tablename__ = "certification_record"
 
@@ -154,10 +173,10 @@ class CertificationRecord(Base):
 
 
 class LifecycleTransition(Base):
-    """New this wave — an audit trail of every ModelLifecycle/
-    RuntimeLifecycle FSM transition, so "how did this model get here" is
-    a real query rather than something only reconstructable from
-    TrainingJob/ValidationJob/EmulationJob/CertificationRecord timestamps.
+    """The audit trail of every ModelLifecycle and RuntimeLifecycle transition (`fsm` is MODEL or RUNTIME), so "how did this model get here" is a query.
+
+    Written by `_fire_model_event` and `_fire_runtime_event`, in the transaction of the change; read by `GET /models/{id}/lifecycle-history`. Self-loop events
+    (APPROVE_TRAINING, APPROVE_VALIDATION) are recorded too, with `from_state == to_state`.
     """
     __tablename__ = "lifecycle_transition"
 
@@ -171,15 +190,15 @@ class LifecycleTransition(Base):
 
 
 class TrainingJob(Base):
-    """model_id/model_coordination_group_id are bare UUIDs, not
-    ForeignKeys, since Wave 1's split moved MLModel/MLModelCoordinationGroup
-    to MLMR's own process — AIMgF never imports MLMR's models, the same
-    cross-module-reference shape already used elsewhere in this build
-    (e.g. sa-smos's own `target_coordination_group_id`). Referential
-    integrity across that boundary is still enforced at the database
-    level: migrations/001_init.sql's own `ON DELETE CASCADE` on this
-    column is unaffected by the code split, since every module shares one
-    physical Postgres instance.
+    """One training run. The row is the TS 28.105 MLTrainingRequest: `GET /ml-training-requests/{id}` renders it, so the spec's attributes live here rather than on a
+    parallel table.
+
+    Exactly one of `model_id` and `model_coordination_group_id` is set (CHECK `exactly_one_target`); a group-targeted run drives no single model's lifecycle.
+    Both are bare UUIDs into MLMR, not foreign keys (see the module description). `status` is NOT_STARTED, IN_PROGRESS, SUSPENDED, FINISHED, FAILED or CANCELLED:
+    TS 28.105's `requestStatus` values plus FAILED; CANCELLING is never produced because cancellation is synchronous. `current_step` is the furthest of
+    `TRAINING_STEPS` the runtime has reported; each step's own status is derived from it and `status` (`main._training_steps`). `started_at` plus `timeout_seconds`
+    is the deadline `_expire_overdue_jobs` enforces. `ml_update_process_id` is set when an MLUpdateProcess started the run (FINE_TUNING), so its completion advances
+    that process. Complex spec datatypes are stored as spec-shaped JSON (`ts28105.dump`).
     """
     __tablename__ = "training_job"
     __table_args__ = (
@@ -302,6 +321,12 @@ TRAINING_STEPS = ("DATA_EXTRACTION", "TRAINING", "TRAINED_MODEL")
 
 
 class InferenceJob(Base):
+    """One inference request against a model's serving runtime (MLIF).
+
+    Unlike training, validation and emulation, an inference job creates no NFO deployment: `nf_deployment_id` is a read-only copy of the model's live serving
+    deployment (`ModelLifecycle.nf_deployment_id`) taken when the job is requested, which is only possible while the runtime is ACTIVE. `status` is RUNNING,
+    COMPLETED or FAILED (the FSM is `INFERENCE_JOB_FSM`); the default deadline is five seconds. `consumer_ref` feeds the function's `usedByFunctionRefList`.
+    """
     __tablename__ = "inference_job"
 
     inference_job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -333,6 +358,11 @@ class InferenceJob(Base):
 
 
 class MLMFSubscription(Base):
+    """A model-performance subscription (MLMF): which metrics of a model to watch, the DME type they come from, and the floor below which a report counts as a breach
+    (`guard_kpi_floor`, metric name to minimum).
+
+    `notification_destination`, when set, receives every report through the outbox. Reports are `PerformanceReport` rows; deleting a subscription cascades to them.
+    """
     __tablename__ = "mlmf_subscription"
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -349,6 +379,10 @@ class MLMFSubscription(Base):
 
 
 class PerformanceReport(Base):
+    """One metrics report against an `MLMFSubscription`; `breached_floor` is True when any metric the subscription guards is below its floor.
+
+    Rows are removed with their subscription (`ON DELETE CASCADE`). Reads list them newest first.
+    """
     __tablename__ = "performance_report"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -359,29 +393,14 @@ class PerformanceReport(Base):
 
 
 class FeatureGroup(Base):
-    """Classified under AIMgF, not MLMR/MLLF: not mentioned by either
-    service's own docs/ownership/*.md (a genuine Wave 0 gap — neither
-    document anticipated it), and DME (which owns "datasets, feature
-    sets" per docs/ARCHITECTURE.md) is
-    explicitly frozen unchanged this wave, so moving it there is out of
-    scope. The reference registers FeatureGroup through its own Training
-    Manager sub-service, co-located with TrainingJob in the same real
-    repo this build's training routes map to — the closest real-world
-    precedent, and consistent with this module's own header docstring
-    already listing MLMF (a monitoring/governance concern) alongside
-    AIMgF rather than MLMR/MLLF. Flagged here for the record in case a
-    later wave wants to revisit it.
+    """A registered feature group: where a set of features lives in the data lake (host, bucket, measurement and the access token) and, when `enable_dme` is set, the
+    DME data job created for it.
 
-    HISTORY.md §5: no feature-group/feature-store concept
-    existed at all — the reference's own FeatureGroup
-    (aiml-fw-awmf-tm's trainingmgr/models/featuregroup.py). Real
-    Cassandra-backed feature storage (the ADOPT target,
-    aiml-fw-athp-sdk-feature-store) and the reference's own
-    enable_dme-triggered DME job (data-consumer/v1/info-jobs/{featureGroupName},
-    trainingmgr_operations.create_dme_filtered_data_job): the storage stays
-    elided, but since OI-5-aiml-featuregroup-dme an `enable_dme` group gets a
-    real DME DataJob of its `dme_type_id`, created with the group and
-    terminated when it is deleted.
+    `feature_group_name` is unique (the API rule is 3 to 63 word characters). `dme_type_id` and `dme_data_job_id` are bare UUIDs into DME, set only for an
+    `enable_dme` group; the job is created before the group is stored and terminated, best effort, when the group is deleted (HISTORY.md OI-5-aiml-featuregroup-dme).
+    `token` is a credential supplied by the caller and is stored and returned in clear text, as listed in `aimgf/README.md` 2.8.
+    The group is AIMgF's rather than MLMR's, MLLF's or DME's because no ownership record placed it elsewhere; the real feature storage behind the reference's
+    feature store is not built (HISTORY.md section 5).
     """
 
     __tablename__ = "feature_group"
@@ -417,10 +436,16 @@ class FeatureGroup(Base):
 # MLModelCoordinationGroup are MLMR's (mlmr/app/models.py).
 
 def _now():
+    """Returns the current UTC time; the default factory of the `created_at` columns of the NRM tables."""
     return datetime.datetime.now(datetime.UTC)
 
 
 class MLTrainingFunction(Base):
+    """TS 28.105 MLTrainingFunction: a training capability that MLTrainingRequests can name. Created and edited directly through the NRM routes.
+
+    `ml_training_type` is read-only in the spec: it holds the type of the most recent run started for this function (stamped by `_start_training`).
+    `ml_model_repository_ref` is a bare UUID into MLMR. The learning-technology, FL and knowledge attributes are stored and returned; nothing acts on them.
+    """
     __tablename__ = "ml_training_function"
 
     ml_training_function_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -436,9 +461,11 @@ class MLTrainingFunction(Base):
 
 
 class MLTrainingProcess(Base):
-    """One per TrainingJob (= MLTrainingRequest), created alongside it by
-    every training entry point, so the spec's request/process split is
-    real for every run, not only for runs started via the NRM routes.
+    """TS 28.105 MLTrainingProcess: the running side of a training request, one per `TrainingJob`, created by `_start_training` so the request/process split exists
+    for every run, not only for runs started through the NRM routes.
+
+    `status` and the cancel and suspend flags are kept in step with the job by `_sync_training_process`; `progress_*` is the execution runtime's ProcessMonitor
+    write-back. Removed with its job (`ON DELETE CASCADE`).
     """
     __tablename__ = "ml_training_process"
 
@@ -457,6 +484,11 @@ class MLTrainingProcess(Base):
 
 
 class MLTrainingReport(Base):
+    """TS 28.105 MLTrainingReport, written on every training completion, successful or not.
+
+    `last_training_report_id` chains to the previous report of the same target (`_write_training_report`). `ml_model_generated_ref` and
+    `ml_model_coordination_group_generated_ref` are set only when the run succeeded. Removed with its job (`ON DELETE CASCADE`).
+    """
     __tablename__ = "ml_training_report"
 
     ml_training_report_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -476,6 +508,7 @@ class MLTrainingReport(Base):
 
 
 class MLTestingFunction(Base):
+    """TS 28.105 MLTestingFunction: a testing capability that MLTestingRequests can name. Created and deleted directly; deleting it sets the requests' reference to NULL."""
     __tablename__ = "ml_testing_function"
 
     ml_testing_function_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -484,6 +517,10 @@ class MLTestingFunction(Base):
 
 
 class MLTestingReport(Base):
+    """TS 28.105 MLTestingReport, written when a validation run completes or times out. `ml_testing_result` is PASSED or FAILED.
+
+    Removed with its validation job (`ON DELETE CASCADE`).
+    """
     __tablename__ = "ml_testing_report"
 
     ml_testing_report_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -495,6 +532,11 @@ class MLTestingReport(Base):
 
 
 class AIMLInferenceFunction(Base):
+    """TS 28.105 AIMLInferenceFunction: an inference capability that models are loaded onto and inference jobs can name.
+
+    `activation_status` (ACTIVATED or DEACTIVATED, default DEACTIVATED) gates inference jobs that name the function. `ml_model_refs` is read-only in the spec: the ids
+    of the models loaded onto it by an MLModelLoadingProcess, as strings.
+    """
     __tablename__ = "aiml_inference_function"
 
     aiml_inference_function_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -509,6 +551,7 @@ class AIMLInferenceFunction(Base):
 
 
 class AIMLInferenceEmulationFunction(Base):
+    """TS 28.105 AIMLInferenceEmulationFunction: the function that hosts emulation runs and owns the AIMLInferenceReports they produce."""
     __tablename__ = "aiml_inference_emulation_function"
 
     aiml_inference_emulation_function_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -517,6 +560,11 @@ class AIMLInferenceEmulationFunction(Base):
 
 
 class AIMLInferenceReport(Base):
+    """TS 28.105 AIMLInferenceReport: the result of one inference or emulation run, or a report posted directly.
+
+    Belongs to an inference function or an emulation function (the API requires exactly one reference); the foreign keys cascade on delete. `inference_job_id` and
+    `emulation_job_id` are set when a job produced the report and become NULL if the job row goes. `ml_model_refs` holds model ids as strings.
+    """
     __tablename__ = "aiml_inference_report"
 
     aiml_inference_report_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -533,6 +581,7 @@ class AIMLInferenceReport(Base):
 
 
 class MLModelLoadingPolicy(Base):
+    """TS 28.105 MLModelLoadingPolicy: the models an AIMLInferenceFunction should load when the policy is triggered (`POST .../trigger`). `policy_for_loading` is stored, not evaluated."""
     __tablename__ = "ml_model_loading_policy"
 
     ml_model_loading_policy_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -544,6 +593,10 @@ class MLModelLoadingPolicy(Base):
 
 
 class MLModelLoadingRequest(Base):
+    """TS 28.105 MLModelLoadingRequest: a request to load models onto an AIMLInferenceFunction. It runs synchronously when created, unless created suspended or cancelled.
+
+    `request_status` is NOT_STARTED, IN_PROGRESS, SUSPENDED, FINISHED or CANCELLED. `ml_model_to_load_refs` holds model ids as strings.
+    """
     __tablename__ = "ml_model_loading_request"
 
     ml_model_loading_request_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -557,6 +610,10 @@ class MLModelLoadingRequest(Base):
 
 
 class MLModelLoadingProcess(Base):
+    """TS 28.105 MLModelLoadingProcess: the record of one loading run, created by a loading request or a policy trigger.
+
+    `loaded_ml_model_refs` grows as each model is brought up; `loading_request_refs` and `loading_policy_refs` say what started it.
+    """
     __tablename__ = "ml_model_loading_process"
 
     ml_model_loading_process_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -574,6 +631,7 @@ class MLModelLoadingProcess(Base):
 
 
 class MLUpdateFunction(Base):
+    """TS 28.105 MLUpdateFunction: the update capability that MLUpdateRequests can name. Its capability report and model list are refreshed when an update finishes."""
     __tablename__ = "ml_update_function"
 
     ml_update_function_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -584,6 +642,10 @@ class MLUpdateFunction(Base):
 
 
 class MLUpdateRequest(Base):
+    """TS 28.105 MLUpdateRequest: a request to update the models in `ml_model_refs`. Realised as FINE_TUNING training of each model (see `nrm.create_ml_update_request`).
+
+    `request_status` is IN_PROGRESS from creation, SUSPENDED while suspended, FINISHED once every run is terminal (whether or not all succeeded) and CANCELLED if cancelled.
+    """
     __tablename__ = "ml_update_request"
 
     ml_update_request_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -600,6 +662,11 @@ class MLUpdateRequest(Base):
 
 
 class MLUpdateProcess(Base):
+    """TS 28.105 MLUpdateProcess: tracks the training runs of one MLUpdateRequest (`TrainingJob.ml_update_process_id` points here).
+
+    `nrm.advance_ml_update_process` recomputes `progress_percentage` as runs finish and sets `status` to FINISHED only if every run succeeded, otherwise FAILED.
+    Removed with its request (`ON DELETE CASCADE`).
+    """
     __tablename__ = "ml_update_process"
 
     ml_update_process_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -614,6 +681,7 @@ class MLUpdateProcess(Base):
 
 
 class MLUpdateReport(Base):
+    """TS 28.105 MLUpdateReport, written once when every run of an update process is terminal; `ml_model_refs` lists the models whose run succeeded. Removed with its process (`ON DELETE CASCADE`)."""
     __tablename__ = "ml_update_report"
 
     ml_update_report_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

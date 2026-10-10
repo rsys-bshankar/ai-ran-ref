@@ -22,6 +22,11 @@ HEALTH_WAIT_MS = 60_000          # the dashboard polls; the stack may have only 
 
 
 def run(base_url: str, out: Path, user: str, password: str, require_healthy: bool, chromium: str | None) -> int:
+    """Signs in, waits for the dashboard's "Modules healthy n/m" tile and opens the alarms page, saving a screenshot at each step; returns the exit code.
+
+        When `require_healthy` is true the tile must show n equal to m (and m above zero) within `HEALTH_WAIT_MS`, otherwise a failure is recorded; when false it only
+        needs the tile to show a non-zero total. A Playwright error is recorded, a `99-failure.png` is taken and the browser is closed either way.
+    """
     out.mkdir(parents=True, exist_ok=True)
     failures: list[str] = []
     with sync_playwright() as pw:
@@ -64,6 +69,7 @@ def run(base_url: str, out: Path, user: str, password: str, require_healthy: boo
 
 
 def main() -> int:
+    """Command-line entry: takes the password from `GUI_SMOKE_PASSWORD` (exit 2 when unset) and returns `run`'s exit code."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--base-url", default="http://localhost:3000")
     ap.add_argument("--out", default="gui-smoke", help="directory for the screenshots")

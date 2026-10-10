@@ -1,9 +1,13 @@
-"""The emitting checks (PR-SB-9b): FM, PM (and FILE), SW and HB.
+"""The emitting checks of the O1 adaptor kit (PR-SB-9b): groups FM, PM (and FILE), SW and HB.
 
-The other direction from checks.py: the adaptor sends alarms, PM reports and files, software-management phase results and heartbeats to RAN NF OAM.
-There is no standard way to ask an adaptor to do that, so the kit uses a trigger API (`POST <emit-url>/emit/<kind>`, the one `mock-o1-adaptor` has), and
-every check then reads RAN NF OAM's own state: a trigger that answers "emitted" and sends nothing fails the read-back. A group is skipped when the adaptor
-does not declare its service in /capabilities, or when no `--oam-url` was given (kit.run).
+These run the other way from checks.py: the adaptor sends alarms, PM reports and files, software-management phase results and heartbeats to RAN NF OAM. There is no
+standard way to ask an adaptor to do that, so the kit uses a trigger API (`POST <emit-url>/emit/<kind>`, the one `mock-o1-adaptor` implements), and every check then reads
+RAN NF OAM's own state: a trigger that answers "emitted" and sends nothing fails the read-back. A group is skipped when the adaptor does not declare its service in
+`/capabilities`, or when no `--oam-url` was given (kit.run).
+
+The kit prepares what RAN NF OAM needs once per run and caches it in `ctx.prepared`: a managed element with an O1 adaptor endpoint (or the `--element` given), and a PM
+subscription for a counter new to the run. It never removes them. Ids are listed in `conformance/README.md`, and the README's trigger table is the contract a vendor's test
+hook must meet. PM-1 reads RAN NF OAM's answer to the report because a report is not stored there (it goes to DME); the other checks read stored state.
 """
 
 import datetime
@@ -19,17 +23,19 @@ UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 
 
 def _excerpt(resp: httpx.Response) -> str:
+    """The first 200 characters of a response body on one line, for a failure message."""
     return resp.text[:200].replace("\n", " ")
 
 
 def _oam_client(ctx: Context) -> httpx.Client:
+    """RAN NF OAM's client, or `Fail` when the run has none (kit.run skips the group before this, so this only guards a check called by hand)."""
     if ctx.oam is None:     # kit.run skips the group before this; a check called by hand without one says so
         raise Fail("no --oam-url: there is no RAN NF OAM to read back from")
     return ctx.oam
 
 
 def _oam(ctx: Context, method: str, path: str, what: str, *, params: dict | None = None, json: dict | None = None, ok: tuple[int, ...] = (200, 201, 202)):
-    """A call to RAN NF OAM that must succeed; its JSON body. A refusal is a Fail naming what could not be prepared or read."""
+    """A call to RAN NF OAM that must answer one of `ok`; its JSON body. A refusal or a non-JSON answer is a `Fail` that names `what` could not be prepared or read."""
     oam = _oam_client(ctx)
     resp = oam.request(method, path, params=params, json=json)
     if resp.status_code not in ok:
@@ -40,7 +46,9 @@ def _oam(ctx: Context, method: str, path: str, what: str, *, params: dict | None
         raise Fail(f"{what}: RAN NF OAM's answer to {method} {path} is not JSON") from None
 
 
+# Only the first 500 items are read (no paging): on a stack with more entries for the filter than that, the item a check looks for may not be in the list and the check fails.
 def _items(ctx: Context, path: str, what: str, params: dict) -> list[dict]:
+    """The `items` list of a RAN NF OAM list endpoint, asking for up to 500; fails when the answer has no `items` list."""
     body = _oam(ctx, "GET", path, what, params={**params, "limit": 500})
     items = body.get("items") if isinstance(body, dict) else None
     if not isinstance(items, list):
@@ -49,7 +57,11 @@ def _items(ctx: Context, path: str, what: str, params: dict) -> list[dict]:
 
 
 def _trigger(ctx: Context, kind: str, body: dict) -> dict:
-    """Ask the adaptor to emit; its answer ({emitted, status, response}). The adaptor saying it did is not the check: the read-back that follows is."""
+    """Ask the adaptor to emit one message of `kind` and return its answer `{emitted, status, response}`.
+
+    `emitted` is the adaptor's word only; a trigger that answers `emitted: false` fails here, naming what RAN NF OAM answered, but one that answers true proves nothing,
+    so every caller reads RAN NF OAM's state afterwards.
+    """
     resp = ctx.emit.post(f"{ctx.emit_prefix}/{kind}", json=body)
     if resp.status_code >= 300:
         raise Fail(f"the trigger POST {ctx.emit_prefix}/{kind} answered {resp.status_code}: {_excerpt(resp)}")
@@ -65,11 +77,13 @@ def _trigger(ctx: Context, kind: str, body: dict) -> dict:
 
 
 def _services(ctx: Context) -> list[str]:
+    """The services to register the run's element with: the adaptor's declared services that RAN NF OAM knows, or all known ones when it has declared none."""
     declared = ctx.declared.get("supportedServices")
     return sorted(s for s in declared if s in KNOWN_SERVICES) if isinstance(declared, list) else sorted(KNOWN_SERVICES)
 
 
 def _endpoint_of(ctx: Context, ref: str) -> dict:
+    """The O1 adaptor endpoint RAN NF OAM holds for the managed element `ref`, or `Fail` when there is none."""
     for ep in _items(ctx, "/o1-adaptor-endpoints", "reading the registered endpoints", {}):
         if ep.get("managedElementRef") == ref:
             return ep
@@ -77,7 +91,11 @@ def _endpoint_of(ctx: Context, ref: str) -> dict:
 
 
 def _element(ctx: Context) -> tuple[str, str]:
-    """(managed element reference, endpoint id) the emit checks use: --element's, else one this run registers (with the services the adaptor declares)."""
+    """`(managed element reference, endpoint id)` the emitting checks use, resolved once per run and cached in `ctx.prepared`.
+
+    With `--element` it is that element's registered endpoint. Otherwise the kit registers a new element at RAN NF OAM (`POST /o1-adaptor-endpoints`) whose adaptor URI is the
+    adaptor's NETCONF URL and whose supported services are the ones the adaptor declares, so that RAN NF OAM's `require_service` check has an answer for them.
+    """
     if "element" not in ctx.prepared:
         if ctx.element:
             ctx.prepared["element"] = (ctx.element, _endpoint_of(ctx, ctx.element)["endpointId"])
@@ -92,7 +110,11 @@ def _element(ctx: Context) -> tuple[str, str]:
 
 
 def _subscribed_counter(ctx: Context) -> str:
-    """A PM subscription on the run's element for a counter new to this run (read back from the subscription list)."""
+    """The counter type of the PM subscription this run made on its element, creating it on first use.
+
+    The subscription is read back from the subscription list before it is used, so a 2xx on creation is not taken on trust. The counter name carries the run id so a second
+    run does not meet the first one's subscription. Without the subscription RAN NF OAM refuses reports and files for the counter.
+    """
     if "counter" not in ctx.prepared:
         ref, _ = _element(ctx)
         counter = f"ConfPm{ctx.run_id}"
@@ -106,21 +128,25 @@ def _subscribed_counter(ctx: Context) -> str:
 
 
 def _source_id(ctx: Context) -> str:
+    """A source alarm id new to this run and to this call, so a check can pick its own alarm out of the list."""
     return f"conf-{ctx.run_id}-{uuid.uuid4().hex[:6]}"
 
 
 def _body_of(answer: dict) -> dict:
+    """The adaptor's relayed body of RAN NF OAM's answer (`response`) when it is a JSON object, else an empty dict."""
     return answer["response"] if isinstance(answer.get("response"), dict) else {}
 
 
 # ------------------------------------------------------------------------------------------------------------ FM
 
 def _alarms(ctx: Context, ref: str, source_id: str) -> list[dict]:
+    """The alarms RAN NF OAM lists for the element whose `sourceAlarmId` is `source_id`."""
     return [a for a in _items(ctx, "/alarms", "reading the alarms", {"managed_element_ref": ref}) if a.get("sourceAlarmId") == source_id]
 
 
 @check("FM-1", "FM", "an alarm the adaptor raises is accepted by RAN NF OAM's ingest, which answers 200 with an alarmId", "FM")
 def fm_accepted(ctx: Context) -> None:
+    """FM-1: RAN NF OAM's alarm ingest answers 200 with a string `alarmId` to an alarm the adaptor raises."""
     ref, _ = _element(ctx)
     answer = _trigger(ctx, "alarm", {"managedElementRef": ref, "severity": "MAJOR"})
     if answer.get("status") != 200 or not isinstance(_body_of(answer).get("alarmId"), str):
@@ -129,6 +155,7 @@ def fm_accepted(ctx: Context) -> None:
 
 @check("FM-2", "FM", "RAN NF OAM lists the alarm with the fields the adaptor sent (cause, problem, type, correlation group)", "FM")
 def fm_listed_with_fields(ctx: Context) -> None:
+    """FM-2: exactly one listed alarm matches the source id, and it carries the cause, problem, type and correlation group the adaptor sent."""
     ref, _ = _element(ctx)
     source = _source_id(ctx)
     sent = {"managedElementRef": ref, "severity": "MINOR", "sourceAlarmId": source, "probableCause": "linkFailure",
@@ -144,6 +171,7 @@ def fm_listed_with_fields(ctx: Context) -> None:
 
 @check("FM-3", "FM", "the severity is taken as a PerceivedSeverity whatever its case: listed in lower case, with the upper-case perceivedSeverity", "FM")
 def fm_severity(ctx: Context) -> None:
+    """FM-3: a severity is accepted in any case and stored lower case, with the upper-case `perceivedSeverity` (a PerceivedSeverity, whatever its case)."""
     ref, _ = _element(ctx)
     for sent, stored in (("Critical", "critical"), ("warning", "warning")):
         source = _source_id(ctx)
@@ -157,6 +185,7 @@ def fm_severity(ctx: Context) -> None:
 
 @check("FM-4", "FM", "the alarmId is minted by RAN NF OAM: a UUID that is not the adaptor's own id, new for each alarm even when the adaptor repeats its id", "FM")
 def fm_fresh_alarm_id(ctx: Context) -> None:
+    """FM-4: RAN NF OAM mints the `alarmId`: two alarms with the same adaptor id get two different UUIDs, neither equal to the adaptor's id."""
     ref, _ = _element(ctx)
     source = _source_id(ctx)
     for _ in range(2):
@@ -172,6 +201,7 @@ def fm_fresh_alarm_id(ctx: Context) -> None:
 
 @check("PM-1", "PM", "after a PM subscription on the element, a report of its counter is accepted (201) and its measurements are counted", "PM")
 def pm_report_accepted(ctx: Context) -> None:
+    """PM-1: a report for the subscribed counter is answered 201 with the counter, the element and the number of measurements (2) it counted."""
     ref, _ = _element(ctx)
     counter = _subscribed_counter(ctx)
     now = datetime.datetime.now(datetime.UTC).isoformat()
@@ -183,6 +213,10 @@ def pm_report_accepted(ctx: Context) -> None:
 
 
 def _file(ctx: Context, cells: list[str]) -> tuple[dict, str]:
+    """Have the adaptor report a performance file with one measurement per cell in `cells`; returns RAN NF OAM's answer (with the `fileId`) and the counter used.
+
+    Fails unless RAN NF OAM answered 201 with a string `fileId`.
+    """
     ref, _ = _element(ctx)
     counter = _subscribed_counter(ctx)
     now = datetime.datetime.now(datetime.UTC).isoformat()
@@ -196,6 +230,7 @@ def _file(ctx: Context, cells: list[str]) -> tuple[dict, str]:
 
 @check("PM-2", "PM", "a performance file the adaptor reports is accepted (201) and listed by GET /files with its format and a size", "FILE")
 def pm_file_listed(ctx: Context) -> None:
+    """PM-2: the reported file is listed once by `GET /files` (matched by the file id in its location) with format `json` and a size above zero."""
     got, _ = _file(ctx, ["201", "202"])
     listed = _items(ctx, "/files", "reading the files", {"fileDataType": "Performance", "beginTime": ctx.started.isoformat()})
     mine = [f for f in listed if str(f.get("fileLocation", "")).endswith(f"/{got['fileId']}/file")]
@@ -207,6 +242,7 @@ def pm_file_listed(ctx: Context) -> None:
 
 @check("PM-3", "PM", "the stored file holds what was reported: its element, its counter and the cells measured", "FILE")
 def pm_file_content(ctx: Context) -> None:
+    """PM-3: the stored file, downloaded from RAN NF OAM, holds the element, the counter and exactly the cells that were reported."""
     ref, _ = _element(ctx)
     got, counter = _file(ctx, ["301", "302", "303"])
     oam = _oam_client(ctx)
@@ -226,6 +262,7 @@ def pm_file_content(ctx: Context) -> None:
 # ------------------------------------------------------------------------------------------------------------ software management
 
 def _start_job(ctx: Context) -> str:
+    """Start a software-management job on the run's element at RAN NF OAM; returns its id, and fails unless a new job reads IN_PROGRESS in phase DOWNLOAD."""
     ref, _ = _element(ctx)
     job = _oam(ctx, "POST", "/software-management-jobs", "starting a software-management job", params={"managed_element_ref": ref})
     if job.get("status") != "IN_PROGRESS" or job.get("phase") != "DOWNLOAD":
@@ -234,6 +271,7 @@ def _start_job(ctx: Context) -> str:
 
 
 def _job(ctx: Context, job_id: str) -> dict:
+    """The software-management job `job_id` as RAN NF OAM lists it, or `Fail` when it is not listed."""
     ref, _ = _element(ctx)
     for job in _items(ctx, "/software-management-jobs", "reading the software-management jobs", {"managed_element_ref": ref}):
         if job.get("jobId") == job_id:
@@ -242,11 +280,13 @@ def _job(ctx: Context, job_id: str) -> dict:
 
 
 def _report_phase(ctx: Context, job_id: str, succeeded: bool) -> None:
+    """Have the adaptor report the result of the job's current phase (`succeeded` true or false) to RAN NF OAM."""
     _trigger(ctx, "software-phase", {"jobId": job_id, "succeeded": succeeded})
 
 
 @check("SW-1", "SW", "a phase result the adaptor reports moves the job on: DOWNLOAD done is read back as phase INSTALL, still IN_PROGRESS", "SWM")
 def sw_download_done(ctx: Context) -> None:
+    """SW-1: a successful DOWNLOAD result moves the job to phase INSTALL, still IN_PROGRESS."""
     job_id = _start_job(ctx)
     _report_phase(ctx, job_id, True)
     job = _job(ctx, job_id)
@@ -256,6 +296,7 @@ def sw_download_done(ctx: Context) -> None:
 
 @check("SW-2", "SW", "reporting DOWNLOAD, INSTALL and ACTIVATE in turn completes the job (COMPLETED, phase ACTIVATE)", "SWM")
 def sw_completes(ctx: Context) -> None:
+    """SW-2: three successful phase results walk the job INSTALL, ACTIVATE, then ACTIVATE/COMPLETED."""
     job_id = _start_job(ctx)
     seen = []
     for _ in range(3):
@@ -268,6 +309,7 @@ def sw_completes(ctx: Context) -> None:
 
 @check("SW-3", "SW", "a failed phase the adaptor reports ends the job FAILED", "SWM")
 def sw_fails(ctx: Context) -> None:
+    """SW-3: a failed phase result (after one success) ends the job FAILED."""
     job_id = _start_job(ctx)
     _report_phase(ctx, job_id, True)
     _report_phase(ctx, job_id, False)
@@ -280,6 +322,7 @@ def sw_fails(ctx: Context) -> None:
 
 @check("HB-1", "HB", "a heartbeat from the adaptor is recorded (lastHeartbeatAt) and the endpoint is ACTIVE (a DISCOVERED one becomes ACTIVE)", "HEARTBEAT")
 def hb_marks_active(ctx: Context) -> None:
+    """HB-1: a heartbeat changes the endpoint's `lastHeartbeatAt` and leaves it ACTIVE (a DISCOVERED endpoint becomes ACTIVE)."""
     ref, endpoint_id = _element(ctx)
     before = _endpoint_of(ctx, ref)
     _trigger(ctx, "heartbeat", {"endpointId": endpoint_id})
@@ -292,6 +335,7 @@ def hb_marks_active(ctx: Context) -> None:
 
 @check("HB-2", "HB", "a second heartbeat is recorded too: lastHeartbeatAt moves on and the endpoint stays ACTIVE", "HEARTBEAT")
 def hb_repeats(ctx: Context) -> None:
+    """HB-2: a second heartbeat moves `lastHeartbeatAt` on again (compared as ISO-8601 strings) and the endpoint stays ACTIVE."""
     ref, endpoint_id = _element(ctx)
     _trigger(ctx, "heartbeat", {"endpointId": endpoint_id})
     first = _endpoint_of(ctx, ref)

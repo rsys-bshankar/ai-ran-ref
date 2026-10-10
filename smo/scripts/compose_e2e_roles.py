@@ -10,7 +10,7 @@ one invoker with the secret (an SMO module) and one without (an rApp), takes a t
   - the limit an SMO module sets for the rApp's invoker id is the one that stops the rApp's config jobs (AI-10.2), through the real
     R1 -> RAN NF OAM path, with the invoker id R1 vouches for.
 
-Exits 1 on the first group of failures; removes what it made.
+Every check runs and the script exits 1 at the end if any failed; the invokers it registered are deleted in a `finally`.
 """
 
 import sys
@@ -26,12 +26,17 @@ made: list[str] = []
 
 
 def check(name: str, ok: bool, detail: object = "") -> None:
+    """Prints one `ok` / `FAIL` line and remembers a failure; the script goes on and lists every failure at the end."""
     print(f"{'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f"  ({detail})"))
     if not ok:
         failures.append(name)
 
 
 def register(enrolled: bool) -> dict:
+    """Registers an invoker with SME, with the enrollment secret when `enrolled` (an SMO module) and without it (an rApp), and returns SME's answer.
+
+        The invoker id is added to `made` so the final cleanup deletes it. Raises `httpx.HTTPStatusError` when SME refuses.
+    """
     resp = httpx.post(f"{SME}/invoker-registrations", json={"apiInvokerPublicKey": "e2e-roles"},
                       headers={"X-SMO-Enrollment": SECRET} if enrolled else {}, timeout=10)
     resp.raise_for_status()
@@ -126,7 +131,7 @@ try:
         check("an rApp cannot lift it (403)", r.status_code == 403, r.status_code)
         r = call("DELETE", kill, internal_tok)
         check("an SMO module can lift it", r.status_code == 204, r.status_code)
-        time.sleep(4)
+        time.sleep(4)          # the gateway re-reads the switch every 3 s: wait for it to see the lift
         r = call("POST", "/dme/data-jobs", rapp_tok, json={})
         check("once lifted the rApp's change is no longer refused as stopped", "RAPP_KILLED" not in r.text, (r.status_code, r.text[:200]))
 finally:

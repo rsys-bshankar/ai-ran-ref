@@ -1,3 +1,6 @@
+# The namespace every overlay of deploy/gitops installs the chart into (base/kustomization.yaml lists it). The chart wants
+# a namespace of its own: its Services are named as in docker-compose.yml, so one release per namespace. deploy/external-secrets/
+# assumes the name `smo` (tests_integration/test_external_secrets_example.py checks it).
 apiVersion: v1
 kind: Namespace
 metadata:

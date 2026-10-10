@@ -1,3 +1,10 @@
+"""Database tables of NFO: deployment descriptors, deployments, their cloud-resource links and the LCM operation history.
+
+Used by `main.py`; the schema is created by the Alembic revisions in `migrations/`. `NFDeployment` is the only versioned table
+(optimistic concurrency, `smo_shared.versioning.Versioned`). The foreign keys between `nf_deployment`, `nf_ocloud_resource` and
+`lcm_operation` are real and enforced on Postgres, which decides the delete order in `main._remove_deployment`.
+"""
+
 import datetime
 import uuid
 
@@ -9,6 +16,9 @@ from smo_shared.versioning import Versioned
 
 
 class NFDeploymentDescriptor(Base):
+    """The workload description a deployment is created from. `package_id` refers to Onboarding's application package but is not
+    an ORM foreign key (see the comment on the column), and is NULL for a descriptor made for a model runtime.
+    """
     __tablename__ = "nf_deployment_descriptor"
 
     nf_deployment_descriptor_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -26,11 +36,10 @@ class NFDeploymentDescriptor(Base):
 
 
 class NFDeployment(Versioned, Base):
-    """HISTORY.md §5: `name` didn't exist at all — the
-    reference's own duplication guard (`_check_duplication`,
-    dms_lcm_nfdeployment.py) rejects a second NfDeployment with the same
-    name or targeting the same descriptorId, which this build couldn't
-    even express without a real name column.
+    """One deployment of a descriptor. `state` holds a `statemachine.DeploymentState` value as text and is changed only through
+    `NFO_FSM`. `name` and the descriptor are each used by at most one deployment, a rule the Instantiate route checks (no unique
+    constraint backs it). `cluster_id` is the O-Cloud id from FOCOM. `workload_ref` and `config_secrets` are not written by any
+    route in this module. Versioned: a stale write raises and becomes a 409.
     """
     __tablename__ = "nf_deployment"
 
@@ -48,13 +57,8 @@ class NFDeployment(Versioned, Base):
 
 
 class NFOCloudResource(Base):
-    """The reference's own NfOCloudVResource (o2dms/domain/dms.py) — the
-    resource-linkage object HISTORY.md §5 flagged as entirely
-    missing. Real per-vResource granularity (CPU/RAM/interface-level
-    linkage) needs actual K8s pod introspection, out of scope same as
-    elsewhere; resource_ref is the clusterId Instantiate already
-    resolves via FOCOM's inventory — the real granularity this module
-    tracks today.
+    """Links a deployment to the O-Cloud resource it uses. One row per deployment is written by Instantiate, with `resource_ref`
+    set to the cluster id; finer per-resource detail is not tracked.
     """
     __tablename__ = "nf_ocloud_resource"
 
@@ -65,6 +69,7 @@ class NFOCloudResource(Base):
 
 
 class LCMOperation(Base):
+    """One lifecycle operation of a deployment (INSTANTIATE, SCALE, HEAL, TERMINATE) and its status; `created_at` orders the history."""
     __tablename__ = "lcm_operation"
 
     operation_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

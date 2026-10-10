@@ -110,6 +110,59 @@ jobs:
         working-directory: smo
         run: python scripts/check_breaking_changes.py
 
+  # The code-documentation gate (smo/docs/CODE_DOCUMENTATION.md). `check_code_docs.py` counts, per module, the files and functions that still lack the description the rule asks for and fails
+  # when a count goes up against smo/scripts/code_docs_baseline.json or when a NEW file or function lacks one. A pull request titled `Docs(code): ...` is a documentation change: it must
+  # also pass `verify_docs_only.py`, which proves against the merge base that only comments, docstrings and layout changed (Markdown is allowed through unverified). The label
+  # `docs-tooling` switches that proof off for the one kind of pull request that cannot satisfy it: a change to the verifier or the gate themselves. The tools' own tests run here
+  # (not only in the integration job) because the TypeScript cases need smo/gui/node_modules.
+  code-docs:
+    name: Code documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # the merge base with origin/main is the reference for "new" code and for the comment-only proof
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: smo/requirements/*.txt
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: smo/sdk-go/go.mod
+          cache: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: smo/gui/package-lock.json
+
+      # The TypeScript half reads the syntax tree with the parser in the GUI's toolchain (rolldown/Oxc), so the GUI's packages are installed; nothing is built.
+      - name: Install the GUI's packages and the test runner
+        run: |
+          (cd smo/gui && npm ci --ignore-scripts)
+          cd smo && pip install --require-hashes -r requirements/dev.txt
+
+      - name: The tools' own tests
+        working-directory: smo
+        run: PYTHONPATH=shared python -m pytest tests_integration/test_code_docs_tools.py -q
+
+      - name: Documentation gate (counts against the baseline, new code must be documented)
+        working-directory: smo
+        run: python scripts/check_code_docs.py
+
+      # Only a pull request whose title starts with `Docs(code):` claims to change nothing but comments; the proof compares each changed file with the merge base.
+      - name: Comment-only proof (pull requests titled "Docs(code):")
+        if: github.event_name == 'pull_request' && startsWith(github.event.pull_request.title, 'Docs(code):') && !contains(github.event.pull_request.labels.*.name, 'docs-tooling')
+        working-directory: smo
+        run: |
+          base="$(git merge-base origin/main HEAD)"
+          python scripts/verify_docs_only.py --base "$base" --head HEAD --allow-unverified-extension .md
+
   unit-and-integration:
     name: Unit + integration tests (SQLite)
     runs-on: ubuntu-latest
@@ -592,6 +645,52 @@ jobs:
         if: always()
         working-directory: smo
         run: docker compose down -v
+
+  # PR-OBS-3.6, PR-OBS-6.4: the compose `tracing` and `logging` profiles run for real. The modules are built with the OpenTelemetry packages and send spans to
+  # Tempo; Fluent Bit ships the containers' logs to Loki; scripts/obs_smoke.py makes one request through the gateway and finds its trace in Tempo, its log line in
+  # Loki, and checks Grafana's provisioned data sources. This is the only place the images in smo/docker-compose.yml's observability services are started.
+  obs-stack:
+    name: Tracing and logging profiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Create the secret files and .env
+        working-directory: smo
+        run: |
+          scripts/init_secrets.sh
+          cp .env.example .env
+
+      - name: docker compose --profile tracing --profile logging up --build
+        working-directory: smo
+        env:
+          GUI_COOKIE_SECURE: "false"
+          SMO_WITH_TRACING: "1"
+          SMO_OTEL_ENDPOINT: http://tempo:4318
+        run: |
+          docker compose --profile tracing --profile logging config --quiet
+          docker compose --profile tracing --profile logging up -d --build
+          for i in $(seq 1 60); do
+            [ "$(docker compose ps -a migrate --format json | jq -rs '.[0] | "\(.State) \(.ExitCode)"')" = "exited 0" ] && break
+            sleep 3
+          done
+
+      - name: Trace in Tempo, log line in Loki, Grafana data sources OK
+        working-directory: smo
+        run: docker compose exec -T r1-termination python3 - < scripts/obs_smoke.py
+
+      - name: Dump logs on failure
+        if: failure()
+        working-directory: smo
+        run: |
+          docker compose --profile tracing --profile logging ps -a
+          docker compose --profile tracing --profile logging logs --no-color --tail=300 tempo loki fluent-bit grafana
+
+      - name: Tear down
+        if: always()
+        working-directory: smo
+        run: docker compose --profile tracing --profile logging down -v
 
   # PR-SEC-2: mutual TLS between the services (docker-compose.mtls.yml). Every service requires a client certificate from the development CA
   # (scripts/mtls_certs.py), every call between modules presents one, and the whole runbook replays over it; a client with no certificate, or with one

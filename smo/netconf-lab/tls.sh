@@ -11,6 +11,8 @@ PKI=${PKI:-/pki}
 mkdir -p "$PKI"
 cd "$PKI"
 openssl req -x509 -newkey rsa:2048 -nodes -keyout ca.key -out ca.crt -days 2 -subj "/CN=smo-lab-ca" 2>/dev/null
+# issue NAME EKU SAN: makes NAME.key, NAME.crt (signed by ca.crt/ca.key, valid for two days, with extendedKeyUsage EKU and the
+# subjectAltName line SAN) and leaves NAME.csr and NAME.ext beside them. Writes in the current directory, which is $PKI.
 issue() {  # name, extendedKeyUsage, subjectAltName
   openssl req -newkey rsa:2048 -nodes -keyout "$1.key" -out "$1.csr" -subj "/CN=$1" 2>/dev/null
   printf 'extendedKeyUsage=%s\n%s\n' "$2" "$3" > "$1.ext"

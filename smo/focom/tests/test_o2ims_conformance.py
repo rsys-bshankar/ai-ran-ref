@@ -1,6 +1,10 @@
-"""SA-FOCOM-2 / 6 / 7 / 9: O-Cloud sites and locations, alarm and performance
-subscriptions, artifact / cluster / infrastructure / provisioning resources, and
-the closed ResourceType list. Run with: pytest smo/focom/tests -q
+"""Tests of the O2-IMS surface added by SA-FOCOM-2, -6, -7 and -9: sites and locations, alarm records and subscriptions, performance records, jobs and
+subscriptions, artifact / cluster / infrastructure / provisioning-request resources, and the closed ResourceType list.
+
+Fixtures: `client` and `db_session` are imported from `test_main.py` (in-memory SQLite, `TestClient` of the app); `sent` (here) records the notifications
+by patching `smo_shared.webhook.post_webhook`, which the outbox calls when it sends. Helpers `_job`, `_make` and `_artifact` create objects through the API.
+
+Run: `cd smo/focom && PYTHONPATH=.:../shared python -m pytest tests/test_o2ims_conformance.py -q`. Needs nothing external.
 """
 
 import uuid
@@ -12,7 +16,10 @@ from test_main import client, db_session  # noqa: F401  (pytest fixtures)
 
 @pytest.fixture
 def sent(monkeypatch):
-    """What the notifications send: they are outbox rows (PR-MSG-1.8), delivered through smo_shared.webhook right after the commit."""
+    """Records what the notifications send, as a list of `(destination, payload)`.
+
+    Notifications are outbox rows (PR-MSG-1.8), delivered through `smo_shared.webhook.post_webhook` right after the commit; the patched function answers 200.
+    """
     import httpx
     posts = []
     monkeypatch.setattr("smo_shared.webhook.post_webhook", lambda dest, json, timeout=5.0: posts.append((dest, json)) or httpx.Response(200))
@@ -22,6 +29,7 @@ def sent(monkeypatch):
 # ---------------------------------------------------------------- SA-FOCOM-2
 
 def test_a_site_belongs_to_a_location_and_a_pool_to_a_site(client):
+    """A location lists its sites, a site lists its pools inline, and a pool names its site: the three links are consistent in both directions."""
     loc = client.post("/locations", json={"name": "Munich DC", "coordinate": "48.1,11.5"}).json()
     assert loc["objectClass"] == "Location" and loc["oCloudSiteIds"] == []
     site = client.post("/o-cloud-sites", json={"locationId": loc["globalLocationId"], "name": "Munich-1"}).json()
@@ -33,6 +41,7 @@ def test_a_site_belongs_to_a_location_and_a_pool_to_a_site(client):
 
 
 def test_the_pool_lists_its_resource_ids_and_the_seed_links_pool_0_to_site_0(client):
+    """The seeded `pool-0` is attached to `site-0`, and a provisioned resource's id appears in the pool's `resources`."""
     pool = client.get("/resource-pools/pool-0").json()
     assert pool["oCloudSiteId"] == "site-0" and pool["resources"] == []
     rid = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()["resourceId"]
@@ -40,6 +49,7 @@ def test_the_pool_lists_its_resource_ids_and_the_seed_links_pool_0_to_site_0(cli
 
 
 def test_inventory_exposes_the_o2ims_ocloud_fields(client):
+    """`/inventory` carries a stable `globalCloudId`, the two endpoint fields, and the seeded site, pool and location links."""
     body = client.get("/inventory").json()
     uuid.UUID(body["globalCloudId"])
     assert body["globalCloudId"] == client.get("/inventory").json()["globalCloudId"]  # stable
@@ -49,6 +59,7 @@ def test_inventory_exposes_the_o2ims_ocloud_fields(client):
 
 
 def test_dangling_and_duplicate_site_objects_are_refused_and_deletes_are_guarded(client):
+    """A site or pool naming nothing, or a duplicate id, is 422; a location or site that still has children cannot be deleted (422); unknown get is 404; an empty location deletes."""
     assert client.post("/o-cloud-sites", json={"locationId": "nope", "name": "x"}).status_code == 422
     assert client.post("/resource-pools", json={"name": "x", "oCloudSiteId": "nope"}).status_code == 422
     assert client.post("/locations", json={"globalLocationId": "loc-0", "name": "dup"}).status_code == 422
@@ -62,6 +73,7 @@ def test_dangling_and_duplicate_site_objects_are_refused_and_deletes_are_guarded
 # ---------------------------------------------------------------- SA-FOCOM-6: alarms
 
 def test_an_alarm_is_an_alarm_event_record(client):
+    """An ingested alarm carries the AlarmEventRecord fields: event type, upper-case perceived severity beside the lowercase one, resource type taken from the inventory, and the ids."""
     rid = client.post("/resources/provision", json={"resourceTypeId": "gpu-l40"}).json()["resourceId"]
     out = client.post("/alarms/ingest", params={"resource_ref": rid, "severity": "MAJOR", "event_type": "EQUIPMENT_ALARM",
                                                 "alarm_definition_id": "gpu-temp", "probable_cause_id": "overheat"}).json()
@@ -72,6 +84,7 @@ def test_an_alarm_is_an_alarm_event_record(client):
 
 
 def test_alarm_input_is_validated(client):
+    """A severity or event type outside the enums is 422, both on ingest and as a list filter; an `INDETERMINATE` alarm is accepted."""
     assert client.post("/alarms/ingest", params={"resource_ref": "h", "severity": "SEVERE"}).status_code == 422
     assert client.post("/alarms/ingest", params={"resource_ref": "h", "severity": "minor", "event_type": "BOGUS"}).status_code == 422
     assert client.get("/alarms", params={"severity": "SEVERE"}).status_code == 422
@@ -79,6 +92,7 @@ def test_alarm_input_is_validated(client):
 
 
 def test_ack_clear_and_change_set_times_and_notify_by_filter(client, sent):
+    """Acknowledge, change and clear set their time fields, and each notifies the subscriptions whose filter admits it (an unfiltered one gets all, a CLEAR one only clears)."""
     everything = client.post("/alarm-subscriptions", json={"callback": "http://c/all", "consumerSubscriptionId": "mine"}).json()
     client.post("/alarm-subscriptions", json={"callback": "http://c/clear", "filter": "CLEAR"})
     alarm = client.post("/alarms/ingest", params={"resource_ref": "h", "severity": "critical"}).json()["alarmId"]
@@ -100,12 +114,14 @@ def test_ack_clear_and_change_set_times_and_notify_by_filter(client, sent):
 
 
 def test_alarm_subscription_filter_is_an_enum_and_unknown_alarms_404(client):
+    """A subscription `filter` outside NEW / CHANGE / CLEAR / ACKNOWLEDGE is 422, and an unknown alarm id is 404 on get and on ack."""
     assert client.post("/alarm-subscriptions", json={"callback": "http://c", "filter": "SOMETIMES"}).status_code == 422
     missing = "00000000-0000-0000-0000-000000000000"
     assert client.get(f"/alarms/{missing}").status_code == 404 and client.patch(f"/alarms/{missing}/ack").status_code == 404
 
 
 def test_the_old_alarm_fields_are_still_there(client):
+    """The GUI's older `alarmId`, `resourceRef` and `severity` are still returned beside the O2-IMS fields."""
     client.post("/alarms/ingest", params={"resource_ref": "host-1", "severity": "critical"})
     item = client.get("/alarms").json()["items"][0]
     assert {"alarmId", "resourceRef", "severity"} <= set(item) and item["resourceRef"] == "host-1"
@@ -114,10 +130,12 @@ def test_the_old_alarm_fields_are_still_there(client):
 # ---------------------------------------------------------------- SA-FOCOM-6: performance
 
 def _job(client, **kw):
+    """Creates a performance job through the API (consumer id `c-1`, interval 60 seconds, `kw` overriding or adding body fields) and returns the raw response."""
     return client.post("/performance-jobs", json={"consumerPerformanceJobId": "c-1", "collectionInterval": 60, **kw})
 
 
 def test_a_performance_job_collects_ingested_records(client):
+    """A new job is ACTIVE and IDLE; ingesting a record for it makes it RUNNING and fills `measuredResources` and `collectedMeasurements`; the record is filterable by job."""
     job = _job(client, qualifiedResourceTypes=["gpu-l40"]).json()
     assert job["state"] == "ACTIVE" and job["status"] == "IDLE" and job["preInstalledJob"] is False and job["collectedMeasurements"] == []
     out = client.post("/performance/ingest", json={"resourceId": "host-1", "performanceMeasurementDefinitionId": "cpu_load",
@@ -131,6 +149,7 @@ def test_a_performance_job_collects_ingested_records(client):
 
 
 def test_an_object_valued_measurement_and_the_old_metric_shape(client):
+    """An object-valued measurement is returned as `measurementValue` with a null `value`, and the older `resourceRef` / `metricName` / `value` keys remain."""
     client.post("/performance/ingest", json={"resourceId": "h", "performanceMeasurementDefinitionId": "temps", "measurementValue": {"cpu": 61, "gpu": 70}})
     item = client.get("/performance", params={"resource_ref": "h"}).json()["items"][0]
     assert item["measurementValue"] == {"cpu": 61, "gpu": 70} and item["value"] is None
@@ -138,6 +157,7 @@ def test_an_object_valued_measurement_and_the_old_metric_shape(client):
 
 
 def test_ingest_checks_the_job(client):
+    """Ingest is 422 for an unknown job and for a suspended one; an interval of 0 is 422; deleting a job makes it 404."""
     ghost = str(uuid.uuid4())
     body = {"resourceId": "h", "performanceMeasurementDefinitionId": "m", "measurementValue": 1}
     assert client.post("/performance/ingest", json={**body, "performanceMeasurementJobId": ghost}).status_code == 422
@@ -149,6 +169,7 @@ def test_ingest_checks_the_job(client):
 
 
 def test_performance_subscriptions_receive_reports_for_matching_job_records(client, sent):
+    """A report goes only to a subscription whose criteria match the job-linked record, carries the job and subscription ids and the value, and a record with no job is never reported."""
     job = _job(client).json()["performanceMeasurementJobId"]
     sub = client.post("/performance-subscriptions", json={
         "callback": "http://c/perf", "consumerPerformanceSubscriptionId": "p-1",
@@ -169,6 +190,7 @@ def test_performance_subscriptions_receive_reports_for_matching_job_records(clie
 
 
 def test_performance_subscription_validation(client):
+    """FILE and STREAM report formats, unknown criteria fields, a wrong criteria key and an unknown mode are 422; a plain subscription can be listed and deleted."""
     ok = {"callback": "http://c"}
     assert client.post("/performance-subscriptions", json={**ok, "reportFormat": "FILE"}).status_code == 422
     assert client.post("/performance-subscriptions", json={**ok, "reportFormat": "STREAM"}).status_code == 422
@@ -183,16 +205,19 @@ def test_performance_subscription_validation(client):
 # ---------------------------------------------------------------- SA-FOCOM-7
 
 def _make(client, path, body, status=201):
+    """POSTs `body` to `/{path}`, asserts the expected status (201 unless `status` says otherwise) and returns the JSON."""
     r = client.post(f"/{path}", json=body)
     assert r.status_code == status, r.text
     return r.json()
 
 
 def _artifact(client, name="k8s-template", version="1.0"):
+    """Creates an ArtifactResource (default `k8s-template` 1.0) and returns its id."""
     return _make(client, "artifact-resources", {"name": name, "version": version, "description": "d"})["artifactResourceId"]
 
 
 def test_artifact_and_cluster_resources_use_spec_names(client):
+    """Artifact and node-cluster objects use the spec's attribute and id names, and can be read back by id and listed."""
     art_type = _make(client, "artifact-resource-types", {"name": "helm", "description": "d"})
     assert art_type["artifactResourceTypeId"] and art_type["objectClass"] == "ArtifactResourceType"
     art = _artifact(client)
@@ -205,6 +230,7 @@ def test_artifact_and_cluster_resources_use_spec_names(client):
 
 
 def test_cluster_resources_and_groups_reference_inventory_and_each_other(client):
+    """A cluster resource must name an inventory resource and an existing type, a group must list existing cluster resources, and an object still named by a group cannot be deleted."""
     rid = client.post("/resources/provision", json={"resourceTypeId": "pserver"}).json()["resourceId"]
     crt = _make(client, "cluster-resource-types", {"name": "node", "description": "d"})["clusterResourceTypeId"]
     cr = _make(client, "cluster-resources", {"name": "n1", "description": "d", "clusterResourceTypeId": crt, "resourceId": rid})
@@ -219,6 +245,7 @@ def test_cluster_resources_and_groups_reference_inventory_and_each_other(client)
 
 
 def test_infrastructure_resources(client):
+    """An infrastructure resource keeps its extensions and must name inventory resources; it cannot be deleted while another links to it, and its artifact cannot be deleted while it uses it."""
     rid = client.post("/resources/provision", json={"resourceTypeId": "pserver"}).json()["resourceId"]
     art = _artifact(client)
     itype = _make(client, "infrastructure-resource-types", {"name": "gateway", "description": "d"})["infrastructureResourceTypeId"]
@@ -236,12 +263,14 @@ def test_infrastructure_resources(client):
 
 
 def test_unknown_attributes_and_ids_are_refused(client):
+    """An attribute the spec does not name is 422; get of an unknown id is 404; delete of an unknown id is 204."""
     _make(client, "artifact-resources", {"name": "n", "version": "1", "description": "d", "bogus": 1}, status=422)
     assert client.get("/artifact-resources/nope").status_code == 404
     assert client.delete("/artifact-resources/nope").status_code == 204
 
 
 def test_a_provisioning_request_is_fulfilled_into_a_node_cluster(client):
+    """A request resolves its template, creates a FULFILLED NodeCluster of the chosen type that says it is model-only, and deleting the request deletes that cluster."""
     _artifact(client, "ran-site", "2.1")
     ctype = _make(client, "node-cluster-types", {"name": "k8s", "description": "d"})["nodeClusterTypeId"]
     req = _make(client, "provisioning-requests", {"name": "site-a", "description": "d", "templateName": "ran-site", "templateVersion": "2.1",
@@ -257,6 +286,7 @@ def test_a_provisioning_request_is_fulfilled_into_a_node_cluster(client):
 
 
 def test_a_provisioning_request_needs_a_template_and_a_cluster_type(client):
+    """A request is 422 without a matching ArtifactResource and without any NodeClusterType; once one type exists it is used by default. Deleting an unknown request is 204."""
     body = {"name": "s", "description": "d", "templateName": "ghost", "templateVersion": "1"}
     assert client.post("/provisioning-requests", json=body).status_code == 422  # no such ArtifactResource
     _artifact(client, "ghost", "1")
@@ -269,6 +299,7 @@ def test_a_provisioning_request_needs_a_template_and_a_cluster_type(client):
 # ---------------------------------------------------------------- SA-FOCOM-9
 
 def test_resource_types_can_be_registered_and_then_provisioned(client):
+    """SA-FOCOM-9: an unknown type is refused until `POST /resource-types` registers it; a duplicate id or a bad kind is 422."""
     assert client.post("/resources/provision", json={"resourceTypeId": "fpga-u280"}).status_code == 404
     out = client.post("/resource-types", json={"resourceTypeId": "fpga-u280", "name": "Alveo U280", "resourceKind": "PHYSICAL", "resourceClass": "COMPUTE"})
     assert out.status_code == 201 and out.json()["resourceClass"] == "COMPUTE"
@@ -278,6 +309,7 @@ def test_resource_types_can_be_registered_and_then_provisioned(client):
 
 
 def test_the_types_callers_provision_are_seeded(client):
+    """The types SO SMOS and the demo runbook provision (`generic`, `gpu-l40`, `pserver`) are seeded, and an empty body defaults to `generic`."""
     for type_id in ("generic", "gpu-l40", "pserver"):
         assert client.post("/resources/provision", json={"resourceTypeId": type_id}).status_code == 200
     assert client.post("/resources/provision", json={}).status_code == 200  # defaults to generic

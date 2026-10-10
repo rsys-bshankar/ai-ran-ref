@@ -13,8 +13,16 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+/**
+ * Covers {@link SmoConfig}: the defaults and variable names it shares with the Python client, secret files, the module and rApp
+ * identity kinds, and that no secret shows in {@code toString}. The environment is a map or lambda, so nothing is read from
+ * the real environment. Run: cd smo/sdk-java && ./mvnw -B -ntp -C verify (JDK 21; CI job sdk-java).
+ */
 class SmoConfigTest {
 
+    /**
+     * Pins the defaults of an empty environment.
+     */
     @Test
     void defaultsMatchThePythonClient() {
         SmoConfig c = SmoConfig.fromEnv(k -> null);
@@ -25,6 +33,9 @@ class SmoConfigTest {
         assertEquals("java-rapp", c.name());
     }
 
+    /**
+     * Pins the variable names, and that a trailing slash on the gateway URL is dropped.
+     */
     @Test
     void readsTheSameVariablesAsThePythonClient() {
         Map<String, String> env = new HashMap<>(Map.of(
@@ -38,6 +49,9 @@ class SmoConfigTest {
         assertEquals("my-rapp", c.name());
     }
 
+    /**
+     * Pins that NAME_FILE takes precedence over NAME, loses its trailing newline, and an unreadable file is an error.
+     */
     @Test
     void aSecretFileWinsAndIsStripped(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("bootstrap");
@@ -47,6 +61,9 @@ class SmoConfigTest {
         assertThrows(IllegalStateException.class, () -> SmoConfig.fromEnv(Map.of("SMO_BOOTSTRAP_KEY_FILE", dir.resolve("missing").toString())::get));
     }
 
+    /**
+     * Pins that only the module identity reads the enrollment secret and asks for the internal scope.
+     */
     @Test
     void aModuleReadsItsEnrollmentSecretARappDoesNot() {
         Map<String, String> env = Map.of("SMO_ENROLLMENT_SECRET", "e", "SMO_IDENTITY_KIND", "module");
@@ -55,12 +72,18 @@ class SmoConfigTest {
         assertNull(SmoConfig.fromEnv(Map.of("SMO_ENROLLMENT_SECRET", "e")::get).enrollmentSecret());
     }
 
+    /**
+     * Pins that an invoker id without a secret is refused when built in code and a secret without an id is ignored from the environment.
+     */
     @Test
     void anIdentityIsIdAndSecretTogether() {
         assertThrows(IllegalArgumentException.class, () -> SmoConfig.of("http://x").withIdentity("id", null));
         assertNull(SmoConfig.fromEnv(Map.of("SMO_INVOKER_SECRET", "orphan")::get).invokerSecret(), "a secret without an id is ignored");
     }
 
+    /**
+     * Pins that logging a config cannot leak the invoker secret or the bootstrap key.
+     */
     @Test
     void toStringNeverContainsASecret() {
         SmoConfig c = SmoConfig.of("http://x").withIdentity("id", "TOPSECRET").withBootstrapKey("KEYSECRET");

@@ -260,10 +260,28 @@ def _fail(db: Session, row: ElementOnboarding, detail: str) -> None:
     db.commit()
 
 
+_MAIN: Any = None
+
+
+def bind_main(module: Any) -> None:
+    """main.py hands over its own module object once, after it has defined everything this file needs from it. Looking `app.main` up again at call time can find
+    another module's `app.main` when several services are loaded in one process (the contract tests do), which made `POST /element-onboarding/{ref}/apply` fail
+    now and then in CI with "module 'app.main' has no attribute 'WriteConfigRequest'"."""
+    global _MAIN
+    _MAIN = module
+
+
+def _main_module() -> Any:
+    if _MAIN is not None:
+        return _MAIN
+    from . import main                                                                       # late: main includes this router (only when nothing was bound)
+    return main
+
+
 def apply_template(db: Session, row: ElementOnboarding, requested_by: str, software_version: str | None = None) -> ElementOnboarding:
     """MGT-14.3: write the template to the element as a config job, and end in ONBOARDED or FAILED. The state APPLYING is committed first, so a second apply of the
     same element (another replica, a double click) is refused as an illegal transition instead of writing twice."""
-    from . import main                                                                       # late: main includes this router
+    main = _main_module()
 
     try:
         row.status = ONBOARDING_FSM.fire(OnboardingState(row.status), OnboardingEvent.APPLY)

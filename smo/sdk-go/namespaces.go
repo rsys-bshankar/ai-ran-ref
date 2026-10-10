@@ -1,3 +1,10 @@
+// namespaces.go holds the typed helpers an rApp starts with: Data (DME), Models (MLMR), Platform (SME) and RApp (the
+// instance's own routes at rApp Management), plus Object and Page, the shapes they return. Each method is one route of
+// routes.go sent through Client.Do, so the token, retries and error mapping apply.
+//
+// The helpers add no validation and do not re-model the platform's schemas (golden rule 6): an answer is an Object, and
+// the platform's own error comes back as *Error. A route without a helper is one Client.Do call.
+
 package smosdk
 
 import (
@@ -50,10 +57,12 @@ func (p *Page[T]) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// call sends one route of routes.go with its path arguments, query and JSON body, and decodes the answer into out.
 func (c *Client) call(ctx context.Context, rt route, args []string, q url.Values, body, out any) error {
 	return c.Do(ctx, Request{Method: rt.method, Path: rt.path(args...), Query: q, Body: body}, out)
 }
 
+// setIf sets a query parameter only when its value is not empty, so an unset filter is not sent.
 func setIf(q url.Values, key, value string) {
 	if value != "" {
 		q.Set(key, value)
@@ -150,8 +159,8 @@ func (p PlatformClient) DiscoverServices(ctx context.Context, f ServiceFilter) (
 //
 // Which of these an rApp may call through R1 is decided by the role policy (smo_shared/roles.py): reads are open and
 // registering or clearing the operator API of the caller's own instance, BootstrapComplete and ReportPerformance are
-// allowed for the caller's own instance (rApp Management answers 403 NOT_THIS_INSTANCE for another's). They were off the
-// rApp allow-list until PR-SEC-10, which opened them: the container reports that it is up and how it performs.
+// allowed for the caller's own instance (rApp Management answers 403 NOT_THIS_INSTANCE for another's). PR-SEC-10 put them
+// on the rApp allow-list: the container reports that it is up and how it performs.
 type RAppClient struct{ c *Client }
 
 // RApp returns the rApp-instance namespace.

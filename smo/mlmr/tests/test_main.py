@@ -1,5 +1,10 @@
-"""Tests for MLMR's routes (AI/ML Workflow LLD sections 1, 4).
-Run with: pytest smo/mlmr/tests -q
+"""Tests of MLMR's own routes: model registration, update and delete, artifact upload and download, coordination groups,
+and the TS 28.105 views and repositories. The TS 29.482 routes (storages, discovery, storeDiscReqs) are in
+`test_mlr_conformance.py`.
+
+Run: `cd smo/mlmr && PYTHONPATH=.:../shared python -m pytest tests -q`. No Postgres is needed: the fixtures build the tables
+on SQLite and override `get_session`. Foreign keys are not enforced there, so the database-level cascades are not covered.
+Fixtures here (`db_session_factory`, `client`) are imported by `test_mlr_conformance.py`.
 """
 
 import uuid
@@ -17,6 +22,9 @@ from app.models import MLModel, MLModelCoordinationGroup, MLModelRepository, Mod
 
 @pytest.fixture
 def db_session_factory():
+    """Builds the MLMR tables on an in-memory SQLite engine and returns a session factory. Uses `make_test_engine()` because the
+    coordination group's array column needs its UUID-aware JSON fallback.
+    """
     # make_test_engine(), not a plain create_engine("sqlite://", ...) —
     # MLModelCoordinationGroup.member_model_ids is an ARRAY(Uuid), whose
     # SQLite JSON fallback needs the UUID-aware serializer make_test_engine
@@ -31,6 +39,7 @@ def db_session_factory():
 
 @pytest.fixture
 def client(db_session_factory):
+    """A TestClient whose `get_session` dependency yields sessions from `db_session_factory`; the override is removed afterwards."""
     def override_get_session():
         session = db_session_factory()
         try:
@@ -44,6 +53,7 @@ def client(db_session_factory):
 
 
 def _make_model(db_session_factory, model_type="t") -> uuid.UUID:
+    """Inserts a bare model directly through the ORM (bypassing the route) and returns its id."""
     model_id = uuid.uuid4()
     with db_session_factory() as session:
         session.add(MLModel(model_id=model_id, registration_id=str(uuid.uuid4()), model_type=model_type, version="1.0"))
@@ -52,9 +62,7 @@ def _make_model(db_session_factory, model_type="t") -> uuid.UUID:
 
 
 def test_get_model_by_id_returns_its_fields(client):
-    """HISTORY.md §5: model CRUD was incomplete — only create
-    and a type-filtered list existed, no GET-by-id at all.
-    """
+    """A model that was registered can be read back by id with its identity fields."""
     created = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()
 
     resp = client.get(f"/models/{created['modelId']}")
@@ -66,11 +74,7 @@ def test_get_model_by_id_returns_its_fields(client):
 
 
 def test_register_model_stores_and_exposes_registration_metadata(client):
-    """HISTORY.md §5: registration metadata was thin — no I/O
-    data type schema, no author/owner, no TargetEnvironment
-    declarations, all real fields on the reference's own
-    ModelRelatedInformation/ModelInformation/Metadata (modelInfo.go).
-    """
+    """Registration metadata (description, author, owner, data types, target environments) is stored and returned on read."""
     target_environments = [{"platformName": "k8s-cluster-1", "environmentType": "PRODUCTION", "dependencyList": "numpy==1.26"}]
     resp = client.post("/models", json={
         "modelType": "coverage-predictor", "version": "1.0", "description": "predicts coverage gaps",
@@ -89,9 +93,7 @@ def test_register_model_stores_and_exposes_registration_metadata(client):
 
 
 def test_register_model_without_metadata_defaults_to_empty(client):
-    """This build's own RegisterModel stays permissive — none of the new
-    fields are required, unlike the reference's own validate:"required".
-    """
+    """Every registration metadata field is optional; unset ones read back as None or an empty list."""
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
 
     view = client.get(f"/models/{model_id}").json()
@@ -101,6 +103,7 @@ def test_register_model_without_metadata_defaults_to_empty(client):
 
 
 def test_update_model_changes_registration_metadata(client):
+    """A PUT with the same identity replaces the registration metadata."""
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
 
     resp = client.put(f"/models/{model_id}", json={
@@ -114,11 +117,7 @@ def test_update_model_changes_registration_metadata(client):
 
 
 def test_register_model_rejects_duplicate_type_and_version(client):
-    """HISTORY.md §5: the reference's own RegisterModel
-    (mmes_apis.go) 409s on a (modelName, modelVersion) unique-constraint
-    violation — this build accepted a duplicate silently, creating a
-    second, indistinguishable row for the same (modelType, version).
-    """
+    """A second registration of the same (modelType, version) is a 409 MODEL_ALREADY_REGISTERED and leaves exactly one row."""
     first = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"})
     assert first.status_code == 201
 
@@ -131,18 +130,21 @@ def test_register_model_rejects_duplicate_type_and_version(client):
 
 
 def test_register_model_allows_a_different_version_of_the_same_type(client):
+    """Uniqueness is on the pair, so a new version of an existing type registers."""
     client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"})
     resp = client.post("/models", json={"modelType": "coverage-predictor", "version": "2.0"})
     assert resp.status_code == 201
 
 
 def test_register_model_allows_the_same_version_of_a_different_type(client):
+    """Uniqueness is on the pair, so the same version string under another type registers."""
     client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"})
     resp = client.post("/models", json={"modelType": "throughput-predictor", "version": "1.0"})
     assert resp.status_code == 201
 
 
 def test_get_unknown_model_is_404(client):
+    """Reading an id that was never registered is a 404."""
     resp = client.get(f"/models/{uuid.uuid4()}")
     assert resp.status_code == 404
 
@@ -150,12 +152,14 @@ def test_get_unknown_model_is_404(client):
 # ---------------------------------------------------------------- Wave 3: TS29482_MLR_MLModelManagement.yaml
 
 def test_register_model_rejects_unknown_domain(client):
+    """A domain outside the TS 29.482 enum is refused on register with 422 SCHEMA_VALIDATION_FAILED."""
     resp = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0", "domain": "TELEPATHY"})
     assert resp.status_code == 422
     assert resp.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED"
 
 
 def test_register_model_stores_and_exposes_domain_and_vendors(client):
+    """domain, customDomain and vendors are stored and returned."""
     model_id = client.post("/models", json={
         "modelType": "coverage-predictor", "version": "1.0", "domain": "CUSTOM",
         "customDomain": "coverage-optimization", "vendors": ["acme", "globex"],
@@ -168,6 +172,7 @@ def test_register_model_stores_and_exposes_domain_and_vendors(client):
 
 
 def test_register_model_without_domain_defaults_to_empty(client):
+    """An omitted domain reads back as None and omitted vendors as an empty list."""
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
     view = client.get(f"/models/{model_id}").json()
     assert view["domain"] is None
@@ -176,6 +181,7 @@ def test_register_model_without_domain_defaults_to_empty(client):
 
 
 def test_update_model_rejects_unknown_domain(client):
+    """The domain check also applies on PUT."""
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
     resp = client.put(f"/models/{model_id}", json={"modelType": "coverage-predictor", "version": "1.0", "domain": "TELEPATHY"})
     assert resp.status_code == 422
@@ -183,6 +189,7 @@ def test_update_model_rejects_unknown_domain(client):
 
 
 def test_update_model_changes_domain_and_vendors(client):
+    """A PUT can change domain and vendors."""
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
     resp = client.put(f"/models/{model_id}", json={
         "modelType": "coverage-predictor", "version": "1.0", "domain": "IMAGE_RECOGNITION", "vendors": ["acme"],
@@ -193,6 +200,7 @@ def test_update_model_changes_domain_and_vendors(client):
 
 
 def test_upload_model_artifact_records_size_bytes(client):
+    """The upload answer reports the size of the bytes actually stored."""
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
     resp = client.post(f"/models/{model_id}/artifact", files={"file": ("model.zip", b"twelve-bytes", "application/zip")})
     assert resp.status_code == 201
@@ -200,9 +208,7 @@ def test_upload_model_artifact_records_size_bytes(client):
 
 
 def test_upload_model_artifact_stamps_version_one_and_records_location(client):
-    """HISTORY.md §5: the reference's real UploadModel — ours had
-    an artifact_location field nothing in main.py ever read or wrote.
-    """
+    """The first upload is artifact version 1 and sets the model's artifactLocation."""
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
 
     resp = client.post(f"/models/{model_id}/artifact", files={"file": ("model.zip", b"pkzip-bytes", "application/zip")})
@@ -216,10 +222,7 @@ def test_upload_model_artifact_stamps_version_one_and_records_location(client):
 
 
 def test_upload_model_artifact_versions_increment_independently_of_model_version(client):
-    """artifactVersion is a separate auto-incrementing counter from
-    modelVersion — a second upload against the same model bumps it to 2
-    without touching MLModel.version at all.
-    """
+    """A second upload becomes artifact version 2 and does not change the model's own version."""
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
     client.post(f"/models/{model_id}/artifact", files={"file": ("model.zip", b"first", "application/zip")})
 
@@ -231,9 +234,7 @@ def test_upload_model_artifact_versions_increment_independently_of_model_version
 
 
 def test_upload_model_artifact_rejects_non_zip(client):
-    """The reference's own UploadModel validation: anything but a .zip
-    suffix is 415 Unsupported Media Type.
-    """
+    """A file name that does not end in .zip is refused (415)."""
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
 
     resp = client.post(f"/models/{model_id}/artifact", files={"file": ("model.tar", b"not-a-zip", "application/x-tar")})
@@ -241,13 +242,13 @@ def test_upload_model_artifact_rejects_non_zip(client):
 
 
 def test_upload_model_artifact_for_unknown_model_is_404(client):
+    """Uploading for a model that does not exist is a 404, not an orphan artifact."""
     resp = client.post(f"/models/{uuid.uuid4()}/artifact", files={"file": ("model.zip", b"bytes", "application/zip")})
     assert resp.status_code == 404
 
 
 def test_download_model_artifact_round_trips_the_uploaded_bytes(client):
-    """DownloadModel — byte-for-byte round trip against the same
-    modelId+artifactVersion key UploadModel stamped."""
+    """Download returns exactly the uploaded bytes, as application/zip."""
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
     client.post(f"/models/{model_id}/artifact", files={"file": ("model.zip", b"pkzip-bytes", "application/zip")})
 
@@ -258,18 +259,15 @@ def test_download_model_artifact_round_trips_the_uploaded_bytes(client):
 
 
 def test_download_unknown_artifact_version_is_404(client):
+    """Asking for an artifact version that was never uploaded is a 404."""
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
     resp = client.get(f"/models/{model_id}/artifact/1")
     assert resp.status_code == 404
 
 
 def test_update_model_changes_metadata_fields(client):
-    """HISTORY.md §5: model CRUD was incomplete — create, list,
-    and (as of the previous pass) get-by-id existed, but no update at all.
-    requiredResourceTypeId/trainingDataLineage/integrityHash are write-only
-    from `_model_view`'s own perspective (pre-existing, unrelated to Wave
-    2's clearedNodeGroups removal) — this only asserts the write itself
-    succeeds, via description/author, which the view does expose.
+    """A PUT with the same identity is accepted when it also carries the write-only fields (resource type, lineage, hash) and
+    the visible description changes.
     """
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0", "requiredResourceTypeId": "gpu-a"}).json()["modelId"]
 
@@ -286,11 +284,7 @@ def test_update_model_changes_metadata_fields(client):
 
 
 def test_update_model_rejects_changing_its_identity(client):
-    """UpdateModel (mmes_apis.go) 400s when the body's modelName/
-    modelVersion doesn't match the existing record at that id — identity
-    is immutable, matching register_model's own (model_type, version)
-    uniqueness constraint.
-    """
+    """A PUT that changes modelType or version is a 400 MODEL_IDENTITY_IMMUTABLE and changes nothing."""
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
 
     resp = client.put(f"/models/{model_id}", json={"modelType": "coverage-predictor", "version": "2.0"})
@@ -302,11 +296,13 @@ def test_update_model_rejects_changing_its_identity(client):
 
 
 def test_update_unknown_model_is_404(client):
+    """A PUT to an unknown id is a 404."""
     resp = client.put(f"/models/{uuid.uuid4()}", json={"modelType": "t", "version": "1.0"})
     assert resp.status_code == 404
 
 
 def test_delete_model_removes_it(client):
+    """Deleting a model answers 204 and the model is gone afterwards."""
     model_id = client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"]
 
     resp = client.delete(f"/models/{model_id}")
@@ -315,23 +311,14 @@ def test_delete_model_removes_it(client):
 
 
 def test_delete_unknown_model_is_idempotent(client):
+    """Deleting an unknown id is 204, not an error."""
     resp = client.delete(f"/models/{uuid.uuid4()}")
     assert resp.status_code == 204
 
 
 def test_delete_model_cascades_its_own_artifacts(client):
-    """HISTORY.md §5: model_artifact had no cascade behavior at
-    all. Wave 1's split moved TrainingJob/ModelChangeSubscription/
-    MLMFSubscription/InferenceJob/PerformanceReport to AIMgF's own
-    process — this module no longer imports them, so it can no longer
-    assert their cleanup directly. That cleanup is still real: every one
-    of those FKs still carries `ON DELETE CASCADE` in
-    migrations/001_init.sql, unaffected by the code split, and every
-    module shares one physical Postgres instance — but it's authoritative
-    at the database level, not exercised by this SQLite-backed unit test
-    (SQLite doesn't enforce FK constraints by default, and this module's
-    own isolated test schema doesn't even declare AIMgF's tables).
-    Verified separately against a live Postgres instance instead.
+    """Deleting a model also removes its artifacts. Only MLMR's own table is checked; the cascades into other modules' tables are
+    foreign keys and are not enforced on SQLite.
     """
     model_id = uuid.UUID(client.post("/models", json={"modelType": "coverage-predictor", "version": "1.0"}).json()["modelId"])
     client.post(f"/models/{model_id}/artifact", files={"file": ("model.zip", b"bytes", "application/zip")})
@@ -342,6 +329,7 @@ def test_delete_model_cascades_its_own_artifacts(client):
 
 
 def test_list_coordination_groups_returns_members(client, db_session_factory):
+    """A created group is listed with its member ids in order."""
     model_id_1 = _make_model(db_session_factory, model_type="t1")
     model_id_2 = _make_model(db_session_factory, model_type="t2")
     group_id = client.post("/coordination-groups", json={"memberModelIds": [str(model_id_1), str(model_id_2)]}).json()["groupId"]
@@ -351,12 +339,7 @@ def test_list_coordination_groups_returns_members(client, db_session_factory):
 
 
 def test_create_coordination_group_rejects_fewer_than_two_members(client, db_session_factory):
-    """The migration's own CHECK constraint (array_length >= 2) enforces
-    this at the DB layer, but SQLite's test schema (built from the ORM
-    models, which never mirrored the constraint) doesn't — so only a
-    real-Postgres run ever caught the unhandled IntegrityError this used
-    to raise. Pre-validated here now instead.
-    """
+    """A group of one or no members is a 422 (COORDINATION_GROUP_TOO_SMALL for one); the SQLite schema has no CHECK, so the route must catch it."""
     model_id = _make_model(db_session_factory)
     resp = client.post("/coordination-groups", json={"memberModelIds": [str(model_id)]})
     assert resp.status_code == 422
@@ -367,7 +350,7 @@ def test_create_coordination_group_rejects_fewer_than_two_members(client, db_ses
 
 
 def test_health_check_answers_the_gui_bff_liveness_probe(client):
-    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    """`/health` answers 200 `{status: healthy}`, which the GUI BFF's module status probe relies on."""
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "healthy"}
@@ -376,6 +359,7 @@ def test_health_check_answers_the_gui_bff_liveness_probe(client):
 # ---------------------------------------------------------------- Wave 4: TS 28.105 MLModel / MLModelRepository / MLModelCoordinationGroup
 
 def _fake_aimgf_refs(monkeypatch, payload=None, status=200):
+    """Replaces `R1Client.get` so the AIMgF `nrm-refs` call returns `payload` with `status`; returns the list of paths called."""
     class Resp:
         status_code = status
 
@@ -393,6 +377,9 @@ def _fake_aimgf_refs(monkeypatch, payload=None, status=200):
 
 
 def test_register_with_ts28105_attributes_and_nrm_view(client, monkeypatch):
+    """TS 28.105 attributes registered on a model come back in the `/ml-models/{id}` view together with AIMgF's read-only refs,
+    and the model appears in its repository.
+    """
     repo = client.post("/ml-model-repositories", json={"userLabel": "mlmr-1"}).json()
     resp = client.post("/models", json={
         "modelType": "energy-saving", "version": "1.0", "aIMLInferenceName": "NG_RAN_NETWORK_ENERGY_SAVING",
@@ -417,6 +404,7 @@ def test_register_with_ts28105_attributes_and_nrm_view(client, monkeypatch):
 
 
 def test_nrm_view_degrades_when_aimgf_unreachable(client, monkeypatch):
+    """When AIMgF does not answer 200, the NRM view still returns, with the AIMgF-owned attributes empty."""
     model_id = client.post("/models", json={"modelType": "m", "version": "1"}).json()["modelId"]
     _fake_aimgf_refs(monkeypatch, None, status=503)
     attrs = client.get(f"/ml-models/{model_id}").json()["attributes"]
@@ -424,6 +412,7 @@ def test_nrm_view_degrades_when_aimgf_unreachable(client, monkeypatch):
 
 
 def test_ts28105_attributes_are_validated(client):
+    """Empty required lists, unknown nested fields and references to a repository or source model that do not exist are refused (422 and 404)."""
     assert client.post("/models", json={"modelType": "m", "version": "1",
                                         "supportedPerformanceIndicators": []}).status_code == 422
     assert client.post("/models", json={"modelType": "m", "version": "1",
@@ -435,6 +424,7 @@ def test_ts28105_attributes_are_validated(client):
 
 
 def test_source_trained_model_ref_and_update(client):
+    """A model can name the model it was trained from, and a PUT can set a TS 28.105 attribute."""
     base = client.post("/models", json={"modelType": "m", "version": "1"}).json()["modelId"]
     derived = client.post("/models", json={"modelType": "m", "version": "2", "sourceTrainedMLModelRef": base}).json()["modelId"]
     assert client.get(f"/models/{derived}").json()["sourceTrainedMLModelRef"] == base
@@ -443,6 +433,7 @@ def test_source_trained_model_ref_and_update(client):
 
 
 def test_coordination_group_nrm_view_and_repository_delete_uncontains(client):
+    """Deleting a repository does not delete its models or groups; they become uncontained."""
     repo = client.post("/ml-model-repositories", json={}).json()
     a = client.post("/models", json={"modelType": "a", "version": "1", "mLModelRepositoryRef": repo["id"]}).json()["modelId"]
     b = client.post("/models", json={"modelType": "b", "version": "1"}).json()["modelId"]

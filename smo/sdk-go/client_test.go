@@ -1,3 +1,8 @@
+// client_test.go covers Client.Do and roundTrip (client.go), RetryPolicy (retry.go) and New: retries and their limits,
+// which calls may be repeated, the Idempotency-Key, the one repeat on CONCURRENT_MODIFICATION, context cancellation, the
+// Retry-After header, headers and query, config validation and answer decoding. It uses fakeStack (stack_test.go) with a
+// fast, jitter-free RetryPolicy. No network beyond httptest. Run: cd smo/sdk-go && go test -race ./... .
+
 package smosdk
 
 import (
@@ -11,6 +16,8 @@ import (
 	"time"
 )
 
+// TestRetriesAServerThatIsBusyThenSucceeds
+// pins that 429, 502, 503 and 504 are repeated and the third attempt's success is returned.
 func TestRetriesAServerThatIsBusyThenSucceeds(t *testing.T) {
 	for _, status := range []int{429, 502, 503, 504} {
 		s := newStack(t)
@@ -31,6 +38,8 @@ func TestRetriesAServerThatIsBusyThenSucceeds(t *testing.T) {
 	}
 }
 
+// TestGivesUpAfterMaxAttemptsWithThePlatformsError
+// pins that after the default four attempts the platform's own error (status, title, detail) is what the caller gets.
 func TestGivesUpAfterMaxAttemptsWithThePlatformsError(t *testing.T) {
 	s := newStack(t)
 	var hits atomic.Int32
@@ -48,6 +57,8 @@ func TestGivesUpAfterMaxAttemptsWithThePlatformsError(t *testing.T) {
 	}
 }
 
+// TestMaxAttemptsOneNeverRetries
+// pins that MaxAttempts 1 means a single try.
 func TestMaxAttemptsOneNeverRetries(t *testing.T) {
 	s := newStack(t)
 	var hits atomic.Int32
@@ -61,6 +72,8 @@ func TestMaxAttemptsOneNeverRetries(t *testing.T) {
 	}
 }
 
+// TestClientErrorsAreFinalAnswers
+// pins that 400, 403, 404 and 422 are not repeated.
 func TestClientErrorsAreFinalAnswers(t *testing.T) {
 	for _, status := range []int{400, 403, 404, 422} {
 		s := newStack(t)
@@ -76,6 +89,8 @@ func TestClientErrorsAreFinalAnswers(t *testing.T) {
 	}
 }
 
+// TestATransportErrorIsRetriedForASafeCall
+// pins that a connection that drops without an answer is retried and the next answer returned.
 func TestATransportErrorIsRetriedForASafeCall(t *testing.T) {
 	s := newStack(t)
 	var hits atomic.Int32
@@ -92,6 +107,8 @@ func TestATransportErrorIsRetriedForASafeCall(t *testing.T) {
 	}
 }
 
+// TestATransportErrorThatPersistsIsReturned
+// pins that a transport failure is returned as the net error and not as a platform *Error, which would claim an answer existed.
 func TestATransportErrorThatPersistsIsReturned(t *testing.T) {
 	s := newStack(t)
 	c := s.client(t)
@@ -107,6 +124,9 @@ func TestATransportErrorThatPersistsIsReturned(t *testing.T) {
 	}
 }
 
+// TestAPostIsRepeatedWithTheSameIdempotencyKey
+// pins that a POST is repeated after 502s and every repeat carries the same non-empty key, so the platform can answer
+// from the first attempt instead of acting twice.
 func TestAPostIsRepeatedWithTheSameIdempotencyKey(t *testing.T) {
 	// the SDK puts an Idempotency-Key on every POST (generated once per call), so a POST is safe to repeat and the key is the same
 	s := newStack(t)
@@ -129,6 +149,8 @@ func TestAPostIsRepeatedWithTheSameIdempotencyKey(t *testing.T) {
 	}
 }
 
+// TestACallersOwnIdempotencyKeyWins
+// pins that a key the caller supplies, in any header spelling, is sent instead of a generated one.
 func TestACallersOwnIdempotencyKeyWins(t *testing.T) {
 	s := newStack(t)
 	s.api = func(w http.ResponseWriter, r *http.Request) {
@@ -143,6 +165,8 @@ func TestACallersOwnIdempotencyKeyWins(t *testing.T) {
 	}
 }
 
+// TestOnlyPostsGetAnIdempotencyKey
+// pins that GET, PUT, PATCH and DELETE carry no Idempotency-Key and POST does.
 func TestOnlyPostsGetAnIdempotencyKey(t *testing.T) {
 	s := newStack(t)
 	s.api = func(w http.ResponseWriter, r *http.Request) {
@@ -159,6 +183,8 @@ func TestOnlyPostsGetAnIdempotencyKey(t *testing.T) {
 	}
 }
 
+// TestEnrollmentIsNotRepeatedAfterAnAmbiguousFailure
+// pins that a registration that got a 502 is not sent again, because each registration creates an invoker and the first may exist.
 func TestEnrollmentIsNotRepeatedAfterAnAmbiguousFailure(t *testing.T) {
 	// a registration mints a new invoker each time: after a 502 the first one may exist, so it is not sent again
 	s := newStack(t)
@@ -178,6 +204,8 @@ func TestEnrollmentIsNotRepeatedAfterAnAmbiguousFailure(t *testing.T) {
 	}
 }
 
+// TestEnrollmentIsRepeatedWhenTheServerSaysItDidNothing
+// pins that a registration refused with 503 (the server did not act) is retried.
 func TestEnrollmentIsRepeatedWhenTheServerSaysItDidNothing(t *testing.T) {
 	s := newStack(t)
 	var regs atomic.Int32
@@ -194,6 +222,8 @@ func TestEnrollmentIsRepeatedWhenTheServerSaysItDidNothing(t *testing.T) {
 	}
 }
 
+// TestAConcurrentModificationIsRepeatedOnceWithTheSameKey
+// pins the one repeat of a write that lost a race, with the same Idempotency-Key.
 func TestAConcurrentModificationIsRepeatedOnceWithTheSameKey(t *testing.T) {
 	s := newStack(t)
 	var keys []string
@@ -213,6 +243,8 @@ func TestAConcurrentModificationIsRepeatedOnceWithTheSameKey(t *testing.T) {
 	}
 }
 
+// TestASecondConcurrentModificationIsReturned
+// pins that the repeat happens once only: a second CONCURRENT_MODIFICATION is returned as a conflict.
 func TestASecondConcurrentModificationIsReturned(t *testing.T) {
 	s := newStack(t)
 	var hits atomic.Int32
@@ -226,6 +258,8 @@ func TestASecondConcurrentModificationIsReturned(t *testing.T) {
 	}
 }
 
+// TestOtherConflictsAndReadsAreNotRepeated
+// pins that a 409 with another title, and a GET that gets CONCURRENT_MODIFICATION, are final after one try.
 func TestOtherConflictsAndReadsAreNotRepeated(t *testing.T) {
 	s := newStack(t)
 	var hits atomic.Int32
@@ -249,6 +283,8 @@ func TestOtherConflictsAndReadsAreNotRepeated(t *testing.T) {
 	}
 }
 
+// TestAContextCancelledDuringBackoffReturnsPromptly
+// pins that cancelling the context ends the wait between attempts at once with the context's error, not after the full delay.
 func TestAContextCancelledDuringBackoffReturnsPromptly(t *testing.T) {
 	s := newStack(t)
 	s.api = func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 503, map[string]any{"detail": "x"}) }
@@ -262,6 +298,8 @@ func TestAContextCancelledDuringBackoffReturnsPromptly(t *testing.T) {
 	}
 }
 
+// TestAContextCancelledBeforeTheCallNeverReachesTheServer
+// pins that an already cancelled context fails the call before any request, even the bootstrap one, is sent.
 func TestAContextCancelledBeforeTheCallNeverReachesTheServer(t *testing.T) {
 	s := newStack(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -275,6 +313,8 @@ func TestAContextCancelledBeforeTheCallNeverReachesTheServer(t *testing.T) {
 	}
 }
 
+// TestRetryAfterRaisesTheWait
+// pins that a Retry-After raises the wait above the backoff and is capped at maxRetryAfter.
 func TestRetryAfterRaisesTheWait(t *testing.T) {
 	p := RetryPolicy{BaseDelay: time.Millisecond, MaxDelay: time.Millisecond, NoJitter: true}
 	if got := p.wait(1, 2*time.Second); got != 2*time.Second {
@@ -285,6 +325,8 @@ func TestRetryAfterRaisesTheWait(t *testing.T) {
 	}
 }
 
+// TestBackoffDoublesIsCappedAndJittersWithinBounds
+// pins the backoff table (doubling, capped), that jitter stays between half the delay and the delay, and the default attempt count.
 func TestBackoffDoublesIsCappedAndJittersWithinBounds(t *testing.T) {
 	p := RetryPolicy{BaseDelay: 100 * time.Millisecond, MaxDelay: time.Second, NoJitter: true}
 	want := []time.Duration{100, 200, 400, 800, 1000, 1000}
@@ -304,6 +346,8 @@ func TestBackoffDoublesIsCappedAndJittersWithinBounds(t *testing.T) {
 	}
 }
 
+// TestParseRetryAfter
+// pins that Retry-After is read as seconds and that an empty, zero, negative or HTTP-date value is 0.
 func TestParseRetryAfter(t *testing.T) {
 	for in, want := range map[string]time.Duration{"3": 3 * time.Second, "": 0, "0": 0, "-1": 0, "Wed, 21 Oct 2026 07:28:00 GMT": 0} {
 		if got := parseRetryAfter(http.Header{"Retry-After": {in}}); got != want {
@@ -312,6 +356,8 @@ func TestParseRetryAfter(t *testing.T) {
 	}
 }
 
+// TestCorrelationIDAndHeadersAndQuery
+// pins that the correlation id of the context, the User-Agent and the encoded query reach the server.
 func TestCorrelationIDAndHeadersAndQuery(t *testing.T) {
 	s := newStack(t)
 	s.api = func(w http.ResponseWriter, r *http.Request) {
@@ -327,6 +373,8 @@ func TestCorrelationIDAndHeadersAndQuery(t *testing.T) {
 	}
 }
 
+// TestNewValidatesTheConfig
+// pins the rejected gateway URLs and half-pinned invoker, the defaults, and the removal of a trailing slash.
 func TestNewValidatesTheConfig(t *testing.T) {
 	for name, cfg := range map[string]Config{
 		"scheme":      {GatewayURL: "ftp://x"},
@@ -348,6 +396,8 @@ func TestNewValidatesTheConfig(t *testing.T) {
 	}
 }
 
+// TestDoRejectsAPathWithoutALeadingSlash
+// pins that a path that does not start with / is an error, since it would be glued to the gateway host.
 func TestDoRejectsAPathWithoutALeadingSlash(t *testing.T) {
 	c, _ := New(Config{BearerToken: "t"})
 	if err := c.Do(context.Background(), Request{Method: "GET", Path: "dme"}, nil); err == nil {
@@ -355,6 +405,8 @@ func TestDoRejectsAPathWithoutALeadingSlash(t *testing.T) {
 	}
 }
 
+// TestAnUndecodableAnswerIsAnError
+// pins that a 2xx body that is not JSON is an error naming the decoding, not a silent empty result.
 func TestAnUndecodableAnswerIsAnError(t *testing.T) {
 	s := newStack(t)
 	s.api = func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("<html>")) }
@@ -364,6 +416,8 @@ func TestAnUndecodableAnswerIsAnError(t *testing.T) {
 	}
 }
 
+// TestA204AndAnEmptyBodyDecodeToNothing
+// pins that a 204 leaves the output untouched and is not an error.
 func TestA204AndAnEmptyBodyDecodeToNothing(t *testing.T) {
 	s := newStack(t)
 	s.api = func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }

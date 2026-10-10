@@ -26,6 +26,10 @@ final class OperatorServer {
     private final HelloRapp app;
     private final HttpServer server;
 
+    /**
+     * Binds {@code port} (0 picks a free one) and prepares the routes; nothing is served until {@link #start()}. Requests are
+     * handled on four daemon threads.
+     */
     OperatorServer(HelloRapp app, int port) throws IOException {
         this.app = app;
         this.server = HttpServer.create(new InetSocketAddress(port), 0);
@@ -49,6 +53,13 @@ final class OperatorServer {
         return server.getAddress().getPort();
     }
 
+    /**
+     * Answers every request: {@code /live} always 200, {@code /ready} 200 once the rApp is RUNNING and 503 before; the three
+     * operator routes only for this process's instance id (another id or an unknown path is 404, a wrong method 405 with an
+     * {@code Allow} header). An {@link SdkException} from the platform becomes 502 PLATFORM_ERROR and any other runtime failure
+     * 500 INTERNAL_ERROR. An {@link IOException} (for instance a request body that is not JSON) is not caught here and goes to
+     * the JDK server, so no JSON error answer is written for it. The exchange is always closed.
+     */
     private void handle(HttpExchange exchange) throws IOException {
         try {
             String path = exchange.getRequestURI().getPath();
@@ -81,10 +92,20 @@ final class OperatorServer {
         }
     }
 
+    /**
+     * The body of one operator route, run by {@code allow} once the HTTP method has been checked. It may throw {@link IOException}
+     * (reading the request or writing the answer).
+     */
     private interface Action {
+        /**
+         * Runs the route once the method has been checked.
+         */
         void run() throws IOException;
     }
 
+    /**
+     * Runs {@code action} when the request uses {@code method}; otherwise answers 405 with {@code Allow: method}.
+     */
     private static void allow(HttpExchange exchange, String method, Action action) throws IOException {
         if (method.equals(exchange.getRequestMethod())) {
             action.run();
@@ -94,6 +115,9 @@ final class OperatorServer {
         }
     }
 
+    /**
+     * Reads {@code limit=<n>} from the query string, kept between 1 and 50; 20 when it is absent or not a number.
+     */
     private static int limitOf(HttpExchange exchange) {
         String query = exchange.getRequestURI().getQuery();
         if (query != null) {
@@ -110,11 +134,17 @@ final class OperatorServer {
         return 20;
     }
 
+    /**
+     * Reads the request body as JSON, at most 64 KiB (the rest is not read); an empty body is an empty object.
+     */
     private static JsonNode readBody(HttpExchange exchange) throws IOException {
         byte[] bytes = exchange.getRequestBody().readNBytes(64 * 1024);
         return bytes.length == 0 ? JSON.createObjectNode() : JSON.readTree(bytes);
     }
 
+    /**
+     * Writes {@code body} as the JSON answer with {@code status}.
+     */
     private static void send(HttpExchange exchange, int status, Object body) throws IOException {
         byte[] bytes = JSON.writeValueAsString(body).getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json");

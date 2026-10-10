@@ -37,6 +37,8 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# psql_value SQL: one query against the database being backed up (inside the compose postgres container with --compose, else with the host's psql and the
+# libpq variables pg_env.sh derives from SMO_DATABASE_URL). SQL is script-internal, never caller input.
 psql_value() {   # one value from the database being backed up
   if [ "${db_args[0]:-}" = --compose ]; then
     docker compose exec -T postgres sh -c "psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Atc \"$1\""
@@ -45,6 +47,8 @@ psql_value() {   # one value from the database being backed up
   fi
 }
 
+# backup_once: one complete off-site backup, in order: dump (and the GUI database copy), manifest, upload, check every upload by name and size, move latest.json, prune.
+# Returns non-zero at the first failing step, before latest.json moves, so latest.json always names a complete set. The staging directory is removed on return.
 backup_once() {
   smo_s3_init
   umask 077

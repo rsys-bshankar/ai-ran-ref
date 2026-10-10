@@ -1,23 +1,22 @@
-"""MDAF (Management Data Analytics Function) — TS 28.104 MDA NRM realization.
+"""MDAF (Management Data Analytics Function): the app that stores analytics reports, tells subscribers about them and
+publishes the DME-sourced rule (TS 28.104 MDA). The TS 28.104 resources (MDAFunction, MDARequest, MDAReport) are in `mda.py`,
+mounted at the bottom of this file.
 
-Wave 1 of the AI Platform Service Decomposition: split out of the former
-`ran-analytics/` module, which kept its own use-case-specific role
-(traffic/energy/coverage analytics) and becomes an MDAF consumer rather
-than the service owning analytics reporting itself — see
-docs/ARCHITECTURE.md and
-docs/ARCHITECTURE.md (MDAF). MDAF is analytics truth: it owns the
-*output* of analysis (reports, subscriptions), not any domain-specific
-production logic — `MDAFProducer` and its registration route stay in
-`ran-analytics/`, which is why this module never calls out to it: a
-producer registering itself and a report being published are
-independent concerns here, exactly as they were before the split (the
-original code never validated a report's producer registration either).
+Where it sits: one FastAPI app behind R1 Termination at `/mdaf`. Producers (rApps through the SDK) publish reports; consumers
+subscribe, query and create MDA requests. Outgoing calls: `GET /dme/data-jobs/{id}` for every report input source
+(`_validate_input_sources_are_real_dme_artifacts`) and, from `mda.py`, AIMgF for drift forwarding. Notifications to subscribers
+and request targets are written to the transactional outbox (`smo_shared.outbox`, PR-MSG-1.8) and sent after the commit.
+`ran-analytics` is a separate producer registry; there is no call either way. Design records: `docs/ARCHITECTURE.md` (MDAF),
+the MDAF section of `HISTORY.md` §7, and `docs/STANDARDS.md` decision D-9.
 
-Wave 3 (docs/ARCHITECTURE.md (DME)): `publish_report` now does call
-out cross-service, to DME — every `input_sources` id must be a real DME
-`DataJob`, closing the "MDAF sources from DME only" rule with an
-enforced check rather than a documented convention. MDAF never reaches
-DME's O1 action-mediation path; this is the data path only.
+What it owns: reports, subscriptions (with their threshold bookkeeping) and, in `mda.py`, MDA functions, requests and
+deliveries. What it does not own: producer registration (`ran-analytics`), and DME's O1 action path (MDAF only reads DME's
+data path to prove a report's sources are real).
+
+Before editing: `publish_report` and `mda.publish_mda_report` each end in one commit that persists the report, the outbox rows
+and the threshold state together; notification helpers must not commit on their own. `mda.py` imports helpers from this file,
+so it is imported last (see the end of the file). The docstrings of routes and request models are published in
+`docs/openapi/mdaf.json`.
 """
 
 import uuid
@@ -41,9 +40,12 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate
 
 from .models import MDAFReport, MDASubscription
 
+# The exact wire values of TS 28.104 ThresholdInfo.thresholdDirection; `subscribe_analytics` checks the body against it.
 THRESHOLD_DIRECTIONS = {"UP", "DOWN", "UP_AND_DOWN"}  # TS28.104 ThresholdInfo.thresholdDirection's exact wire values
 
 
+# One threshold of a subscription (TS 28.104 ThresholdInfo). `thresholdDirection` is a plain string here and is checked against
+# `THRESHOLD_DIRECTIONS` by the route; the stricter `ts28104.ThresholdInfo` is the MDA request's.
 class ThresholdInfo(BaseModel):
     monitoredMDAOutputIE: str
     thresholdDirection: str
@@ -63,13 +65,11 @@ install_health(app, checks=[database_check, sme_token_check])  # /live, /ready a
 
 
 def _validate_input_sources_are_real_dme_artifacts(input_sources: list[uuid.UUID]) -> None:
-    """Wave 3 (AI Platform Service Decomposition) —
-    docs/ARCHITECTURE.md's DME "two paths, not one": MDAF is a
-    consumer of DME's data plane like any rApp, never the O1 action
-    path, and a report can no longer cite data that never actually came
-    from DME. Same bare-UUID cross-service-reference convention used
-    for NFO/AIMgF elsewhere in this build — MDAF doesn't fetch the data
-    itself here, only proves the reference is real.
+    """Refuses a report whose inputs are not DME data jobs: one `GET /dme/data-jobs/{id}` over R1 per source.
+
+    Raises 422 DME_ARTIFACT_NOT_FOUND for the first source DME does not answer 200 for. Only existence is proven, the data is
+    not fetched. This is the data path of DME, never its O1 action path. A transport error talking to DME is not caught. An
+    empty list passes.
     """
     for source_id in input_sources:
         resp = _r1.get(f"/dme/data-jobs/{source_id}")
@@ -79,6 +79,10 @@ def _validate_input_sources_are_real_dme_artifacts(input_sources: list[uuid.UUID
 
 @app.post("/reports", status_code=201)
 def publish_report(analytics_type: str, output: dict, input_sources: list[uuid.UUID], scope: dict | None = None, db: Session = Depends(get_session)):
+    # Stores a report from a producer (201 `{reportId}`; 422 DME_ARTIFACT_NOT_FOUND when an input source is unknown to DME).
+    # Order: sources checked, the report added and flushed, subscribers notified (outbox rows, threshold state), then
+    # `_deliver_legacy_report` matches the report against open MDA requests and commits everything in one transaction. Nothing is sent
+    # if the commit fails.
     _validate_input_sources_are_real_dme_artifacts(input_sources)
     report = MDAFReport(analytics_type=analytics_type, output=output, input_sources=input_sources, scope=scope)
     db.add(report)
@@ -91,16 +95,13 @@ def publish_report(analytics_type: str, output: dict, input_sources: list[uuid.U
 
 
 def _threshold_crossed(sub: MDASubscription, output: dict) -> bool:
-    """TS28.104 ThresholdInfo — edge-triggered crossing with a real
-    hysteresis band, not a level check re-fired on every report (that
-    would make `hysteresis` a declared-but-unused field, the exact
-    anti-pattern this build's own audits keep catching elsewhere).
-    Mutates `sub.threshold_state` in place (caller commits); returns
-    True the moment ANY of this subscription's thresholds crosses.
-    `threshold_state` maps monitoredMDAOutputIE -> "ABOVE"/"BELOW", the
-    side last observed — None (never yet observed, or the metric hasn't
-    appeared in a report yet) fires nothing on its own, it only seeds
-    the state so the *next* report can detect a real transition.
+    """Decides whether this report crosses any of the subscription's thresholds, and records which side of each it is on.
+
+    Edge-triggered with a hysteresis band: a threshold fires when the value reaches it in the watched direction and the stored
+    side for that metric is not already that side; a value beyond the band on the other side re-arms it; a value inside the band
+    changes nothing. A metric missing from the report is skipped. The first report for a metric fires if it is already across the
+    threshold (the stored side starts empty). Returns True if any threshold fired. Mutates `sub.threshold_state` (metric to
+    "ABOVE" or "BELOW"); the caller commits it, whether or not anything fired. A subscription with no thresholds returns False.
     """
     if not sub.threshold_info:
         return False
@@ -112,6 +113,8 @@ def _threshold_crossed(sub: MDASubscription, output: dict) -> bool:
             continue
         value, threshold, hysteresis = output[ie], entry["thresholdValue"], entry["hysteresis"]
         previous = state.get(ie)
+        # Branches in order: a crossing in a watched direction (fires and records the side), else a value beyond the hysteresis
+        # band (records the side without firing), else nothing.
         if direction in ("UP", "UP_AND_DOWN") and value >= threshold and previous != "ABOVE":
             crossed, state[ie] = True, "ABOVE"
         elif direction in ("DOWN", "UP_AND_DOWN") and value <= threshold and previous != "BELOW":
@@ -126,21 +129,12 @@ def _threshold_crossed(sub: MDASubscription, output: dict) -> bool:
 
 
 def _notify_report_subscribers(db: Session, report: MDAFReport) -> None:
-    """HISTORY.md §5: PublishAnalyticsReport's subscriber loop
-    was a deliberate no-op (`for sub in subs: pass`) — a matching
-    MDASubscription was looked up but never actually notified, so every
-    consumer had to poll QueryAnalyticsReport instead. Same shape fix as
-    Intent Service's
-    CreateIntent notification: best-effort, an unreachable subscriber
-    never fails the publish that triggered it. Only subscriptions that
-    registered a real `notificationDestination` are ever POSTed to — one
-    that didn't (e.g. a purely poll-based consumer) is left alone rather
-    than guessing a delivery target from `requestedBy`.
+    """Queues a notification for every subscription of the report's analytics type that should hear about it.
 
-    Wave 3: a subscription with `threshold_info` set is now conditional —
-    notified only on a real threshold crossing (see `_threshold_crossed`),
-    not on every report. A subscription with no threshold_info keeps the
-    original always-notify behavior, unchanged.
+    A subscription without thresholds is notified for every report; one with thresholds only when `_threshold_crossed` says a
+    threshold fired. The notification is an outbox row (`enqueue`), so it is sent after the caller's commit and not at all if the
+    transaction rolls back. A subscription with no `notification_destination` is a polling consumer and gets no row (`enqueue`
+    also drops a destination the SSRF guard refuses). Does not commit.
     """
     subs = db.scalars(select(MDASubscription).where(MDASubscription.analytics_type == report.analytics_type)).all()
     for sub in subs:
@@ -155,6 +149,7 @@ def _notify_report_subscribers(db: Session, report: MDAFReport) -> None:
     # threshold_state, including for subscriptions that didn't cross (or have no destination), in one transaction.
 
 
+# Body of `POST /subscriptions`; everything is optional, so an empty body subscribes to every report of the analytics type with no destination.
 class SubscribeAnalyticsRequest(BaseModel):
     """`scope`'s wire shape changes here from a bare JSON body to this
     named model — FastAPI can't leave `scope` as the implicit unwrapped
@@ -177,6 +172,9 @@ class SubscribeAnalyticsRequest(BaseModel):
 @app.post("/subscriptions", status_code=201)
 def subscribe_analytics(analytics_type: str, requested_by: str,
                          body: SubscribeAnalyticsRequest = SubscribeAnalyticsRequest(), db: Session = Depends(get_session)):
+    # Creates a subscription for `analytics_type` on behalf of `requested_by` (both query parameters). 201 `{subscriptionId}`; 422
+    # SCHEMA_VALIDATION_FAILED for a threshold direction outside UP / DOWN / UP_AND_DOWN. The notification destination is not
+    # checked here: an unsafe one is dropped at publish time (see `smo_shared.outbox.enqueue`), the subscription still exists.
     if body.thresholdInfo is not None:
         bad = [t.thresholdDirection for t in body.thresholdInfo if t.thresholdDirection not in THRESHOLD_DIRECTIONS]
         if bad:
@@ -190,6 +188,7 @@ def subscribe_analytics(analytics_type: str, requested_by: str,
 
 @app.delete("/subscriptions/{subscription_id}", status_code=204)
 def unsubscribe_analytics(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Deletes a subscription; an unknown id is 204 as well (idempotent).
     sub = db.get(MDASubscription, subscription_id)
     if sub is not None:
         db.delete(sub)
@@ -216,6 +215,8 @@ def list_analytics_subscriptions(analytics_type: str | None = None, requested_by
 @app.get("/reports")
 def query_analytics_report(analytics_type: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                             db: Session = Depends(get_session)):
+    # Paginated reports, optionally of one analytics type, ordered by report id (the paging default), which is not time order.
+    # The view carries the report kind and MDA type.
     stmt = select(MDAFReport)
     if analytics_type:
         stmt = stmt.where(MDAFReport.analytics_type == analytics_type)
@@ -225,6 +226,7 @@ def query_analytics_report(analytics_type: str | None = None, limit: int = PageL
 
 
 def _subscription_view(s: MDASubscription) -> dict:
+    """The JSON of a subscription, including its thresholds (not the internal threshold state)."""
     return {"subscriptionId": str(s.subscription_id), "analyticsType": s.analytics_type,
             "requestedBy": s.requested_by, "notificationDestination": s.notification_destination, "scope": s.scope,
             "thresholdInfo": s.threshold_info}
@@ -234,6 +236,7 @@ def _subscription_view(s: MDASubscription) -> dict:
 # Imported last: app/mda.py reuses the helpers above. Bound at load time,
 # never imported lazily inside a route (the integration mesh's loader
 # evicts `app.*` from sys.modules after loading each service).
+# Imported last on purpose: `mda.py` imports helpers from this module, so a top-of-file import would be circular.
 from .mda import deliver_legacy_report as _deliver_legacy_report, router as _mda_router  # noqa: E402
 
 app.include_router(_mda_router)

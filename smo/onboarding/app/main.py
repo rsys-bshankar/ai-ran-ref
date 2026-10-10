@@ -1,8 +1,18 @@
-"""Software Package Onboarding SMOS.
+"""Software Package Onboarding SMOS: the HTTP routes that onboard an rApp package (a TOSCA CSAR) and govern its lifecycle.
 
-SMO Design v1.3 section 3.4, extended by Onboarding/rApp Mgmt LLD sections
-1-4: concrete TOSCA-Metadata/Definitions/Artifacts package format, the
-FAILED terminal state, and the cascade-delete guard (statemachine.py).
+What it is: the FastAPI app of the `onboarding` module (R1 route `/onboarding` via R1 Termination). `POST /packages` fetches a CSAR from a caller-given
+location, validates it (`package_validation.py`), registers its artifacts, asks NFO to create the NF deployment descriptor, and leaves the package
+AVAILABLE or FAILED. The other routes move the package through its lifecycle (`statemachine.py`), register usage by rApp instances, and list packages,
+artifacts and usages.
+
+Where it sits: rApp Management, AIMgF and the GUI BFF call it over R1; it calls NFO (`POST /nfo/descriptors`) through `R1Client`, and fetches the package
+itself with a plain HTTP GET (not over R1). Design: SMO Design v1.3 section 3.4 and Onboarding/rApp Mgmt LLD sections 1-4; module README sections 1.5 and 2.
+
+What it owns: the `application_package`, `artifact` and `package_usage_registration` tables (`models.py`). It does not store the package bytes, deploy
+anything or register SME declarations (rApp Management does that per instance).
+
+Before editing: the names re-exported from `package_validation` below (marked noqa F401) are imported from here by the tests and by
+`fuzz/fuzz_csar_parsers.py`; keep them importable. `POST /packages` commits twice on purpose (see `onboard_package`).
 """
 
 import logging
@@ -38,20 +48,16 @@ from .statemachine import ONBOARDING_FSM, PackageEvent, PackageState
 
 
 class DescriptorCreationFailed(Exception):
-    """NFO's CreateDescriptor call (NFO+FOCOM LLD section 2) didn't return
-    201 — treated the same as any other onboarding validation failure.
+    """NFO's CreateDescriptor call (NFO+FOCOM LLD section 2) did not answer 201.
+
+    Raised by `_create_nf_deployment_descriptor`; listed in ONBOARD_VALIDATION_FAILURES, so the package ends FAILED like any other validation failure.
     """
 
 
-# What counts as "this package fails to validate" — broadened beyond
-# malformed-zip/missing-entry to include the location being unreachable
-# at all (caught while integration-testing: an unreachable location
-# previously crashed OnboardPackage with an unhandled 500 instead of
-# routing to FAILED, which is itself a real, expected outcome here), and
-# now DescriptorCreationFailed/PackageValidationFailed alongside it, and
-# yaml.YAMLError for the Wave 1 manifest.yaml/capabilities.yaml
-# extension — a malformed one is a validation failure like any other
-# malformed package file, not an unhandled 500.
+# What counts as "this package fails to validate" in this route: everything package_validation.PARSE_FAILURES lists (bad zip, missing entry, malformed
+# YAML or JSON, PackageValidationFailed), plus the package location being unreachable or answering an error (httpx.HTTPError) and NFO refusing the
+# descriptor (DescriptorCreationFailed). Each of these ends the request in a FAILED package with a normal 202, not an HTTP error. Anything not listed
+# here is not caught and is a 500.
 ONBOARD_VALIDATION_FAILURES = (*PARSE_FAILURES, httpx.HTTPError, DescriptorCreationFailed)
 
 log = logging.getLogger(__name__)
@@ -69,6 +75,8 @@ apply_correlation_id(app)
 install_health(app, checks=[database_check, sme_token_check])  # /live, /ready and the /health alias (PR-ST-7)
 
 
+# Request body of POST /packages. `location` is caller-supplied and untrusted: it is checked for `.csar` and against the SSRF guard before it is fetched
+# (`_validate_package`). `applicationType` is limited to the values the column's CHECK constraint accepts, so any other value is a 422 here and not a database error.
 class OnboardRequest(BaseModel):
     location: str
     applicationType: Literal["rApp", "xApp", "CloudifiedNF", "PNF"] = "rApp"      # the column's CHECK (migrations/001_init.sql): any other value was a 500
@@ -81,6 +89,16 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
     signature (internal-consistency only, D-SEC-ONBD-1), parse
     Definitions/<name>.yaml, register Artifacts, THEN reach AVAILABLE.
     """
+    # Maintainer notes (not published). Answers 202 with {packageId, trackingId[, failureReason]} whenever the body is valid, whether or not the package validates:
+    # the verdict is the package's state (AVAILABLE or FAILED), read from onboarding-status. A body without `location` or with an unknown applicationType is a 422.
+    # Order of work: insert the row as ONBOARDING and commit; fetch and validate; reject a duplicate content hash; copy identity, artifacts and declarations onto the
+    # row; ask NFO for the descriptor; fire VALIDATE_OK; set the state and commit. An exception in ONBOARD_VALIDATION_FAILURES fires VALIDATE_FAILED instead.
+    # The identity fields and Artifact rows set before a late failure (NFO refusing the descriptor) are committed with the FAILED package; a failure during the
+    # fetch or the validation never reaches them.
+    # An exception outside ONBOARD_VALIDATION_FAILURES (for example NFO answering 201 with a body that is not a UUID) is not caught: the request is a 500 and the
+    # row committed first stays in ONBOARDING, from which no route moves it on or deletes it.
+    # `failureReason` is the exact message for PackageValidationFailed and only the exception class name for anything else, so internals are not returned;
+    # it is logged and never stored.
     pkg = ApplicationPackage(
         application_type=body.applicationType,
         name="unresolved-until-validated",
@@ -138,9 +156,11 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
         for path, access_url in artifacts:
             db.add(Artifact(package_id=pkg.package_id, path=path, access_url=access_url))
         pkg.nf_deployment_descriptor_id = _create_nf_deployment_descriptor(pkg, entry_definitions)
+        # The state machine only computes the target state; it is stored by `pkg.state = new_state` after the try block, so both outcomes commit in one place.
         new_state = ONBOARDING_FSM.fire(PackageState.ONBOARDING, PackageEvent.VALIDATE_OK, db=db, package=pkg)
     except ONBOARD_VALIDATION_FAILURES as exc:
         new_state = ONBOARDING_FSM.fire(PackageState.ONBOARDING, PackageEvent.VALIDATE_FAILED, db=db, package=pkg)
+        # The message of a PackageValidationFailed is written for the operator (the place and the rule broken). Any other exception reports only its class name, so a library message (paths, URLs) is not returned.
         failure_reason = str(exc) if isinstance(exc, PackageValidationFailed) else type(exc).__name__
         log.warning("package %s failed validation: %s", pkg.package_id, failure_reason)
 
@@ -153,17 +173,20 @@ def onboard_package(body: OnboardRequest, db: Session = Depends(get_session)):
 
 
 def _create_nf_deployment_descriptor(pkg: ApplicationPackage, entry_definitions: str) -> uuid.UUID:
-    """NFO+FOCOM LLD section 2: NFDeploymentDescriptor is derived from the
-    onboarded package's TOSCA Definitions/ at onboarding time — the actual
-    fix for the gap where nfDeploymentDescriptorId referenced nothing
-    concrete and rApp Management passed packageId directly where NFO
-    expected a real descriptor. Phase 1: workloadTemplate is a thin
-    reference to the entry definitions rather than a fully parsed TOSCA
-    node template.
+    """Asks NFO to create the NF deployment descriptor for `pkg` and returns its id.
+
+    NFO+FOCOM LLD section 2: the descriptor is derived from the package's TOSCA Definitions at onboarding time, so rApp Management deploys with a real
+    nfDeploymentDescriptorId and not the packageId. Phase 1: `workloadTemplate` is a thin reference to the entry definitions, not a parsed TOSCA node template.
+    Per-mode container resources from the manifest's `runtimeProfiles` are added as `containerResourcesByMode` (PR-RAPP-2.1); a package without profiles gets
+    no such key.
+
+    Calls NFO over R1 (`POST /nfo/descriptors`), which needs the `application_package` row to be committed already (see `onboard_package`). Raises
+    DescriptorCreationFailed for any status other than 201.
     """
     workload: dict = {"toscaEntryDefinitions": entry_definitions}
     # PR-RAPP-2.1: the manifest's CPU and memory per execution mode as the container resources a deployment manager applies (smo_shared/runtime_resources.py);
     # absent for a package with no runtimeProfiles, so its descriptor is what it was
+    # A mode whose profile gives no cpu or memory (a gpu-only profile) yields no resources (the walrus drops falsy results) and is left out of the map.
     by_mode = {mode: resources for mode, profile in ((pkg.ai_capabilities or {}).get("runtimeProfiles") or {}).items() if (resources := container_resources(profile))}
     if by_mode:
         workload["containerResourcesByMode"] = by_mode
@@ -178,21 +201,14 @@ def _create_nf_deployment_descriptor(pkg: ApplicationPackage, entry_definitions:
 
 
 def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, dict]:
-    """Open TOSCA-Metadata/Definitions/Artifacts, per Onboarding LLD section 1.
+    """Checks the location, fetches the package and validates it; returns (entry definitions, artifacts, integrity hash, identity) from `validate_package_bytes`.
 
-    HISTORY.md §5: NamingValidator's filename convention (a
-    package location not ending in `.csar` is rejected up front, before
-    ever fetching it), adopted from the reference's own validator chain.
+    Per Onboarding LLD section 1. Raises PackageValidationFailed when the location does not end in `.csar` (NamingValidator, HISTORY.md §5) or fails the SSRF
+    guard, before anything is fetched; httpx.HTTPError when the fetch fails or the server answers a non-2xx status; and whatever `validate_package_bytes` raises
+    (PARSE_FAILURES). The caller treats all of them as "this package fails".
 
-    The reference's own FileExistenceValidator additionally requires
-    `Files/Acm/definition/compositions.json` (an ONAP ACM composition
-    file) alongside `TOSCA-Metadata/TOSCA.meta` — deliberately NOT
-    adopted here. This build never calls ONAP ACM at all (real
-    deployment orchestration is a declared elision — see
-    rapp-mgmt/app/main.py's own CreateInstance), so requiring every CSAR
-    to bundle an ONAP-specific file just to pass validation would be
-    requiring a dependency this build doesn't have, not real spec
-    fidelity. A package with or without that file onboards the same way.
+    The reference's FileExistenceValidator also requires `Files/Acm/definition/compositions.json` (an ONAP ACM file); that is deliberately not adopted, because
+    this build never calls ONAP ACM and the file would be a dependency it does not have (README section 1.2).
     """
     if not location.endswith(".csar"):
         raise PackageValidationFailed(f"package location {location!r} does not end with .csar")
@@ -201,18 +217,23 @@ def _validate_package(location: str) -> tuple[str, list[tuple[str, str]], str, d
     # call in this build goes through (smo_shared.webhook), before anything is fetched.
     if not is_safe_webhook_destination(location):
         raise PackageValidationFailed(f"package location {location!r} is not an allowed http(s) destination")
+    # A plain GET with a 30 s timeout and httpx's default of not following redirects: a 3xx answer is raised as an error by raise_for_status below and the package fails.
     resp = httpx.get(location, timeout=30.0)
     resp.raise_for_status()
     data = resp.content
+    # The signature policy is read after the fetch and handed to validate_package_bytes, which checks the signature before parsing anything in the package.
     trust, require_signed = _signing_policy()
     return validate_package_bytes(data, location, trust=trust, require_signed=require_signed)
 
 
 def _signing_policy() -> tuple["csar_signing.TrustStore | None", bool]:
-    """PR-RAPP-1.3/1.5, read for each package so a changed ConfigMap or a rotated key is seen without a restart. `ONBOARDING_TRUST_STORE`: a file or a directory
-    of PEM public keys of the publishers whose packages are accepted (empty: no signature is checked, as before). `ONBOARDING_REQUIRE_SIGNED_PACKAGES`:
-    `true` refuses a package that is not signed by one of them (default `false`). A trust store that cannot be used fails the package with the reason, and does
-    not fall back to "trust nothing, check nothing"."""
+    """Reads the package-signature policy from the environment for one package and returns (trust store or None, require signed).
+
+    PR-RAPP-1.3/1.5. Read for every package, so a changed ConfigMap or a rotated key is seen without a restart. `ONBOARDING_TRUST_STORE`: a file or a directory of PEM
+    public keys of the publishers whose packages are accepted (empty: no store, no signature is checked). `ONBOARDING_REQUIRE_SIGNED_PACKAGES`: `true`, `1`, `yes` or
+    `on` refuses a package that is not signed by one of them (default `false`). Raises PackageValidationFailed when the trust store cannot be loaded; it does not fall
+    back to "trust nothing, check nothing" (the failure carries csar_signing's message, which names the problem and not the mounted path).
+    """
     location = os.environ.get("ONBOARDING_TRUST_STORE", "").strip()
     require = os.environ.get("ONBOARDING_REQUIRE_SIGNED_PACKAGES", "false").strip().lower() in ("1", "true", "yes", "on")
     if not location:
@@ -224,6 +245,7 @@ def _signing_policy() -> tuple["csar_signing.TrustStore | None", bool]:
 
 
 def _get_package_or_404(db: Session, package_id: uuid.UUID) -> ApplicationPackage:
+    """Returns the package or raises the PACKAGE_NOT_FOUND framework error (404)."""
     pkg = db.get(ApplicationPackage, package_id)
     if pkg is None:
         raise framework_error(FrameworkError.PACKAGE_NOT_FOUND, detail=f"no such package {package_id}")
@@ -231,12 +253,12 @@ def _get_package_or_404(db: Session, package_id: uuid.UUID) -> ApplicationPackag
 
 
 def _fire(db: Session, pkg: ApplicationPackage, event: PackageEvent, guard_refusal: str | None = None) -> PackageState:
-    """Fires `event` on `pkg`, mapping IllegalTransition to a 409. When the
-    event has an edge from the current state, the refusal came from that
-    edge's guard (active usage / blocking dependents) and is reported as
-    409 SERVICE_NAME_CONFLICT with `guard_refusal`; otherwise the event is
-    not allowed from this state at all: 409 LIFECYCLE_ILLEGAL_TRANSITION
-    naming the state and the event (OI-2-lcm-error-mapping).
+    """Fires `event` on `pkg` and returns the new state; the caller stores it and commits.
+
+    An IllegalTransition becomes a 409. When the event has an edge from the current state, the refusal came from that edge's guard (active usage or blocking
+    dependents) and is reported as 409 SERVICE_NAME_CONFLICT with `guard_refusal`; otherwise the event is not allowed from this state at all: 409
+    LIFECYCLE_ILLEGAL_TRANSITION naming the state and the event (OI-2-lcm-error-mapping). A guard refusal with no `guard_refusal` text is reported as an illegal
+    transition.
     """
     state = PackageState(pkg.state)
     try:
@@ -250,6 +272,8 @@ def _fire(db: Session, pkg: ApplicationPackage, event: PackageEvent, guard_refus
 @app.get("/packages/{package_id}/onboarding-status")
 def query_onboarding_status(package_id: uuid.UUID, db: Session = Depends(get_session)):
     """404 PACKAGE_NOT_FOUND for an unknown package."""
+    # Maintainer notes (not published). rApp Management's CreateInstance and AIMgF read this route: `smeDeclarations` rides along for bootstrap-complete's per-instance
+    # SME registration (HISTORY.md §7, Onboarding/rApp Mgmt finding 3) and `aiCapabilities` for the runtime profiles AIMgF sizes a runtime with (W7-03). Read only.
     pkg = _get_package_or_404(db, package_id)
     return {
         "packageId": str(pkg.package_id), "state": pkg.state,
@@ -269,6 +293,8 @@ def query_onboarding_status(package_id: uuid.UUID, db: Session = Depends(get_ses
 @app.get("/packages")
 def query_packages(state: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                     db: Session = Depends(get_session)):
+    # Maintainer notes (not published). Lists packages in `_package_view` form, optionally filtered by an exact `state` string (an unknown state gives an empty
+    # page, not an error). Paginated by smo_shared.pagination, which orders an unordered statement by primary key (package_id, a random UUID), so the order is stable but not chronological.
     stmt = select(ApplicationPackage)
     if state:
         stmt = stmt.where(ApplicationPackage.state == state)
@@ -279,6 +305,7 @@ def query_packages(state: str | None = None, limit: int = PageLimit, offset: int
 @app.post("/packages/{package_id}/deprecate")
 def deprecate_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
     """AVAILABLE -> DEPRECATED; 409 LIFECYCLE_ILLEGAL_TRANSITION from any other state."""
+    # Maintainer notes (not published). One FSM event, one commit; the guard-less edge, so the only refusal is the 409 from `_fire`.
     pkg = _get_package_or_404(db, package_id)
     pkg.state = _fire(db, pkg, PackageEvent.DEPRECATE)
     db.commit()
@@ -295,6 +322,8 @@ def prime_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
     transitions fire within this one request. 409
     LIFECYCLE_ILLEGAL_TRANSITION from any state but AVAILABLE.
     """
+    # Maintainer notes (not published). PRIME and PRIME_COMPLETE are fired one after the other and committed once, so PRIMING is never stored or visible. If the
+    # first event is refused the second is not tried and nothing is written.
     pkg = _get_package_or_404(db, package_id)
     pkg.state = _fire(db, pkg, PackageEvent.PRIME)
     pkg.state = _fire(db, pkg, PackageEvent.PRIME_COMPLETE)
@@ -309,6 +338,8 @@ def deprime_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
     guard's active-usage-registration check): 409 SERVICE_NAME_CONFLICT.
     Any state but PRIMED: 409 LIFECYCLE_ILLEGAL_TRANSITION.
     """
+    # Maintainer notes (not published). DEPRIME carries a guard (no open usage registration), so a refusal while the package is PRIMED is reported as 409
+    # SERVICE_NAME_CONFLICT through `guard_refusal`; DEPRIME_COMPLETE follows in the same request and the same commit.
     pkg = _get_package_or_404(db, package_id)
     pkg.state = _fire(db, pkg, PackageEvent.DEPRIME, guard_refusal="blocked by an active usage registration")
     pkg.state = _fire(db, pkg, PackageEvent.DEPRIME_COMPLETE)
@@ -319,6 +350,7 @@ def deprime_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
 @app.post("/packages/{package_id}/cancel-delete")
 def cancel_delete(package_id: uuid.UUID, db: Session = Depends(get_session)):
     """DEPRECATED -> AVAILABLE; 409 LIFECYCLE_ILLEGAL_TRANSITION from any other state."""
+    # Maintainer notes (not published). The only edge is DEPRECATED -> AVAILABLE; one event, one commit.
     pkg = _get_package_or_404(db, package_id)
     pkg.state = _fire(db, pkg, PackageEvent.CANCEL_DELETE)
     db.commit()
@@ -332,6 +364,10 @@ def delete_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
     registration blocks it); a FAILED package's row is deleted directly.
     Any other state (PRIMED, DELETING, ...): 409 LIFECYCLE_ILLEGAL_TRANSITION.
     """
+    # Maintainer notes (not published). Two paths. FAILED: the row is deleted directly (its Artifact rows go with it through the ondelete CASCADE), no FSM event, and the
+    # answer is {"status": "deleted"}. Otherwise: the DELETE event runs its guard (`_no_blocking_dependents`) and the answer is the package view in state DELETING, the
+    # row kept. A usage registration has a foreign key to the package with no ondelete rule and usage/start does not check the package state, so on PostgreSQL the
+    # direct delete of a FAILED package that has a registration fails on that key.
     pkg = _get_package_or_404(db, package_id)
     if pkg.state == PackageState.FAILED:
         # FAILED never reached AVAILABLE, so nothing can depend on it — cascade
@@ -348,6 +384,8 @@ def delete_package(package_id: uuid.UUID, db: Session = Depends(get_session)):
 @app.post("/packages/{package_id}/usage/start")
 def register_usage_start(package_id: uuid.UUID, consumer_id: str, db: Session = Depends(get_session)):
     """404 PACKAGE_NOT_FOUND for an unknown package."""
+    # Maintainer notes (not published). `consumer_id` (the rApp instance id) is a query parameter, taken as given. Every call inserts a new registration, so a repeated
+    # call by the same consumer opens a second one. The package's state is not checked. The open registration (no stopped_at) is what blocks DEPRIME and DELETE.
     _get_package_or_404(db, package_id)
     reg = PackageUsageRegistration(package_id=package_id, consumer_id=consumer_id)
     db.add(reg)
@@ -362,6 +400,8 @@ def register_usage_stop(package_id: uuid.UUID, registration_id: uuid.UUID, db: S
     unknown or belongs to another package. Idempotent: stopping an already
     stopped registration keeps its original stoppedAt.
     """
+    # Maintainer notes (not published). The registration must belong to the package in the path, otherwise it is the same 404 as an unknown one. The stop time is
+    # written once; a second stop keeps it.
     import datetime
 
     _get_package_or_404(db, package_id)
@@ -376,6 +416,11 @@ def register_usage_stop(package_id: uuid.UUID, registration_id: uuid.UUID, db: S
 
 
 def _package_view(pkg: ApplicationPackage) -> dict:
+    """The JSON view of a package that the lifecycle routes and the list route return.
+
+    Identity, descriptor ids, state, signatureVerified, aiCapabilities and smeDeclarations, as camelCase keys. `manifest_ref`, `integrity_hash` and `parent_package_id`
+    are not part of it.
+    """
     return {
         "packageId": str(pkg.package_id),
         "name": pkg.name,
@@ -399,6 +444,8 @@ def _package_view(pkg: ApplicationPackage) -> dict:
 def list_package_artifacts(package_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
                             db: Session = Depends(get_session)):
     """(GUI pass 2) The artifacts registered during validation (Onboarding LLD section 1)."""
+    # Maintainer notes (not published). Artifacts are the rows written during validation: `path` inside the CSAR and `accessUrl` (`<location>#<path>`); the package
+    # bytes are not stored. 404 PACKAGE_NOT_FOUND for an unknown package.
     _get_package_or_404(db, package_id)
     stmt = select(Artifact).where(Artifact.package_id == package_id)
     page = paginate(db, stmt, limit, offset)

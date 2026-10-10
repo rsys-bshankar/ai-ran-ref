@@ -51,6 +51,9 @@ MUTABLE_NODES = (ast.Dict, ast.List, ast.Set, ast.DictComp, ast.ListComp, ast.Se
 
 
 def scan_files(root: Path) -> list[Path]:
+    """The Python files the check reads, sorted: `<module>/app/**` of every directory under `root` that has an `app` folder (except `mock-*`), `shared/smo_shared`,
+        `sdk/smo_sdk` and `samples/*/app`. Anything under a `tests` directory or `__pycache__` is left out.
+    """
     files: list[Path] = []
     for base in sorted(root.iterdir()):
         if base.name.startswith("mock-") or not base.is_dir():
@@ -64,6 +67,7 @@ def scan_files(root: Path) -> list[Path]:
 
 
 def _call_name(node: ast.AST) -> str:
+    """The bare name of what is called (`threading.Thread(...)` and `Thread(...)` both give `Thread`), or "" when it is neither a name nor an attribute. A decorator without a call is accepted too."""
     func = node.func if isinstance(node, ast.Call) else node
     if isinstance(func, ast.Name):
         return func.id
@@ -84,6 +88,7 @@ def _is_app_state(target: ast.AST) -> str | None:
 
 
 def _stateful_classes(tree: ast.Module) -> set[str]:
+    """Names of the classes defined at the top of the file whose `__init__` assigns an attribute on `self`: an instance of one, held at module level, is process state."""
     names = set()
     for node in tree.body:
         if isinstance(node, ast.ClassDef):
@@ -96,6 +101,7 @@ def _stateful_classes(tree: ast.Module) -> set[str]:
 
 
 def _targets(node: ast.AST) -> list[str]:
+    """The plain names assigned by a statement (`a = b = ...`, or an annotated `a: T = ...`); attribute and subscript targets are not included."""
     if isinstance(node, ast.Assign):
         return [t.id for t in node.targets if isinstance(t, ast.Name)]
     if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
@@ -151,6 +157,7 @@ def violations_in(path: Path, rel: str) -> list[tuple[str, str, int]]:
 
 
 def load_allowlist(path: Path = ALLOWLIST) -> dict[str, str]:
+    """Reads `statelessness_allowlist.txt` as `{key: reason}`. Blank lines and `#` comment lines are skipped; an entry without a `# reason` ends the script with the file name and line."""
     entries: dict[str, str] = {}
     for n, raw in enumerate(path.read_text().splitlines(), 1):
         line = raw.strip()
@@ -179,6 +186,10 @@ def check(root: Path = SMO_ROOT, allowlist: dict[str, str] | None = None) -> tup
 
 
 def main() -> int:
+    """Prints every NEW finding and every STALE allowlist entry; returns 1 if there is either, else prints a one-line summary and returns 0.
+
+        A stale entry fails the check on purpose: an allowlist that keeps entries for code that is gone would hide the next real finding with the same key.
+    """
     new, stale = check()
     for line in new:
         print(f"NEW      {line}")

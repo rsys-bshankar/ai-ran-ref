@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Create `kpi_definition`: a KPI's name, formula and the counters it reads."""
     op.execute("""
         CREATE TABLE kpi_definition (
             name        VARCHAR PRIMARY KEY,
@@ -27,4 +28,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop `kpi_definition`."""
     op.execute("DROP TABLE kpi_definition")

@@ -1,15 +1,11 @@
-"""AI Runtime SDK — Wave 1 of the AI Platform Service Decomposition
-(docs/ARCHITECTURE.md). A thin rApp-facing client
-layer over R1 Termination, wrapping smo_shared.r1_client.R1Client so an
-rApp author calls e.g. `sdk.models.register_model(...)` instead of
-hand-building an HTTP request against `/mlmr/models` (golden rule 6:
-this SDK is a thin client over the same R1 path every other cross-module
-call already uses, not a second one).
+"""The AI Runtime SDK: the package an rApp author imports (`from smo_sdk import AiRuntimeSdk`).
 
-No existing caller has been migrated to use this yet — every module in
-this build still calls R1Client directly, exactly as before. This is
-new, additive capability for rApp authors; wiring existing callers over
-to it is future work, tracked separately from Wave 1's structural split.
+`AiRuntimeSdk` is six namespace clients (`data`, `analytics`, `models`, `lifecycle`, `intent`, `platform`) over one shared `smo_shared.r1_client.R1Client`, so an rApp calls
+`sdk.models.register_model(...)` instead of hand-building an HTTP request against `/mlmr/models`. Golden rule 6 of `docs/ARCHITECTURE.md`: the SDK is a thin client over the same R1
+path every other cross-module call uses, not a second one. It adds no business logic and no client-side validation; the platform's answer, when it is an error, is raised as `SdkError`.
+
+Nothing in the SMO modules imports it (they call `R1Client` directly); the sample rApps under `samples/` and rApp authors do. `operator_ui.py` is authoring support and is imported
+by name (`from smo_sdk import operator_ui`), not through `AiRuntimeSdk`. Per-method behaviour and design decisions are in `sdk/README.md`; update it with a change here.
 """
 
 from smo_shared.r1_client import R1Client
@@ -26,12 +22,10 @@ __all__ = ["AiRuntimeSdk", "SdkError", "DataClient", "AnalyticsClient", "ModelsC
 
 
 class AiRuntimeSdk:
-    """The six sdk.* namespaces from the layered architecture diagram,
-    one client each, sharing one R1Client (and so one cached SME token —
-    see r1_client.py's own module docstring on per-process token caching).
-    """
+    """The six namespaces from the layered architecture diagram, one client each, sharing one `R1Client` and so one cached SME token (see `smo_shared/r1_client.py` on per-process token caching)."""
 
     def __init__(self, r1: R1Client | None = None):
+        """Build the six clients over `r1`, or over a new `R1Client()` (which onboards its SME invoker on first use) when none is given; tests pass a fake."""
         r1 = r1 or R1Client()
         self.data = DataClient(r1)
         self.analytics = AnalyticsClient(r1)

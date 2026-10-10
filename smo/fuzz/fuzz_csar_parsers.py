@@ -36,6 +36,12 @@ KNOWN_NAMES = [
 
 
 def TestOneInput(data: bytes) -> None:
+    """One fuzz iteration: builds a zip of up to six entries from `data` and runs Onboarding's three CSAR parsers on it.
+
+    Entry names are often one of KNOWN_NAMES so the parsers' code is reached. A failure Onboarding documents
+    (ONBOARD_VALIDATION_FAILURES) is the expected outcome for a bad package and is swallowed; any other exception propagates
+    and atheris reports it, because in the service it would escape the FAILED path.
+    """
     fdp = atheris.FuzzedDataProvider(data)
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
@@ -55,6 +61,7 @@ def TestOneInput(data: bytes) -> None:
 
 
 def main() -> None:
+    """Hands `TestOneInput` to atheris, which parses the fuzzer's command-line flags (such as -max_total_time) and runs until a finding or the limit."""
     atheris.Setup(sys.argv, TestOneInput)
     atheris.Fuzz()
 

@@ -11,17 +11,31 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Covers {@link TokenProvider}: discovery, enrolment, the grant and its scope, caching until 30 s before expiry, refresh,
+ * pinned and self-enrolled identities, errors, and offboarding. It talks to {@link FakePlatform} with the retry policy off
+ * unless a test says otherwise. No network beyond loopback. Run: cd smo/sdk-java && ./mvnw -B -ntp -C verify (JDK 21; CI job sdk-java).
+ */
 class TokenProviderTest {
 
+    /**
+     * Builds a provider over a real {@link HttpCaller} whose sleeper does nothing and the given clock.
+     */
     private static TokenProvider provider(SmoConfig config, FakePlatform.TestClock clock) {
         HttpCaller http = new HttpCaller(HttpClient.newHttpClient(), Duration.ofSeconds(5), d -> { });
         return new TokenProvider(config, http, clock);
     }
 
+    /**
+     * A config for the fake, with no retry and the name "unit".
+     */
     private static SmoConfig config(FakePlatform fake) {
         return SmoConfig.of(fake.url()).withRetry(RetryPolicy.none()).withName("unit");
     }
 
+    /**
+     * Pins the first-token sequence: bootstrap with the key, enrolment without an enrollment secret, then a client_credentials grant for scope smo-rapp.
+     */
     @Test
     void enrolsThenGrantsARappToken() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok-1", 300)) {
@@ -43,6 +57,9 @@ class TokenProviderTest {
         }
     }
 
+    /**
+     * Pins that the module identity sends its enrollment secret and asks for the internal scope.
+     */
     @Test
     void aModuleAsksForTheInternalScopeAndPresentsItsEnrollmentSecret() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
@@ -59,6 +76,9 @@ class TokenProviderTest {
         }
     }
 
+    /**
+     * Pins the cache lifetime (expiry minus 30 s) and that a renewal reuses the endpoint and the invoker.
+     */
     @Test
     void cachesUntilThirtySecondsBeforeExpiryThenGrantsAgain() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok-a", 100)) {
@@ -79,6 +99,9 @@ class TokenProviderTest {
         }
     }
 
+    /**
+     * Pins that asking with refresh obtains a new token even when the cached one is valid.
+     */
     @Test
     void refreshDiscardsTheCachedToken() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok-a", 3600)) {
@@ -90,6 +113,9 @@ class TokenProviderTest {
         }
     }
 
+    /**
+     * Pins that an invoker from the configuration is used as is and neither registered nor deregistered.
+     */
     @Test
     void aPinnedIdentityIsNeverEnrolledOrOffboarded() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
@@ -103,6 +129,9 @@ class TokenProviderTest {
         }
     }
 
+    /**
+     * Pins that invalid_client for an invoker the SDK enrolled leads to one new enrolment and a retried grant.
+     */
     @Test
     void aForgottenSelfEnrolledInvokerIsEnrolledAfreshOnce() throws Exception {
         try (FakePlatform fake = new FakePlatform()) {
@@ -123,6 +152,9 @@ class TokenProviderTest {
         }
     }
 
+    /**
+     * Pins that invalid_client for a pinned invoker is thrown and no replacement is enrolled.
+     */
     @Test
     void aPinnedIdentitySmeRefusesIsAnErrorNotAReplacement() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {
@@ -136,6 +168,9 @@ class TokenProviderTest {
         }
     }
 
+    /**
+     * Pins that a refused grant is thrown with SME's status and body.
+     */
     @Test
     void aGrantSmeRefusesIsReportedWithItsStatusAndBody() throws Exception {
         try (FakePlatform fake = new FakePlatform()) {
@@ -149,6 +184,9 @@ class TokenProviderTest {
         }
     }
 
+    /**
+     * Pins that a bootstrap answer without a token endpoint is an error.
+     */
     @Test
     void aBootstrapThatNamesNoTokenEndpointIsAnError() throws Exception {
         try (FakePlatform fake = new FakePlatform()) {
@@ -157,6 +195,9 @@ class TokenProviderTest {
         }
     }
 
+    /**
+     * Pins that the token calls obey the retry policy: a 503 from /bootstrap is repeated.
+     */
     @Test
     void transientErrorsDuringEnrolmentAreRetried() throws Exception {
         try (FakePlatform fake = new FakePlatform()) {
@@ -170,6 +211,9 @@ class TokenProviderTest {
         }
     }
 
+    /**
+     * Pins that offboarding deletes the self-enrolled invoker with the current token, forgets it, and a second call does nothing.
+     */
     @Test
     void offboardDeregistersASelfEnrolledInvoker() throws Exception {
         try (FakePlatform fake = new FakePlatform().withSme("tok", 300)) {

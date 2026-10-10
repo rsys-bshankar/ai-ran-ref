@@ -29,6 +29,7 @@ LOCKOUT_ATTEMPTS = 5
 
 
 def sign_in(page, base_url: str, user: str, password: str) -> None:
+    """Signs in through the login form and waits for the dashboard's "Modules healthy" tile."""
     page.goto(f"{base_url}/login")
     page.get_by_label("Username").fill(user)
     page.get_by_label("Password").fill(password)
@@ -37,10 +38,17 @@ def sign_in(page, base_url: str, user: str, password: str) -> None:
 
 
 def sidebar(page) -> list[str]:
+    """The visible labels of the GUI's main navigation, stripped."""
     return [t.strip() for t in page.locator("nav[aria-label='Main'] a").all_inner_texts()]
 
 
 def check_role(browser, base_url: str, user: str, password: str, role: str, problems: list[str]) -> None:
+    """Signs in as one account in a fresh browser context and appends to `problems` anything that differs from the design for `role`.
+
+        Checks the sidebar (Admin only for the admin), the cookies (`smo_session` HttpOnly, SameSite=Strict, Path=/api and unreadable by a script; `smo_csrf` readable), the
+        backend (`/api/admin/users` 200 for admin and 403 below; a write without the CSRF header 403; with it 403 below admin and 201 for the admin, whose test user is deleted
+        again) and the sign-out (sidebar gone, cookie gone, the copied cookie refused with 401). Returns early when the session cookies are missing. Playwright errors become problems.
+    """
     context = browser.new_context()
     page = context.new_page()
     page.set_default_timeout(30_000)
@@ -101,6 +109,10 @@ def check_role(browser, base_url: str, user: str, password: str, role: str, prob
 
 
 def check_lockout(browser, base_url: str, user: str, problems: list[str]) -> None:
+    """Sends five wrong passwords for `user` and then a sixth: the first five must answer 401 and the sixth 429.
+
+        Side effect: the account stays locked on the stack for the lockout period, so `main` runs this after the role checks.
+    """
     context = browser.new_context()
     statuses = [context.request.post(f"{base_url}/api/login", data={"username": user, "password": f"wrong-{i}-password"}).status
                 for i in range(LOCKOUT_ATTEMPTS + 1)]
@@ -111,6 +123,7 @@ def check_lockout(browser, base_url: str, user: str, problems: list[str]) -> Non
 
 
 def check_expiry(browser, base_url: str, user: str, password: str, seconds: int, problems: list[str]) -> None:
+    """Signs in, waits `seconds` + 2 s (the stack's `GUI_SESSION_TTL_SECONDS` plus a margin), and checks that the copied session is refused with 401 and that the GUI falls back to the sign-in page."""
     context = browser.new_context()
     page = context.new_page()
     page.set_default_timeout(30_000)
@@ -135,6 +148,9 @@ def check_expiry(browser, base_url: str, user: str, password: str, seconds: int,
 
 
 def main() -> int:
+    """Reads the three account passwords from the environment (exit 2 when one is unset), runs the role and lockout checks unless `--only-expiry`, and the expiry check
+        (as the operator) when `--expiry` is given. Returns 1 if any problem was found, else 0.
+    """
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--base-url", default="http://localhost:3000")
     ap.add_argument("--expiry", type=int, default=0, help="the stack's GUI_SESSION_TTL_SECONDS: also check that a session ends after that long")

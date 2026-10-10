@@ -1,3 +1,8 @@
+# The SMO Helm chart: its name, the chart version, and the appVersion whose images it installs
+# (ghcr.io/<owner>/<repo>/smo-<module>:<appVersion>, see smo.tag in templates/_helpers.tpl). The release PR of
+# docs/RELEASES.md raises `version` and `appVersion` together. Raising `version` must change no pod template, or every release
+# would restart the pods (tests_integration/test_helm_chart.py proves it), which is why pod labels never name the chart version.
+# `kubeVersion` is the oldest Kubernetes the chart accepts.
 apiVersion: v2
 name: smo
 description: "The AI-RAN SMO (service management and orchestration) platform: the R1 gateway, SME, DME, the AI/ML and RAN management modules, and the operator GUI"

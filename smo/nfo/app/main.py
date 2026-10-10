@@ -1,15 +1,19 @@
-"""NFO SMOS (O2dms).
+"""NFO (Network Function Orchestrator): deployment descriptors and the lifecycle of NF deployments, as the O2-DMS-style
+service of the SMO.
 
-SMO Design v1.3 section 3.7, extended by NFO+FOCOM LLD sections 2, 4:
-NFDeploymentDescriptor closes the gap where nfDeploymentDescriptorId
-referenced nothing concrete, and Instantiate now calls FOCOM's inventory
-first to resolve clusterId, rather than assuming the Phase 1 degenerate
-single-cluster value implicitly. HISTORY.md §5 extends this
-further: a real 7-state deployment lifecycle (statemachine.py), real
-duplication/dependency guards on Instantiate (dms_lcm_nfdeployment.py's
-_check_duplication/_check_dependencies), a resource-linkage object
-(NFOCloudResource, the reference's NfOCloudVResource), and Heal/Scale
-now actually drive state transitions instead of being pure stubs.
+Where it sits: one FastAPI app behind R1 Termination at `/nfo`. Callers are AIMgF (model runtimes), rApp Management, SO SMOS,
+SA SMOS (heal), Onboarding (descriptors) and the GUI. It makes one outgoing call: `GET /focom/inventory` in `instantiate`,
+to learn the O-Cloud id for placement. The design records are `HISTORY.md` §5 (the deployment state machine and guards) and
+`OI-3-nfo-abnormal` (asynchronous terminate); the NFO + FOCOM LLD sections 2 and 4 describe the flows.
+
+What it owns: descriptors, deployments and their state (`statemachine.py`), the operation history and the resource link
+rows. It deploys nothing for real: Instantiate, Scale and the default Terminate complete in the same request instead of
+driving Helm (the "Phase 1 elision" comments mark each place). The deployment manager reports how an asynchronous
+terminate ends through `receive_dms_notification`.
+
+Before editing: every state change goes through `NFO_FSM.fire`, so a new transition belongs in `statemachine.py` first.
+`NFDeployment` is versioned, so two concurrent writers give one of them a 409 CONCURRENT_MODIFICATION. The docstrings of
+the routes and request models are published in `docs/openapi/nfo.json`.
 """
 
 import uuid
@@ -48,12 +52,14 @@ apply_correlation_id(app)
 install_health(app, checks=[database_check, sme_token_check])  # /live, /ready and the /health alias (PR-ST-7)
 
 
+# Body of `POST /deployments`: the descriptor to deploy, a unique deployment name and an optional resource type used for the FOCOM inventory lookup.
 class InstantiateRequest(BaseModel):
     nfDeploymentDescriptorId: uuid.UUID
     name: str
     requiredResourceTypeId: str | None = None
 
 
+# Body of `POST /descriptors`; `packageId` is absent for a descriptor created for a model runtime, which has no onboarded package.
 class CreateDescriptorRequest(BaseModel):
     packageId: uuid.UUID | None = None
     name: str
@@ -74,6 +80,8 @@ def create_descriptor(body: CreateDescriptorRequest, db: Session = Depends(get_s
     package-derived descriptor (Onboarding's own flow, unchanged) still
     always sets it.
     """
+    # Stores a descriptor and returns its id (201). No validation beyond the body's shape: the descriptor is taken as given and
+    # `packageId` is not checked against Onboarding (it is a cross-module reference, see `models.py`).
     descriptor = NFDeploymentDescriptor(
         package_id=body.packageId, name=body.name,
         required_resource_type_id=body.requiredResourceTypeId,
@@ -94,6 +102,12 @@ def instantiate(body: InstantiateRequest, request: Request, db: Session = Depend
     and _check_duplication (no two deployments may share a name, and a
     descriptor may only be deployed once).
     """
+    # Creates a deployment and, in this request, takes it to RUNNING. Checks in order: descriptor exists (422
+    # NFDEPLOYMENT_DESCRIPTOR_NOT_FOUND), name unused (409 NFDEPLOYMENT_NAME_CONFLICT), descriptor not yet deployed (409
+    # NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED); the last two are SELECTs, not unique constraints. Then the FOCOM inventory is asked
+    # for the O-Cloud id (any non-200 answer falls back to `phase1-degenerate-cluster`). Writes the deployment, an INSTANTIATE
+    # operation (COMPLETED) and one resource link in a single commit. Repeating the call with the same `Idempotency-Key` header
+    # returns the first answer.
     if db.get(NFDeploymentDescriptor, body.nfDeploymentDescriptorId) is None:
         raise framework_error(FrameworkError.NFDEPLOYMENT_DESCRIPTOR_NOT_FOUND,
                                detail=f"no such NFDeploymentDescriptor: {body.nfDeploymentDescriptorId}")
@@ -104,6 +118,7 @@ def instantiate(body: InstantiateRequest, request: Request, db: Session = Depend
         raise framework_error(FrameworkError.NFDEPLOYMENT_DESCRIPTOR_ALREADY_DEPLOYED,
                                detail=f"NfDeploymentDescriptor {body.nfDeploymentDescriptorId} already deployed")
 
+    # Created per request here; the unit tests patch `R1Client.get` on the class, which covers it.
     r1 = R1Client()
     inv_resp = r1.get("/focom/inventory", params={"resource_type": body.requiredResourceTypeId or ""})
     # HISTORY.md §7 item 8: FOCOM's /inventory reshaped toward the real
@@ -120,6 +135,8 @@ def instantiate(body: InstantiateRequest, request: Request, db: Session = Depend
     )
     db.add(deployment)
     db.flush()
+    # Added in INITIAL and flushed (which assigns the id the operation row below needs), then moved through INSTANTIATING to
+    # RUNNING in this request. The intermediate states are never committed, so no caller can observe them.
     deployment.state = NFO_FSM.fire(DeploymentState.INITIAL, DeploymentEvent.INSTANTIATE)
     op = LCMOperation(nf_deployment_id=deployment.nf_deployment_id, operation_type="INSTANTIATE", status="IN_PROGRESS")
     db.add(op)
@@ -155,9 +172,17 @@ def terminate(nf_deployment_id: uuid.UUID, async_uninstall: bool = False, db: Se
     `POST /deployments/{id}/dms-notifications`, which is how DELETING and
     ABNORMAL are reached and observed.
     """
+    # Removes a deployment (204) or starts removing it (202 with `async_uninstall=true`). An unknown id is 204 as well (idempotent).
+    # What happens depends on the state: INITIAL and ABNORMAL go straight to DELETING; INSTANTIATING, RUNNING and UPDATING go to
+    # TERMINATING first; TERMINATING again is a no-op; DELETING (a second Terminate racing the first) turns the deployment ABNORMAL
+    # and records a FAILED TERMINATE operation. Synchronously the uninstall and the deletion both complete here and the whole
+    # deployment, its resource links and its operation history are removed in one commit. With `async_uninstall` the deployment
+    # stays TERMINATING (or DELETING) with a TERMINATE operation IN_PROGRESS, and `receive_dms_notification` finishes it.
     d = db.get(NFDeployment, nf_deployment_id)
     if d is None:
         return
+    # Read before the transition fires: TERMINATING + TERMINATE is a legal self-edge in the state machine, so the new state
+    # alone cannot tell a repeat from a first call.
     was_terminating = d.state == DeploymentState.TERMINATING
     new_state = NFO_FSM.fire(DeploymentState(d.state), DeploymentEvent.TERMINATE)
     if new_state == DeploymentState.ABNORMAL:
@@ -183,12 +208,14 @@ def terminate(nf_deployment_id: uuid.UUID, async_uninstall: bool = False, db: Se
 
 
 def _accepted(d: NFDeployment) -> JSONResponse:
+    """The 202 body of an asynchronous terminate (id and current state)."""
     return JSONResponse(status_code=202, content={"nfDeploymentId": str(d.nf_deployment_id), "state": d.state})
 
 
 def _remove_deployment(db: Session, d: NFDeployment) -> None:
-    """The deployment is gone: its resource links, its operation history and
-    the record itself (the descriptor may be deployed again)."""
+    """Deletes a deployment's resource links, its operation history and the deployment itself, in the caller's transaction
+    (the caller commits). Both child tables have foreign keys to the deployment, so they go first.
+    """
     db.query(NFOCloudResource).filter_by(nf_deployment_id=d.nf_deployment_id).delete()
     # LCMOperation.nf_deployment_id has a real FK, same as NFOCloudResource
     # above — deleting the deployment without clearing its own operation
@@ -204,6 +231,7 @@ def _remove_deployment(db: Session, d: NFDeployment) -> None:
     db.delete(d)
 
 
+# Body of `POST /deployments/{id}/dms-notifications`: what the deployment manager reports, with an optional reason for a failure.
 class DmsNotification(BaseModel):
     """OI-3-nfo-abnormal: the deployment manager's (O2 DMS) report on a
     deployment. `detail` says why, for a failure."""
@@ -226,6 +254,11 @@ def receive_dms_notification(nf_deployment_id: uuid.UUID, body: DmsNotification,
     404 for an unknown deployment, 409 NFDEPLOYMENT_ILLEGAL_OPERATION for an
     event its state can't take.
     """
+    # Applies one report of the deployment manager. 404 NFDEPLOYMENT_NOT_FOUND; 409 NFDEPLOYMENT_ILLEGAL_OPERATION when the
+    # current state cannot take the event (nothing is changed). DELETE_COMPLETE is handled here and not by the state machine
+    # because it ends the deployment: it needs state DELETING and removes the whole deployment. Every other event is a state
+    # machine transition; a transition into ABNORMAL stores the reason (`EVENT: detail`) and marks an open TERMINATE operation FAILED.
+    # One commit. The caller is not distinguished from any other authenticated R1 caller.
     d = db.get(NFDeployment, nf_deployment_id)
     if d is None:
         raise framework_error(FrameworkError.NFDEPLOYMENT_NOT_FOUND, detail="no such NfDeployment")
@@ -251,6 +284,7 @@ def receive_dms_notification(nf_deployment_id: uuid.UUID, body: DmsNotification,
 
 
 def _open_terminate(db: Session, nf_deployment_id: uuid.UUID) -> LCMOperation | None:
+    """The TERMINATE operation of the deployment that is still IN_PROGRESS, or None."""
     return db.scalar(select(LCMOperation).where(LCMOperation.nf_deployment_id == nf_deployment_id,
                                                 LCMOperation.operation_type == "TERMINATE",
                                                 LCMOperation.status == "IN_PROGRESS"))
@@ -258,6 +292,7 @@ def _open_terminate(db: Session, nf_deployment_id: uuid.UUID) -> LCMOperation | 
 
 @app.get("/deployments/{nf_deployment_id}")
 def get_deployment(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Returns one deployment (404 NFDEPLOYMENT_NOT_FOUND); the view includes `abnormalReason` for an ABNORMAL one.
     d = db.get(NFDeployment, nf_deployment_id)
     if d is None:
         raise framework_error(FrameworkError.NFDEPLOYMENT_NOT_FOUND, detail="no such NfDeployment")
@@ -274,6 +309,9 @@ def heal(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
     pod-health remediation behind it stays out of scope
     (D-DEPLOY-NFO-3, unchanged).
     """
+    # Recovers an ABNORMAL deployment to RUNNING (or accepts a RUNNING one as already healthy). 404 NFDEPLOYMENT_NOT_FOUND; 409
+    # NFDEPLOYMENT_ILLEGAL_OPERATION from any other state. Clears `abnormalReason` and records a HEAL operation as COMPLETED; no
+    # workload is touched. One commit, and the versioned row gives a concurrent writer a 409 CONCURRENT_MODIFICATION.
     d = db.get(NFDeployment, nf_deployment_id)
     if d is None:
         raise framework_error(FrameworkError.NFDEPLOYMENT_NOT_FOUND, detail="no such NfDeployment")
@@ -296,6 +334,9 @@ def scale(nf_deployment_id: uuid.UUID, request: Request, db: Session = Depends(g
     conceptual operation as the reference's Update (RUNNING->UPDATING),
     so it drives that same edge — legal only from RUNNING.
     """
+    # Takes a RUNNING deployment through UPDATING and back to RUNNING within the request and records a SCALE operation as COMPLETED.
+    # It takes no target size and changes no replica count (the Helm upgrade is elided). 404; 409 NFDEPLOYMENT_ILLEGAL_OPERATION
+    # unless RUNNING. Repeating with the same `Idempotency-Key` returns the first answer.
     d = db.get(NFDeployment, nf_deployment_id)
     if d is None:
         raise framework_error(FrameworkError.NFDEPLOYMENT_NOT_FOUND, detail="no such NfDeployment")
@@ -320,12 +361,14 @@ def query_deployment_resources(nf_deployment_id: uuid.UUID, db: Session = Depend
     """The reference's own NfOCloudVResource, genuinely queryable rather
     than just a column nothing ever reads.
     """
+    # Lists the resource links of a deployment. An unknown deployment gives an empty list, not a 404.
     rows = db.scalars(select(NFOCloudResource).where(NFOCloudResource.nf_deployment_id == nf_deployment_id)).all()
     return [{"resourceLinkId": str(r.resource_link_id), "resourceRef": r.resource_ref, "vresourceType": r.vresource_type} for r in rows]
 
 
 @app.get("/operations/{operation_id}")
 def query_operation_status(operation_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Returns the status of one LCM operation (404 LCM_OPERATION_NOT_FOUND).
     op = db.get(LCMOperation, operation_id)
     if op is None:
         raise framework_error(FrameworkError.LCM_OPERATION_NOT_FOUND, detail="no such LCM operation")
@@ -334,6 +377,7 @@ def query_operation_status(operation_id: uuid.UUID, db: Session = Depends(get_se
 
 @app.get("/deployments/{nf_deployment_id}/placement")
 def query_cluster_placement(nf_deployment_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Returns the cluster (O-Cloud) id a deployment was placed on (404 NFDEPLOYMENT_NOT_FOUND).
     d = db.get(NFDeployment, nf_deployment_id)
     if d is None:
         raise framework_error(FrameworkError.NFDEPLOYMENT_NOT_FOUND, detail="no such NfDeployment")
@@ -355,6 +399,7 @@ def list_deployments(state: str | None = None, limit: int = PageLimit, offset: i
 
 
 def _deployment_view(d: NFDeployment) -> dict:
+    """The JSON of a deployment. `workloadRef` is always None here: nothing in NFO sets it."""
     return {"nfDeploymentId": str(d.nf_deployment_id), "name": d.name, "state": d.state, "clusterId": d.cluster_id,
             "nfDeploymentDescriptorId": str(d.nf_deployment_descriptor_id), "workloadRef": d.workload_ref,
             "requiredResourceTypeId": d.required_resource_type_id, "abnormalReason": d.abnormal_reason}

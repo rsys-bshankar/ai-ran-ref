@@ -71,7 +71,7 @@ These are facts about the current build; each is either tracked in `OPEN_ITEMS.m
   token. Fixed (section 4): a new user starts at a random version.
 - **Rows for typed names accumulate** (row 2), and a person who types a password into the username field leaves it in `gui_login_failure` and `gui_audit_log.username`. Retention for both is `DB-3.6` and
   `STD-4.2`; nothing deletes them today.
-- **Reads are broad.** A viewer can read alarms (with `ack_user_id`) and every configuration job (with `requested_by`); an rApp token can read the same unless it has a scope claim (`PR-SEC-10`, `docs/adr/0005-tenant-region-authorization.md`: the rApp then sees only the elements of its own regions and tenants; the console's own users and the DME and MLMR reads are not scoped, `GUI-5.1`, `SEC-10.7`); the logging of personal-data reads is `STD-4.4`.
+- **Reads are broad.** A viewer can read alarms (with `ack_user_id`) and every configuration job (with `requested_by`); an rApp token can read the same unless it has a scope claim (`PR-SEC-10`, `docs/adr/0005-tenant-region-authorization.md`: the rApp then sees only the elements of its own regions and tenants; the console's own users are not, `GUI-5.1`; DME's action list is, the rest of DME and MLMR is not, `SEC-10.7`; and an rApp with a claim reads only its own config jobs, approval requests and decision records); the logging of personal-data reads is `STD-4.4`.
 
 ## 4. Erasure of a GUI user (`STD-4.3`)
 
@@ -124,4 +124,4 @@ and the ORM refuses to edit an audit row.
 | Access logging for reads of personal data | `STD-4.4` with `SEC-11.2` |
 | Back up and restore the GUI database | `DB-6.5` |
 | No local passwords at all: OIDC is built (the user is created on first sign-in with no password, `SEC-6`, 0.5.0); what remains is `GUI_LOCAL_LOGIN_ENABLED=false` in a deployment that wants no break-glass password, and reading an e-mail or display name from the provider is deliberately not done | `SEC-6` (done), operator choice |
-| Per-tenant and per-region read scoping for the console's users, DME and MLMR (RAN NF OAM's reads by rApps are scoped, `PR-SEC-10`) | `GUI-5.1`, `SEC-10.7` |
+| Per-tenant and per-region read scoping for the console's users, and for DME's and MLMR's data other than the action list (RAN NF OAM's reads by rApps are scoped, `PR-SEC-10`) | `GUI-5.1`, `SEC-10.7` |

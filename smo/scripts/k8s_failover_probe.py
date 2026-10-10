@@ -26,6 +26,11 @@ DEADLINE = time.monotonic() + 1800  # a probe that is never stopped does not run
 
 
 def write() -> bool:
+    """One write through SME: registers an invoker (a row in Postgres) and deletes it again. True when the registration answered 200 or 201.
+
+        Any HTTP error, a non-2xx answer or an unparseable body counts as a failed write and is not raised; that is how the outage shows up in the gap measurement.
+        A failure of the cleanup `delete` is not checked.
+    """
     try:
         r = httpx.post(f"{SME}/invoker-registrations", json={"apiInvokerPublicKey": "ha-failover"},
                        headers={"X-SMO-Enrollment": SECRET}, timeout=5)

@@ -49,7 +49,7 @@ Theme: rApps that could be handed to another party. Core (1 to 3) first, then th
 |---|---|---|---|
 | 1 | Signed and conformant rApp packages | `RAPP-1` CSAR signing with a trust store and a policy flag to require signed packages (sample CSARs signed); `RAPP-3` offline validator and runtime conformance checks with a report; `RAPP-2.1` and `2.3` (runtime profile becomes pod limits, egress only to R1) | The rApp-side counterpart of the O1 conformance kit. **Built** (`HISTORY.md` PR-RAPP-1, PR-RAPP-2a, PR-RAPP-3); `RAPP-2.2` (pod `securityContext`) is not part of this row and stays open; the CI step of the conformance pack and the chart's render tests are to be confirmed by CI |
 | 2 | Approval and decision audit | `AI-11` approval queue for rApp actions (timeout, notification, autonomy-mode hook) with the GUI inbox; `AI-13` decision record per rApp config job (inputs, model version, rationale, job id), query route and GUI detail; `AI-12` shadow mode if time allows | Answers "who let the rApp do that, and why". **Built** (`HISTORY.md` PR-AI-11, PR-AI-13): the approval queue, the timeout, the hook for an `ASSIST` instance, the notice, the GUI inbox (`GUI-7.2`) and the decision record, then (follow-ups) an opt-in second approver, the samples' `decision` and a retention for both tables. **Not started:** `AI-12` shadow mode |
-| 3 | Tenant and region authorization | `SEC-10`: `region` and `tenant` on managed elements, a scope claim on the caller, enforced first on `POST /config-jobs` (the pilot, `SEC-10.1` to `10.4`), then config reads, alarms, PM, DME and MLMR reads | The main security gap left before 1.0.0. Scoping axes: both region and tenant. **Built** (`HISTORY.md` PR-SEC-10): `SEC-10.1` to `10.6`, the pilot, config reads, alarms and PM, with both axes. **Open:** `SEC-10.7` (DME and MLMR have nothing to match on, see below), `10.8` (OPA), and the rest of RAN NF OAM's reads (`10.9`) |
+| 3 | Tenant and region authorization | `SEC-10`: `region` and `tenant` on managed elements, a scope claim on the caller, enforced first on `POST /config-jobs` (the pilot, `SEC-10.1` to `10.4`), then config reads, alarms, PM, DME and MLMR reads | The main security gap left before 1.0.0. Scoping axes: both region and tenant. **Built** (`HISTORY.md` PR-SEC-10): `SEC-10.1` to `10.6`, the pilot, config reads, alarms and PM, with both axes; and `10.9` (the rest of RAN NF OAM's reads), `10.11` (job ownership) and the DME action list of `10.7`. **Open:** `SEC-10.7` for the rest of DME and MLMR (they have nothing to match on, see below), `10.8` (OPA), `10.10` (GUI forms) and `10.12` (the console's users) |
 | 4 | rApp SDK in two more languages | `RAPP-4` (Java and Go, decided): a Java SDK and a Go SDK built from `docs/openapi/` (the Java one: hand-written clients held to the specs by a contract test, `HISTORY.md` PR-RAPP-4 Java) with token acquisition and refresh, one example rApp in each, and a CI build for each | Python SDK stays. Each example runs against the stack |
 | 5 | Life-cycle flows (stretch) | `MGT-14` zero-touch onboarding (templates, discovery triggers a template, status FSM); `MGT-15` software campaigns (waves with a health gate, rollback, report) | The wave machinery is `MGT-5`, done. **Built** (`HISTORY.md` PR-MGT-14, PR-MGT-15): the API, the migration (`0033`) and the tests; opt in, nothing changes for an existing user. **Open:** the GUI pages (`MGT-14.6`, `MGT-15.5`), notifications (`MGT-14.7`, `MGT-15.6`), a job timeout and rollback in reverse wave order (`MGT-15.7`), and a real software-management exchange with the element (`MGT-15.8`) |
 | 6 | Spec and stub realism (stretch) | `MGT-2` MSAC beyond writes; `SB-7` VES event receiver; `SB-10` first vendor profile on the O1 stub | **Built** (`HISTORY.md` PR-SB-7, PR-SB-10, PR-MGT-2): the VES listener (off until it has a password, which the chart can take from a Secret), MSAC reach (off until `RAN_NF_OAM_MSAC_REACH`), and a vendor profile mechanism with a first profile that is **a stand-in, not a real vendor**. **Open:** `SB-7.6` (needs `MSG-3.4`), the first real vendor profile (`SB-10.5`), and the parts of `MGT-2` named under PR-MGT-2 |
@@ -394,15 +394,13 @@ Done (`HISTORY.md`, PR-SEC-7: SEC-7.1 to 7.8). Not built, and not planned unless
 
 #### PR-SEC-10 — Tenant / region authorization
 
-Done (`HISTORY.md`, PR-SEC-10; decision `docs/adr/0005-tenant-region-authorization.md`): SEC-10.1 to 10.6 (the ADR, `region` and `tenant` on `managed_entity`, the scope claim on the invoker, the pilot `POST /config-jobs` with rollback and the approval path, configuration reads, alarms and PM). What is left:
+Done (`HISTORY.md`, PR-SEC-10; decision `docs/adr/0005-tenant-region-authorization.md`): SEC-10.1 to 10.6 (the ADR, `region` and `tenant` on `managed_entity`, the scope claim on the invoker, the pilot `POST /config-jobs` with rollback and the approval path, configuration reads, alarms and PM), then SEC-10.9 (the managed-object tree, topology, KPI schedules, file subscriptions, the registries), SEC-10.11 (ownership of a job) and the action list of SEC-10.7 (ADR section 10). What is left:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-10.7 | Same on rApp-facing DME and MLMR reads. **Open, with a reason:** neither module's data has a managed element, a region or a tenant to match (DME types, producers, jobs and records; MLMR models and repositories), so there is no rule to apply until someone decides what a tenant of a data type or of a model is (a column on `dme_type` and `ml_model`, set by the producer or the registrant, or derived from the producer's scope). The one DME route that names an element, `POST /dme/actions`, is already held to the rApp's scope at RAN NF OAM (tests in `tests_integration/test_tenant_region_scope.py`); `GET /dme/actions` lists records with an element reference and is not filtered | 403 test | SEC-10.3 |
+| SEC-10.7 | Same on rApp-facing DME and MLMR reads. **Built:** `GET /dme/actions` and `/dme/actions/{id}` (an action names an element; DME asks RAN NF OAM which elements the claim covers). **Open, with a reason:** nothing else in either module's data has a managed element, a region or a tenant to match (DME types, producers, offers, jobs and records; MLMR models and repositories), so a scoped rApp still reads all of it, until someone decides what a tenant of a data type or of a model is (a column on `dme_type` and `ml_model`, set by the producer or the registrant, or derived from the producer's scope). `POST /dme/actions` is held to the rApp's scope at RAN NF OAM (`tests_integration/test_tenant_region_scope.py`) | 403 test | SEC-10.3 |
 | SEC-10.8 | OPA sidecar as an alternative decision point (optional; the seam is `smo_shared/scope.py`) | Same tests pass with it | SEC-10.1 |
-| SEC-10.9 | The rest of RAN NF OAM's reads: the managed-object tree (`/managed-objects/...`), topology and links, the KPI schedules, the file subscriptions, the vendor and CM-schema registries (`GET /kpis/{name}` is scoped) | 403 / filtered tests like `ran-nf-oam/tests/test_scope.py` | SEC-10.4 |
 | SEC-10.10 | A form in the GUI to set a claim on an invoker or an instance, and the place of an element (today an admin calls `PUT /sme/invoker-registrations/{id}/authz-scope` and `PUT /ran-nf-oam/managed-entities/{ref}/scope` through the API); a scoped rApp's refusals on the Safeguards page already show | Vitest | SEC-10.3 |
-| SEC-10.11 | Ownership of a config job: an rApp rolling back another rApp's job inside its own scope is allowed today (and is not part of the scope rule) | 403 test | – |
 | SEC-10.12 | Scoping the human users (an operator who may act on one tenant only, an approver for one region): the GUI session claim (`GUI-5.1`) and the BFF passing it to the modules | Claim in the session | GUI-5.1 |
 
 #### PR-SEC-11 — Tamper-evident audit
@@ -455,7 +453,7 @@ OpenTelemetry spans to Tempo and log shipping to Loki exist (`HISTORY.md` §10, 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | OBS-3.4 | SQLAlchemy spans (server spans and `R1Client` client spans are done), and spans for the calls that do not go through `R1Client` (the gateway's token check, webhooks) | A request shows a database span under its server span | – |
-| OBS-3.6 | A live check: the compose `tracing` profile, one runbook call, its trace found by id (the stack is configured but was not run in CI) | Trace visible for a runbook call | – |
+| OBS-3.6 | A live check: the compose `tracing` profile, one gateway call, its trace found by id. Written: `scripts/obs_smoke.py` and the CI job `obs-stack` ("Tracing and logging profiles"), not yet seen green. Close it when the job has passed on `main` | Job green on `main` | – |
 | OBS-3.7 | Decide whether the release workflow also publishes a tracing-enabled image variant (`WITH_TRACING=1`) | Decision recorded | – |
 
 #### PR-OBS-4 — Business metrics (open: the remainder below; done in `HISTORY.md` §10)
@@ -483,7 +481,7 @@ Done: packages, rApp instances and intents by state, the outbox backlog and its 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | OBS-6.3 | Elasticsearch field mapping, shipped and tried (described in `docs/OBSERVABILITY.md`) | Index created, a log line indexed | – |
-| OBS-6.4 | A live check of the `logging` profile (Fluent Bit to Loki, a query by correlation id returns the request's lines); not run in CI | Query returns a request's lines | – |
+| OBS-6.4 | A live check of the `logging` profile (Fluent Bit to Loki, a query returns the request's line). Written: the same script and job as OBS-3.6 (the query is by trace id, not correlation id), not yet seen green. Close it when the job has passed on `main` | Job green on `main` | – |
 
 #### PR-OBS-7 — Runbooks (open: the entries below; template, index and one page per alert are in `HISTORY.md` §10)
 
@@ -492,6 +490,12 @@ Done: packages, rApp instances and intents by state, the outbox backlog and its 
 | OBS-7.2 | Entry: Postgres down (SME down and R1 down are the `SmoModuleDown` page); each page tried once on the compose stack (none has been: the commands were written from the code, not replayed) | Each tried once | – |
 | OBS-7.3 | Entries: O1 write failures, adaptor unreachable (the latter is partly `SmoOutboundCallsFailing`) | Same | OBS-4.3 |
 | OBS-7.6 | Entry: backup and restore | Same | DB-6.4 |
+
+#### PR-OBS-3.9 — Tempo 3 (open)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OBS-3.9 | Move the `tracing` profile and the chart's `observability.tempo` from Tempo 2.8.2 to 3.x. Tempo 3 removed the scalable single binary, replaced the ingester and compactor with block-builders, live-stores and a backend scheduler, and needs a Kafka-compatible ingest path (and refuses legacy flat overrides). The shipped `tempo.yaml` is a single binary on local disk, so the move means adding a Kafka-compatible broker (for example Redpanda) to compose and the chart and rewriting the config; Dependabot's bump to 3.1.0 failed the "Tracing and logging profiles" job for that reason, and the other three observability images (Grafana 13.2.3, Loki 3.7.8, Fluent Bit 5.1.3) are already bumped. Until then Dependabot ignores Tempo major versions | The `tracing` profile and the chart run Tempo 3.x with its ingest path, and the job is green | Decision: whether a lab trace store should carry a broker |
 
 #### PR-OBS-8 — Self-monitoring (all steps done: `HISTORY.md` PR-OBS-8)
 
@@ -772,11 +776,10 @@ ack and clear routes.
 
 #### Configuration management
 
-#### PR-MGT-2 — MSAC beyond writes (`SA-RANOAM-1` reach; MGT-2.1 to 2.5 done: `HISTORY.md` PR-MGT-2)
+#### PR-MGT-2 — MSAC beyond writes (`SA-RANOAM-1` reach; MGT-2.1 to 2.6 done: `HISTORY.md` PR-MGT-2)
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| MGT-2.6 | Decide whether the list routes (alarms, subscriptions, jobs, endpoints, KPIs, the registries) and subscription deletes are in MSAC's reach, and with what target (a list has none; the scope filter of `PR-SEC-10` is the model) | A decision, then tests | The owner |
 | MGT-2.7 | Make the switch the default (`RAN_NF_OAM_MSAC_REACH`), once operators have had a release to add `read` rules to the Identities they made for writes | Default on, a note under `### Changed` | A release after 0.7.0 |
 
 #### PR-MGT-3 — Dry run (done: `HISTORY.md` §10)

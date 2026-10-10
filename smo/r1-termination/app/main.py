@@ -1,14 +1,21 @@
-"""R1 Termination — the gateway every rApp connects through.
+"""R1 Termination: the gateway every rApp, the GUI backend and every SMO module reaches the other modules through.
 
-Carries no domain schema of its own (SMO Design v1.3 section 3.3). Its whole
-job is TLS/auth termination, routing, and the version-independent Bootstrap
-endpoint. Route table and Bootstrap semantics per Foundational Platform LLD
-section 4.
+What it is: the single FastAPI application of this module. It answers its own probes and `/bootstrap`, and turns every other request into one
+authenticated, role-checked, rate-limited, audited forward to the backend named by the first path segment (`ROUTES`), or, for
+`/rapps/{instanceId}/operator/...`, to the operator API a rApp instance registered (`operator_api.py`). It carries no domain schema (SMO Design v1.3
+section 3.3); route table and Bootstrap semantics are Foundational Platform LLD section 4. Phase 1 implements it as a thin reverse proxy, not a gateway
+product (Kong etc. is a REFERENCE option, not adopted, per the Repo Map blueprint) so the SMO runs as one docker-compose stack.
 
-Phase 1: implemented as a thin FastAPI reverse-proxy rather than a real
-gateway product (Kong etc. — flagged as a REFERENCE option, not adopted,
-per the Repo Map blueprint) so the whole SMO can run as one docker-compose
-stack without an extra infra dependency.
+Where it sits: called by rApps, the GUI BFF and `smo_shared.r1_client.R1Client` of every module; it calls SME (`POST /oauth2/introspect`, directly, never
+through itself), the module named by the prefix, and rApp Management (to resolve an operator API). `introspection_cache.py` holds the optional cache of
+SME's answers. The policy it applies lives in `smo_shared` (`roles`, `killswitch`, `scope`, `ratelimit`, `audit`, `bodylimit`), not here.
+
+What it owns: the order of the checks in `_proxy` and the headers it forwards. What it deliberately does not own: any data. The only state is in memory
+(rate buckets unless `R1_RATE_STORE=postgres`, the introspection cache) plus the rows it writes to the shared audit chain and reads from the kill-switch table.
+
+Before editing: the order in `_proxy` is part of the security design (authenticate, rate-limit, reject an unresolved path, role policy, kill switch, forward);
+every identity header a caller sends (`X-R1-Role`, `X-R1-Invoker-Id`, the on-behalf and scope headers) is dropped and replaced by the gateway's own value, so
+a backend can trust them; a new route-table entry also needs the role lists in `smo_shared/roles.py` checked.
 """
 
 import hmac
@@ -50,9 +57,8 @@ app = FastAPI(title="R1 Termination")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
 install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
 # /health (with /live, /ready and /version) and /bootstrap are this gateway's own exemptions (see
-# below: the probes are answered ahead of _authorized entirely, /bootstrap is "No auth (network-isolated)") — every other
-# path here is the catch-all proxy route, which really does call
-# _authorized() on every request.
+# below: the probes are answered ahead of the token check entirely, /bootstrap is "No auth (network-isolated)") — every other
+# path here is the catch-all proxy route, which really does introspect the token (`_introspect_token`) on every request.
 apply_r1_gateway_security(app, public_paths=frozenset({"/health", "/live", "/ready", "/version", "/bootstrap"}))
 # This gateway is the true origin point for external traffic: a caller
 # that never sent its own X-Correlation-ID gets one assigned here, which
@@ -77,7 +83,10 @@ _limiter: TokenBuckets | SharedTokenBuckets = SharedTokenBuckets(_rate, _burst) 
 
 
 async def _take_budget(caller: str) -> int | None:
-    """The limiter's answer for `caller`; the shared one is a database round trip, so it runs off the event loop."""
+    """Takes one request from `caller`'s budget: None when allowed, else the whole seconds to wait (the `Retry-After` of the 429).
+
+    The shared limiter (`R1_RATE_STORE=postgres`) is a database round trip, so it runs in a worker thread to keep the event loop free; the in-process one is called directly.
+    """
     if _limiter.blocking:
         return await run_in_threadpool(_limiter.take, caller)
     return _limiter.take(caller)
@@ -86,6 +95,10 @@ async def _take_budget(caller: str) -> int | None:
 # Introspection cache (PR-SEC-5.4): R1_INTROSPECTION_CACHE_SECONDS (read on every call; default 0 = off, every request asks SME as before) is how long an answer of SME is
 # reused, R1_INTROSPECTION_CACHE_MAX_ENTRIES (read once at start, default 10000) bounds it. See introspection_cache.py for the promises and the revocation bound.
 def _cache_seconds() -> float:
+    """The introspection cache lifetime in seconds from `R1_INTROSPECTION_CACHE_SECONDS`; 0.0 means the cache is off.
+
+    Read on every call so a setting changed at run time applies. A negative value is treated as 0; a value that is not a number logs a warning and also switches the cache off.
+    """
     try:
         return max(0.0, float(os.environ.get("R1_INTROSPECTION_CACHE_SECONDS", "0")))
     except ValueError:
@@ -94,6 +107,7 @@ def _cache_seconds() -> float:
 
 
 def _cache_max_entries() -> int:
+    """The capacity of the introspection cache from `R1_INTROSPECTION_CACHE_MAX_ENTRIES`, or the default when the value is not an integer. Read once, when the cache object is built."""
     try:
         return int(os.environ.get("R1_INTROSPECTION_CACHE_MAX_ENTRIES", str(DEFAULT_MAX_ENTRIES)))
     except ValueError:
@@ -134,7 +148,8 @@ ROUTES = {
     # The sample rApps' own operator APIs are no longer routes of this table: a rApp instance registers the base URL of its operator API at rApp Management
     # and `/rapps/{instanceId}/operator/...` (operator_api.py, handled in `_proxy`) is resolved to it, so a rApp onboarded at run time is reachable without a change here.
 }
-# PR-SEC-2: with SMO_MTLS=on every backend is reached over https (an http:// address, default or set, becomes https://)
+# PR-SEC-2: with SMO_MTLS=on every backend is reached over https (an http:// address, default or set, becomes https://).
+# Built once at import: tests that change the environment run the gateway in a fresh interpreter (tests/test_mtls_routes.py).
 ROUTES.update({prefix: mtls.http_url(url) for prefix, url in ROUTES.items()})
 
 
@@ -174,6 +189,10 @@ def bootstrap(x_bootstrap_key: str | None = Header(default=None, description="Th
     `R1_BOOTSTRAP_KEY[_FILE]` set (PR-SEC-9.3, off by default) the caller must also send that key as `X-Bootstrap-Key` (compared in constant
     time), else 401; the key is a shared secret an operator hands to the rApps, a gate against scanners, not an identity.
     """
+    # Maintainer note (not published). Answers 200 with the two endpoint entries, or 401 `UNAUTHORIZED` (a body without any address) when a key is configured and
+    # the header is missing or wrong. The key is encoded to bytes before `hmac.compare_digest` so a non-ASCII header is a plain mismatch, not a TypeError.
+    # It needs no token because it is declared before the catch-all `proxy`, which is the only place a token is checked (otherwise `/bootstrap` would be
+    # read as an unknown module prefix); `public_paths` in `apply_r1_gateway_security` only makes the OpenAPI document say `security: []` for it.
     if BOOTSTRAP_KEY is not None and not hmac.compare_digest((x_bootstrap_key or "").encode(), BOOTSTRAP_KEY.encode()):
         return JSONResponse(status_code=401, content={"title": "UNAUTHORIZED", "status": 401, "detail": "this gateway asks for the bootstrap key (X-Bootstrap-Key)"})
     if PUBLIC_BASE_URL:
@@ -208,6 +227,7 @@ class ProxiedError(BaseModel):
     detail: Any
 
 
+# The error responses declared on the proxy route for the OpenAPI document: the gateway's own refusals or a module's error passed through.
 _GATEWAY_ERRORS: dict[int | str, dict[str, Any]] = {code: {"model": GatewayProblem | ProxiedError, "description": "refused or failed at the gateway, or a module's own error passed through"}
                    for code in (401, 403, 404, 429, 502, 503, 504)}
 
@@ -227,9 +247,13 @@ async def proxy(full_path: str, request: Request):
     this build, so pinning it to a fixed string is a pure stability fix,
     not a behavior change.
     """
+    # Maintainer note (not published; the docstring above is). Answers whatever `_proxy` answers, see its docstring for the status codes. After the
+    # response is built, a revocation that went through this gateway evicts the cached introspection answers (`_drop_revoked_tokens`), and an authenticated
+    # change (POST/PUT/PATCH/DELETE, `roles.CHANGES`) gets an audit row (PR-SEC-11) written as a background task, after the response is sent, so a slow or
+    # unreachable database delays or fails no call. The row never holds the body. Reads are not recorded.
     response = await _proxy(full_path, request)
     _drop_revoked_tokens(request.method, full_path, response.status_code)
-    audited = getattr(request.state, "audit", None)          # set once the caller is known: an unauthenticated or rate-limited call is not recorded
+    audited = getattr(request.state, "audit", None)          # set once the caller is known: an unauthenticated call is not recorded
     if audited is not None and request.method in roles.CHANGES and audit_enabled():
         invoker, role, refused, on_behalf_of = audited
         result = f"REFUSED:{refused}" if refused else str(response.status_code)
@@ -255,7 +279,12 @@ def _drop_revoked_tokens(method: str, full_path: str, status: int) -> None:
 
 
 def _path_problem(rest: str) -> bool:
-    """True for a path the policy and the backend could read differently (see the caller)."""
+    """True when `rest` (the path after the module prefix) is not in resolved form, so the caller gets a 400 instead of a forward.
+
+    The role policy and the kill switch match the path as received, while a backend resolves `.` and `..` and the framework redirects a trailing slash; a path
+    that differs between those two readings could pass the policy for one route and reach another. A backslash or NUL byte is refused for the same reason.
+    One trailing slash is tolerated (the caller strips it afterwards); an empty, `.` or `..` segment anywhere else is not.
+    """
     if "\\" in rest or "\x00" in rest:
         return True
     parts = rest.split("/")
@@ -265,7 +294,14 @@ def _path_problem(rest: str) -> bool:
 
 
 async def _proxy(full_path: str, request: Request):
-    """The proxy itself (`proxy` above adds the audit record): authenticates, applies the role policy, forwards."""
+    """The proxy itself (`proxy` adds the audit record): authenticates, applies the role policy and the kill switch, forwards. Returns the response to send.
+
+    Order of the checks, which the caller sees as status codes: 404 `NO_ROUTE` (unknown prefix, or `/metrics` of a module, which is for the scraper only) ->
+    503 `AUTH_SERVICE_UNAVAILABLE` (SME could not say) -> 401 `UNAUTHORIZED` -> 429 `RATE_LIMITED` -> 400 `INVALID_PATH` -> 403 `ROLE_NOT_PERMITTED` (enforce
+    mode) -> 403 `RAPP_KILLED` / 503 `KILL_SWITCH_UNAVAILABLE` (changes by a stopped rApp) -> the forward (504 `UPSTREAM_TIMEOUT`, 502 `UPSTREAM_UNAVAILABLE`, else the
+    backend's own status). The budget is spent only after the token is accepted, so a refused anonymous request spends nobody's. It records, in
+    `request.state.audit`, who the caller is and, once refused, why, for `proxy` to write the audit row. A dynamic `/rapps/...` path goes to `_forward_operator_api`.
+    """
     segments = full_path.split("/", 1)
     prefix = "/" + segments[0]
     if segments[1:] == ["metrics"]:
@@ -286,6 +322,8 @@ async def _proxy(full_path: str, request: Request):
     if caller is None:
         return JSONResponse(status_code=401, content={"title": "UNAUTHORIZED", "status": 401})
     invoker_id, role, caller_scope = caller
+    # From here the caller is known, so `proxy` writes an audit row for a change (a refusal below replaces the `None` with its code). Set before the rate
+    # limit and the path check, so a 429 or a 400 of an authenticated change is recorded too; only an unauthenticated call (401/503 above) is not.
     request.state.audit = (invoker_id, role, None, request.headers.get(ON_BEHALF_OF_HEADER) if role == roles.ROLE_INTERNAL else None)
     wait = await _take_budget(invoker_id or "anonymous")
     if wait is not None:
@@ -339,7 +377,7 @@ async def _proxy(full_path: str, request: Request):
 
     # (rest_of_path was worked out above, for the role policy)
     # TLS is terminated at the ingress in front of this container (Phase 1:
-    # docker-compose network boundary); with SMO_MTLS=on the hop to the backend is mutual TLS (PR-SEC-2) — everything past _authorized above
+    # docker-compose network boundary); with SMO_MTLS=on the hop to the backend is mutual TLS (PR-SEC-2) — everything past the token check above
     # is just forwarding the already-authenticated request.
     body = await request.body()
     if dynamic:
@@ -400,6 +438,7 @@ _OPERATOR_API_DROP_RESPONSE = frozenset({"connection", "keep-alive", "transfer-e
 
 
 def _problem(status: int, title: str, detail: str) -> JSONResponse:
+    """A gateway-made error response in the gateway's RFC 7807 shape (`title`, `status`, `detail` at the top level, not under `detail`)."""
     return JSONResponse(status_code=status, content={"title": title, "status": status, "detail": detail})
 
 
@@ -493,6 +532,7 @@ async def _introspect_token(request: Request) -> Caller | None:
     if not token:
         return None
     ttl = _cache_seconds()
+    # Read before asking SME: `put` below refuses to store an answer if a revocation evicted entries in between (the answer may predate it).
     generation = _introspection_cache.generation
     if ttl > 0:
         found, cached = _introspection_cache.get(token)
@@ -506,7 +546,7 @@ async def _introspect_token(request: Request) -> Caller | None:
         except httpx.HTTPError as exc:
             raise IntrospectionUnavailable from exc
     if resp.status_code >= 500:
-        raise IntrospectionUnavailable
+        raise IntrospectionUnavailable          # a 5xx is "cannot say", not "inactive": never cached, and the caller gets a 503 rather than a 401
     if resp.status_code != 200 or resp.json().get("active") is not True:
         if ttl > 0:
             _introspection_cache.put(token, None, min(ttl, NEGATIVE_SECONDS), generation)
@@ -520,10 +560,11 @@ async def _introspect_token(request: Request) -> Caller | None:
     if ttl > 0:
         # never past the token's own end of life (SME's `exp`, when it says)
         exp = body.get("exp")
-        life = ttl if not isinstance(exp, int) or isinstance(exp, bool) else min(ttl, exp - time.time())
+        life = ttl if not isinstance(exp, int) or isinstance(exp, bool) else min(ttl, exp - time.time())     # bool is an int in Python: `true` is not an expiry
         _introspection_cache.put(token, answer, life, generation)
     return answer
 
 
 async def _authorized(request: Request) -> bool:
+    """True when the request carries a bearer token SME reports as active. Not called by the gateway itself: `_proxy` calls `_introspect_token` directly, because it needs the role and scope too."""
     return await _introspect(request) is not None

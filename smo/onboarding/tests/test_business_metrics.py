@@ -1,4 +1,7 @@
-"""PR-OBS-4: `smo_rapp_packages{state}` follows the application_package table."""
+"""The `smo_rapp_packages{state}` gauge (PR-OBS-4) follows the application_package table.
+
+Imports `app.main` so that importing the app registers the gauge, then reads it directly. Run: `cd smo/onboarding && PYTHONPATH=.:../shared python -m pytest tests/test_business_metrics.py -q`.
+"""
 
 from sqlalchemy import Column, Table, Uuid, create_engine
 from sqlalchemy.orm import sessionmaker
@@ -13,6 +16,7 @@ from app.statemachine import PackageState
 
 
 def test_packages_are_counted_by_state_with_every_state_present():
+    """Packages are counted per state, and every PackageState value appears as a label, including those with a count of zero."""
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     if "nf_deployment_descriptor" not in Base.metadata.tables:
         Table("nf_deployment_descriptor", Base.metadata, Column("nf_deployment_descriptor_id", Uuid, primary_key=True))

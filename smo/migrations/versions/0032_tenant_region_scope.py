@@ -24,6 +24,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add the nullable region and tenant columns (with an index each) to `managed_entity`, and the nullable scope-claim columns of the approval, invoker and rApp instance tables; every statement tolerates a rerun."""
     op.execute("ALTER TABLE ran_nf_oam.managed_entity ADD COLUMN IF NOT EXISTS region VARCHAR")
     op.execute("ALTER TABLE ran_nf_oam.managed_entity ADD COLUMN IF NOT EXISTS tenant VARCHAR")
     op.execute("CREATE INDEX IF NOT EXISTS ix_managed_entity_region ON ran_nf_oam.managed_entity (region)")
@@ -35,6 +36,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop the indexes and the columns, in reverse order."""
     op.execute("ALTER TABLE rapp_mgmt.rapp_instance_version DROP COLUMN IF EXISTS previous_authz_scope")
     op.execute("ALTER TABLE rapp_mgmt.rapp_instance DROP COLUMN IF EXISTS authz_scope")
     op.execute("ALTER TABLE sme.invoker_registration DROP COLUMN IF EXISTS authz_scope")

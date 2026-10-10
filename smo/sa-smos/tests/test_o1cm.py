@@ -1,9 +1,8 @@
-"""Tests for SA SMOS's generic O1-CM intent handler (Wave 8, app/o1cm.py).
-Run with: pytest smo/sa-smos/tests -q
+"""The generic O1-CM intent handler of SA SMOS (`app/o1cm.py`): registration, enactment of an Intent as DME actions, and the fulfilment report.
 
-Intent Service and DME are faked at the R1Client boundary; the real round
-trip (Intent Service -> SA SMOS -> DME -> RAN NF OAM -> mock O1 adaptor) is
-tests_integration/test_cross_service.py's own O1-CM test.
+Intent Service and DME are faked at the R1Client boundary by the `platform` fixture; the real round trip (Intent Service, SA SMOS, DME, RAN NF OAM, mock O1 adaptor) is tested in
+`tests_integration/test_cross_service.py`. The `client` fixture and `FakeR1Response` are imported from `test_main.py`, so this file needs `tests/` on the import path (pytest's default when run from
+`smo/sa-smos`). Run: `cd smo/sa-smos && PYTHONPATH=.:../shared python -m pytest tests/test_o1cm.py -q`.
 """
 
 import uuid
@@ -14,6 +13,8 @@ from test_main import FakeR1Response, client  # noqa: F401  (pytest fixture)
 
 
 def _intent(intent_id, targets, instance="gnb-du-01", cells=("101",), admin="ACTIVATED", rmih="sa-smos"):
+    """Builds an Intent as Intent Service returns it: one RAN_SUBNETWORK expectation `e1` with `targets`, the managed element `instance`, a Cell context of `cells`, the admin state and the owning RMIH.
+    """
     obj = {"objectType": "RAN_SUBNETWORK"}
     if instance:
         obj["objectInstance"] = instance
@@ -25,7 +26,11 @@ def _intent(intent_id, targets, instance="gnb-du-01", cells=("101",), admin="ACT
 
 @pytest.fixture
 def platform(monkeypatch):
-    """Fake Intent Service + DME: serves intents, records actions/reports."""
+    """Fakes Intent Service and DME for the O1-CM handler and returns the state the tests read and set.
+
+    `state["intents"]` holds the intents served by id; `posts` and `deletes` record the calls; `action_status` is the status DME gives every new action (default COMPLETED). The CM-target lookup answers an empty
+    registry, so the handler uses its defaults.
+    """
     state = {"intents": {}, "posts": [], "deletes": [], "action_status": "COMPLETED"}
 
     def get(self, path, **kw):
@@ -53,6 +58,7 @@ LOCK = {"targetName": "NRCellDU.administrativeState", "targetCondition": "IS_EQU
 
 
 def test_registration_declares_the_cm_targets(client, platform):
+    """Registration deletes any earlier RMIH first (idempotent), posts the default CM targets in order, and refuses a target name without a '.'."""
     resp = client.post("/o1-cm-handler/registration", json={})
     assert resp.status_code == 201
     path, body = platform["posts"][0]
@@ -66,6 +72,8 @@ def test_registration_declares_the_cm_targets(client, platform):
 
 
 def test_enacts_each_cell_and_reports_fulfilled(client, platform):
+    """One expectation with two cells gives one DME action with a change per cell, carrying the intent and expectation ids as source context, and a FULFILLED report with the achieved value.
+    """
     intent_id = uuid.uuid4()
     platform["intents"][str(intent_id)] = _intent(intent_id, [LOCK], cells=("101", "102"))
     enactment = client.post("/o1-cm-handler/intents", json={"intentId": str(intent_id)}).json()
@@ -83,6 +91,7 @@ def test_enacts_each_cell_and_reports_fulfilled(client, platform):
 
 
 def test_failed_config_job_reports_degraded(client, platform):
+    """A DME action whose status is not COMPLETED makes the intent NOT_FULFILLED and DEGRADED, with the action status in the reasons."""
     platform["action_status"] = "PARTIAL_SUCCESS"
     intent_id = uuid.uuid4()
     platform["intents"][str(intent_id)] = _intent(intent_id, [LOCK])
@@ -92,6 +101,7 @@ def test_failed_config_job_reports_degraded(client, platform):
     assert info["notFullfilledState"] == "DEGRADED" and "PARTIAL_SUCCESS" in info["notFulfilledReasons"][0]
 
 
+# One row per reason a target is not enacted: not a CM target, a condition other than IS_EQUAL_TO, a value outside the allowed list, and no managed element.
 @pytest.mark.parametrize("target, instance, reason", [
     ({"targetName": "RANEnergyConsumption", "targetCondition": "IS_LESS_THAN", "targetValueRange": 1}, "gnb", "not a CM target"),
     ({**LOCK, "targetCondition": "IS_ONE_OF"}, "gnb", "IS_EQUAL_TO"),
@@ -99,6 +109,7 @@ def test_failed_config_job_reports_degraded(client, platform):
     (LOCK, None, "objectInstance"),
 ])
 def test_unenactable_targets_are_reported_not_written(client, platform, target, instance, reason):
+    """An unsupported target is reported with its reason, the intent is NOT_FULFILLED, and no DME action is posted."""
     intent_id = uuid.uuid4()
     platform["intents"][str(intent_id)] = _intent(intent_id, [target], instance=instance)
     enactment = client.post("/o1-cm-handler/intents", json={"intentId": str(intent_id)}).json()
@@ -108,6 +119,7 @@ def test_unenactable_targets_are_reported_not_written(client, platform, target, 
 
 
 def test_deactivated_foreign_and_unknown_intents(client, platform):
+    """A DEACTIVATED intent is SKIPPED, one addressed to another RMIH is 422, an unknown one is 404, and none of them records an enactment."""
     a, b = uuid.uuid4(), uuid.uuid4()
     platform["intents"][str(a)] = _intent(a, [LOCK], admin="DEACTIVATED")
     platform["intents"][str(b)] = _intent(b, [LOCK], rmih="so-smos")
@@ -118,9 +130,8 @@ def test_deactivated_foreign_and_unknown_intents(client, platform):
 
 
 def test_a_re_pushed_intent_replays_the_same_action_id(client, platform, monkeypatch):
-    """Wave 10.1 (W10-18): the DME action id is derived from the intent and
-    expectation; when DME reports the replay IGNORED, the original outcome
-    still decides fulfilment."""
+    """The DME action id is derived from the intent and expectation (uuid5), so a re-push sends the same id; when DME answers the replay IGNORED, the original status still decides fulfilment.
+    """
     intent_id = uuid.uuid4()
     platform["intents"][str(intent_id)] = _intent(intent_id, [LOCK], cells=("101",))
     client.post("/o1-cm-handler/intents", json={"intentId": str(intent_id)})
@@ -140,7 +151,7 @@ def test_a_re_pushed_intent_replays_the_same_action_id(client, platform, monkeyp
 
 
 def test_a_cio_target_writes_the_offset_on_each_named_relation(client, platform):
-    """Wave 10.2: Cell-context values name the relations (NRCellRelation=<id>)."""
+    """A cell individual offset target writes the six-value offset on each relation named by the Cell context (NRCellRelation=<id>)."""
     intent_id = uuid.uuid4()
     cio = {"targetName": "NRCellRelation.cellIndividualOffset", "targetCondition": "IS_EQUAL_TO",
            "targetValueRange": [2, 2, 2, 2, 2, 2]}
@@ -152,7 +163,7 @@ def test_a_cio_target_writes_the_offset_on_each_named_relation(client, platform)
 
 
 def test_tilt_and_power_targets_write_each_named_cell(client, platform):
-    """Wave 10.3: one integer value per expectation, on the IOC named by the target."""
+    """A digital tilt target writes its integer value on the IOC the target names, for each named cell (CommonBeamformingFunction=<cell>)."""
     intent_id = uuid.uuid4()
     tilt = {"targetName": "CommonBeamformingFunction.digitalTilt", "targetCondition": "IS_EQUAL_TO", "targetValueRange": 70}
     platform["intents"][str(intent_id)] = _intent(intent_id, [tilt], cells=("301",))
