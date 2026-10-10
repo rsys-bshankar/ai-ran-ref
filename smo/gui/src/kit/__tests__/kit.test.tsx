@@ -34,7 +34,7 @@ describe("Pager", () => {
 describe("ServerTable", () => {
   // Paging and filtering are the backend's: the table sends limit/offset and the filter, and Next asks for the next offset.
   it("asks the module for one page with its filters and pages forward on Next", async () => {
-    const calls = fakeBff({ "GET /smo/ran-nf-oam/alarms": (c) => ({ items: [{ id: `a${c.query.get("offset")}` }], total: 120, limit: 50, offset: Number(c.query.get("offset")) }) });
+    const calls = fakeBff({ "GET /smo/ran-nf-oam/alarms": (c: { query: URLSearchParams }) => ({ items: [{ id: `a${c.query.get("offset")}` }], total: 120, limit: 50, offset: Number(c.query.get("offset")) }) });
     const { container } = await mountWith(<ServerTable<{ id: string }> path="/ran-nf-oam/alarms" query={{ severity: "critical" }} rowKey={(r) => r.id}
       columns={[{ header: "Id", render: (r) => r.id }]} />);
     await settle();

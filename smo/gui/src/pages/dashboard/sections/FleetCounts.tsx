@@ -1,0 +1,42 @@
+/** Fleet (`dashboard.fleet`, handoff `Main.dc.html`): rApp packages and instances, NF deployments and intents by state, AI/ML models, training jobs
+ * and managed elements, every number a true count from the summary (`byState`, SCALE.md P2). The pre-redesign Fleet box also counted O1 adaptor
+ * endpoints by health and RAN analytics reports by type from the first list page; no summary count exists for those, so they are left out. */
+import { Link } from "react-router-dom";
+
+import { Card, StateBadge } from "../../../components/ui";
+import { byState, count, type Summary } from "../../../data/summary";
+import { formatCount } from "../../../kit/Kpi";
+import { useDashboardSummary } from "../data/queries";
+
+/** One fleet row: label, total, and a badge per state with a non-zero count. */
+function Row({ label, to, total, states }: { label: string; to: string; total: number | null; states?: Record<string, number> }) {
+  return (
+    <Link to={to} className="summary">
+      <div className="row between"><span>{label}</span><strong className="num">{formatCount(total)}</strong></div>
+      {states && Object.keys(states).length > 0 && (
+        <div className="summary-badges">{Object.entries(states).map(([k, v]) => <span key={k}><StateBadge state={k} /> {formatCount(v)}</span>)}</div>
+      )}
+    </Link>
+  );
+}
+
+/** A row's props for a `prefix.STATE` family of counts. */
+const family = (s: Summary | undefined, prefix: string) => ({ total: count(s, `${prefix}.total`), states: byState(s, prefix) });
+
+/** The card. */
+export function FleetCounts() {
+  const s = useDashboardSummary().data;
+  return (
+    <Card section="dashboard.fleet" title="Fleet" sub="counts by state">
+      <div className="stack" style={{ gap: 8 }}>
+        <Row label="rApp instances" to="/rapps#instances" {...family(s, "instances")} />
+        <Row label="rApp packages" to="/rapps#packages" {...family(s, "packages")} />
+        <Row label="NF deployments (NFO)" to="/infrastructure#nfo" {...family(s, "deployments")} />
+        <Row label="Intents" to="/policy#intents" {...family(s, "intents")} />
+        <Row label="AI/ML models" to="/aiml#models" total={count(s, "models.total")} />
+        <Row label="Training jobs" to="/aiml#training" total={count(s, "trainingJobs.total")} />
+        <Row label="Managed elements" to="/topology" total={count(s, "elements.total")} />
+      </div>
+    </Card>
+  );
+}
