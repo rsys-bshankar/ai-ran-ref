@@ -23,6 +23,8 @@ export function NewCampaignForm({ onStarted }: { onStarted: (id: string) => void
   const dry = useSmoAction();
   const start = useSmoAction();
   const built = campaignBody(f);
+  // the form's first problem is shown once the operator has changed something: a form nobody has touched yet is not an error
+  const touched = f !== EMPTY_FORM;
   const key = built.ok ? JSON.stringify(built.body) : "";
   const fresh = preview !== null && preview.key === key;
   const set = (patch: Partial<CampaignForm>) => setF({ ...f, ...patch });
@@ -69,9 +71,9 @@ export function NewCampaignForm({ onStarted }: { onStarted: (id: string) => void
               </select>
             </Field>
           </div>
-          {!built.ok && <div className="error-box" role="alert">{built.error}</div>}
+          {touched && !built.ok && <div className="error-box" role="alert">{built.error}</div>}
           <div className="row end">
-            <button type="button" className="btn" disabled={!built.ok || dry.isPending}
+            <button type="button" className="btn" disabled={!built.ok || dry.isPending} title={built.ok ? undefined : built.error}
               onClick={() => built.ok && dry.mutate({ method: "POST", path: CAMPAIGNS_PATH, json: { ...built.body, dryRun: true } },
                 { onSuccess: (d) => setPreview({ key, plan: d as CampaignDryRun }) })}>
               {dry.isPending ? "…" : "Dry run"}

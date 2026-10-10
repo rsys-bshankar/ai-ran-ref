@@ -116,6 +116,20 @@ describe("Software page", () => {
     expect(posts[0].body).toMatchObject({ dryRun: true, name: "upgrade", selector: { vendorName: "vendor-a" } });
     expect(posts[1].body).toEqual({ name: "upgrade", onGateFailure: "halt", rollbackOrder: "reverse", selector: { vendorName: "vendor-a" }, wavePauseSeconds: 0, gateMaxNewAlarms: 0 });
   });
+
+  // A form nobody has touched shows no error (its Dry run is off and says why on hover); the first problem appears once a field changed.
+  it("waits for the operator before it names the form's first problem", async () => {
+    window.location.hash = "#new";
+    const { container } = await open("operator");
+    await settle();
+    const form = container.querySelector("[data-section='software.new']")!;
+    expect(form.querySelector("[role=alert]")).toBeNull();
+    const dryRun = byText(form, "button", "Dry run") as HTMLButtonElement;
+    expect(dryRun.disabled).toBe(true);
+    expect(dryRun.title).toBe("Give the campaign a name");
+    await type(form.querySelectorAll("input")[0] as HTMLInputElement, "upgrade");
+    expect(form.querySelector("[role=alert]")?.textContent).toBe("Select by at least one of vendor, region, entity type, tenant");
+  });
 });
 
 describe("campaign rules", () => {

@@ -33,6 +33,7 @@ page's markup changes, this script and the README captions change with it.
 """
 
 import argparse
+import json
 import os
 import re
 import shlex
@@ -1071,12 +1072,39 @@ print(len(ids))
 """
 
 
+# The rApp's part of a two-person approval (#401), played inside the compose network as DEMO_RUNBOOK's CM-write step does: a write by the
+# invoker `two-person-demo` (the role R1 would stamp), which RAN NF OAM parks because an admin's policy asks two people for it. argv[1]: an element.
+TWO_PERSON_WRITE = """
+import json, sys, httpx
+r = httpx.post("http://ran-nf-oam:8000/config-jobs", headers={"X-R1-Invoker-Id": "two-person-demo", "X-R1-Role": "rapp"}, json={
+    "requestedBy": "two-person-demo", "accessScope": "cell",
+    "decision": {"rationale": "Wake cell 2: load above the energy-saving threshold", "modelVersion": "es-v3"},
+    "changes": [{"managedElementRef": sys.argv[1], "managedFunctionRef": "NRCellDU=2", "attributeChanges": {"administrativeState": "UNLOCKED"}}]})
+r.raise_for_status()
+print(json.dumps(r.json()))
+"""
+
+
+def seed_two_person_approval(w: Walk, element: str) -> str:
+    """A request waiting for its second approver (README: Approvals, two-person approval): the admin asks two people for the invoker
+    `two-person-demo` (`PUT /rapp-approval-policy/{invoker}`, `requiredApprovals: 2`), the rApp's write is parked (`TWO_PERSON_WRITE`), and the
+    operator gives the first approval through the BFF, which records it under the signed-in user. Returns the approval id."""
+    w.api("PUT", "/ran-nf-oam/rapp-approval-policy/two-person-demo",
+          json={"requestedBy": "smo-gui", "timeoutSeconds": 86400, "onTimeout": "EXPIRE", "requiredApprovals": 2})
+    done = subprocess.run([*w.compose, "exec", "-T", "r1-termination", "python3", "-c", TWO_PERSON_WRITE, element], cwd=SMO, capture_output=True, text=True)
+    if done.returncode != 0:
+        raise RuntimeError(f"the parked write failed: {done.stderr[-300:]}")
+    approval_id = json.loads(done.stdout.strip().splitlines()[-1])["approvalId"]
+    w.api("POST", f"/ran-nf-oam/rapp-approvals/{approval_id}/approve", json={"decidedBy": "smo-gui", "reason": "Load figures checked"}, user="operator")
+    return approval_id
+
+
 def seed_console(w: Walk):
     """Gives the stack what the console's later features read and the demos do not make: a region and a site cluster on each demo element
     (`PUT /managed-entities/{me}/scope` and `/site-cluster`, admin), utilisation readings for the FOCOM resources (`UTILISATION_PRODUCER`,
     run inside r1-termination as the runbook does), one onboarding template for the demo elements' type (`PUT /onboarding-templates/{name}`,
-    admin, MGT-14.6) so Configuration → Element onboarding shows one, and one decisions export job (`POST /api/exports`) so the Exports page
-    has a row."""
+    admin, MGT-14.6) so Configuration → Element onboarding shows one, a request waiting for its second approver (`seed_two_person_approval`),
+    and one decisions export job (`POST /api/exports`) so the Exports page has a row."""
     elements = w.items("/ran-nf-oam/managed-entities")
     for entity, (region, cluster) in zip(elements, DEMO_PLACES * (len(elements) // len(DEMO_PLACES) + 1)):
         ref = entity["managedElementRef"]
@@ -1087,6 +1115,7 @@ def seed_console(w: Walk):
         "entityType": entity_type, "vendorName": None, "description": "Unlock the DU function of a new element",
         "changes": [{"managedFunctionRef": "GNBDUFunction=1", "attributeChanges": {"administrativeState": "UNLOCKED"}, "operation": "merge"}],
         "softwareBaseline": None, "requireBaseline": False, "autoApply": False, "enabled": True})
+    seed_two_person_approval(w, elements[0]["managedElementRef"])
     done = subprocess.run([*w.compose, "exec", "-T", "r1-termination", "python3", "-c", UTILISATION_PRODUCER], cwd=SMO, capture_output=True, text=True)
     if done.returncode != 0:
         raise RuntimeError(f"utilisation producer failed: {done.stderr[-300:]}")
@@ -1113,6 +1142,15 @@ def capture_pages(w: Walk):
 
         w.step(name, one)
     p = w.page()
+
+    def two_person():
+        # the request waiting for its second approver, opened from the queue (the operator gave the first approval)
+        w.goto(p, "/approvals", 3500)
+        p.get_by_role("button", name="Review…").first.click()
+        w.settle(p, 2500)
+        w.shot(p, "pages/approvals-two-person")
+
+    w.step("pages/approvals-two-person", two_person)
     # the demos' rApps: those whose own operator API is registered draw their declared page
     rapps = [r for r in p.request.get(w.base + "/api/rapps", params={"limit": 50}).json()["items"] if r.get("hasPage") and r.get("operatorApiRegistered")]
     by_name = {r["name"]: r["instanceId"] for r in rapps}
