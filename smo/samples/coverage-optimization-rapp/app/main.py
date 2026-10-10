@@ -149,12 +149,22 @@ def _changes(inst: CoverageInstance, settings: dict[str, dict]) -> list[dict]:
             for cell, s in settings.items() for k, v in s.items()]
 
 
+def _decision(inst, execution_id: str, reason: str) -> dict:
+    """PR-AI-13: why this write is made, kept by RAN NF OAM as the decision record of the config job (and shown to a person who is asked to approve it): a
+    reference to this execution (its inputs are on the instance's operator page, not in the record), the version of the model that decided, and the reason in words.
+    The direct path of this rApp is a service-restoring write (a wake, a revert, a rollback, an operator override)."""
+    wanted = {"inputsRef": f"{RAPP_ID}:{inst.instance_id}:execution:{execution_id}", "modelVersion": inst.model_version,
+              "rationale": f"Restoring service: {reason}"}
+    return {k: v for k, v in wanted.items() if v}
+
+
 def _execute_direct(inst: CoverageInstance, settings: dict[str, dict], execution_id: str, reason: str) -> dict:
     action_id = str(uuid.uuid4())
     try:
         result = sdk.platform.execute_action(
             f"{RAPP_ID}:{inst.instance_id}", _changes(inst, settings), action_id=action_id,
-            source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason})
+            source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason},
+            decision=_decision(inst, execution_id, reason))
         return {"path": "DME_DIRECT", "actionId": result["actionId"], "forwardedJobId": result.get("forwardedJobId"),
                 "status": result["status"]}
     except SdkError as e:

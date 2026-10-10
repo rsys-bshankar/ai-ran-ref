@@ -243,10 +243,14 @@ def apply_approval_policy(inst: RAppInstance) -> None:
     policy could not be set, so an unreachable RAN NF OAM or a refused push is a 503 and the instance stays DEPLOYING. No policy: no call."""
     if not inst.approval_policy:
         return
+    wanted = inst.approval_policy.get("requiredApprovals", 1)
     try:
         resp = R1Client().put(f"/ran-nf-oam/rapp-approval-policy/{inst.oauth_client_id}", json={"requestedBy": "rapp-mgmt", **inst.approval_policy})
         pushed = resp.status_code == 200
-    except httpx.HTTPError:
+        if pushed and wanted > 1:
+            # a RAN NF OAM of the previous release ignores the field and would hold the instance's writes for ONE approval: only an answer that says two is accepted
+            pushed = resp.json().get("requiredApprovals") == wanted
+    except (httpx.HTTPError, ValueError, AttributeError):
         pushed = False
     if not pushed:
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE,

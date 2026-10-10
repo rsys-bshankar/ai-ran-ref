@@ -25,6 +25,7 @@ SUB = "ran_nf_oam.write_config_sub_change"
 
 
 def upgrade() -> None:
+    """Replace the status checks of `write_config_job` and `write_config_sub_change` with ones that also allow HALTED and REVERTED, the states a staged job uses."""
     op.execute(f"ALTER TABLE {JOB} DROP CONSTRAINT write_config_job_status_check")
     op.execute(f"ALTER TABLE {JOB} ADD CONSTRAINT write_config_job_status_check "
                "CHECK (status IN ('PENDING', 'PROCESSING', 'HALTED', 'COMPLETED', 'PARTIAL_SUCCESS', 'FAILED'))")
@@ -34,6 +35,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Move rows in the new states to the nearest old state, then put the old, narrower checks back."""
     # rows already in the new states would stop the old checks from being added: they are moved to the nearest old state first
     op.execute(f"UPDATE {JOB} SET status = 'PROCESSING' WHERE status = 'HALTED'")
     op.execute(f"UPDATE {SUB} SET status = 'APPLIED' WHERE status = 'REVERTED'")

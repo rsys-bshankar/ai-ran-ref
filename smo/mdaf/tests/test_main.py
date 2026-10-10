@@ -1,5 +1,11 @@
-"""Tests for MDAF's routes (RAN Analytics LLD section 1; TS 28.104 MDA NRM).
-Run with: pytest smo/mdaf/tests -q
+"""Tests of MDAF's producer-push surface: publishing and querying reports, subscriptions, subscriber notification through the
+outbox, DME source validation and threshold-gated notification. The TS 28.104 resources are in `test_mda.py` and the retention
+task in `test_tasks.py`.
+
+Run: `cd smo/mdaf && PYTHONPATH=.:../shared python -m pytest tests -q`. No Postgres: the tables, including the outbox table,
+are built on SQLite and `get_session` is overridden. DME is faked by patching `app.main.R1Client.get`. Webhooks are captured by
+patching `app.main.httpx.post`, which replaces `httpx.post` for the whole process and is what the outbox's sender calls.
+Fixtures `db_session_factory` and `client` are imported by the other test files.
 """
 
 import uuid
@@ -19,6 +25,7 @@ from app.models import MDAFReport, MDASubscription
 
 @pytest.fixture
 def db_session_factory():
+    """Creates every MDAF table and the outbox table on an in-memory SQLite engine and returns a session factory."""
     engine = make_test_engine()
     from app import models as mdaf_models
     Base.metadata.create_all(engine, tables=[
@@ -31,6 +38,7 @@ def db_session_factory():
 
 @pytest.fixture
 def client(db_session_factory):
+    """A TestClient whose `get_session` dependency yields sessions from `db_session_factory`."""
     def override_get_session():
         session = db_session_factory()
         try:
@@ -44,24 +52,21 @@ def client(db_session_factory):
 
 
 class FakeDmeResponse:
+    """Stands in for the DME answer; only `status_code` is read."""
     def __init__(self, status_code):
         self.status_code = status_code
 
 
 @pytest.fixture(autouse=True)
 def _dme_data_jobs_are_known_by_default(monkeypatch):
-    """Wave 3: publish_report's cross-service check
-    (docs/ARCHITECTURE.md's DME "MDAF sources from DME only" rule)
-    calls out to DME for every input_sources id. Every existing test uses
-    either an empty list or an arbitrary placeholder UUID never meant to
-    be a real negative-case test — defaulting the lookup to "found" keeps
-    those tests focused on what they actually test.
-    `test_publish_report_rejects_unknown_dme_input_source` overrides this.
+    """Autouse: makes every DME data job lookup answer 200, so tests that use placeholder source ids are not about DME. A test
+    of the unknown-source case patches it again.
     """
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeDmeResponse(200))
 
 
 def test_publish_and_query_report_by_analytics_type(client):
+    """A published report is listed by its analytics type and not under another."""
     dme_type = str(uuid.uuid4())
     resp = client.post("/reports", params={"analytics_type": "resource-utilization"},
                         json={"output": {"utilization": 0.7}, "input_sources": [dme_type]})
@@ -76,6 +81,7 @@ def test_publish_and_query_report_by_analytics_type(client):
 
 
 def test_subscribe_and_unsubscribe_analytics(client):
+    """A subscription can be created and deleted (204)."""
     sub = client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"}).json()
     assert "subscriptionId" in sub
     resp = client.delete(f"/subscriptions/{sub['subscriptionId']}")
@@ -83,19 +89,13 @@ def test_subscribe_and_unsubscribe_analytics(client):
 
 
 def test_unsubscribe_unknown_subscription_is_idempotent(client):
-    """unsubscribe_analytics's `if sub is not None` guard means deleting a
-    subscription that was never created (or already deleted) must not
-    raise — never exercised before this pass.
-    """
+    """Deleting a subscription that does not exist is 204, not an error."""
     resp = client.delete(f"/subscriptions/{uuid.uuid4()}")
     assert resp.status_code == 204
 
 
 def test_query_all_reports_without_filter_returns_everything(client):
-    """query_analytics_report's unfiltered path (no analytics_type query
-    param) was never exercised — only the filtered and empty-filtered
-    cases had coverage.
-    """
+    """Without an analytics type filter, `GET /reports` returns reports of every type."""
     client.post("/reports", params={"analytics_type": "coverage-issue-analysis"}, json={"output": {"a": 1}, "input_sources": []})
     client.post("/reports", params={"analytics_type": "resource-utilization"}, json={"output": {"b": 2}, "input_sources": []})
 
@@ -104,13 +104,7 @@ def test_query_all_reports_without_filter_returns_everything(client):
 
 
 def test_publish_report_persists_scope(client, db_session_factory):
-    """scope is an optional field on MDAFReport — never actually set to a
-    non-None value and read back before this pass. query_analytics_report's
-    own response view doesn't expose scope at all, so this reads the row
-    back from the DB directly, the same pattern
-    test_reregistering_same_producer_and_type_updates_in_place (now in
-    ran-analytics/tests) uses.
-    """
+    """The optional `scope` of a report is stored (the query view does not show it, so the row is read directly)."""
     resp = client.post("/reports", params={"analytics_type": "coverage-issue-analysis"},
                         json={"output": {"a": 1}, "input_sources": [], "scope": {"cellId": "cell-42"}})
     assert resp.status_code == 201
@@ -122,10 +116,7 @@ def test_publish_report_persists_scope(client, db_session_factory):
 
 
 def test_list_subscriptions_returns_active_subscription(client):
-    """HISTORY.md §5: no list/query endpoint for active
-    subscriptions existed at all — same gap as ran-analytics's own
-    producer list.
-    """
+    """A created subscription is listed with its analytics type and requester."""
     client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"})
 
     resp = client.get("/subscriptions")
@@ -137,6 +128,7 @@ def test_list_subscriptions_returns_active_subscription(client):
 
 
 def test_list_subscriptions_filters_by_analytics_type(client):
+    """The subscription list can be filtered by analytics type."""
     client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"})
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"})
 
@@ -146,6 +138,7 @@ def test_list_subscriptions_filters_by_analytics_type(client):
 
 
 def test_list_subscriptions_filters_by_requested_by(client):
+    """The subscription list can be filtered by requester."""
     client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"})
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "sa-smos"})
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"})
@@ -156,6 +149,7 @@ def test_list_subscriptions_filters_by_requested_by(client):
 
 
 def test_list_subscriptions_excludes_unsubscribed(client):
+    """A deleted subscription is no longer listed."""
     sub = client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"}).json()
     client.delete(f"/subscriptions/{sub['subscriptionId']}")
 
@@ -164,12 +158,7 @@ def test_list_subscriptions_excludes_unsubscribed(client):
 
 
 def test_publish_report_notifies_subscriber_with_a_notification_destination(client, monkeypatch):
-    """HISTORY.md §5: PublishAnalyticsReport's subscriber loop
-    was a deliberate no-op (`for sub in subs: pass`) — a matching
-    MDASubscription was looked up but never actually notified. This is
-    the headline fix — a published report now actually reaches a
-    matching subscriber's notificationDestination.
-    """
+    """A published report reaches the notification destination of a matching subscription, with the report id, type and output."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
@@ -185,10 +174,7 @@ def test_publish_report_notifies_subscriber_with_a_notification_destination(clie
 
 
 def test_publish_report_does_not_notify_subscriber_without_a_notification_destination(client, monkeypatch):
-    """A subscriber that never registered a notificationDestination is a
-    purely poll-based consumer (QueryAnalyticsReport) — left alone
-    rather than having a delivery target guessed for it.
-    """
+    """A subscription with no destination is a polling consumer and nothing is sent for it."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
@@ -199,6 +185,7 @@ def test_publish_report_does_not_notify_subscriber_without_a_notification_destin
 
 
 def test_publish_report_does_not_notify_subscriber_of_a_different_analytics_type(client, monkeypatch):
+    """A subscription is notified only for reports of its own analytics type."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
@@ -209,6 +196,7 @@ def test_publish_report_does_not_notify_subscriber_of_a_different_analytics_type
 
 
 def test_publish_report_notification_delivery_survives_unreachable_subscriber(client, monkeypatch):
+    """An unreachable subscriber does not fail the publish."""
     import httpx as httpx_module
 
     def raise_error(url, json=None, timeout=None):
@@ -223,6 +211,7 @@ def test_publish_report_notification_delivery_survives_unreachable_subscriber(cl
 
 
 def test_list_subscriptions_exposes_notification_destination(client):
+    """The subscription list shows each subscription's notification destination."""
     client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"}, json={"notificationDestination": "http://sa-smos:8000/analytics-reports"})
 
     resp = client.get("/subscriptions")
@@ -230,6 +219,7 @@ def test_list_subscriptions_exposes_notification_destination(client):
 
 
 def test_publish_report_rejects_unknown_dme_input_source(client, monkeypatch):
+    """A report citing a source DME does not know is a 422 DME_ARTIFACT_NOT_FOUND."""
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeDmeResponse(404))
     resp = client.post("/reports", params={"analytics_type": "resource-utilization"},
                         json={"output": {"utilization": 0.7}, "input_sources": [str(uuid.uuid4())]})
@@ -238,6 +228,7 @@ def test_publish_report_rejects_unknown_dme_input_source(client, monkeypatch):
 
 
 def test_publish_report_accepts_multiple_known_dme_input_sources(client):
+    """A report with several known DME sources is accepted."""
     resp = client.post("/reports", params={"analytics_type": "resource-utilization"},
                         json={"output": {"utilization": 0.7}, "input_sources": [str(uuid.uuid4()), str(uuid.uuid4())]})
     assert resp.status_code == 201
@@ -246,6 +237,7 @@ def test_publish_report_accepts_multiple_known_dme_input_sources(client):
 # ---------------------------------------------------------------- Wave 3: ThresholdInfo conditional reporting
 
 def test_subscribe_rejects_unknown_threshold_direction(client):
+    """A threshold direction outside UP, DOWN and UP_AND_DOWN is a 422 SCHEMA_VALIDATION_FAILED."""
     resp = client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
                         json={"thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "SIDEWAYS", "thresholdValue": 0.8}]})
     assert resp.status_code == 422
@@ -253,6 +245,7 @@ def test_subscribe_rejects_unknown_threshold_direction(client):
 
 
 def test_subscribe_persists_threshold_info(client):
+    """The thresholds of a subscription, with their hysteresis, are stored and listed as sent."""
     sub = client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
                        json={"thresholdInfo": [{"monitoredMDAOutputIE": "utilization", "thresholdDirection": "UP",
                                                  "thresholdValue": 0.8, "hysteresis": 0.05}]}).json()
@@ -263,6 +256,7 @@ def test_subscribe_persists_threshold_info(client):
 
 
 def test_threshold_subscription_fires_on_first_report_already_crossed(client, monkeypatch):
+    """A threshold subscription is notified by its first report if the value is already across the threshold."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
@@ -273,6 +267,7 @@ def test_threshold_subscription_fires_on_first_report_already_crossed(client, mo
 
 
 def test_threshold_subscription_does_not_notify_below_threshold(client, monkeypatch):
+    """A report that does not reach the threshold sends nothing."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
@@ -283,6 +278,7 @@ def test_threshold_subscription_does_not_notify_below_threshold(client, monkeypa
 
 
 def test_threshold_subscription_does_not_refire_while_staying_above(client, monkeypatch):
+    """While the value stays on the far side (even moving inside the hysteresis band) only the first crossing notifies."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
@@ -295,6 +291,7 @@ def test_threshold_subscription_does_not_refire_while_staying_above(client, monk
 
 
 def test_threshold_subscription_refires_after_reset_and_recross(client, monkeypatch):
+    """After the value drops beyond the hysteresis band the threshold re-arms and the next crossing notifies again."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
@@ -307,6 +304,7 @@ def test_threshold_subscription_refires_after_reset_and_recross(client, monkeypa
 
 
 def test_threshold_subscription_ignores_reports_missing_the_monitored_field(client, monkeypatch):
+    """A report that lacks the monitored output does not notify and does not fail."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
@@ -317,6 +315,7 @@ def test_threshold_subscription_ignores_reports_missing_the_monitored_field(clie
 
 
 def test_threshold_subscription_down_direction_fires_on_drop(client, monkeypatch):
+    """A DOWN threshold fires when the value falls to or below it."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
@@ -327,9 +326,7 @@ def test_threshold_subscription_down_direction_fires_on_drop(client, monkeypatch
 
 
 def test_subscription_without_threshold_info_is_still_notified_every_report(client, monkeypatch):
-    """Regression: the pre-existing always-notify behavior for a plain
-    subscription (no thresholdInfo) must be unaffected by this feature.
-    """
+    """A subscription without thresholds is notified for every report regardless of value."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "resource-utilization", "requested_by": "nfo"},
@@ -341,7 +338,7 @@ def test_subscription_without_threshold_info_is_still_notified_every_report(clie
 
 
 def test_health_check_answers_the_gui_bff_liveness_probe(client):
-    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    """`/health` answers 200 `{status: healthy}`, which the GUI BFF's module status probe relies on."""
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "healthy"}
@@ -350,13 +347,15 @@ def test_health_check_answers_the_gui_bff_liveness_probe(client):
 # ---------------------------------------------------------------- notifications through the outbox (PR-MSG-1.8)
 
 def _outbox_rows(db_session_factory):
+    """All outbox rows in creation order."""
     with db_session_factory() as db:
         return db.query(NotificationOutbox).order_by(NotificationOutbox.created_at).all()
 
 
 def test_a_report_notification_survives_a_crash_between_commit_and_send(client, db_session_factory, monkeypatch):
-    """The crash test of MSG-1.8 for MDAF: the report and its subscriber notification are one committed transaction; with the
-    inline send off (the process died after the commit) nothing went out, and a later drain delivers it."""
+    """The report and its subscriber notification are one committed transaction: with the inline send off (as if the process
+    died after the commit) the row is PENDING and a later drain sends it.
+    """
     monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
     monkeypatch.setenv("MODULE", "mdaf")
     calls = []
@@ -380,6 +379,7 @@ def test_a_report_notification_survives_a_crash_between_commit_and_send(client, 
 
 
 def test_nothing_is_announced_and_no_report_is_stored_when_the_publish_does_not_commit(client, db_session_factory, monkeypatch):
+    """When the commit fails nothing is sent, no outbox row remains and no report is stored (500 to the caller)."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     client.post("/subscriptions", params={"analytics_type": "coverage-issue-analysis", "requested_by": "sa-smos"},

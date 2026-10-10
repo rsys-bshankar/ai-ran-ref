@@ -1,14 +1,12 @@
-"""NFDeployment lifecycle.
+"""The NFDeployment lifecycle: its states, its events and the transition table (`NFO_FSM`).
 
-HISTORY.md §5: the reference's real NfDeploymentState
-(o2dms/domain/states.py) has 7 states — Initial/Installing/Installed/
-Updating/Uninstalling/Abnormal/Deleting — plus dispatch logic in
-dms_lcm_nfdeployment.py's lcm_nfdeployment_uninstall; this build only
-ever moved INSTANTIATING->RUNNING. State names below keep this build's
-own existing vocabulary (INSTANTIATING/RUNNING, not Installing/Installed)
-rather than adopting the reference's, matching how other modules in this
-build (e.g. onboarding's AVAILABLE for the reference's COMMISSIONED)
-already handle the same naming choice.
+Used by `main.py`, which calls `NFO_FSM.fire(state, event)` for every state change and turns `IllegalTransition` into a 409.
+The states keep this build's names (INSTANTIATING, RUNNING) rather than the reference implementation's (Installing,
+Installed); the transitions follow the reference's O2 DMS dispatch (HISTORY.md §5), and `OI-3-nfo-abnormal` added the
+events the deployment manager reports. DELETE_COMPLETE is not an event here: it ends the deployment, which the route handles.
+
+Before editing: a new transition is a line in `build_nfo_fsm`; a route that fires an event with no edge from the current state
+answers 409.
 """
 
 from __future__ import annotations
@@ -19,6 +17,9 @@ from smo_shared.statemachine import StateMachine
 
 
 class DeploymentState(StrEnum):
+    """States of a deployment. INITIAL is only the moment of creation; DELETING and ABNORMAL are reached through Terminate or a
+    deployment manager report.
+    """
     INITIAL = "INITIAL"
     INSTANTIATING = "INSTANTIATING"
     RUNNING = "RUNNING"
@@ -29,6 +30,9 @@ class DeploymentState(StrEnum):
 
 
 class DeploymentEvent(StrEnum):
+    """Events that move a deployment: the SMO's own operations, and the reports of the deployment manager (UNINSTALL_*,
+    DELETE_FAILED, RUNTIME_FAILURE).
+    """
     INSTANTIATE = "INSTANTIATE"
     INSTANTIATE_COMPLETE = "INSTANTIATE_COMPLETE"
     UPDATE = "UPDATE"
@@ -45,6 +49,10 @@ class DeploymentEvent(StrEnum):
 
 
 def build_nfo_fsm() -> StateMachine[DeploymentState, DeploymentEvent]:
+    """Builds the transition table. Reading guide: INSTANTIATE and UPDATE each have a completion event that the route fires in the
+    same request; HEAL recovers ABNORMAL; TERMINATE has an edge from every state (so the route never meets an illegal
+    Terminate) with the targets explained in the comments below; the last block holds the deployment manager's reports.
+    """
     fsm: StateMachine[DeploymentState, DeploymentEvent] = StateMachine()
     fsm.add(DeploymentState.INITIAL, DeploymentEvent.INSTANTIATE, DeploymentState.INSTANTIATING)
     fsm.add(DeploymentState.INSTANTIATING, DeploymentEvent.INSTANTIATE_COMPLETE, DeploymentState.RUNNING)

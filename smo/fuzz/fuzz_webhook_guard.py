@@ -17,6 +17,12 @@ with atheris.instrument_imports():
 
 
 def TestOneInput(data: bytes) -> None:
+    """One fuzz iteration: turns `data` into a destination string and checks the guard's contract on it.
+
+    The guard must return a bool without raising. When it allows the destination, the scheme must be http or https and the host
+    must not be a blocked name or a loopback, link-local, multicast, unspecified or reserved IP literal; a failed `assert` is the
+    finding atheris reports. A destination the guard refuses is not checked further.
+    """
     fdp = atheris.FuzzedDataProvider(data)
     destination = fdp.ConsumeUnicodeNoSurrogates(200)
 
@@ -37,6 +43,7 @@ def TestOneInput(data: bytes) -> None:
 
 
 def main() -> None:
+    """Hands `TestOneInput` to atheris, which parses the fuzzer's command-line flags (such as -max_total_time) and runs until a finding or the limit."""
     atheris.Setup(sys.argv, TestOneInput)
     atheris.Fuzz()
 

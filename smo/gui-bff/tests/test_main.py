@@ -344,6 +344,15 @@ def test_an_approval_is_attributed_to_the_signed_in_user_and_not_to_what_the_bro
     assert len(smo.proxied) == 2
 
 
+def test_a_policy_asking_for_two_approvals_reaches_ran_nf_oam_from_an_admin_only_with_the_setter_pinned(app, smo):
+    """Two-person approval is a field of the approval policy: the BFF passes it through, pins who set the policy, and leaves the policy to an admin."""
+    body = {"timeoutSeconds": 600, "onTimeout": "EXPIRE", "requiredApprovals": 2, "requestedBy": "someone-else"}
+    login(app, "admin").put("/api/smo/ran-nf-oam/rapp-approval-policy/es-client", json=body)
+    assert json.loads(smo.proxied[0].content) == {"timeoutSeconds": 600, "onTimeout": "EXPIRE", "requiredApprovals": 2, "requestedBy": "smo-gui:admin"}
+    assert login(app, "operator").put("/api/smo/ran-nf-oam/rapp-approval-policy/es-client", json=body).status_code == 403
+    assert len(smo.proxied) == 1
+
+
 def test_a_rapps_own_api_is_no_longer_a_module_of_the_proxy(app, smo):
     """PR-GUI-8: the four sample rApps' static rules are gone; their routes are reached through /api/rapps/<instance>/operator/..., allowed by the declaration."""
     for who in ("viewer", "operator", "admin"):

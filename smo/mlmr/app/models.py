@@ -1,3 +1,14 @@
+"""Database tables of MLMR: models, artifacts, coordination groups, repositories, TS 29.482 storages and profiles.
+
+Used by `main.py` and `mlr.py`; the schema itself is created by the Alembic revisions in `migrations/` (the models are
+checked against it by `scripts/check_migration_matches_models.py`). Table names are internal storage, not a contract: the
+model table is still called `aiml_model` from before the class was renamed `MLModel`.
+
+Lifecycle state, training jobs and node-group targeting are not here; they are AIMgF's `model_lifecycle` row. Other
+modules hold foreign keys to `aiml_model` and `model_artifact` with `ON DELETE CASCADE`, which is why a model delete here is
+enough to clear their rows on Postgres.
+"""
+
 import datetime
 import uuid
 
@@ -8,14 +19,13 @@ from smo_shared.db import Base
 
 # Wave 3 (AI Platform Service Decomposition) — TS29482_MLR_MLModelManagement.yaml's
 # MLModelDomain enum, HISTORY.md §7's MLMR section.
+# The closed MLModelDomain values of TS29482_MLR_MLModelManagement.yaml; `CUSTOM` is paired with `custom_domain`.
 MODEL_DOMAINS = {"SPEECH_RECOGNITION", "IMAGE_RECOGNITION", "IMAGE_PROCESSING", "LOCATION_PREDICTION", "CUSTOM"}
 
 
 class MLModelRepository(Base):
-    """Wave 4 — TS 28.105 MLModelRepository IOC: the container MLModels
-    and MLModelCoordinationGroups are registered into. Optional for
-    either — a model/group with no repository is simply uncontained, as
-    every pre-Wave-4 row is.
+    """TS 28.105 MLModelRepository: the container models and coordination groups may be registered into. Containment is optional
+    (`ml_model_repository_id` is nullable on both) and deleting a repository sets it to NULL on its members.
     """
     __tablename__ = "ml_model_repository"
 
@@ -25,6 +35,10 @@ class MLModelRepository(Base):
 
 
 class MLModelCoordinationGroup(Base):
+    """A set of models that retrain together (at least two members; enforced by a CHECK on Postgres and by the route). `member_model_ids`
+    is an array of model ids that is not a foreign key, so a member that is deleted stays listed.
+    The list route returns `retrain_propagation` and `shared_feature_pipeline_ref`, which AIMgF reads.
+    """
     __tablename__ = "ml_model_coordination_group"
 
     group_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -38,28 +52,11 @@ class MLModelCoordinationGroup(Base):
 
 
 class MLModel(Base):
-    """Wave 1 (AI Platform Service Decomposition): renamed from AIMLModel to
-    match TS 28.105's own vocabulary — docs/ARCHITECTURE.md (MLMR).
-    Table name (`aiml_model`) is unchanged: it's internal storage, not a
-    public contract, so keeping it avoids an unnecessary migration.
+    """One registered model: identity, descriptive metadata and the TS 28.105 and TS 29.482 attributes.
 
-    This row is MLMR's repository truth — identity, metadata, versioning,
-    artifact location. Wave 1 left `state`/`training_job_id`/
-    `cleared_node_groups` on this same row as a structural shortcut
-    (AIMgF/MLLF read/wrote them via `PATCH /models/{id}/lifecycle`); Wave 2
-    moves all three to AIMgF's own `model_lifecycle` table — MLMR is model
-    truth, not lifecycle truth (docs/ARCHITECTURE.md:
-    "Lifecycle state: AIMgF ✅, MLMR ❌") — so this row no longer carries
-    them at all.
-
-    HISTORY.md §5: no uniqueness/conflict check on
-    (model_type, version) existed — duplicate registrations silently
-    succeeded where the reference 409s. The reference's own ModelID
-    (modelInfo.go) is a composite primary key on
-    (modelName, modelVersion); this build never introduced a separate
-    name field, so model_type plays that identifying role already —
-    the same adaptation this codebase already made elsewhere (e.g.
-    DMEType's own (namespace, name, version) UniqueConstraint).
+    Identity is (`model_type`, `version`), a unique constraint, so a duplicate registration is a 409 rather than a second row.
+    JSON columns hold the spec-shaped complex datatypes as sent. `phase_info` is written by AIMgF; `registered_at` is the base for
+    `storeDiscReqs.duration` and `accessReqs.timePeriod`. Table `aiml_model`.
     """
     __tablename__ = "aiml_model"
     __table_args__ = (UniqueConstraint("model_type", "version"),)
@@ -125,7 +122,7 @@ class MLModel(Base):
 
 
 class MLModelsStorage(Base):
-    """TS 29.482 MLModelsStorage (SA-MLMR-1): a group of model profiles."""
+    """TS 29.482 MLModelsStorage (SA-MLMR-1): a group of model profiles and optional storage addresses (EndPoint list)."""
     __tablename__ = "ml_models_storage"
 
     storage_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -134,8 +131,9 @@ class MLModelsStorage(Base):
 
 
 class MLModelProfile(Base):
-    """TS 29.482 MLModelProfile: names a registered model (`mlModelInfo.mlModelId`)
-    inside a storage, with the AIMLE ids and the model's URI."""
+    """TS 29.482 MLModelProfile: names a registered model inside a storage, with the AIMLE ids and the model's URI. Deleted with
+    its storage or its model.
+    """
     __tablename__ = "ml_model_profile"
 
     profile_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -147,13 +145,9 @@ class MLModelProfile(Base):
 
 
 class ModelArtifact(Base):
-    """HISTORY.md §5: the reference's real UploadModel/DownloadModel
-    (S3-backed), with an auto-incrementing artifactVersion distinct from
-    modelVersion. Real S3 storage is a total, deliberate elision in this
-    build (same as elsewhere), so `content` holds the actual uploaded bytes
-    in-DB — the honest, minimal, self-contained substitute: upload and
-    download genuinely round-trip within the sandbox rather than being a
-    metadata-only stub.
+    """One uploaded artifact version of a model, with the bytes stored in the row (`content`); there is no object store in this build.
+    `artifact_version` starts at 1 and is assigned by the upload route; the table does not constrain it to be unique per model.
+    `size_bytes` is measured from the uploaded bytes and feeds `mlModelSize`.
     """
 
     __tablename__ = "model_artifact"
@@ -174,6 +168,7 @@ class ModelArtifact(Base):
 
 
 class ModelChangeSubscription(Base):
+    """Table declared for model-change subscriptions; no code in this module reads or writes it."""
     __tablename__ = "model_change_subscription"
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

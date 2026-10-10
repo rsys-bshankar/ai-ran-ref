@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Create `safeguard_subscription` (callbacks told of refusals) and `safeguard_refusal` (one row per refusal of an rApp) with indexes on the time and the invoker."""
     op.execute("""
         CREATE TABLE safeguard_subscription (
             subscription_id UUID PRIMARY KEY,
@@ -38,5 +39,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop both tables."""
     op.execute("DROP TABLE safeguard_refusal")
     op.execute("DROP TABLE safeguard_subscription")

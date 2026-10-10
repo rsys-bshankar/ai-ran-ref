@@ -122,8 +122,8 @@ class FakePlatform:
         self.training.append((ok, metrics))
         return {"status": "TRAINED" if ok else "FAILED"}
 
-    def execute_action(self, consumer, changes, action_id, source_context):
-        self.actions.append({"changes": changes, "actionId": action_id, "context": source_context})
+    def execute_action(self, consumer, changes, action_id, source_context, decision=None):
+        self.actions.append({"changes": changes, "actionId": action_id, "context": source_context, "decision": decision})
         if not self.stuck:
             for change in changes:
                 self.config.setdefault(change["managedFunctionRef"], {}).update(change["attributeChanges"])
@@ -226,6 +226,15 @@ def _force_idle(platform):
 
 
 # ---------------------------------------------------------------- instance binding
+
+
+def _assert_decision(action, rapp, reason):
+    """PR-AI-13: a direct write says why it is made, so RAN NF OAM's decision record (and an approver) has more than the job: the execution it came from, the
+    version of the model that decided (when the instance has one) and the reason in words."""
+    decision = action["decision"]
+    assert decision["rationale"] == f"Restoring service: {reason}"
+    assert decision["inputsRef"].startswith(f"{rapp}:") and ":execution:" in decision["inputsRef"] and decision["inputsRef"].endswith(action["context"]["correlationId"])
+    assert set(decision) <= {"inputsRef", "modelVersion", "rationale"}
 
 def test_start_binds_the_instance_and_discovers_a_dataset_per_stage(client, platform, r1):
     instance_id = _start(client, r1, "ASSIST", baselineCio=1, baselinePriority=4, coverageInstanceId="co-1",
@@ -359,6 +368,7 @@ def test_a_step_that_degrades_the_kpi_is_reverted_through_dme(client, platform, 
     assert (reverted["decision"], reverted["outcome"], reverted["kpi"]["verdict"]) == ("REVERT", "REVERTED", "DEGRADED")
     assert reverted["reason"].startswith("KPI_DEGRADED:") and reverted["toValue"] == step["fromValue"]
     assert platform.actions[-1]["context"]["reason"] == "REVERT:KPI_DEGRADED"
+    _assert_decision(platform.actions[-1], "traffic-steering-rapp", "REVERT:KPI_DEGRADED")
     cell = client.get(f"/instances/{instance_id}/cells").json()["items"][0]
     assert cell["state"] == "STEADY" and cell["steering"] == {"cio": {}, "prio": {}}
 

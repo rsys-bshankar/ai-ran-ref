@@ -495,24 +495,44 @@ export function describeChange(change: { managedElementRef: string; managedFunct
 }
 
 /** One line for an approval policy: "held for approval · lapses after 60 min (rejected)"; "Writes at once" when there is none. */
-export function describeApprovalPolicy(policy: { timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT" } | null | undefined): string {
+export function describeApprovalPolicy(policy: { timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT"; requiredApprovals?: number } | null | undefined): string {
   if (!policy) return "Writes at once";
   const minutes = Math.round(policy.timeoutSeconds / 60);
   const after = minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60} h` : `${minutes} min`;
-  return `Held for approval · lapses after ${after} (${policy.onTimeout === "REJECT" ? "rejected" : "expires"})`;
+  const people = policy.requiredApprovals === 2 ? " · two different people must approve" : "";
+  return `Held for approval${people} · lapses after ${after} (${policy.onTimeout === "REJECT" ? "rejected" : "expires"})`;
 }
 
-export interface ApprovalPolicyForm { minutes: string; onTimeout: "EXPIRE" | "REJECT" }
+/** `twoApprovals` is only present when two different people must approve: a form for the usual single approval is what it was. */
+export interface ApprovalPolicyForm { minutes: string; onTimeout: "EXPIRE" | "REJECT"; twoApprovals?: true }
 
-export function approvalPolicyForm(policy: { timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT" } | null | undefined): ApprovalPolicyForm {
-  return policy ? { minutes: String(Math.round(policy.timeoutSeconds / 60)), onTimeout: policy.onTimeout } : { minutes: "60", onTimeout: "EXPIRE" };
+/** The dialog's starting values from the stored policy: minutes and the timeout action; 60 minutes and EXPIRE when there is no policy; `twoApprovals` only when the policy asks for two. */
+export function approvalPolicyForm(policy: { timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT"; requiredApprovals?: number } | null | undefined): ApprovalPolicyForm {
+  if (!policy) return { minutes: "60", onTimeout: "EXPIRE" };
+  const form: ApprovalPolicyForm = { minutes: String(Math.round(policy.timeoutSeconds / 60)), onTimeout: policy.onTimeout };
+  if (policy.requiredApprovals === 2) form.twoApprovals = true;
+  return form;
+}
+
+/** Who decided a request, for the list: the approvers in the order they approved, then whoever rejected it or `system:timeout`. A single approval is its approver. */
+export function decidedByText(a: { decidedBy: string | null; requiredApprovals?: number; approvals?: { by: string }[] }): string {
+  if ((a.requiredApprovals ?? 1) <= 1) return a.decidedBy ?? "—";
+  const people = (a.approvals ?? []).map((v) => v.by);
+  if (a.decidedBy && !people.includes(a.decidedBy)) people.push(a.decidedBy);
+  return people.length > 0 ? people.join(", ") : "—";
+}
+
+/** "1 of 2 approvals" for a waiting request that needs two; null for the usual single approval (nothing to show). */
+export function approvalProgress(a: { requiredApprovals?: number; approvals?: unknown[] }): string | null {
+  const needed = a.requiredApprovals ?? 1;
+  return needed > 1 ? `${a.approvals?.length ?? 0} of ${needed} approvals` : null;
 }
 
 /** The body of PUT /ran-nf-oam/rapp-approval-policy/{id} from the form (a minute to a week), or the problem to show. `requestedBy` is pinned by the BFF. */
-export function approvalPolicyPayload(form: ApprovalPolicyForm): { ok: true; body: { timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT" } } | { ok: false; error: string } {
+export function approvalPolicyPayload(form: ApprovalPolicyForm): { ok: true; body: { timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT"; requiredApprovals?: 2 } } | { ok: false; error: string } {
   const minutes = Number(form.minutes.trim());
   if (!form.minutes.trim() || !Number.isInteger(minutes) || minutes < 1 || minutes > 10_080) return { ok: false, error: "How long a request may wait is a whole number of minutes, 1 to 10080 (a week)." };
-  return { ok: true, body: { timeoutSeconds: minutes * 60, onTimeout: form.onTimeout } };
+  return { ok: true, body: { timeoutSeconds: minutes * 60, onTimeout: form.onTimeout, ...(form.twoApprovals ? { requiredApprovals: 2 as const } : {}) } };
 }
 
 /** The query of the decision list from its filter form: blank fields are left out. */

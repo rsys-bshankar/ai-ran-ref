@@ -19,6 +19,7 @@ FLOORS = {"mem": 50.0, "fds": 50.0, "pg_connections": 10.0, "outbox_pending": 10
 
 
 def load(path: Path) -> dict[str, list[tuple[int, float]]]:
+    """Reads the sampler's CSV into `{metric: [(unix seconds, value), ...]}`. Lines that do not have three fields or whose numbers do not parse are skipped silently."""
     series: dict[str, list[tuple[int, float]]] = defaultdict(list)
     for line in path.read_text(encoding="utf-8").splitlines():
         parts = line.strip().split(",")
@@ -32,10 +33,18 @@ def load(path: Path) -> dict[str, list[tuple[int, float]]]:
 
 
 def judge(series: dict[str, list[tuple[int, float]]], growth: float) -> tuple[list[dict], bool]:
+    """Decides, per metric, whether it grew: returns `(rows, ok)`.
+
+        The first tenth of the samples is dropped as warm-up, then the mean of the first third of the rest is compared with the mean of the last third. A metric is GROWING when
+        the rise exceeds both the floor for its kind (`FLOORS`, by the part of the name before the colon) and `growth` as a fraction of the first mean (any rise over the
+        floor when the first mean is 0). A metric with fewer than nine samples is reported as "too few samples" and makes `ok` false: a soak that could not measure
+        something fails rather than passes.
+    """
     rows, ok = [], True
     for metric in sorted(series):
         values = [v for _, v in sorted(series[metric])]
         n = len(values)
+        # fewer than nine samples cannot leave three in each of the first and the last third once the warm-up tenth is dropped, so no verdict is possible
         if n < 9:
             rows.append({"metric": metric, "samples": n, "first": 0.0, "last": 0.0, "change": 0.0, "verdict": "too few samples"})
             ok = False
@@ -53,6 +62,7 @@ def judge(series: dict[str, list[tuple[int, float]]], growth: float) -> tuple[li
 
 
 def main() -> None:
+    """Prints the verdict table and exits 0 when every metric is flat, 1 otherwise."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("samples")
     ap.add_argument("--growth", type=float, default=0.25)

@@ -81,6 +81,10 @@ def cert_pem(cert: x509.Certificate) -> bytes:
 
 
 def make_ca(days: int = CA_DAYS, common_name: str = "AI-RAN SMO development mTLS CA") -> tuple[x509.Certificate, ec.EllipticCurvePrivateKey]:
+    """A new self-signed ECDSA P-256 CA and its key: a CA certificate (path length 0, so it can sign leaves but no sub-CA) valid for `days` (default ten years).
+
+        Backdated by five minutes (`_SKEW`) so a host whose clock is slightly behind still accepts it. Nothing is written; the caller stores the pair.
+    """
     key = new_key()
     name = x509.Name([x509.NameAttribute(NameOID.ORGANIZATION_NAME, "AI-RAN SMO development"), x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
     now = _now()
@@ -95,6 +99,7 @@ def make_ca(days: int = CA_DAYS, common_name: str = "AI-RAN SMO development mTLS
 
 
 def _san(names: list[str]) -> x509.SubjectAlternativeName:
+    """A subject-alternative-name extension from `names`: an IP address becomes an IP entry, anything else a DNS entry. Duplicates are dropped, order is kept."""
     entries: list[x509.GeneralName] = []
     for name in dict.fromkeys(names):          # unique, in order
         try:
@@ -133,6 +138,11 @@ def make_leaf(ca_cert: x509.Certificate, ca_key, name: str, days: int = LEAF_DAY
 # ---------------------------------------------------------------------------------------------------------------------------- files
 
 def _write(path: Path, data: bytes, mode: int) -> None:
+    """Writes `data` to `path` with permissions `mode`, creating parent directories.
+
+        Written to `<path>.tmp` and renamed over the target, so a service that rereads its certificate when the file changes never sees half a file. The explicit
+        `chmod` after the write makes the mode exact whatever the process umask is.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
@@ -161,6 +171,11 @@ def _service_dirs(root: Path) -> list[Path]:
 
 
 def _write_leaf(directory: Path, cert: x509.Certificate, key, ca_bundle: bytes) -> None:
+    """Writes `tls.crt`, `tls.key` and `ca.crt` of one service or client into `directory`.
+
+        The directory is 0755 and the files 0644, including the key, on purpose: a container's unprivileged user must read its own key, and the parent `DIR` is 0700 so no
+        other account on the host can reach it. The CA key is never written here.
+    """
     directory.mkdir(parents=True, exist_ok=True)
     os.chmod(directory, 0o755)  # noqa: S103 (a container's unprivileged user must traverse its own directory; the parent is 0700)
     _write(directory / "tls.crt", cert_pem(cert), 0o644)
@@ -179,6 +194,11 @@ def _ca_bundle(root: Path) -> bytes:
 
 
 def init(root: Path, days: int, force: bool = False) -> str:
+    """Creates the CA (`ca/ca.crt`, `ca/ca.key` mode 0600) and a certificate for every service, client and the database; returns a one-line message.
+
+        Without `force` an existing CA is left alone and the message says `kept` (nothing is written). With `force` a new CA replaces it, any rotation files
+        (`next.*`, `previous.crt`) are removed, and every certificate is new, so every service must restart. `days` is the validity of the leaf certificates only.
+    """
     ca = root / "ca"
     if (ca / "ca.crt").exists() and not force:
         return f"kept: {root} (already has a CA; --force makes a new one and new certificates, `renew` keeps the CA)"
@@ -197,6 +217,11 @@ def init(root: Path, days: int, force: bool = False) -> str:
 
 
 def renew(root: Path, days: int) -> str:
+    """Issues new leaf certificates for every service and client found under `root`, from the CA already in use, and rewrites their `ca.crt` with the current bundle.
+
+        The name and whether a certificate is a server one are read back from the old certificate (a server certificate is recognised by `localhost` among its DNS names),
+        so a client-only certificate stays client-only. Servers load their certificate at start: restart them afterwards.
+    """
     ca_cert, ca_key = _load_cert(root / "ca" / "ca.crt"), _load_key(root / "ca" / "ca.key")
     bundle = _ca_bundle(root)
     done = 0
@@ -211,6 +236,7 @@ def renew(root: Path, days: int) -> str:
 
 
 def new_client(root: Path, name: str, days: int) -> str:
+    """Issues a client-only certificate (no serverAuth, no extra names) for `name` under `clients/<name>`, signed by the current CA."""
     ca_cert, ca_key = _load_cert(root / "ca" / "ca.crt"), _load_key(root / "ca" / "ca.key")
     cert, key = make_leaf(ca_cert, ca_key, name, days, server=False)
     _write_leaf(root / "clients" / name, cert, key, _ca_bundle(root))
@@ -218,6 +244,12 @@ def new_client(root: Path, name: str, days: int) -> str:
 
 
 def rotate_ca(root: Path, phase: str, days: int) -> str:
+    """One phase of replacing the CA without a moment when two services disagree about it; returns a message saying what was done and what to do next.
+
+        `trust` makes a second CA (`ca/next.*`) and puts old and new into every `ca.crt`. `issue` makes the new CA the signing one, keeps the old as `previous.crt`, and
+        renews every leaf from the new CA (the bundles still hold both). `retire` deletes `previous.crt` so every `ca.crt` holds the new CA only. Each phase is followed
+        by a restart of every service. A phase out of order changes nothing and the message says which phase to run first. Raises `SystemExit` for an unknown phase.
+    """
     ca = root / "ca"
     if phase == "trust":
         if (ca / "next.crt").exists():
@@ -256,6 +288,7 @@ def _not_after(certificate) -> dt.datetime:
 
 
 def status(root: Path, warn_days: int) -> tuple[str, bool]:
+    """Days left on the CA and on every leaf certificate as `(report, any_under_warn_days)`; the CA line counts the earliest expiry in its file (old and new during a rotation)."""
     lines, bad = [], False
     now = _now()
     items = [("CA", root / "ca" / "ca.crt")] + [(d.name if d.parent == root else f"clients/{d.name}", d / "tls.crt") for d in _service_dirs(root)]
@@ -268,6 +301,9 @@ def status(root: Path, warn_days: int) -> tuple[str, bool]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Command-line entry for `init`, `renew`, `client`, `rotate-ca` and `status`. Returns 2 when a command other than `init` finds no CA in the directory,
+        1 when `status` finds a certificate under `--warn-days`, else 0.
+    """
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--dir", type=Path, default=DEFAULT_DIR)
     sub = parser.add_subparsers(dest="command", required=True)

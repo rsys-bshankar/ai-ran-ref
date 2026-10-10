@@ -22,6 +22,7 @@ UNITS = {"b": 1, "kib": 1024, "mib": 1024**2, "gib": 1024**3, "kb": 1000, "mb": 
 
 
 def to_bytes(text: str) -> int:
+    """Parses a `docker stats` size such as "12.5MiB" or "1.2GB" (binary and decimal units) into bytes; raises `ValueError` for anything else."""
     match = re.fullmatch(r"\s*([0-9.]+)\s*([A-Za-z]+)\s*", text)
     if not match or match.group(2).lower() not in UNITS:
         raise ValueError(f"not a size: {text!r}")
@@ -29,6 +30,7 @@ def to_bytes(text: str) -> int:
 
 
 def percentile(values: list[float], q: float) -> float:
+    """The q-quantile (0..1) of `values` by the nearest-rank method (the smallest value with at least q of the samples at or below it). `values` must not be empty."""
     ordered = sorted(values)
     return ordered[min(len(ordered) - 1, math.ceil(q * len(ordered)) - 1)]
 
@@ -43,6 +45,12 @@ def round_up(value: float, step: float) -> float:
 
 
 def summarize(lines: list[str], mem_headroom: float, request_headroom: float) -> list[dict]:
+    """One row per stack container from the `docker stats` JSON lines: sample count, peak memory, median and p95 CPU, and the suggested resources.
+
+        Lines for containers whose name does not start with the compose project prefix (`smo-` / `smo_`) are ignored, and replicas of a service (a numeric suffix) are
+        pooled under the service name. Suggestions: memory request = peak x `request_headroom` rounded up to 16 MiB, memory limit = peak x `mem_headroom` rounded up to
+        64 MiB, CPU request = the p95 percentage read as tenths of a core (100 % = 1000 m), at least 1 m, rounded up to 25 m.
+    """
     per: dict[str, dict[str, list]] = {}
     for line in lines:
         line = line.strip()
@@ -73,6 +81,7 @@ def summarize(lines: list[str], mem_headroom: float, request_headroom: float) ->
 
 
 def markdown(rows: list[dict]) -> str:
+    """The rows as a markdown table, with the suggestions in the units the chart's `resources` takes (`Mi`, `m`)."""
     out = ["| Service | Samples | Memory peak (MiB) | CPU median (%) | CPU p95 (%) | Suggested memory request | Suggested memory limit | Suggested CPU request |", "|---|---|---|---|---|---|---|---|"]
     for r in rows:
         s = r["suggest"]
@@ -81,6 +90,7 @@ def markdown(rows: list[dict]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Reads the stats file, writes `sizing.json` and `sizing.md` into `--out` and prints the table. Returns 1 (and writes nothing) when no sample belongs to the stack."""
     parser = argparse.ArgumentParser()
     parser.add_argument("stats")
     parser.add_argument("--out", default="load-out")

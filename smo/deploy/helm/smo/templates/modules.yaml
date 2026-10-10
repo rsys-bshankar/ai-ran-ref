@@ -140,6 +140,17 @@ spec:
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+            {{- if eq $name "ran-nf-oam" }}
+            {{- with $.Values.ranNfOam.vesPasswordSecretRef }}
+            {{- if .name }}
+            {{- if or (hasKey $m.env "RAN_NF_OAM_VES_PASSWORD") (hasKey $m.env "RAN_NF_OAM_VES_PASSWORD_FILE") }}
+            {{- fail "ranNfOam.vesPasswordSecretRef is set and modules.ran-nf-oam.env also sets RAN_NF_OAM_VES_PASSWORD or RAN_NF_OAM_VES_PASSWORD_FILE: the VES listener refuses a password given twice (503); use one" }}
+            {{- end }}
+            # SB-7.8: the VES listener's password from a Secret of your own, a file mounted at /run/ves (the listener exists only with a password)
+            - { name: RAN_NF_OAM_VES_PASSWORD_FILE, value: /run/ves/password }
+            {{- end }}
+            {{- end }}
+            {{- end }}
             {{- if eq $name "onboarding" }}
             {{- if $.Values.rappSigning.trustStoreConfigMap }}
             # PR-RAPP-1: the accepted publishers' public keys, the files of a ConfigMap of your own mounted at /run/rapp-trust (read for each package)
@@ -262,6 +273,9 @@ spec:
             {{- if and (eq $name "onboarding") $.Values.rappSigning.trustStoreConfigMap }}
             - { name: rapp-trust, mountPath: /run/rapp-trust, readOnly: true }
             {{- end }}
+            {{- if and (eq $name "ran-nf-oam") $.Values.ranNfOam.vesPasswordSecretRef.name }}
+            - { name: ves-password, mountPath: /run/ves, readOnly: true }
+            {{- end }}
             {{- if $m.persistence }}
             - { name: data, mountPath: {{ $m.persistence.mountPath }} }
             {{- end }}
@@ -323,6 +337,14 @@ spec:
           secret:
             secretName: {{ $.Values.gui.jwtKeySecretRef.name | quote }}
             defaultMode: 0440              # readable by the pod's group (fsGroup), not by the world
+        {{- end }}
+        {{- if and (eq $name "ran-nf-oam") $.Values.ranNfOam.vesPasswordSecretRef.name }}
+        - name: ves-password
+          secret:
+            secretName: {{ $.Values.ranNfOam.vesPasswordSecretRef.name | quote }}
+            defaultMode: 0440              # readable by the pod's group (fsGroup), not by the world
+            items:
+              - { key: {{ $.Values.ranNfOam.vesPasswordSecretRef.key | default "ves-password" | quote }}, path: password }      # only this key, not the whole Secret
         {{- end }}
         {{- if and (eq $name "onboarding") $.Values.rappSigning.trustStoreConfigMap }}
         - name: rapp-trust

@@ -1,5 +1,7 @@
-"""Tests for RAN Analytics SMOS (RAN Analytics LLD section 1).
-Run with: pytest smo/ran-analytics/tests -q
+"""Tests of RAN Analytics' routes: producer registration (upsert, MDA type handling, SME enrolment) and the producer list.
+
+Run: `cd smo/ran-analytics && PYTHONPATH=.:../shared python -m pytest tests -q`. No Postgres: the table is created on SQLite and
+`get_session` is overridden. The SME calls are replaced by patching `app.main.R1Client.post`, so SME itself is not exercised.
 """
 
 import uuid
@@ -17,6 +19,7 @@ from app.models import MDAFProducer
 
 @pytest.fixture
 def db_session_factory():
+    """Creates the producer table on an in-memory SQLite engine and returns a session factory."""
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[MDAFProducer.__table__])
     return sessionmaker(bind=engine)
@@ -24,6 +27,7 @@ def db_session_factory():
 
 @pytest.fixture
 def client(db_session_factory, monkeypatch):
+    """A TestClient with `get_session` overridden and `R1Client.post` stubbed to do nothing; both are undone afterwards."""
     def override_get_session():
         session = db_session_factory()
         try:
@@ -38,9 +42,7 @@ def client(db_session_factory, monkeypatch):
 
 
 def test_register_analytics_producer_closes_the_v1_3_gap(client):
-    """RAN Analytics LLD section 1: v1.3 had Subscribe/Unsubscribe/Query
-    but no way for a producer to register at all.
-    """
+    """A producer can register with its DME input types and output schema (201)."""
     dme_type = str(uuid.uuid4())
     resp = client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis"},
                         json={"dme_input_types": [dme_type], "output_schema": {"type": "object"}})
@@ -48,12 +50,7 @@ def test_register_analytics_producer_closes_the_v1_3_gap(client):
 
 
 def test_reregistering_same_producer_and_type_updates_in_place(client, db_session_factory):
-    """The real fix this pass made: the same producer re-registering the
-    same analytics_type (e.g. on restart) previously crashed with an
-    unhandled IntegrityError on the (producer_id, analytics_type)
-    composite primary key instead of updating in place — same shape of
-    bug as SME's RegisterService had.
-    """
+    """Registering the same producer and analytics type again updates the one row (the new inputs and schema) instead of failing on the primary key."""
     first_dme_type = uuid.uuid4()
     resp1 = client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis"},
                          json={"dme_input_types": [str(first_dme_type)], "output_schema": {"type": "object"}})
@@ -72,10 +69,7 @@ def test_reregistering_same_producer_and_type_updates_in_place(client, db_sessio
 
 
 def test_different_analytics_type_for_same_producer_is_a_separate_row(client):
-    """producer_id + analytics_type together are the key — a different
-    analytics_type for the same producer is a distinct registration, not
-    a conflict with the one above.
-    """
+    """The key is the pair, so another analytics type for the same producer registers separately."""
     resp1 = client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis"},
                          json={"dme_input_types": [], "output_schema": {}})
     resp2 = client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "resource-utilization"},
@@ -85,11 +79,7 @@ def test_different_analytics_type_for_same_producer_is_a_separate_row(client):
 
 
 def test_register_analytics_producer_publishes_sme_service_registration(client, monkeypatch):
-    """RegisterAnalyticsProducer's SME side-effect (POST to
-    /sme/published-apis/.../service-apis) was never asserted on — only
-    that the route itself returned 201. Confirms the mdaf.<analyticsType>
-    naming and producerId actually reach SME.
-    """
+    """A registration enrols the producer in SME first and then publishes the `mdaf.<analyticsType>` service, with the producer id on both calls."""
     calls = []
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: calls.append((path, json)))
 
@@ -109,10 +99,7 @@ def test_register_analytics_producer_publishes_sme_service_registration(client, 
 
 
 def test_list_producers_returns_registered_producer(client):
-    """HISTORY.md §5: no list/query endpoint for registered
-    producers existed at all — the reference defines this route (even
-    if its own implementation is a no-op stub).
-    """
+    """A registered producer is listed with its ids and DME input types as text."""
     dme_type = str(uuid.uuid4())
     client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis"},
                 json={"dme_input_types": [dme_type], "output_schema": {"type": "object"}})
@@ -127,6 +114,7 @@ def test_list_producers_returns_registered_producer(client):
 
 
 def test_list_producers_filters_by_analytics_type(client):
+    """The producer list can be filtered by analytics type."""
     client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis"},
                 json={"dme_input_types": [], "output_schema": {}})
     client.post("/producers", params={"producer_id": "rapp-mdaf-2", "analytics_type": "resource-utilization"},
@@ -138,6 +126,7 @@ def test_list_producers_filters_by_analytics_type(client):
 
 
 def test_list_producers_filters_by_producer_id(client):
+    """The producer list can be filtered by producer id and returns all of that producer's types."""
     client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis"},
                 json={"dme_input_types": [], "output_schema": {}})
     client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "resource-utilization"},
@@ -151,15 +140,13 @@ def test_list_producers_filters_by_producer_id(client):
 
 
 def test_list_producers_returns_empty_list_when_none_registered(client):
+    """With nothing registered the list is empty, not an error."""
     resp = client.get("/producers")
     assert resp.json()["items"] == []
 
 
 def test_register_analytics_producer_infers_mda_type_for_a_known_shorthand(client):
-    """HISTORY.md §7's `analytics_type` enum finding, closed: TS28104's
-    own real MDAType is derived automatically for the two shorthand
-    values this build honestly maps unambiguously.
-    """
+    """A known shorthand analytics type gets its TS 28.104 MDA type filled in automatically."""
     client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis"},
                 json={"dme_input_types": [], "output_schema": {}})
     resp = client.get("/producers")
@@ -167,9 +154,7 @@ def test_register_analytics_producer_infers_mda_type_for_a_known_shorthand(clien
 
 
 def test_register_analytics_producer_leaves_mda_type_null_for_an_unmapped_shorthand(client):
-    """`resource-utilization` is genuinely ambiguous between several real
-    MDAType values (virtualized vs. physical NF resource analytics) — left
-    unmapped, not guessed."""
+    """An analytics type with no unambiguous MDA type is stored with none, not a guess."""
     client.post("/producers", params={"producer_id": "rapp-mdaf-1", "analytics_type": "resource-utilization"},
                 json={"dme_input_types": [], "output_schema": {}})
     resp = client.get("/producers")
@@ -177,6 +162,7 @@ def test_register_analytics_producer_leaves_mda_type_null_for_an_unmapped_shorth
 
 
 def test_register_analytics_producer_accepts_an_explicit_real_mda_type(client):
+    """A caller can declare a real MDA type for any analytics type, and it is stored."""
     client.post("/producers", params={
         "producer_id": "rapp-mdaf-1", "analytics_type": "some-custom-shorthand", "mda_type": "PREDICTIONS_PM_DATA",
     }, json={"dme_input_types": [], "output_schema": {}})
@@ -185,6 +171,7 @@ def test_register_analytics_producer_accepts_an_explicit_real_mda_type(client):
 
 
 def test_register_analytics_producer_rejects_an_unknown_mda_type(client):
+    """An `mda_type` outside the TS 28.104 list is a 422 SCHEMA_VALIDATION_FAILED."""
     resp = client.post("/producers", params={
         "producer_id": "rapp-mdaf-1", "analytics_type": "coverage-issue-analysis", "mda_type": "NOT_A_REAL_MDA_TYPE",
     }, json={"dme_input_types": [], "output_schema": {}})
@@ -193,7 +180,7 @@ def test_register_analytics_producer_rejects_an_unknown_mda_type(client):
 
 
 def test_health_check_answers_the_gui_bff_liveness_probe(client):
-    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    """`/health` answers 200 `{status: healthy}`, which the GUI BFF's module status probe relies on."""
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "healthy"}

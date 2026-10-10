@@ -20,6 +20,7 @@ BASELINE_SQL = Path(__file__).resolve().parent.parent / "001_init.sql"
 
 
 def upgrade() -> None:
+    """Create the whole baseline schema by running `001_init.sql` unchanged: every module's tables as the consolidated file defines them, and the shared tables the file ends with."""
     # Straight to the DBAPI cursor, with no parameters: the file is many statements, and both `op.execute(text(...))`
     # (reads the `:` in a CHECK constraint as a bind parameter) and `exec_driver_sql` (psycopg reads the `%` of a
     # `NOT LIKE '%:%'` as a placeholder) would try to interpret it.
@@ -28,4 +29,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Not supported: raises NotImplementedError, because dropping the whole schema is a restore, not a downgrade (`scripts/db_restore.sh`)."""
     raise NotImplementedError("the baseline is the first revision: restore a backup (scripts/db_restore.sh) instead")

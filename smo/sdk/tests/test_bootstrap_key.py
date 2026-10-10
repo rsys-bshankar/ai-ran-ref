@@ -1,5 +1,8 @@
-"""PR-SEC-9.3: the SDK reaches /bootstrap only through R1Client, so `SMO_BOOTSTRAP_KEY` set in an rApp's environment makes the SDK's
-first call present `X-Bootstrap-Key`; unset, it sends no such header (the gateway's default, an open /bootstrap)."""
+"""PR-SEC-9.3: the SDK reaches the gateway's `/bootstrap` only through `R1Client`, so `SMO_BOOTSTRAP_KEY` in an rApp's environment makes its first call present `X-Bootstrap-Key`, and unset it sends no
+such header (the gateway's default, an open `/bootstrap`).
+
+Run with `cd sdk && PYTHONPATH=.:../shared python -m pytest tests/test_bootstrap_key.py -q`. Replaces `httpx.get` and `httpx.post` inside `smo_shared.r1_client` with a fake gateway; no network.
+"""
 
 import httpx
 import pytest
@@ -37,6 +40,7 @@ class Gateway:
 
 @pytest.fixture
 def gateway(monkeypatch):
+    """Fixture returning `install(key=None)`, which puts a fake gateway (requiring `key` on `/bootstrap` when set) in place of httpx and resets the module's cached identity; the bootstrap-key variables start unset."""
     def install(key=None):
         fake = Gateway(key)
         monkeypatch.setattr(r1_client.httpx, "get", fake.get)
@@ -49,16 +53,19 @@ def gateway(monkeypatch):
 
 
 def sdk():
+    """An `AiRuntimeSdk` over a real `R1Client` pointed at the fake gateway's address."""
     return AiRuntimeSdk(r1_client.R1Client(R1))
 
 
 def test_without_a_key_the_sdk_sends_no_bootstrap_header_to_an_open_gateway(gateway):
+    """With no key configured the SDK sends no `X-Bootstrap-Key` and an open gateway serves the call."""
     fake = gateway(key=None)
     sdk().platform.list_published_services("apf-1")
     assert fake.bootstrap_headers == [{}] and fake.calls
 
 
 def test_with_the_key_in_the_environment_the_sdk_passes_a_gateway_that_asks_for_it(gateway, monkeypatch):
+    """With `SMO_BOOTSTRAP_KEY` set the SDK presents it on `/bootstrap`, so a gateway that requires it lets the SDK discover its token endpoint."""
     fake = gateway(key="shared-key")
     monkeypatch.setenv("SMO_BOOTSTRAP_KEY", "shared-key")
     sdk().platform.list_published_services("apf-1")
@@ -66,6 +73,7 @@ def test_with_the_key_in_the_environment_the_sdk_passes_a_gateway_that_asks_for_
 
 
 def test_without_the_key_a_gateway_that_asks_for_it_refuses_discovery_and_the_sdk_gets_no_token(gateway, caplog):
+    """Without the key a gateway that requires it answers 401 to discovery and the failure is logged; the SDK ends up with no token."""
     fake = gateway(key="shared-key")
     sdk().platform.list_published_services("apf-1")          # R1Client logs the failed discovery and sends the call without a token (the gateway then 401s it)
     assert fake.bootstrap_headers == [{}]

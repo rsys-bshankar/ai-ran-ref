@@ -26,6 +26,7 @@ def _rdns(dn: str) -> list[str]:
 
 
 def upgrade() -> None:
+    """Create `managed_object` with its two indexes, then backfill it from `managed_entity`: the root `ManagedElement=<ref>` of every registered element and, for one registered with a managed function, that function's DN with its ancestors."""
     op.execute("""
         CREATE TABLE managed_object (
           dn                   TEXT PRIMARY KEY,
@@ -39,6 +40,7 @@ def upgrade() -> None:
     """)
     op.execute("CREATE INDEX ix_managed_object_parent_dn ON managed_object (parent_dn)")
     op.execute("CREATE INDEX ix_managed_object_managed_element_ref ON managed_object (managed_element_ref)")
+    # The backfill: one 'registry' row per RDN prefix of each element's DN. ON CONFLICT DO NOTHING makes a DN shared by several elements, or a rerun, harmless.
     bind = op.get_bind()
     now = datetime.datetime.now(datetime.UTC)
     insert = sa.text("INSERT INTO managed_object (dn, parent_dn, object_class, object_id, managed_element_ref, source, updated_at) "
@@ -58,4 +60,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop `managed_object`; the backfilled rows go with it."""
     op.execute("DROP TABLE managed_object")

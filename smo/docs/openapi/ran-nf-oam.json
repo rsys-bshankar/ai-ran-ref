@@ -124,6 +124,15 @@
             "title": "Requestedby",
             "type": "string"
           },
+          "requiredApprovals": {
+            "default": 1,
+            "enum": [
+              1,
+              2
+            ],
+            "title": "Requiredapprovals",
+            "type": "integer"
+          },
           "timeoutSeconds": {
             "default": 3600,
             "maximum": 604800.0,
@@ -3388,7 +3397,7 @@
     },
     "/capabilities": {
       "get": {
-        "description": "What this RAN NF OAM can drive across every registered vendor \u2014\n`supportedVendorModes` is the union of the vendors' declared modes.",
+        "description": "What this RAN NF OAM can drive across every registered vendor \u2014\n`supportedVendorModes` is the union of the vendors' declared modes. PR-SEC-10.9: for a caller with a scope claim, across the vendors of its own elements.",
         "operationId": "o1_capabilities_capabilities_get",
         "responses": {
           "200": {
@@ -3749,6 +3758,7 @@
     },
     "/cm-schemas": {
       "get": {
+        "description": "The CM schemas, the ones bundled with the service and the ones loaded. PR-SEC-10.9: a caller with a scope claim sees the loaded ones its elements' vendors use.",
         "operationId": "list_cm_schemas_cm_schemas_get",
         "parameters": [
           {
@@ -4031,6 +4041,7 @@
     },
     "/cm-schemas/{schema_name}": {
       "get": {
+        "description": "One schema with its descriptor. PR-SEC-10.9: a loaded schema that is not one of a caller's elements' vendors is a 404 for a caller with a scope claim (a bundled\nschema of the same name and revision, when there is one, is shown in its place).",
         "operationId": "get_cm_schema_cm_schemas__schema_name__get",
         "parameters": [
           {
@@ -5828,7 +5839,7 @@
     },
     "/decision-records/{decision_id}": {
       "get": {
-        "description": "AI-13.3: one record with its `integrity` (VERIFIED, UNCHAINED while the chain write is pending, or MISMATCH when the record or its audit row was changed).",
+        "description": "AI-13.3: one record with its `integrity` (VERIFIED, UNCHAINED while the chain write is pending, or MISMATCH when the record or its audit row was changed).\nPR-SEC-10.11: an rApp with a scope claim reads only its own (404 for another's).",
         "operationId": "read_decision_record_decision_records__decision_id__get",
         "parameters": [
           {
@@ -6814,6 +6825,7 @@
     },
     "/file-subscriptions": {
       "post": {
+        "description": "TS 28.532: subscribe to `notifyFileReady`. A subscription is sent the notice of every file, of every element, so there is no part of it a caller with a scope\nclaim could hold: PR-SEC-10.9 refuses it, 403 `SCOPE_DENIED` (an unscoped caller is unchanged). MGT-2.5: with the MSAC switch on, a managed caller needs `read` on the\nwhole network.",
         "operationId": "create_file_subscription_file_subscriptions_post",
         "requestBody": {
           "content": {
@@ -6940,6 +6952,7 @@
     },
     "/file-subscriptions/{subscription_id}": {
       "delete": {
+        "description": "Idempotent. A subscription covers every element, so it is never inside a caller's scope claim (PR-SEC-10.9) and a managed caller needs `read` on the whole network\nto remove it (MGT-2.6, as to create it): for any other the answer is 204 and nothing is removed, as for an id that is not there.",
         "operationId": "delete_file_subscription_file_subscriptions__subscription_id__delete",
         "parameters": [
           {
@@ -8597,6 +8610,7 @@
     },
     "/kpi-schedules": {
       "get": {
+        "description": "PR-SEC-10.9: a caller with a scope claim sees the schedules of the elements inside it (a schedule of the whole network is for an unscoped caller).",
         "operationId": "list_kpi_schedules_kpi_schedules_get",
         "responses": {
           "200": {
@@ -8958,7 +8972,7 @@
         "summary": "Get Kpi Schedule"
       },
       "put": {
-        "description": "MSG-4: publish `kpi` to DME every `intervalSeconds` (over the last `lookbackSeconds`), as `POST /kpis/{name}/publish` does. The worker runs it\n(`ran-nf-oam-worker`); with no worker nothing happens. 404 for a KPI that is not defined. Replaces the schedule of that id (its `last*` stay).\nInternal-only at R1.",
+        "description": "MSG-4: publish `kpi` to DME every `intervalSeconds` (over the last `lookbackSeconds`), as `POST /kpis/{name}/publish` does. The worker runs it\n(`ran-nf-oam-worker`); with no worker nothing happens. 404 for a KPI that is not defined. Replaces the schedule of that id (its `last*` stay).\nInternal-only at R1. PR-SEC-10.9: for a caller with a scope claim, 403 `SCOPE_DENIED` when the schedule names an element outside it, when it names none (a schedule of\nthe whole network), or when the id is a schedule the caller may not see (it is not replaced).",
         "operationId": "put_kpi_schedule_kpi_schedules__schedule_id__put",
         "parameters": [
           {
@@ -9096,7 +9110,7 @@
     },
     "/kpis/{name}": {
       "get": {
-        "description": "MGT-11.3/11.4/11.5: the KPI over [from_time, to_time) (to_time: now), per cell, per element, per sector group or incident zone (the cell\nguards of the registry), or over everything asked for. A ratio is computed from the group's summed counters, not from its cells' ratios.\n`managed_element_ref` and `cell_id` narrow what is read. A group without data has a null `value` and a `reason`.\nPR-SEC-10.6: a caller with a scope claim gets the KPI over the performance files of the elements inside it only (so `all` is its elements, never the network's).",
+        "description": "MGT-11.3/11.4/11.5: the KPI over [from_time, to_time) (to_time: now), per cell, per element, per sector group or incident zone (the cell\nguards of the registry), or over everything asked for. A ratio is computed from the group's summed counters, not from its cells' ratios.\n`managed_element_ref` and `cell_id` narrow what is read. A group without data has a null `value` and a `reason`.\nPR-SEC-10.6: a caller with a scope claim gets the KPI over the performance files of the elements inside it only (so `all` is its elements, never the network's).\nMGT-2.6: with the MSAC switch on, a caller that is a registered Identity gets it over the elements its access rules let it `read` only.",
         "operationId": "compute_kpi_kpis__name__get",
         "parameters": [
           {
@@ -11115,7 +11129,7 @@
     },
     "/managed-entities/{managed_element_ref}/managed-objects/refresh": {
       "post": {
-        "description": "PR-SB-6.2: read the element's server with a whole-container `get-config` and make the containment tree match what it reports: new objects\nare added with `source=walk`, walked objects it no longer reports are removed, and registry objects are kept. Needs an ssh or tls endpoint\nregistered with `?model=` (a server without a model has nothing to walk): 409 `PROTOCOL_NOT_SUPPORTED` otherwise, 503 when the read fails.",
+        "description": "PR-SB-6.2: read the element's server with a whole-container `get-config` and make the containment tree match what it reports: new objects\nare added with `source=walk`, walked objects it no longer reports are removed, and registry objects are kept. Needs an ssh or tls endpoint\nregistered with `?model=` (a server without a model has nothing to walk): 409 `PROTOCOL_NOT_SUPPORTED` otherwise, 503 when the read fails.\nPR-SEC-10.9: 403 `SCOPE_DENIED` for an element outside the caller's scope.",
         "operationId": "refresh_managed_objects_managed_entities__managed_element_ref__managed_objects_refresh_post",
         "parameters": [
           {
@@ -11381,7 +11395,7 @@
     },
     "/managed-objects/{dn}": {
       "get": {
-        "description": "PR-SB-6: one node of the containment tree by its distinguished name (`ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101`).",
+        "description": "PR-SB-6: one node of the containment tree by its distinguished name (`ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101`). PR-SEC-10.9: a node of an element\noutside the caller's scope is a 404.",
         "operationId": "read_managed_object_managed_objects__dn__get",
         "parameters": [
           {
@@ -11509,7 +11523,7 @@
     },
     "/managed-objects/{dn}/children": {
       "get": {
-        "description": "PR-SB-6.3: the direct children of a node (404 `MANAGED_OBJECT_NOT_FOUND` when the node itself is not in the tree), ordered by class then id.",
+        "description": "PR-SB-6.3: the direct children of a node (404 `MANAGED_OBJECT_NOT_FOUND` when the node itself is not in the tree), ordered by class then id. PR-SEC-10.9: only\nthe children inside the caller's scope.",
         "operationId": "list_managed_object_children_managed_objects__dn__children_get",
         "parameters": [
           {
@@ -11677,7 +11691,7 @@
     },
     "/managed-objects/{dn}/subtree": {
       "get": {
-        "description": "PR-SB-6.4: a node and its descendants as a nested tree (`children` on each node), down to `depth` levels below it (default and most 16).\nAt most 1000 nodes are returned; `truncated` says when that cut the answer short.",
+        "description": "PR-SB-6.4: a node and its descendants as a nested tree (`children` on each node), down to `depth` levels below it (default and most 16).\nAt most 1000 nodes are returned; `truncated` says when that cut the answer short. PR-SEC-10.9: only the nodes inside the caller's scope.",
         "operationId": "read_managed_object_subtree_managed_objects__dn__subtree_get",
         "parameters": [
           {
@@ -16737,7 +16751,7 @@
     },
     "/rapp-approvals/{approval_id}": {
       "get": {
-        "description": "One request with the changes it asks for. The rApp that made it polls this for the outcome (`jobId` once approved).",
+        "description": "One request with the changes it asks for. The rApp that made it polls this for the outcome (`jobId` once approved). PR-SEC-10.11: an rApp with a scope claim reads\nonly its own.",
         "operationId": "read_approval_rapp_approvals__approval_id__get",
         "parameters": [
           {
@@ -16866,7 +16880,7 @@
     },
     "/rapp-approvals/{approval_id}/approve": {
       "post": {
-        "description": "AI-11.2: approve a waiting request. The safeguards are checked again now (a kill switch thrown while it waited refuses it: 403 `RAPP_KILLED`, the\nrequest is closed REFUSED), then MSAC, the schema check and the dispatch run as for any write, and the job is made from the request as the rApp\nsent it. 200 with the request (now APPROVED, `jobId`) and the job's status. 404, 403 (an rApp, or the requester), 409 (not pending).",
+        "description": "AI-11.2: approve a waiting request. The safeguards are checked again now (a kill switch thrown while it waited refuses it: 403 `RAPP_KILLED`, the\nrequest is closed REFUSED), then MSAC, the schema check and the dispatch run as for any write, and the job is made from the request as the rApp\nsent it. 200 with the request (now APPROVED, `jobId`) and the job's status. 404, 403 (an rApp, or the requester), 409 (not pending).\n\nA request parked under a policy of `requiredApprovals: 2` needs two different people: the first approval is recorded and the request stays PENDING (200,\n`jobStatus` null, the approvals so far in `approvals`), a second approval by the same person is 409 `APPROVAL_ALREADY_GIVEN`, and the second person's approval\nruns everything above. The requester's own approval never counts (403 `APPROVAL_SELF_DECISION`). The first approval checks nothing and writes nothing.",
         "operationId": "approve_action_rapp_approvals__approval_id__approve_post",
         "parameters": [
           {
@@ -20768,7 +20782,7 @@
     },
     "/topology/links": {
       "get": {
-        "description": "PR-MGT-10.2: the neighbour relations declared in the cell guards, each with its link type (`topology.py`): both cells on one element\n(`INTRA_ELEMENT`), on different elements (`INTER_ELEMENT`), a cell id several elements claim (`AMBIGUOUS`) or none does (`EXTERNAL`), and whether\nthe other side declares the relation back (`reciprocal`). `managed_element_ref` keeps the links with that element at either end.",
+        "description": "PR-MGT-10.2: the neighbour relations declared in the cell guards, each with its link type (`topology.py`): both cells on one element\n(`INTRA_ELEMENT`), on different elements (`INTER_ELEMENT`), a cell id several elements claim (`AMBIGUOUS`) or none does (`EXTERNAL`), and whether\nthe other side declares the relation back (`reciprocal`). `managed_element_ref` keeps the links with that element at either end.\n\nPR-SEC-10.9: a caller with a scope claim gets the links among the elements inside it. The elements outside are not part of its world, so a neighbour that is declared\non one of them is `EXTERNAL` for it (and `AMBIGUOUS` and `reciprocal` are worked out among its elements only): the answer never names an element it may not touch.\nMGT-2.6: the same for the elements its access rules do not let it read.",
         "operationId": "topology_links_topology_links_get",
         "parameters": [
           {
@@ -20925,7 +20939,7 @@
     },
     "/topology/relation": {
       "get": {
-        "description": "PR-MGT-10.2: how the managed object `a` (a DN) stands to `b` in the containment tree: SAME, ANCESTOR (a contains b), DESCENDANT, SIBLING,\nSAME_ELEMENT or DIFFERENT_ELEMENT. 404 when either is not in the tree.",
+        "description": "PR-MGT-10.2: how the managed object `a` (a DN) stands to `b` in the containment tree: SAME, ANCESTOR (a contains b), DESCENDANT, SIBLING,\nSAME_ELEMENT or DIFFERENT_ELEMENT. 404 when either is not in the tree. PR-SEC-10.9: a node outside the caller's scope is not in its tree (404), so DIFFERENT_ELEMENT\nis only ever said of two nodes the caller may see.",
         "operationId": "topology_relation_topology_relation_get",
         "parameters": [
           {
@@ -21340,6 +21354,7 @@
         "summary": "Delete Vendor Capability"
       },
       "get": {
+        "description": "One vendor's capability entry. PR-SEC-10.9: for a caller with a scope claim, 404 when none of its elements is of that vendor, as if there were no entry.",
         "operationId": "get_vendor_capability_vendor_capabilities__vendor_name__get",
         "parameters": [
           {

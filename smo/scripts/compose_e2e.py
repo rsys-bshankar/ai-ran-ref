@@ -36,12 +36,17 @@ failures: list[str] = []
 
 
 def check(name: str, ok: bool, detail: object = "") -> None:
+    """Prints one `ok` / `FAIL` line and remembers a failure; the script goes on and lists every failure at the end."""
     print(f"{'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f" -- {detail}"))
     if not ok:
         failures.append(name)
 
 
 def wait_for(url: str, want_200: bool, timeout: float = 180.0) -> httpx.Response | None:
+    """Polls `url` every 2 s for up to `timeout` seconds and returns the first response (any status when `want_200` is false, only a 200 otherwise).
+
+        Returns None, after printing the last status or error, when none came in time. A service that is still starting is the normal reason for the wait.
+    """
     deadline = time.monotonic() + timeout
     last: object = None
     while time.monotonic() < deadline:

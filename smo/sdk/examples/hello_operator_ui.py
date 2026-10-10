@@ -57,6 +57,7 @@ def package_files() -> dict[str, str]:
 
 
 def build_bytes() -> bytes:
+    """The CSAR as bytes: a zip of `package_files()` with sorted entries, a fixed timestamp and deflate, so the same sources always give the same bytes."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for path, text in sorted(package_files().items()):
@@ -67,6 +68,7 @@ def build_bytes() -> bytes:
 
 
 def main() -> None:
+    """Write `hello-operator-ui.csar` into the directory named by the first argument (default: the current one) and print its path."""
     out = Path(sys.argv[1] if len(sys.argv) > 1 else ".") / f"{NAME}.csar"
     out.write_bytes(build_bytes())
     print(f"wrote {out}")

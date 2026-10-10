@@ -11,7 +11,7 @@ import uuid
 
 import httpx
 import jsonschema
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -25,7 +25,8 @@ from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.r1_client import R1Client
 from smo_shared.openapi_security import apply_r1_gateway_security
 from smo_shared.correlation import apply_correlation_id, get_correlation_id
-from smo_shared.pagination import PageLimit, PageOffset, paginate
+from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
+from smo_shared import scope as authz_scope
 from smo_shared.outbox import enqueue
 from smo_shared.webhook import get_webhook
 
@@ -790,23 +791,67 @@ def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
     return {"actionId": str(record.action_id), "forwardedJobId": forwarded["jobId"], "status": record.status}
 
 
+def _visible_elements(scope: authz_scope.Scope) -> set[str]:
+    """PR-SEC-10.7: the managed elements a caller with `scope` may touch, asked of the module that owns them (RAN NF OAM; DME holds no element, region or tenant).
+    `R1Client` passes the rApp's claim on with the call (`X-R1-On-Behalf-Scope`), so RAN NF OAM answers with the elements inside it. Fails closed: if the claim could not be
+    passed on (it would be read as no claim, and the answer would be every element), or RAN NF OAM does not answer, the caller is shown nothing and told why."""
+    if authz_scope.get_originator_scope() != scope:
+        return set()
+    refs: set[str] = set()
+    offset = 0
+    while True:
+        resp = _r1.get("/ran-nf-oam/managed-entities", params={"limit": 500, "offset": offset})
+        if resp.status_code != 200:
+            raise framework_error(FrameworkError.UPSTREAM_FAILED, detail=f"RAN NF OAM answered {resp.status_code}: the caller's scope cannot be applied to the actions")
+        page = resp.json()
+        refs.update(item["managedElementRef"] for item in page["items"])
+        offset += len(page["items"])
+        if not page["items"] or offset >= page["total"]:
+            return refs
+
+
+def _named_elements(a: DmeActionRecord) -> set[str]:
+    """Every managed element an action names: the one the record is filed under and each change's own."""
+    names = {a.managed_element_ref} | {c.get("managedElementRef") for c in a.changes if isinstance(c, dict)}
+    return {n for n in names if isinstance(n, str) and n}
+
+
+def _within(a: DmeActionRecord, visible: set[str]) -> bool:
+    """Whether a caller who may touch `visible` may see the action: it names at least one element, and every element it names is one of them (the action is
+    one request: one element outside is a view of a change to it). An action that names no element has no region or tenant to be inside, so it is not shown."""
+    named = _named_elements(a)
+    return bool(named) and named <= visible
+
+
 @app.get("/actions/{action_id}")
-def get_action(action_id: uuid.UUID, db: Session = Depends(get_session)):
+def get_action(action_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    """One action. PR-SEC-10.7: for a caller with a scope claim, one that names an element outside it is a 404, as if there were no such action."""
     record = db.get(DmeActionRecord, action_id)
-    if record is None:
+    scope = authz_scope.request_scope(request)
+    if record is None or (scope is not None and not _within(record, _visible_elements(scope))):
         raise framework_error(FrameworkError.DME_ACTION_NOT_FOUND, detail="no such action")
     return _action_view(record)
 
 
 @app.get("/actions")
-def list_actions(managed_element_ref: str | None = None, requested_by: str | None = None, limit: int = PageLimit,
+def list_actions(request: Request, managed_element_ref: str | None = None, requested_by: str | None = None, limit: int = PageLimit,
                   offset: int = PageOffset, db: Session = Depends(get_session)):
+    """The recorded actions. PR-SEC-10.7: a caller with a scope claim sees the actions all of whose elements are inside it (filtered, never refused; `total` counts what
+    it may see). DME has no region or tenant to match, so the elements inside the claim are asked of RAN NF OAM (`GET /ran-nf-oam/managed-entities`, which applies
+    the claim it is passed); the cost is that call for each list, in pages of 500. An unscoped caller (an SMO module, the operator's GUI, an rApp with no claim) asks nothing
+    and sees every action, as before."""
     stmt = select(DmeActionRecord)
     if managed_element_ref:
         stmt = stmt.where(DmeActionRecord.managed_element_ref == managed_element_ref)
     if requested_by:
         stmt = stmt.where(DmeActionRecord.requested_by == requested_by)
-    page = paginate(db, stmt, limit, offset)
+    scope = authz_scope.request_scope(request)
+    if scope is None:
+        page = paginate(db, stmt, limit, offset)
+        return {**page, "items": [_action_view(a) for a in page["items"]]}
+    visible = _visible_elements(scope)
+    shown = [a for a in db.scalars(stmt.order_by(DmeActionRecord.action_id)) if _within(a, visible)]
+    page = paginate_list(shown, limit, offset)
     return {**page, "items": [_action_view(a) for a in page["items"]]}
 
 

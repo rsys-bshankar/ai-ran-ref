@@ -1,19 +1,23 @@
-"""TS 28.312 value datatypes that `ValueRangeType` and `ReportingCondition` use
-(SA-INTENT-partial). They were accepted as values with no inner structure.
+"""The structured value datatypes of TS 28.312 that `ValueRangeType` and `ReportingCondition` use, as strict pydantic models plus the functions that check a
+value against them (SA-INTENT-partial).
 
-`TS28312_IntentNrm.yaml`: `Frequency`, `UEGroup`, `QoSId`, `CivicArea`,
-`CivicAddress`, `ReportingCondition` = `TimeCondition` | `TargetFulfilmentCondition`;
-with their dependencies `PlmnId`, `Snssai` (TS 28.541), `SchedulingTime`,
-`TimeWindow`, `TimeInterval`, `GeoArea`, `GeoCoordinate` (TS 28.623).
+What it is: `Frequency`, `UEGroup` (with `QoSId`, `PlmnId`, `Snssai`), `CivicArea` / `CivicAddress`, `SchedulingTime` (with `TimeWindow`,
+`TimeInterval`), `GeoArea` (with `GeoCircle`, `GeoCoordinate`) and `TargetFulfilmentCondition` from `TS28312_IntentNrm.yaml`, TS 28.541 and
+TS 28.623, and three checking functions: `value_range_problem`, `named_datatype_problem` and `reporting_condition_problem`. Design record:
+`intent-service/README.md` (1.2).
 
-`value_range_problem(value)` is the whole `ValueRangeType` rule: a scalar is
-fine; a list is each of its items; an object must match exactly one of the
-structured alternatives (TimeWindow, DateTime string, GeoArea, PlmnId,
-GeoCoordinate, UEGroup, Frequency, SchedulingTime, CivicArea). `None` is
-allowed (an optional value that is absent).
+`value_range_problem(value)` is the whole `ValueRangeType` rule: a scalar is fine; a list is each of its items; an object must match at least one
+of the structured alternatives in `STRUCTURED`. `None` is allowed (an optional value that is absent).
 
-Recorded deviation: `DateTime` and `FullTime` strings are checked by pattern
-(RFC 3339 shape), not by calendar validity.
+Where it sits: imported by `ts28312.py`, which calls these functions from the validators of `IntentExpectation` and `IntentReportControl`; nothing
+here touches the database or HTTP. Each checking function returns a reason string, or None when the value is fine; the caller turns a reason into
+a `ValueError`, so the API answers 422.
+
+Recorded deviation: `DateTime` and `FullTime` strings are checked by pattern (RFC 3339 shape), not by calendar validity, and a `GeoArea` polygon
+is not checked for closure.
+
+Before editing: every model forbids unknown keys, which is what keeps the alternatives of `ValueRangeType` apart (an object that fits two forms
+would otherwise be ambiguous); loosening one model changes what the others accept.
 """
 
 import re
@@ -25,11 +29,16 @@ _DATE_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[
 _FULL_TIME = re.compile(r"^\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$")
 
 
+# Base of the datatype models in this file: unknown keys are refused.
 class _S(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
 def _one_key(value: dict, allowed: tuple[str, ...], what: str) -> None:
+    """Raises `ValueError` unless `value` has exactly one key and it is one of `allowed`; `what` names the datatype in the message.
+
+    No code in the repository calls it.
+    """
     present = [k for k in allowed if k in value]
     if len(present) != 1 or len(value) != 1:
         raise ValueError(f"{what} takes exactly one of {', '.join(allowed)}")
@@ -47,16 +56,19 @@ class QoSId(_S):
         return self
 
 
+# TS 28.541 PlmnId: `mcc` is three digits, `mnc` two or three; both optional here, as an empty object matches (a `UEGroup` needs at least one part).
 class PlmnId(_S):
     mcc: str | None = Field(default=None, pattern=r"^[0-9]{3}$")
     mnc: str | None = Field(default=None, pattern=r"^[0-9]{2,3}$")
 
 
+# TS 28.541 Snssai: `sst` 0..255 and `sd` six hex digits; both optional.
 class Snssai(_S):
     sst: int | None = Field(default=None, ge=0, le=255)
     sd: str | None = Field(default=None, pattern=r"^[A-Fa-f0-9]{6}$")
 
 
+# TS 28.312 UEGroup: at least one of PLMN, QoS, S-NSSAI or UE type; `uEType` is REDCAP_UE or EREDCAP_UE.
 class UEGroup(_S):
     pLMNId: PlmnId | None = None
     qOSId: QoSId | None = None
@@ -77,6 +89,7 @@ class UEGroup(_S):
         return self
 
 
+# TS 28.312 Frequency: an `arfcn`, a `freqband` or both.
 class Frequency(_S):
     arfcn: int | None = None
     freqband: str | None = None
@@ -88,6 +101,7 @@ class Frequency(_S):
         return self
 
 
+# RFC 4119 / TS 28.312 CivicAddress: every field is an optional string, with the spec's own key names (A1..A6, HNO, ...), and unknown keys are refused.
 class CivicAddress(_S):
     A1: str | None = None
     A2: str | None = None
@@ -125,6 +139,7 @@ class CivicAddress(_S):
     usageRules: str | None = None
 
 
+# TS 28.312 CivicArea: exactly one of `civicAddress` or `locationLabel`.
 class CivicArea(_S):
     civicAddress: CivicAddress | None = None
     locationLabel: str | None = None
@@ -136,6 +151,7 @@ class CivicArea(_S):
         return self
 
 
+# TS 28.623 TimeWindow: `startTime` and `endTime` are RFC 3339 date-times (checked by pattern); either may be missing.
 class TimeWindow(_S):
     startTime: str | None = None
     endTime: str | None = None
@@ -148,6 +164,7 @@ class TimeWindow(_S):
         return v
 
 
+# TS 28.623 TimeInterval: `intervalStart` and `intervalEnd` are RFC 3339 full-times (checked by pattern).
 class TimeInterval(_S):
     intervalStart: str | None = None
     intervalEnd: str | None = None
@@ -163,6 +180,8 @@ class TimeInterval(_S):
 DAYS = ("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY")
 
 
+# TS 28.623 SchedulingTime in one of four forms: a time window (`startTime` / `endTime`), `timeIntervals`, `daysOfWeek` or `daysOfMonth` (each of the
+# last two with optional `timeIntervals`). `_form` enforces which combinations are allowed.
 class SchedulingTime(BaseModel):
     """One of: a TimeWindow; `timeIntervals`; `daysOfWeek` (+ `timeIntervals`);
     `daysOfMonth` (+ `timeIntervals`)."""
@@ -175,6 +194,11 @@ class SchedulingTime(BaseModel):
 
     @model_validator(mode="after")
     def _form(self):
+        """Checks that the object is one of the allowed forms; raises `ValueError` otherwise.
+
+        Refused: an empty object; a window combined with intervals or days; `daysOfWeek` together with `daysOfMonth`; a repeated or unknown weekday; a repeated
+        day of month or one outside 0..31. A window's times are checked by building a `TimeWindow` from them, which raises on a bad date-time.
+        """
         window = self.startTime is not None or self.endTime is not None
         days_of_week, days_of_month = self.daysOfWeek, self.daysOfMonth
         weekly, monthly = days_of_week is not None, days_of_month is not None
@@ -193,17 +217,20 @@ class SchedulingTime(BaseModel):
         return self
 
 
+# TS 28.623 GeoCoordinate: `latitude` -90..90, `longitude` -180..180, optional `altitude`.
 class GeoCoordinate(_S):
     altitude: float | None = None
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
 
 
+# TS 28.623 GeoCircle: `distanceRadius` 1..65535 around a `referenceLocation`.
 class GeoCircle(_S):
     distanceRadius: int | None = Field(default=None, ge=1, le=65535)
     referenceLocation: GeoCoordinate | None = None
 
 
+# TS 28.623 GeoArea: exactly one of a `geoPolygon` (at least one coordinate; closure is not checked) or a `geoCircle`.
 class GeoArea(_S):
     geoPolygon: list[GeoCoordinate] | None = Field(default=None, min_length=1)
     geoCircle: GeoCircle | None = None
@@ -219,11 +246,13 @@ class GeoArea(_S):
 
 # Structured alternatives of ValueRangeType, in the spec's order. A value must
 # match at least one; the models reject unknown keys, so shapes do not blur.
+# The ValueRangeType alternatives for an object value, in the spec's order. An object is accepted when any one validates (`value_range_problem`).
 STRUCTURED = (("TimeWindow", TimeWindow), ("GeoArea", GeoArea), ("PlmnId", PlmnId), ("GeoCoordinate", GeoCoordinate),
               ("UEGroup", UEGroup), ("Frequency", Frequency), ("SchedulingTime", SchedulingTime), ("CivicArea", CivicArea))
 
 
 def _validates(model: type[BaseModel], value: dict) -> str | None:
+    """Returns None when `value` validates against `model`, else the pydantic errors flattened to one string (`field.path: message; ...`)."""
     try:
         model.model_validate(value)
     except ValidationError as exc:
@@ -253,6 +282,7 @@ def value_range_problem(value: Any) -> str | None:
 
 
 # datatype named by a specialised target / context (the families' own names)
+# Specialised target / context names whose value must be a given datatype (the families' own names), used by `named_datatype_problem`.
 NAMED_DATATYPES: dict[str, type[BaseModel]] = {"UEGroup": UEGroup, "CivicArea": CivicArea, "DlFrequency": Frequency,
                                                 "UlFrequency": Frequency, "schedulingTime": SchedulingTime}
 
@@ -274,6 +304,8 @@ def named_datatype_problem(name: str, value: Any) -> str | None:
 
 # ---------------------------------------------------------------- ReportingCondition
 
+# TS 28.312 TargetFulfilmentCondition: a `targetName` with a Condition and a `targetValueRange` that must itself be a ValueRangeType.
+# The condition list in `_condition` repeats the `Condition` literal of `ts28312.py`; keep the two equal.
 class TargetFulfilmentCondition(_S):
     targetCondition: str
     targetName: str

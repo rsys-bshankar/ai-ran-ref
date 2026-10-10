@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Create `rapp_limit` (the per-rApp job cap), add `invoker_id` and `created_at` to `write_config_job` with an index on the invoker, and `rapp_limits_set` to `rapp_instance`."""
     op.execute("""
         CREATE TABLE rapp_limit (
             invoker_id               VARCHAR PRIMARY KEY,
@@ -28,6 +29,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop the index, the columns and `rapp_limit`, in reverse order."""
     op.execute("ALTER TABLE rapp_instance DROP COLUMN rapp_limits_set")
     op.execute("DROP INDEX ix_write_config_job_invoker_id")
     op.execute("ALTER TABLE write_config_job DROP COLUMN created_at")

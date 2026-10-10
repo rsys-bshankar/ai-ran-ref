@@ -9,7 +9,7 @@ Runs inside the SME pod (it holds the enrollment secret, so it can take an inter
     kubectl -n smo exec -i deploy/sme -- python3 - finish JOB < scripts/k8s_staged_job_failover.py     # the job completes, every sub-change applied once
 
 The state of the job is in the database (the wave it is at, when the next one is due), so any worker that runs afterwards picks it up (MSG-4.4).
-Exits 1 on the first failure; removes what it made on `finish`.
+Exits 1 on the first failure. It removes nothing: the three O1 endpoints stay registered (a second run accepts the 409) and `start` makes a new job each time.
 """
 import sys
 import time
@@ -22,11 +22,16 @@ ELEMENTS = ["ha-job-du-1", "ha-job-du-2", "ha-job-du-3"]
 
 
 def fail(message: str) -> None:
+    """Prints `FAIL <message>` and ends the script with exit status 1."""
     print(f"FAIL {message}")
     sys.exit(1)
 
 
 def token() -> str:
+    """An internal bearer token for the platform: registers an invoker with the enrollment secret and exchanges its onboarding secret for a `smo-internal` token.
+
+        Each run leaves one invoker registration behind (`ha-job`). An HTTP error raises (`raise_for_status`).
+    """
     reg = httpx.post(f"{SME}/invoker-registrations", json={"apiInvokerPublicKey": "ha-job"}, headers={"X-SMO-Enrollment": SECRET}, timeout=10)
     reg.raise_for_status()
     body = reg.json()
@@ -41,6 +46,7 @@ def call(method: str, path: str, **kw) -> httpx.Response:
 
 
 def job(job_id: str) -> dict:
+    """The view of config job `job_id` from RAN NF OAM; any status other than 200 ends the script through `fail`."""
     r = call("GET", f"/config-jobs/{job_id}")
     if r.status_code != 200:
         fail(f"GET job -> {r.status_code} {r.text[:200]}")

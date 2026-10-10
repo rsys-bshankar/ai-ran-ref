@@ -1,3 +1,8 @@
+// auth_test.go covers the token flow of auth.go through Client.Do: discovery through /bootstrap, enrollment, the grant,
+// caching, renewal before expiry and on a 401, a pinned invoker, a bootstrap key, a fixed bearer token, and many
+// goroutines at once (run with -race for those). It uses fakeStack (stack_test.go), which counts the bootstrap,
+// registration and grant calls. No network beyond httptest. Run: cd smo/sdk-go && go test -race ./... .
+
 package smosdk
 
 import (
@@ -9,11 +14,15 @@ import (
 	"time"
 )
 
+// get sends GET path through c and returns only the error, for the tests that care about the token traffic and not the answer.
 func get(t *testing.T, c *Client, path string) error {
 	t.Helper()
 	return c.Do(context.Background(), Request{Method: "GET", Path: path}, nil)
 }
 
+// TestFirstCallDiscoversEnrollsAndAsksForTheRappScope
+// pins the first-call sequence: one /bootstrap, one registration (without an enrollment header, so SME records an rApp)
+// and one client_credentials grant for scope smo-rapp with the enrolled invoker.
 func TestFirstCallDiscoversEnrollsAndAsksForTheRappScope(t *testing.T) {
 	s := newStack(t)
 	s.api = func(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +48,8 @@ func TestFirstCallDiscoversEnrollsAndAsksForTheRappScope(t *testing.T) {
 	}
 }
 
+// TestTokenIsCachedAcrossCalls
+// pins that later calls reuse the token: a grant per call would hammer SME.
 func TestTokenIsCachedAcrossCalls(t *testing.T) {
 	s := newStack(t)
 	c := s.client(t)
@@ -52,6 +63,9 @@ func TestTokenIsCachedAcrossCalls(t *testing.T) {
 	}
 }
 
+// TestTokenIsRenewedBeforeItExpires
+// pins renewal 30 s before expiry, and that a renewal reuses the invoker and the token endpoint (no new registration or
+// bootstrap).
 func TestTokenIsRenewedBeforeItExpires(t *testing.T) {
 	s := newStack(t)
 	s.expiresIn = 40 // minus the 30 s margin: usable for 10 s
@@ -78,6 +92,8 @@ func TestTokenIsRenewedBeforeItExpires(t *testing.T) {
 	}
 }
 
+// TestShortLivedTokenStillGetsAtLeastOneSecond
+// pins the one-second floor on the cached lifetime: a token that lives less than the 30 s margin is still cached for about a second, not for zero or negative time.
 func TestShortLivedTokenStillGetsAtLeastOneSecond(t *testing.T) {
 	s := newStack(t)
 	s.expiresIn = 5 // below the margin
@@ -90,6 +106,8 @@ func TestShortLivedTokenStillGetsAtLeastOneSecond(t *testing.T) {
 	}
 }
 
+// TestA401RenewsTheTokenOnceAndRepeatsTheCall
+// pins that a token SME has revoked is replaced and the call repeated, without a new registration.
 func TestA401RenewsTheTokenOnceAndRepeatsTheCall(t *testing.T) {
 	s := newStack(t)
 	c := s.client(t)
@@ -105,6 +123,8 @@ func TestA401RenewsTheTokenOnceAndRepeatsTheCall(t *testing.T) {
 	}
 }
 
+// TestAPersistent401IsReturnedAfterOneRenewal
+// pins that a 401 that survives one fresh token is returned to the caller, so a refused call cannot loop.
 func TestAPersistent401IsReturnedAfterOneRenewal(t *testing.T) {
 	s := newStack(t)
 	s.api = func(w http.ResponseWriter, r *http.Request) {
@@ -120,6 +140,8 @@ func TestAPersistent401IsReturnedAfterOneRenewal(t *testing.T) {
 	}
 }
 
+// TestConcurrentCallsShareOneGrant
+// pins single flight: twenty goroutines starting together cause one bootstrap, one registration and one grant.
 func TestConcurrentCallsShareOneGrant(t *testing.T) {
 	s := newStack(t)
 	c := s.client(t)
@@ -139,6 +161,8 @@ func TestConcurrentCallsShareOneGrant(t *testing.T) {
 	}
 }
 
+// TestConcurrent401sRenewOnce
+// pins that callers rejected with the same revoked token renew it once between them, not once each.
 func TestConcurrent401sRenewOnce(t *testing.T) {
 	s := newStack(t)
 	c := s.client(t)
@@ -162,6 +186,8 @@ func TestConcurrent401sRenewOnce(t *testing.T) {
 	}
 }
 
+// TestPinnedInvokerIsNotEnrolled
+// pins that an invoker from the configuration (the one rApp Management issues) is used for the grant and no registration is made.
 func TestPinnedInvokerIsNotEnrolled(t *testing.T) {
 	s := newStack(t)
 	c := s.client(t, func(c *Config) { c.InvokerID, c.InvokerSecret = "api-invoker-instance", "s3cret" })
@@ -176,6 +202,9 @@ func TestPinnedInvokerIsNotEnrolled(t *testing.T) {
 	}
 }
 
+// TestAPinnedInvokerSMEForgotIsAnErrorNotAReplacement
+// pins that a pinned invoker SME no longer knows gives the invalid_client error and is never replaced by a new
+// registration, because the pinned identity is the instance's own.
 func TestAPinnedInvokerSMEForgotIsAnErrorNotAReplacement(t *testing.T) {
 	s := newStack(t)
 	s.forgetInvoker = true
@@ -190,6 +219,8 @@ func TestAPinnedInvokerSMEForgotIsAnErrorNotAReplacement(t *testing.T) {
 	}
 }
 
+// TestAnEnrolledInvokerSMEForgotIsEnrolledAfresh
+// pins that an invoker the SDK enrolled itself and SME then purged is enrolled again, once, and the new one is used.
 func TestAnEnrolledInvokerSMEForgotIsEnrolledAfresh(t *testing.T) {
 	s := newStack(t)
 	c := s.client(t)
@@ -211,6 +242,8 @@ func TestAnEnrolledInvokerSMEForgotIsEnrolledAfresh(t *testing.T) {
 	}
 }
 
+// TestBootstrapKeyIsSentWhenConfigured
+// pins that Config.BootstrapKey is sent to /bootstrap as X-Bootstrap-Key, and that a gateway asking for it answers 401 without it.
 func TestBootstrapKeyIsSentWhenConfigured(t *testing.T) {
 	s := newStack(t)
 	s.bootstrapKey = "k3y"
@@ -223,6 +256,8 @@ func TestBootstrapKeyIsSentWhenConfigured(t *testing.T) {
 	}
 }
 
+// TestAFailedTokenFlowIsAnErrorNotAnUnauthenticatedCall
+// pins that when the token cannot be obtained the call fails with that error and the API is never called without a token.
 func TestAFailedTokenFlowIsAnErrorNotAnUnauthenticatedCall(t *testing.T) {
 	apiCalled := false
 	srv := newStack(t)
@@ -237,6 +272,8 @@ func TestAFailedTokenFlowIsAnErrorNotAnUnauthenticatedCall(t *testing.T) {
 	}
 }
 
+// TestBearerTokenBypassesSME
+// pins that Config.BearerToken is sent as is with no SME traffic, and that its 401 is returned with no renewal attempt.
 func TestBearerTokenBypassesSME(t *testing.T) {
 	s := newStack(t)
 	s.mu.Lock()
@@ -258,6 +295,8 @@ func TestBearerTokenBypassesSME(t *testing.T) {
 	}
 }
 
+// TestTokenEndpointWithoutTheTokenPathIsRefused
+// pins that a bootstrap answer whose token endpoint does not end in /oauth2/token is an error.
 func TestTokenEndpointWithoutTheTokenPathIsRefused(t *testing.T) {
 	s := newStack(t)
 	s.srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

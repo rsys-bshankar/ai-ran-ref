@@ -1,5 +1,9 @@
-"""PR-SEC-14: the role policy at the gateway: an rApp is refused on the internal-only routes, an SMO module is not, and what a backend reads as the
-caller's role is only ever what SME said."""
+"""PR-SEC-14: the role policy at the gateway: an rApp is refused on the internal-only routes, an SMO module is not, and what a backend reads as the caller's role is only ever what SME said.
+
+Covers the role step of `_proxy` against the lists in `smo_shared/roles.py` (the deny-list `INTERNAL_ONLY` and the change allow-list `RAPP_MAY_CHANGE`), the enforce/audit
+modes, how a role is derived from SME's answer, and the `X-R1-On-Behalf-Of` rule. A fake SME and backend replace httpx (`gateway` fixture). A route added to either list
+in `roles.py` should be added to the tables here. Run: `PYTHONPATH=.:../shared python -m pytest tests/test_roles.py -q`.
+"""
 
 import json
 
@@ -17,6 +21,7 @@ INTROSPECT_URL = f"{ROUTES['/sme']}/oauth2/introspect"
 
 @pytest.fixture(autouse=True)
 def fresh_rate_limiter():
+    """Autouse fixture: every test starts and ends with every caller's rate bucket full."""
     from app.main import _limiter
     _limiter.clear()
     yield
@@ -75,6 +80,7 @@ INTERNAL_ONLY_CALLS = [("PUT", "/ran-nf-oam/rapp-limits/x"), ("DELETE", "/ran-nf
 
 @pytest.mark.parametrize("method, path", INTERNAL_ONLY_CALLS)
 def test_an_rapp_is_refused_on_an_internal_only_route_and_the_backend_is_never_called(gateway, method, path):
+    """Every route in `INTERNAL_ONLY_CALLS` is a 403 `ROLE_NOT_PERMITTED` for an rApp, and no backend sees the call."""
     resp = client.request(method, path, headers=AUTH)
     assert resp.status_code == 403 and resp.json()["title"] == "ROLE_NOT_PERMITTED"
     assert gateway["forwarded"] == []
@@ -82,6 +88,7 @@ def test_an_rapp_is_refused_on_an_internal_only_route_and_the_backend_is_never_c
 
 @pytest.mark.parametrize("method, path", INTERNAL_ONLY_CALLS)
 def test_an_smo_module_is_not_refused_there(gateway, method, path):
+    """The same calls pass for an `internal` caller and are forwarded once each."""
     gateway["sme_says"]["role"] = "internal"
     assert client.request(method, path, headers=AUTH).status_code == 200
     assert len(gateway["forwarded"]) == 1
@@ -94,27 +101,32 @@ def test_an_smo_module_is_not_refused_there(gateway, method, path):
                                           ("POST", "/rapp-mgmt/instances/i/bootstrap-complete"), ("POST", "/rapp-mgmt/instances/i/performance"),
                                           ("DELETE", "/sme/provider-registrations/a"), ("GET", "/onboarding/packages"), ("GET", "/rapp-mgmt/instances"), ("GET", "/sme/trusted-invokers")])
 def test_other_routes_are_open_to_an_rapp_as_before(gateway, method, path):
+    """Routes that look similar to internal-only ones but are not (reads of one's own record, a different method or path) stay open to an rApp."""
     assert client.request(method, path, headers=AUTH).status_code == 200
 
 
 def test_audit_mode_lets_the_call_through(gateway, monkeypatch):
+    """With `SMO_ROLE_ENFORCEMENT=audit` the call that would be refused is forwarded (the decision is counted and logged only)."""
     monkeypatch.setenv("SMO_ROLE_ENFORCEMENT", "audit")
     assert client.put("/ran-nf-oam/rapp-limits/x", headers=AUTH).status_code == 200
     assert len(gateway["forwarded"]) == 1
 
 
 def test_a_mistyped_mode_still_enforces(gateway, monkeypatch):
+    """Any `SMO_ROLE_ENFORCEMENT` value other than `audit` enforces, so a typo cannot switch the policy off."""
     monkeypatch.setenv("SMO_ROLE_ENFORCEMENT", "of")
     assert client.put("/ran-nf-oam/rapp-limits/x", headers=AUTH).status_code == 403
 
 
 def test_the_role_a_backend_sees_is_the_one_sme_gave_never_the_callers(gateway):
+    """The role and invoker-id headers a caller sends are replaced by the values from SME's introspection before forwarding."""
     client.get("/ran-nf-oam/health", headers={**AUTH, roles.ROLE_HEADER: "internal", "X-R1-Invoker-Id": "someone-else"})
     headers = {k.lower(): v for k, v in gateway["forwarded"][0][2].items()}
     assert headers[roles.ROLE_HEADER.lower()] == "rapp" and headers["x-r1-invoker-id"] == "inv-1"
 
 
 def test_an_sme_that_does_not_say_is_read_by_the_scope(gateway):
+    """When SME's answer has no `role`, the scope decides: `smo-internal` is a module, any other scope or none is an rApp."""
     gateway["sme_says"] = {"active": True, "client_id": "old", "scope": "smo-internal"}
     assert client.put("/ran-nf-oam/rapp-limits/x", headers=AUTH).status_code == 200
     gateway["sme_says"] = {"active": True, "client_id": "old", "scope": "3gpp#aef:api"}
@@ -124,6 +136,7 @@ def test_an_sme_that_does_not_say_is_read_by_the_scope(gateway):
 
 
 def test_refusals_are_counted(gateway):
+    """A role refusal increments `smo_role_refusals_total` for the module and `refused` action."""
     from prometheus_client import REGISTRY
     before = REGISTRY.get_sample_value("smo_role_refusals_total", {"module": "ran-nf-oam", "action": "refused"}) or 0
     client.put("/ran-nf-oam/rapp-limits/x", headers=AUTH)
@@ -131,11 +144,12 @@ def test_refusals_are_counted(gateway):
 
 
 def _forwarded(gateway):
+    """The headers of the first forwarded call, lower-cased."""
     return {k.lower(): v for k, v in gateway["forwarded"][0][2].items()}
 
 
 def test_an_internal_module_may_say_whom_it_acts_for(gateway):
-    """X-R1-On-Behalf-Of: DME acting for an rApp tells RAN NF OAM, so the rApp's own safeguards apply to what DME writes."""
+    """`X-R1-On-Behalf-Of` from an `internal` caller is forwarded next to the module's own invoker id, so the rApp's safeguards apply to what the module writes."""
     gateway["sme_says"] = {"active": True, "client_id": "dme-client", "role": "internal"}
     client.get("/ran-nf-oam/health", headers={**AUTH, "X-R1-On-Behalf-Of": "es-client"})
     headers = _forwarded(gateway)
@@ -143,13 +157,14 @@ def test_an_internal_module_may_say_whom_it_acts_for(gateway):
 
 
 def test_an_rapp_cannot_pose_as_another_rapp(gateway):
-    """The default caller is an rApp: its own claim of whom it acts for is dropped, not forwarded."""
+    """An rApp's own `X-R1-On-Behalf-Of` is dropped, and the invoker id forwarded stays its own."""
     client.get("/ran-nf-oam/health", headers={**AUTH, "X-R1-On-Behalf-Of": "someone-else"})
     headers = _forwarded(gateway)
     assert "x-r1-on-behalf-of" not in headers and headers["x-r1-invoker-id"] == "inv-1"
 
 
 def test_a_module_that_names_nobody_forwards_nothing(gateway):
+    """A module that does not send the header gets none added."""
     gateway["sme_says"] = {"active": True, "client_id": "dme-client", "role": "internal"}
     client.get("/ran-nf-oam/health", headers=AUTH)
     assert "x-r1-on-behalf-of" not in _forwarded(gateway)
@@ -175,6 +190,7 @@ def test_a_module_that_names_nobody_forwards_nothing(gateway):
     ("POST", "/rapp-mgmt/instances/i/upgrade"), ("PUT", "/rapp-mgmt/instances/i/config"), ("POST", "/rapp-mgmt/instances/i/performance-x"),
 ])
 def test_an_rapp_may_not_change_what_it_does_not_use(gateway, method, path):
+    """A change by an rApp outside `RAPP_MAY_CHANGE` is a 403 `ROLE_NOT_PERMITTED` with no backend call; the table includes near misses (another method, an extra segment, another id shape) that must also be refused."""
     resp = client.request(method, path, headers=AUTH)
     assert resp.status_code == 403 and resp.json()["title"] == "ROLE_NOT_PERMITTED"
     assert gateway["forwarded"] == []
@@ -187,19 +203,23 @@ def test_an_rapp_may_not_change_what_it_does_not_use(gateway, method, path):
     ("POST", "/rapp-mgmt/instances/i/bootstrap-complete"), ("POST", "/rapp-mgmt/instances/i/performance"),
 ])
 def test_an_rapp_may_change_what_it_uses(gateway, method, path):
+    """The changes the SDK and the 3GPP consumer routes need are open to an rApp."""
     assert client.request(method, path, headers=AUTH).status_code == 200
 
 
 def test_every_change_is_decided_for_an_internal_module_too_and_it_is_never_refused(gateway):
+    """The allow-list does not apply to an `internal` caller: it may change any module."""
     gateway["sme_says"]["role"] = roles.ROLE_INTERNAL
     assert client.post("/onboarding/packages", headers=AUTH).status_code == 200
 
 
 def test_audit_mode_lets_an_unlisted_change_through(gateway, monkeypatch):
+    """In audit mode a change outside the allow-list is forwarded."""
     monkeypatch.setenv("SMO_ROLE_ENFORCEMENT", "audit")
     assert client.post("/onboarding/packages", headers=AUTH).status_code == 200
 
 
 def test_the_allow_list_names_only_modules_the_gateway_routes_to():
+    """Every module prefix in `RAPP_MAY_CHANGE` is in the gateway's route table, so an entry cannot name a module that does not exist."""
     from app.main import ROUTES
     assert set(roles.RAPP_MAY_CHANGE) <= set(ROUTES)

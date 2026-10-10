@@ -1,5 +1,7 @@
-"""Tests for SA SMOS (SO/SA SMOS LLD section 2). Run with:
-pytest smo/sa-smos/tests -q
+"""The SA SMOS assurance routes (`app/main.py`): monitors, threshold evaluation, remedial-action dispatch by target and action type, escalation and the list and read routes.
+
+Fixture `client`: the app over an in-memory SQLite (`make_test_engine`) with the SA SMOS tables, `get_session` overridden to it, and `app.main.R1Client.post` faked to answer 200; tests that need
+other answers patch `R1Client.get` and `post` themselves. `FakeR1Response` is also imported by `test_o1cm.py`, together with the fixture. Run: `cd smo/sa-smos && PYTHONPATH=.:../shared python -m pytest tests/test_main.py -q`.
 """
 
 import uuid
@@ -18,6 +20,7 @@ from app.models import AssuranceMonitor, O1CmEnactment, RemedialAction
 
 
 class FakeR1Response:
+    """Stands in for an R1 response: a status code and a JSON payload (an empty dict when none is given)."""
     def __init__(self, status_code, payload=None):
         self.status_code = status_code
         self._payload = payload or {}
@@ -28,6 +31,11 @@ class FakeR1Response:
 
 @pytest.fixture
 def client(monkeypatch):
+    """A TestClient of the app over an in-memory SQLite with the SA SMOS tables, and R1 posts answered with 200.
+
+    Stub tables for `service_order`, `ml_model_coordination_group` and `mda_subscription` (other modules' tables) are created next to them; AssuranceMonitor declares no foreign key to them, so the tests do
+    not depend on them. The dependency override is removed after the test.
+    """
     engine = make_test_engine()
     # service_order and ml_model_coordination_group live in other modules —
     # stand in minimal tables so AssuranceMonitor's FKs resolve, same pattern
@@ -60,9 +68,7 @@ def client(monkeypatch):
 
 
 def test_register_monitor_rejects_both_targets_set(client):
-    """SO/SA SMOS LLD section 2.2's one_target_only constraint, checked
-    at the route layer (the DB CHECK constraint is the backstop).
-    """
+    """More than one target is refused with 422 at the route (the database CHECK `one_target_only` is the backstop; LLD section 2.2)."""
     resp = client.post("/monitors", params={
         "target_order_id": str(uuid.uuid4()), "target_coordination_group_id": str(uuid.uuid4()),
     }, json={})
@@ -72,11 +78,13 @@ def test_register_monitor_rejects_both_targets_set(client):
 def test_register_monitor_with_single_target(client):
     # `thresholds` is a bare dict body param — the JSON body IS the thresholds
     # dict directly, not wrapped under a "thresholds" key.
+    """One target is accepted and answers 201; the JSON body is the thresholds dict itself, not wrapped in a key."""
     resp = client.post("/monitors", params={"target_order_id": str(uuid.uuid4())}, json={"latency": 100})
     assert resp.status_code == 201
 
 
 def test_evaluate_thresholds_reports_breaches(client):
+    """Only a metric below its threshold is reported as a breach; the body of the request is the metrics dict itself."""
     monitor = client.post("/monitors", params={}, json={"latency": 100, "throughput": 50}).json()
     # current_metrics is a bare `dict` body param — the JSON body IS the dict,
     # not wrapped in a key.
@@ -85,6 +93,7 @@ def test_evaluate_thresholds_reports_breaches(client):
 
 
 def test_config_change_dispatches_and_resolves(client):
+    """CONFIG_CHANGE posts the config job and, when R1 answers 2xx, records the outcome RESOLVED."""
     monitor = client.post("/monitors", params={}, json={}).json()
     resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "CONFIG_CHANGE"})
     assert resp.status_code == 201
@@ -92,19 +101,17 @@ def test_config_change_dispatches_and_resolves(client):
 
 
 def test_scale_always_escalates_phase1_stub(client):
-    """SCALE inherits NFO's own Phase 1 stub status — cannot do anything
-    real yet, and that's the documented, correct outcome (LLD section 2.1).
-    """
+    """SCALE always ends ESCALATED, because NFO scaling is a Phase 1 stub (LLD section 2.1)."""
     monitor = client.post("/monitors", params={}, json={}).json()
     resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "SCALE"})
     assert resp.json()["outcome"] == "ESCALATED"
 
 
+# Two monitors: one with no target and one scoped to an order.
 @pytest.mark.parametrize("scope", [{}, {"target_order_id": str(uuid.uuid4())}])
 def test_rollback_without_a_rapp_instance_target_is_409(client, scope):
-    """OI-1-sa-rollback: only rApp Management keeps a version history; an
-    unscoped or order-scoped monitor (a bare NF deployment) has nothing to
-    roll back to."""
+    """OI-1-sa-rollback: only rApp Management keeps a version history, so ROLLBACK on a monitor that is not rApp-instance-scoped is 409 ROLLBACK_HISTORY_UNAVAILABLE.
+    """
     monitor = client.post("/monitors", params=scope, json={}).json()
     resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "ROLLBACK"})
     assert resp.status_code == 409
@@ -112,6 +119,8 @@ def test_rollback_without_a_rapp_instance_target_is_409(client, scope):
 
 
 def test_rollback_of_a_rapp_scoped_monitor_dispatches_rapp_mgmt_rollback(client, monkeypatch):
+    """ROLLBACK on a rApp-scoped monitor posts to rApp Management's rollback of that instance, is RESOLVED and returns rApp Management's answer as `result`.
+    """
     instance_id = uuid.uuid4()
     started = {"instanceId": str(uuid.uuid4()), "newInstanceId": str(uuid.uuid4()), "toPackageId": str(uuid.uuid4())}
     calls = []
@@ -132,6 +141,7 @@ def test_rollback_of_a_rapp_scoped_monitor_dispatches_rapp_mgmt_rollback(client,
 
 
 def test_rollback_refused_by_rapp_mgmt_is_escalated_with_its_reason(client, monkeypatch):
+    """A refusal from rApp Management is an ESCALATED outcome (still 201) carrying its 'TITLE: detail' text, and shows in the escalation queue."""
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(409, {"detail": {
         "title": "ROLLBACK_HISTORY_UNAVAILABLE", "detail": "no upgrade left to roll back"}}))
     monitor = client.post("/monitors", params={"target_rapp_instance_id": str(uuid.uuid4())}, json={}).json()
@@ -146,6 +156,7 @@ def test_rollback_refused_by_rapp_mgmt_is_escalated_with_its_reason(client, monk
 
 
 def test_reconnect_of_a_rapp_scoped_monitor_heals_the_current_instance_workload(client, monkeypatch):
+    """RECONNECT on a rApp-scoped monitor reads the workload from the instance's version history and heals that NFO deployment."""
     instance_id, workload = uuid.uuid4(), str(uuid.uuid4())
     posts = []
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"workloadRef": workload})
@@ -160,20 +171,20 @@ def test_reconnect_of_a_rapp_scoped_monitor_heals_the_current_instance_workload(
 
 
 def test_a_monitor_takes_at_most_one_target(client):
+    """A rApp-instance target together with an order target is refused with 422, like any other pair."""
     resp = client.post("/monitors", params={"target_order_id": str(uuid.uuid4()),
                                             "target_rapp_instance_id": str(uuid.uuid4())}, json={})
     assert resp.status_code == 422
 
 
 def test_remedial_action_on_an_unknown_monitor_is_404(client):
+    """A remedial action on a monitor that does not exist is 404."""
     resp = client.post(f"/monitors/{uuid.uuid4()}/remedial-actions", params={"action_type": "SCALE"})
     assert resp.status_code == 404
 
 
 def test_reconnect_resolves_deployment_via_order_and_heals(client, monkeypatch):
-    """The actual fix: RECONNECT is no longer refused — it resolves the
-    monitor's target_order_id into a concrete nfDeploymentId via SO
-    SMOS's own order record, then dispatches to NFO's Heal.
+    """RECONNECT on an order-scoped monitor resolves the nfDeploymentId from SO SMOS's order record (its completed DEPLOY step) and posts NFO's heal for it.
     """
     order_id = uuid.uuid4()
     nf_deployment_id = str(uuid.uuid4())
@@ -200,12 +211,14 @@ def test_reconnect_resolves_deployment_via_order_and_heals(client, monkeypatch):
 
 
 def test_reconnect_escalates_when_monitor_has_no_target_order(client):
+    """With no order to resolve a deployment from, RECONNECT is ESCALATED."""
     monitor = client.post("/monitors", params={}, json={}).json()  # no target_order_id at all
     resp = client.post(f"/monitors/{monitor['monitorId']}/remedial-actions", params={"action_type": "RECONNECT"})
     assert resp.json()["outcome"] == "ESCALATED"
 
 
 def test_reconnect_escalates_when_order_has_no_completed_deploy_step(client, monkeypatch):
+    """An order without a completed DEPLOY step gives no deployment to heal, so RECONNECT is ESCALATED."""
     order_id = uuid.uuid4()
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(200, {"steps": [
         {"stepType": "CONFIG", "status": "COMPLETED", "result": {}},
@@ -216,11 +229,7 @@ def test_reconnect_escalates_when_order_has_no_completed_deploy_step(client, mon
 
 
 def test_group_scoped_monitor_dispatches_retrain_regardless_of_action_type(client, monkeypatch):
-    """MLModelCoordinationGroup x SA SMOS convergence (HISTORY.md §1): a coordination-group-scoped monitor bypasses
-    CONFIG_CHANGE/SCALE/RECONNECT/ROLLBACK entirely — those are
-    NF-deployment concepts that don't map onto a model group — and
-    always dispatches a group retrain via AI/ML Workflow instead,
-    whatever actionType was requested.
+    """A coordination-group monitor always retrains the group through AIMgF's training-jobs, whatever the requested action type (HISTORY.md §1, MLModelCoordinationGroup convergence).
     """
     group_id = uuid.uuid4()
     calls = []
@@ -239,6 +248,7 @@ def test_group_scoped_monitor_dispatches_retrain_regardless_of_action_type(clien
 
 
 def test_group_scoped_monitor_escalates_when_ai_ml_workflow_rejects(client, monkeypatch):
+    """If the retrain request is refused (here 409) the action is ESCALATED."""
     group_id = uuid.uuid4()
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(409))
 
@@ -248,6 +258,7 @@ def test_group_scoped_monitor_escalates_when_ai_ml_workflow_rejects(client, monk
 
 
 def test_escalate_to_operator(client):
+    """POST /escalate answers 200 with the outcome ESCALATED."""
     monitor = client.post("/monitors", params={}, json={}).json()
     resp = client.post(f"/monitors/{monitor['monitorId']}/escalate", params={"reason": "no auto-remediation available"})
     assert resp.status_code == 200
@@ -255,14 +266,14 @@ def test_escalate_to_operator(client):
 
 
 def test_health_check_answers_the_gui_bff_liveness_probe(client):
-    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    """The BFF's module-status probe, GET /health, answers 200 {"status": "healthy"}."""
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "healthy"}
 
 
 def test_list_and_get_monitors(client):
-    """GUI pass: AssuranceMonitor was write-only."""
+    """The monitor list and read routes return the registered thresholds, and an unknown monitor is 404."""
     monitor_id = client.post("/monitors", json={"accuracy": 0.9}).json()["monitorId"]
     assert [(m["monitorId"], m["thresholds"]) for m in client.get("/monitors").json()["items"]] == [(monitor_id, {"accuracy": 0.9})]
     assert client.get(f"/monitors/{monitor_id}").json()["monitorId"] == monitor_id
@@ -270,6 +281,7 @@ def test_list_and_get_monitors(client):
 
 
 def test_list_remedial_actions_filters_escalations(client):
+    """The action list can be filtered by outcome (the escalation queue) and by monitor; an unknown monitor gives an empty list."""
     monitor_id = client.post("/monitors", json={}).json()["monitorId"]
     resolved = client.post(f"/monitors/{monitor_id}/remedial-actions", params={"action_type": "CONFIG_CHANGE"}).json()
     escalated = client.post(f"/monitors/{monitor_id}/escalate", params={"reason": "manual"}).json()
@@ -281,4 +293,5 @@ def test_list_remedial_actions_filters_escalations(client):
 
 
 def test_evaluating_an_unknown_monitor_is_404(client):
+    """Evaluating a monitor that does not exist is 404."""
     assert client.post("/monitors/e3e70682-c209-1cac-a29f-6fbed82c07cd/evaluate", json={"x": 1}).status_code == 404

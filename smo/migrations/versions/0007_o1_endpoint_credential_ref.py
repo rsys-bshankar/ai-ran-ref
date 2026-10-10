@@ -16,8 +16,10 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add the nullable `o1_adaptor_endpoint.credential_ref`."""
     op.execute("ALTER TABLE o1_adaptor_endpoint ADD COLUMN credential_ref TEXT")
 
 
 def downgrade() -> None:
+    """Drop the column `credential_ref`."""
     op.execute("ALTER TABLE o1_adaptor_endpoint DROP COLUMN credential_ref")

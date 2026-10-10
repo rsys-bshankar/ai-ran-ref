@@ -15,12 +15,14 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add the nullable `kpi_guard`, `kpi_guard_result` and `kpi_guard_checked_at` to `write_config_job`."""
     op.execute("ALTER TABLE write_config_job ADD COLUMN kpi_guard JSON")
     op.execute("ALTER TABLE write_config_job ADD COLUMN kpi_guard_result JSON")
     op.execute("ALTER TABLE write_config_job ADD COLUMN kpi_guard_checked_at TIMESTAMP WITH TIME ZONE")
 
 
 def downgrade() -> None:
+    """Drop the three columns."""
     op.execute("ALTER TABLE write_config_job DROP COLUMN kpi_guard_checked_at")
     op.execute("ALTER TABLE write_config_job DROP COLUMN kpi_guard_result")
     op.execute("ALTER TABLE write_config_job DROP COLUMN kpi_guard")
