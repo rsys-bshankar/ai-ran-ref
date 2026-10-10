@@ -1,3 +1,9 @@
+/**
+ * The shell around every signed-in page: the sidebar (the `NAV` list, the signed-in user, the pinned rApps, change-password and sign-out) and the outlet where the routed page is drawn.
+ * Used by main.tsx as the layout route behind `RequireAuth`. The menu is only a convenience: `minRole` hides the Admin entry from a non-admin, but the route itself is guarded
+ * in main.tsx and every call is checked again by the BFF. While a local admin must still enrol a one-time code, the menu shows only Account security.
+ */
+
 import { useState, type FormEvent } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
@@ -43,6 +49,9 @@ export function PinnedRapps() {
   );
 }
 
+/**
+ * The signed-in shell: sidebar and the routed page. Draws nothing while there is no user (the router sends a signed-out visitor to the login page).
+ */
 export function Layout() {
   const { me, logout } = useAuth();
   const [pwOpen, setPwOpen] = useState(false);
@@ -78,6 +87,10 @@ export function Layout() {
   );
 }
 
+/**
+ * A dialog that changes the signed-in user's own password (POST /api/me/password with the current and the new one). On success it toasts and closes;
+ * on failure it shows the server's message in the dialog and stays open. The 8-character minimum is a browser-side hint; the BFF enforces its own rule.
+ */
 function ChangePassword({ onClose }: { onClose: () => void }) {
   const toast = useToast();
   const [current, setCurrent] = useState("");

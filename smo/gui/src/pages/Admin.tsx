@@ -1,3 +1,10 @@
+/**
+ * The Admin page (route /admin): the GUI users and their roles, which the BFF holds and the SMO does not, and the audit log of every mutating call. Admin only: main.tsx wraps the route in
+ * `RequireAuth minRole="admin"`, the menu hides the entry from other roles, and the BFF's /api/admin/* routes require the admin role themselves (`require_admin`), so the checks here are for
+ * the display. It calls the BFF directly (`api`), not the SMO proxy, and its caches are keyed ["bff", "admin", ...] so a change refreshes the lists.
+ * The role matrix at the bottom is a fixed text, not read from the permission table: update it together with gui-bff/app/rbac.py.
+ */
+
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -13,6 +20,9 @@ import { mfaLabel } from "../lib/mfa";
 
 const TABS = ["users", "audit"] as const;
 
+/**
+ * Returns a mutation for one BFF admin call (`path`, request options and the success text): toasts the success text or the error message and refreshes the admin lists.
+ */
 function useBffMutation() {
   const qc = useQueryClient();
   const toast = useToast();
@@ -23,6 +33,7 @@ function useBffMutation() {
   });
 }
 
+/** The page: header, the Users and Audit tabs (kept in the URL hash) and the role matrix. */
 export function Admin() {
   const [tab, setTab] = useHashTab(TABS, "users");
   return (
@@ -45,6 +56,10 @@ export function Admin() {
   );
 }
 
+/**
+ * The users table with its row actions: change role, activate or deactivate, break-glass flag (not for identity-provider users), reset password, end every session, remove the one-time code
+ * (asks first) and delete (not offered for yourself). Each action is a PATCH, POST or DELETE on /api/admin/users/<name>. Destructive actions ask with `window.confirm`; the BFF is the authority on what is allowed.
+ */
 function Users() {
   const { me } = useAuth();
   const users = useQuery<GuiUser[], ApiError>({ queryKey: ["bff", "admin", "users"], queryFn: () => api("/admin/users") });
@@ -85,6 +100,9 @@ function Users() {
   );
 }
 
+/**
+ * The dialog that creates a GUI user (username, initial password, role). The username is lower-cased as typed and checked against the BFF's pattern; the password needs at least 8 characters.
+ */
 function CreateUser({ onClose }: { onClose: () => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -106,6 +124,7 @@ function CreateUser({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** The dialog that sets a new password for a user; the BFF ends that user's existing sessions. */
 function ResetPassword({ username, onClose }: { username: string; onClose: () => void }) {
   const [password, setPassword] = useState("");
   const m = useBffMutation();
@@ -119,6 +138,10 @@ function ResetPassword({ username, onClose }: { username: string; onClose: () =>
   );
 }
 
+/**
+ * The audit log tab: the latest 300 entries (polled every 10 s), filtered by user name and by event. The outcome badge is derived from the event (DENIED, failed or locked sign-ins read as rejected, a proxied call with
+ * status 400 or more as failed). The list of events is fixed text; an event the BFF adds is shown in the table but cannot be filtered until it is added here.
+ */
 function Audit() {
   const [username, setUsername] = useState("");
   const [action, setAction] = useState("");

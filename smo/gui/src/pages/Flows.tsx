@@ -1,3 +1,10 @@
+/**
+ * The Lifecycle flows page (route /flows): one tab per end-to-end journey of smo/docs/call-flows (01, 02, 03, 04, 06, 07, 08, 09, 10; the list is `FLOWS` in lib/flows.ts), each tracked live against real SMO state. The operator picks the entity to follow
+ * (a package, a model, a config job and so on) and sees a timeline of steps that are done, current, failed, blocked or a warning; the status rules are the pure functions in `lib/flows.ts`, and this file only fetches the entities and draws the result.
+ * The button under the current step performs that step through the module's own route (some simulate what a producer or the rApp would do, and say so in their tooltip). Every signed-in role may read; the buttons are `ActionButton`s, so a role that may
+ * not make the call does not see them. The selected flow is kept in the URL hash (#01, #06, ...).
+ */
+
 import { useState, type ReactNode } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -18,6 +25,7 @@ import { modelActions } from "../lib/domain";
 
 const IDS = FLOWS.map((f) => f.id) as readonly string[];
 
+/** The page: the list of flows on the left and the selected flow's timeline on the right. */
 export function Flows() {
   const [flowId, setFlowId] = useHashTab(IDS, "01");
   const flow = FLOWS.find((f) => f.id === flowId)!;
@@ -55,6 +63,9 @@ export function Flows() {
 
 const ICON: Record<FlowStep["status"], string> = { done: "✓", current: "●", todo: "○", failed: "✕", blocked: "–", warn: "!" };
 
+/**
+ * Draws a flow's steps as an ordered list with a progress bar and a status icon (with an accessible name) per step. `actions` maps a step id to the control shown under that step, and only while the step is current, a warning or failed.
+ */
 function Timeline({ steps, actions = {} }: { steps: FlowStep[]; actions?: Record<string, ReactNode> }) {
   const p = progress(steps);
   return (
@@ -82,6 +93,9 @@ function Timeline({ steps, actions = {} }: { steps: FlowStep[]; actions?: Record
   );
 }
 
+/**
+ * The selector of the entity a flow follows; when there are none it shows `empty` (usually a link to where one is created) instead of the select.
+ */
 function Pick<T>({ label, items, value, onChange, render, id, empty, extra }: {
   label: string; items: T[] | undefined; value: string; onChange: (v: string) => void; render: (t: T) => string; id: (t: T) => string;
   empty: ReactNode; extra?: ReactNode;
@@ -110,6 +124,9 @@ const go = (to: string, label = "Open") => <Link className="btn small" to={to}>{
 
 // ---------------------------------------------------------------- 01 rApp onboarding → running
 
+/**
+ * Flow 01 for one package: the instance made from it (the latest of that package), and its NFO deployment (found by workload reference or by the name `rapp-instance-<instanceId>`).
+ */
 function Flow01() {
   const packages = useSmo<Package[]>("/onboarding/packages");
   const [pkgId, setPkg, pkg] = useSelection(packages.data, (p) => p.packageId);
@@ -135,6 +152,9 @@ function Flow01() {
 
 // ---------------------------------------------------------------- 02 AI/ML
 
+/**
+ * Flow 02 for one model: its lifecycle, training and inference jobs, MLMF subscriptions and their reports. The same next-action button (from `modelActions`) is offered under every model step that is current, and an inference can be requested or resolved.
+ */
 function Flow02() {
   const models = useSmo<Model[]>("/mlmr/models");
   const [modelId, setModel, model] = useSelection(models.data, (m) => m.modelId);
@@ -185,6 +205,9 @@ function Flow02() {
 
 // ---------------------------------------------------------------- 03 config write
 
+/**
+ * Flow 03 for one config job (the newest by default): the O1 endpoints, a heartbeat button for each endpoint that is not ACTIVE, and the job's sub-changes.
+ */
 function Flow03() {
   const endpoints = useSmo<O1Endpoint[]>("/ran-nf-oam/o1-adaptor-endpoints");
   const jobs = useSmo<ConfigJobSummary[]>("/ran-nf-oam/config-jobs");
@@ -215,6 +238,9 @@ function Flow03() {
 
 // ---------------------------------------------------------------- 04 closed-loop assurance
 
+/**
+ * Flow 04 for one assurance monitor: its order (when order-scoped), remedial actions, and the analytics and MLMF reports that feed it; with buttons to dispatch a remedial action or escalate.
+ */
 function Flow04() {
   const monitors = useSmo<Monitor[]>("/sa-smos/monitors");
   const [monitorId, setMonitor, monitor] = useSelection(monitors.data, (m) => m.monitorId);
@@ -246,6 +272,9 @@ function Flow04() {
 
 // ---------------------------------------------------------------- 06 failure / deprecation / delete guard
 
+/**
+ * Flow 06 for one package: its usage registrations, with buttons to deprecate, to stop an active usage (or register a test usage to see the cascade-delete guard) and to delete.
+ */
 function Flow06() {
   const packages = useSmo<Package[]>("/onboarding/packages");
   const [pkgId, setPkg, pkg] = useSelection(packages.data, (p) => p.packageId);
@@ -274,6 +303,9 @@ function Flow06() {
 
 // ---------------------------------------------------------------- 07 rApp fault & performance
 
+/**
+ * Flow 07 for one rApp instance: its performance and fault reports, with buttons that simulate the rApp's reports and the recover or re-bootstrap step.
+ */
 function Flow07() {
   const instances = useSmo<InstanceSummary[]>("/rapp-mgmt/instances");
   const [id, setId] = useSelection(instances.data, (i) => i.instanceId);
@@ -300,6 +332,9 @@ function Flow07() {
 
 // ---------------------------------------------------------------- 08 RAN Analytics
 
+/**
+ * Flow 08 for one analytics type (taken from the producers, subscriptions and reports): the SME services of its producers are looked up to see whether `mdaf.<type>` is discoverable.
+ */
 function Flow08() {
   const producers = useSmo<AnalyticsProducer[]>("/ran-analytics/producers");
   const subs = useSmo<AnalyticsSubscription[]>("/mdaf/subscriptions");
@@ -331,6 +366,9 @@ function Flow08() {
 
 // ---------------------------------------------------------------- 09 intents
 
+/**
+ * Flow 09 for one intent: the registered handlers and the intent's reports, with a button that publishes a fulfilment report as the handler.
+ */
 function Flow09() {
   const intents = useSmo<Intent[]>("/intent-service/intents");
   const [intentId, setIntent, intent] = useSelection(intents.data, (i) => i.intentId);
@@ -358,6 +396,7 @@ function Flow09() {
 
 // ---------------------------------------------------------------- 10 SO multi-step
 
+/** Flow 10 for one SO SMOS service order: its steps and their statuses (a failed step blocks the later ones). */
 function Flow10() {
   const orders = useSmo<ServiceOrder[]>("/so-smos/orders");
   const [orderId, setOrder, order] = useSelection(orders.data, (o) => o.orderId);
