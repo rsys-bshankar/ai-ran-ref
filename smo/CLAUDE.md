@@ -191,4 +191,6 @@ Docker compose runs the migrations itself (the `migrate` service); services star
   Python `None` as SQL `NULL` in `JSON` columns and encodes UUIDs in the
   `ARRAY(Uuid)` fallback. SQLite returns `DateTime(timezone=True)` values
   naive, so any elapsed-time computation on such a column must normalise
-  with `smo_shared.timeutil.as_utc()` first.
+  with `smo_shared.timeutil.as_utc()` first. A test suite gets the in-memory SQLite only by opting in: its `tests/conftest.py` sets
+  `SMO_ALLOW_SQLITE_FALLBACK=1` before any module is imported (a new module's `tests/` needs the same file); `smo_shared.db` no longer
+  guesses it from `pytest` being loaded.

@@ -3,6 +3,12 @@ runs from the sample's own directory. Run with: cd samples/coverage-optimization
 pytest tests -q
 """
 
+import os
+
+# The in-memory SQLite fallback of smo_shared.db is an explicit opt-in (SMO_ALLOW_SQLITE_FALLBACK), never inferred from pytest being loaded; set here,
+# before any application module is imported, because smo_shared.db builds its engine at import.
+os.environ.setdefault("SMO_ALLOW_SQLITE_FALLBACK", "1")
+
 import sys
 from pathlib import Path
 

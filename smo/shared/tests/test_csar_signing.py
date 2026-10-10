@@ -297,3 +297,62 @@ def test_a_key_that_is_not_ed25519_or_not_pem_is_refused_when_loaded():
         cs.load_public_key(b"nope")
     with pytest.raises(ValueError, match="ed25519 public key"):
         cs.load_public_key(ec_private.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
+
+
+# ------------------------------------------------------------------------------------------------------------------------ zip-bomb limits
+
+def _verify(data, trust, **limits):
+    """Helper: verify `data` with `ZipLimits(**limits)` and return the SignatureError code (the call must raise)."""
+    with pytest.raises(cs.SignatureError) as excinfo, zipfile.ZipFile(io.BytesIO(data)) as z:
+        cs.verify_zip(z, trust, cs.ZipLimits(**limits))
+    return excinfo.value.code
+
+
+def test_the_default_limits_accept_an_ordinary_signed_package(key, trust):
+    """The defaults are far above a real package, so a normal signed package still verifies."""
+    assert cs.verify_csar(signed(key), trust).publisher == "acme"
+
+
+def test_a_package_with_too_many_entries_is_too_large(key, trust):
+    """An archive with thousands of tiny entries is refused from the directory, before anything is hashed."""
+    files = {**FILES, **{f"extra/{n}.txt": b"x" for n in range(30)}}
+    assert _verify(signed(key, files), trust, max_entries=20) == "too_large"
+
+
+def test_a_single_file_above_the_member_limit_is_too_large(key, trust):
+    """One oversized file is refused by its declared size."""
+    assert _verify(signed(key, {**FILES, "big.bin": b"a" * 5000}), trust, max_member_bytes=1000) == "too_large"
+
+
+def test_the_total_uncompressed_size_is_limited(key, trust):
+    """Many files that are each under the member limit still cannot add up beyond the total limit."""
+    files = {**FILES, **{f"part/{n}.bin": b"a" * 600 for n in range(10)}}
+    assert _verify(signed(key, files), trust, max_member_bytes=1000, max_total_bytes=3000) == "too_large"
+
+
+def test_a_highly_compressed_file_is_refused_by_the_ratio_guard(key, trust):
+    """A zip bomb (a long run of one byte compresses by a factor of about a thousand) is refused although each limit on size alone is generous."""
+    bomb = signed(key, {**FILES, "bomb.bin": b"\0" * (4 * 1024 * 1024)})
+    assert _verify(bomb, trust, ratio_floor_bytes=1024) == "too_large"
+
+
+def test_the_default_limits_refuse_a_real_zip_bomb(key, trust):
+    """A 60 MiB file of zeros (about 60 kB compressed) is refused by the default limits (member size and ratio), the behaviour that matters in production."""
+    with pytest.raises(cs.SignatureError) as excinfo:
+        cs.verify_csar(signed(key, {**FILES, "bomb.bin": b"\0" * (60 * 1024 * 1024)}), trust)
+    assert excinfo.value.code == "too_large"
+
+
+def test_a_directory_that_understates_a_file_is_caught_while_reading(key, trust, monkeypatch):
+    """The read is bounded as well as the directory: a file whose header says it is small but whose data is large is refused when read."""
+    data = signed(key, {**FILES, "liar.bin": b"a" * 5000})
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        monkeypatch.setattr(cs, "_check_limits", lambda *a, **k: None)         # skip the directory check to reach the bounded read
+        with pytest.raises(cs.SignatureError) as excinfo:
+            cs.verify_zip(z, trust, cs.ZipLimits(max_member_bytes=1000))
+    assert excinfo.value.code == "too_large"
+
+
+def test_an_oversized_digest_list_is_too_large(key, trust):
+    """The digest list and the signature entry have their own, small limit."""
+    assert _verify(signed(key), trust, max_signing_bytes=10) == "too_large"

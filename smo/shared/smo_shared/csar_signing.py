@@ -11,7 +11,7 @@ name the operator gave that key in the trust store, never anything the package s
 
 A package is accepted as signed when (1) its key id is in the trust store, (2) the signature verifies under that key, and (3) the digest list
 and the package say the same thing: every file is listed with its digest, nothing is listed that is missing, nothing is in the package that is not
-listed. Each failure has its own `SignatureError.code`, so a caller (the Onboarding validation, the CLI, the conformance pack) can say what is wrong.
+listed. A package above the size limits of `ZipLimits` is refused as `too_large` before it is decompressed. Each failure has its own `SignatureError.code`, so a caller (the Onboarding validation, the CLI, the conformance pack) can say what is wrong.
 
 The trust store is a file or a directory of PEM public keys (`load_trust_store`). A file holds one key or several; a directory is read for `*.pub` and
 `*.pem` (a Kubernetes ConfigMap mount has dot-entries and symlinks, which are skipped). The publisher name is the file name without its extension
@@ -294,9 +294,66 @@ def _signature_document(raw: bytes) -> tuple[str, bytes]:
         raise SignatureError("malformed", "the signature is not base64") from exc
 
 
-def verify_zip(archive: zipfile.ZipFile, trust: TrustStore) -> Verification:
-    """Check a package against the trust store. Raises SignatureError (`code`: unsigned, malformed, unknown_publisher, bad_signature, modified, missing,
-    added). Returns who signed it when everything agrees."""
+@dataclasses.dataclass(frozen=True)
+class ZipLimits:
+    """How much archive `verify_zip` is willing to read before it has trusted anything (a package arrives from outside, and the digests are checked
+    only after every file has been decompressed, so an unbounded read is a zip bomb).
+
+    `max_entries` counts every entry of the central directory, directories included. `max_member_bytes` and `max_total_bytes` bound the uncompressed
+    size of one file and of all files together. `max_ratio` bounds uncompressed size over compressed size of one file, and applies only to a file above
+    `ratio_floor_bytes` (a few hundred zero bytes legitimately compress a hundredfold). `max_signing_bytes` bounds the digest list and the signature entry.
+    The defaults are far above any real rApp package (the committed samples are under 50 kB) and far below what exhausts a worker's memory.
+    """
+    max_entries: int = 2000
+    max_member_bytes: int = 50 * 1024 * 1024
+    max_total_bytes: int = 200 * 1024 * 1024
+    max_ratio: int = 200
+    ratio_floor_bytes: int = 1024 * 1024
+    max_signing_bytes: int = 2 * 1024 * 1024
+
+
+DEFAULT_LIMITS = ZipLimits()
+
+
+def _check_limits(archive: zipfile.ZipFile, limits: ZipLimits) -> None:
+    """Refuses (`SignatureError("too_large")`) an archive whose central directory already shows it is too big: too many entries, a file or the total above
+    the limit, or a file with a compression ratio above `max_ratio`. Reads only the directory (the declared sizes), never the data."""
+    infos = archive.infolist()
+    if len(infos) > limits.max_entries:
+        raise SignatureError("too_large", f"the package has {len(infos)} entries, more than the {limits.max_entries} allowed")
+    total = 0
+    for info in infos:
+        if info.is_dir():
+            continue
+        cap = limits.max_signing_bytes if info.filename in SIGNING_FILES else limits.max_member_bytes
+        if info.file_size > cap:
+            raise SignatureError("too_large", f"the package file {info.filename[:80]!r} is {info.file_size} bytes uncompressed, more than the {cap} allowed")
+        # the declared compressed size is zero only for an empty file; max(.., 1) keeps the ratio defined without letting a lie through
+        if info.file_size > limits.ratio_floor_bytes and info.file_size > limits.max_ratio * max(info.compress_size, 1):
+            raise SignatureError("too_large", f"the package file {info.filename[:80]!r} compresses more than {limits.max_ratio} to 1 (a zip bomb?)")
+        total += info.file_size
+        if total > limits.max_total_bytes:
+            raise SignatureError("too_large", f"the package is more than {limits.max_total_bytes} bytes uncompressed")
+
+
+def _read_member(archive: zipfile.ZipFile, name: str, limit: int) -> bytes:
+    """Reads one file of the archive and refuses (`too_large`) one that really holds more than `limit` bytes. The directory's declared size can lie, so the
+    read itself is bounded: at most `limit + 1` bytes are ever decompressed."""
+    with archive.open(name) as member:
+        data = member.read(limit + 1)
+    if len(data) > limit:
+        raise SignatureError("too_large", f"the package file {name[:80]!r} is larger than the {limit} bytes allowed")
+    return data
+
+
+def verify_zip(archive: zipfile.ZipFile, trust: TrustStore, limits: ZipLimits = DEFAULT_LIMITS) -> Verification:
+    """Check a package against the trust store. Raises SignatureError (`code`: too_large, unsigned, malformed, unknown_publisher, bad_signature, modified,
+    missing, added). Returns who signed it when everything agrees.
+
+    The size limits of `limits` are checked first, from the zip directory, and again while reading (a directory can understate a file), so a zip bomb is
+    refused with `too_large` before it is decompressed in full.
+    """
+    _check_limits(archive, limits)
     entries = [i.filename for i in archive.infolist() if not i.is_dir()]
     if len(set(entries)) != len(entries):
         raise SignatureError("malformed", "the package lists a file twice")        # which of two entries a reader sees must not depend on the reader
@@ -310,8 +367,8 @@ def verify_zip(archive: zipfile.ZipFile, trust: TrustStore) -> Verification:
         raise SignatureError("unsigned", f"the package has a digest list but no signature ({SIGNATURE_FILE} is missing)")
     if not has_digests:
         raise SignatureError("malformed", f"the package has a signature but no digest list ({DIGEST_FILE} is missing)")
-    digest_bytes = archive.read(DIGEST_FILE)
-    key_name, signature = _signature_document(archive.read(SIGNATURE_FILE))
+    digest_bytes = _read_member(archive, DIGEST_FILE, limits.max_signing_bytes)
+    key_name, signature = _signature_document(_read_member(archive, SIGNATURE_FILE, limits.max_signing_bytes))
     trusted = trust.get(key_name)
     if trusted is None:
         raise SignatureError("unknown_publisher", f"unknown publisher: the package is signed with key {key_name[:16]}..., which is not in the trust store")
@@ -328,7 +385,7 @@ def verify_zip(archive: zipfile.ZipFile, trust: TrustStore) -> Verification:
     added = [n for n in present if n not in listed]
     if added:
         raise SignatureError("added", f"file added to the package: {_names(added)} is not covered by the signed digest list")
-    changed = [n for n in present if hashlib.sha256(archive.read(n)).hexdigest() != listed[n]]
+    changed = [n for n in present if hashlib.sha256(_read_member(archive, n, limits.max_member_bytes)).hexdigest() != listed[n]]
     if changed:
         raise SignatureError("modified", f"file modified after signing: {_names(changed)} does not match its signed digest")
     return Verification(trusted.publisher, trusted.key_id, len(present))

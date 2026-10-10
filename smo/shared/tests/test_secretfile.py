@@ -64,7 +64,7 @@ def test_the_password_is_put_into_a_url_that_has_none(tmp_path):
     path = tmp_path / "db_password"
     path.write_text("p@ss/word:1\n")
     url = resolve_database_url({"SMO_DATABASE_URL": "postgresql+psycopg://smo@postgres:5432/smo",
-                                "SMO_DATABASE_PASSWORD_FILE": str(path)}, under_pytest=False)
+                                "SMO_DATABASE_PASSWORD_FILE": str(path)}, allow_sqlite_fallback=False)
     assert url == "postgresql+psycopg://smo:p%40ss%2Fword%3A1@postgres:5432/smo"   # percent-encoded, so any character works
 
 
@@ -73,7 +73,7 @@ def test_a_password_in_a_file_replaces_one_already_in_the_url(tmp_path):
     path = tmp_path / "db_password"
     path.write_text("new")
     url = resolve_database_url({"SMO_DATABASE_URL": "postgresql+psycopg://smo:old@db/smo",
-                                "SMO_DATABASE_PASSWORD_FILE": str(path)}, under_pytest=False)
+                                "SMO_DATABASE_PASSWORD_FILE": str(path)}, allow_sqlite_fallback=False)
     assert url == "postgresql+psycopg://smo:new@db/smo"
 
 
@@ -81,19 +81,19 @@ def test_the_whole_url_may_come_from_a_file(tmp_path):
     """SMO_DATABASE_URL_FILE supplies the whole URL."""
     path = tmp_path / "url"
     path.write_text("postgresql+psycopg://u:p@h/d\n")
-    assert resolve_database_url({"SMO_DATABASE_URL_FILE": str(path)}, under_pytest=False) == "postgresql+psycopg://u:p@h/d"
+    assert resolve_database_url({"SMO_DATABASE_URL_FILE": str(path)}, allow_sqlite_fallback=False) == "postgresql+psycopg://u:p@h/d"
 
 
 def test_an_unreadable_password_file_stops_the_service_with_the_path_in_the_message(tmp_path):
     """An unreadable password file raises SecretFileError naming the variable, so the service stops at start."""
     with pytest.raises(SecretFileError, match="SMO_DATABASE_PASSWORD_FILE="):
         resolve_database_url({"SMO_DATABASE_URL": "postgresql+psycopg://smo@db/smo",
-                              "SMO_DATABASE_PASSWORD_FILE": str(tmp_path / "gone")}, under_pytest=False)
+                              "SMO_DATABASE_PASSWORD_FILE": str(tmp_path / "gone")}, allow_sqlite_fallback=False)
 
 
 def test_an_environment_password_is_accepted_too_and_a_url_without_one_is_left_alone():
     """SMO_DATABASE_PASSWORD from the environment is accepted too, and a URL with no password and no secret is unchanged."""
     assert resolve_database_url({"SMO_DATABASE_URL": "postgresql+psycopg://smo@db/smo", "SMO_DATABASE_PASSWORD": "x"},
-                                under_pytest=False) == "postgresql+psycopg://smo:x@db/smo"
-    assert resolve_database_url({"SMO_DATABASE_URL": "postgresql+psycopg://smo@db/smo"}, under_pytest=False) == \
+                                allow_sqlite_fallback=False) == "postgresql+psycopg://smo:x@db/smo"
+    assert resolve_database_url({"SMO_DATABASE_URL": "postgresql+psycopg://smo@db/smo"}, allow_sqlite_fallback=False) == \
         "postgresql+psycopg://smo@db/smo"

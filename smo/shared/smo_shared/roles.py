@@ -149,7 +149,9 @@ def rapp_may_change(module: str, method: str, path: str) -> bool:
     if rules is None:
         return True
     path = "/" + path.lstrip("/")
-    return any(method.upper() in methods and pattern.match(path) for methods, pattern in rules)
+    # `fullmatch`, not `match`: the patterns end in `$`, which also matches just before a trailing "\n", so `/config-jobs\n` would pass an allow-list
+    # that lists `/config-jobs`. An allow-list must accept exactly the listed path.
+    return any(method.upper() in methods and pattern.fullmatch(path) for methods, pattern in rules)
 
 
 def enforcement_mode() -> str:
@@ -161,6 +163,8 @@ def enforcement_mode() -> str:
 def internal_only(module: str, method: str, path: str) -> bool:
     """Whether an rApp is refused this call: `module` is the R1 prefix (`/ran-nf-oam`), `path` what follows it (`/rapp-limits/x`)."""
     path = "/" + path.lstrip("/")
+    # `.match` on purpose: the patterns end in `$`, which also matches before a final "\n", so this deny-list errs on the side of refusing
+    # (`/rapp-kill\n` is refused like `/rapp-kill`). The allow-list below must be the opposite, a strict `fullmatch`.
     return any(m == module and method.upper() in methods and pattern.match(path) for m, methods, pattern in INTERNAL_ONLY)
 
 

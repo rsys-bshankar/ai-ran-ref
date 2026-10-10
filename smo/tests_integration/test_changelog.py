@@ -39,3 +39,11 @@ def test_the_tag_scheme_names_the_prefix_the_release_doc_uses():
     releases = (SMO_ROOT / "docs" / "RELEASES.md").read_text()
     assert "smo-v<MAJOR>.<MINOR>.<PATCH>" in releases
     assert re.search(r"^## \[Unreleased\]", CHANGELOG, re.M)
+
+
+def test_no_document_holds_an_unresolved_merge_conflict():
+    """No top-level or `docs/` Markdown file contains a git conflict marker line (a merge that left `<<<<<<<`, `=======` or `>>>>>>>` in a document fails here)."""
+    marker = re.compile(r"^(<{7}|={7}|>{7})( |$)", re.M)
+    files = [*SMO_ROOT.glob("*.md"), *(SMO_ROOT / "docs").rglob("*.md")]
+    assert files
+    assert [str(f.relative_to(SMO_ROOT)) for f in files if marker.search(f.read_text())] == []
