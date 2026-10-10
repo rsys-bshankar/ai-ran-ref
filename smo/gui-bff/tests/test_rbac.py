@@ -99,6 +99,11 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/ran-nf-oam/software-campaigns/c/rollback", "operator"),
     ("GET", "/ran-nf-oam/software-campaigns/c/report", "viewer"),
     ("GET", "/ran-nf-oam/element-onboarding", "viewer"),
+    ("GET", "/ran-nf-oam/software-campaigns", "viewer"),
+    ("GET", "/ran-nf-oam/onboarding-templates", "viewer"),
+    ("POST", "/ran-nf-oam/lifecycle-subscriptions", "admin"),            # MGT-14.7 / MGT-15.6: where a failure or a halt is announced
+    ("DELETE", "/ran-nf-oam/lifecycle-subscriptions/s", "admin"),
+    ("GET", "/ran-nf-oam/lifecycle-subscriptions", "viewer"),
     ("PUT", "/sme/invoker-registrations/i/authz-scope", "admin"),
     # AI-11: a person decides an rApp's action (operator); who waits for a decision, and who is told, is administrative
     ("POST", "/ran-nf-oam/rapp-approvals/a/approve", "operator"),

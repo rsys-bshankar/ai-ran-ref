@@ -391,6 +391,7 @@ NOT_ABOUT_ELEMENTS = {            # route: why a claim has nothing to match on (
     "/rapp-approval-policy/{invoker_id_}": "a safeguard setting named by an invoker id", "/rapp-kill": "internal-only at R1", "/rapp-kill/{invoker_id_}": "a safeguard setting named by an invoker id",
     "/rapp-limits/{invoker_id_}": "a safeguard setting named by an invoker id", "/rapp-approvals": "internal-only at R1", "/decision-records": "internal-only at R1",
     "/safeguard-refusals": "internal-only at R1", "/safeguard-subscriptions": "internal-only at R1", "/approval-subscriptions": "internal-only at R1",
+    "/lifecycle-subscriptions": "internal-only at R1",
 }
 
 

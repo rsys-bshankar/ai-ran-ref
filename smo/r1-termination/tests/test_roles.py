@@ -72,6 +72,8 @@ INTERNAL_ONLY_CALLS = [("PUT", "/ran-nf-oam/rapp-limits/x"), ("DELETE", "/ran-nf
                        ("POST", "/ran-nf-oam/rapp-approvals/a/reject"), ("POST", "/ran-nf-oam/rapp-approvals/expire-due"), ("GET", "/ran-nf-oam/rapp-approvals"),
                        ("GET", "/ran-nf-oam/approval-subscriptions"), ("POST", "/ran-nf-oam/approval-subscriptions"), ("DELETE", "/ran-nf-oam/approval-subscriptions/s"),
                        ("GET", "/ran-nf-oam/decision-records"),
+                       # MGT-14.7 / MGT-15.6: where the platform calls when an onboarding fails or a campaign halts
+                       ("GET", "/ran-nf-oam/lifecycle-subscriptions"), ("POST", "/ran-nf-oam/lifecycle-subscriptions"), ("DELETE", "/ran-nf-oam/lifecycle-subscriptions/s"),
                        # SEC-10: the scope of a caller and of a target is set by the platform
                        ("PUT", "/sme/invoker-registrations/i/authz-scope"), ("PUT", "/ran-nf-oam/managed-entities/e/scope")]
 

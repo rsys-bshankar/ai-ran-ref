@@ -419,6 +419,18 @@
   },
   {
     "method": "POST",
+    "pattern": "^/ran-nf-oam/lifecycle-subscriptions$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-nf-oam/lifecycle-subscriptions/[^/]+$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/ran-nf-oam/(cm-schemas|vendor-onboarding)$",
     "role": "admin",
     "queryMatch": {}

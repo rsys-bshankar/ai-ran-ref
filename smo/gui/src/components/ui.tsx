@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 
 import type { Query } from "../api/client";
 import { useSmoAction, type SmoAction } from "../api/hooks";
@@ -86,6 +86,9 @@ const TONES: Record<string, string> = {
   CONGESTED: "bad", NORMAL: "ok",
   // AI-11 / AI-13: approval requests and decision records (PENDING, APPROVED-> ok, REJECTED, FAILED are above)
   APPROVED: "ok", EXPIRED: "muted", REFUSED: "bad", DIRECT: "info", ROLLBACK: "warn", UNCHAINED: "warn", MISMATCH: "bad", PENDING_APPROVAL: "warn",
+  // MGT-14 / MGT-15: onboarding of an element and software campaigns (COMPLETED, HALTED, FAILED, FAILED, MISMATCH, DISCOVERED are above)
+  NO_TEMPLATE: "muted", TEMPLATE_SELECTED: "info", APPLYING: "warn", ONBOARDED: "ok", MATCH: "ok", NOT_CHECKED: "muted",
+  ABORTED: "muted", ROLLING_BACK: "warn", ROLLED_BACK: "info", ROLLBACK_FAILED: "bad",
 };
 
 export function StateBadge({ state }: { state: string | null | undefined }) {
@@ -159,10 +162,11 @@ export function DataTable<T>({ rows, columns, rowKey, loading, error, empty = "N
 
 export function Drawer({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
   useEscape(onClose);
+  const titleId = useId();                                    // the dialog is named by its heading (axe: aria-dialog-name)
   return (
     <div className="overlay" onClick={onClose}>
-      <aside className="drawer" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <div className="drawer-head"><h2>{title}</h2><button className="btn ghost" onClick={onClose} aria-label="Close">✕</button></div>
+      <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-head"><h2 id={titleId}>{title}</h2><button className="btn ghost" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="drawer-body" tabIndex={0}>{children}</div>
       </aside>
     </div>
@@ -171,10 +175,11 @@ export function Drawer({ title, onClose, children }: { title: ReactNode; onClose
 
 export function Modal({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
   useEscape(onClose);
+  const titleId = useId();
   return (
     <div className="overlay center-overlay" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <div className="drawer-head"><h2>{title}</h2><button className="btn ghost" onClick={onClose} aria-label="Close">✕</button></div>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-head"><h2 id={titleId}>{title}</h2><button className="btn ghost" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="modal-body">{children}</div>
       </div>
     </div>

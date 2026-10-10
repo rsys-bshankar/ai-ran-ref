@@ -2817,12 +2817,15 @@ def advance_software_job(job_id: uuid.UUID, succeeded: bool, db: Session = Depen
     if job is None:
         raise framework_error(FrameworkError.SOFTWARE_JOB_NOT_FOUND, detail=f"unknown jobId {job_id}")
     event = {"DOWNLOAD": SwmEvent.DOWNLOAD_OK, "INSTALL": SwmEvent.INSTALL_OK, "ACTIVATE": SwmEvent.ACTIVATE_OK}[job.phase]
-    if not succeeded:
-        job.status = SOFTWARE_MANAGEMENT_FSM.fire(SwmState(job.status), SwmEvent.PHASE_FAILED)
-    else:
-        job.status = SOFTWARE_MANAGEMENT_FSM.fire(SwmState(job.status), event)
-        if event in PHASE_ORDER:
-            job.phase = PHASE_ORDER[event]
+    try:
+        if not succeeded:
+            job.status = SOFTWARE_MANAGEMENT_FSM.fire(SwmState(job.status), SwmEvent.PHASE_FAILED)
+        else:
+            job.status = SOFTWARE_MANAGEMENT_FSM.fire(SwmState(job.status), event)
+            if event in PHASE_ORDER:
+                job.phase = PHASE_ORDER[event]
+    except IllegalTransition as exc:                    # a report for a job that has ended (a campaign timed it out, MGT-15.7): 409, as for a config job, not a 500
+        raise illegal_transition_error(exc, f"software management job {job_id}") from None
     db.commit()
     if job.campaign_id is not None:
         lifecycle.on_job_advanced(db, job.campaign_id)          # MGT-15: the job belongs to a campaign, which decides what comes next (its own transaction)

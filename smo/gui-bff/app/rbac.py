@@ -189,6 +189,9 @@ RULES: list[Rule] = [
           json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
     _rule("POST", "/ran-nf-oam/software-campaigns/{id}/(continue|halt|abort|rollback)", O,
           json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
+    # MGT-14.7 / MGT-15.6: where the platform calls when an onboarding fails or a campaign halts is an administrative decision (as for safeguard and approval subscriptions)
+    _rule("POST", "/ran-nf-oam/lifecycle-subscriptions", A),
+    _rule("DELETE", "/ran-nf-oam/lifecycle-subscriptions/{id}", A),
     # Wave 9 (W9-01..06): the vendor capability registry, CM schema
     # descriptors and cell guards are inventory/onboarding data — admin.
     _rule("POST", "/ran-nf-oam/(cm-schemas|vendor-onboarding)", A),

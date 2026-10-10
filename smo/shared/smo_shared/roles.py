@@ -55,6 +55,8 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/ran-nf-oam", ("POST",), r"^/rapp-approvals/([^/]+/(approve|reject)|expire-due)$"),
         ("/ran-nf-oam", ("GET",), r"^/rapp-approvals$"),
         ("/ran-nf-oam", ("GET", "POST", "DELETE"), r"^/approval-subscriptions(/[^/]+)?$"),
+        # MGT-14.7, MGT-15.6: who is told when an onboarding fails or a campaign halts (a destination the platform will call)
+        ("/ran-nf-oam", ("GET", "POST", "DELETE"), r"^/lifecycle-subscriptions(/[^/]+)?$"),
         # AI-13: the record of why rApps acted
         ("/ran-nf-oam", ("GET",), r"^/decision-records$"),
         # SEC-10: what a caller (or a target) is scoped to is set by the platform, never by an rApp
