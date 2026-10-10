@@ -509,11 +509,14 @@ def delete_cell_guards(managed_element_ref: str, cell_id: str, db: Session = Dep
 
 @router.get("/cell-guards")
 def query_cell_guards(request: Request, managed_element_ref: str | None = None, cell_id: str | None = None, cell_class: CellClass | None = None,
-                      sector_group: str | None = None, incident_zone: str | None = None, limit: int = PageLimit,
+                      sector_group: str | None = None, incident_zone: str | None = None, region: str | None = scoping.RegionFilter,
+                      site_cluster: str | None = scoping.SiteClusterFilter, limit: int = PageLimit,
                       offset: int = PageOffset, db: Session = Depends(get_session)):
     """The guard query any rApp uses (e.g. the EnergySaving rApp never
-    sleeps an EMERGENCY cell, nor two cells of one sectorGroup at once). PR-SEC-10.6: only the elements inside the caller's scope claim."""
+    sleeps an EMERGENCY cell, nor two cells of one sectorGroup at once). PR-SEC-10.6: only the elements inside the caller's scope claim.
+    PR-GUI-9.3: `region` and `site_cluster` keep the cells of the elements of that place."""
     stmt = scoping.scoped_to_elements(select(ManagedEntity), scoping.request_scope(request), ManagedEntity.managed_element_ref).order_by(ManagedEntity.managed_element_ref)
+    stmt = scoping.narrowed_to_place(stmt, ManagedEntity.managed_element_ref, region, site_cluster)
     if managed_element_ref:
         stmt = stmt.where(ManagedEntity.managed_element_ref == managed_element_ref)
     items = []

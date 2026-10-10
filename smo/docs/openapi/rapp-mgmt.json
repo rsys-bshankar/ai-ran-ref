@@ -454,6 +454,7 @@
     },
     "/instances": {
       "get": {
+        "description": "The rApp instances, paged. `state` narrows. PR-GUI-9.3: `region` keeps the instances whose `authzScope.regions` lists it and, unless\n`include_unscoped=false`, the instances that restrict no region (they may touch an element of any region); without `region`,\n`include_unscoped` does nothing.",
         "operationId": "list_instances_instances_get",
         "parameters": [
           {
@@ -470,6 +471,38 @@
                 }
               ],
               "title": "State"
+            }
+          },
+          {
+            "description": "Keep the instances whose `authzScope.regions` lists this region (ADR 0005).",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the instances whose `authzScope.regions` lists this region (ADR 0005).",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "With `region`: also keep the instances that restrict no region (no `authzScope`, or one without `regions`), which may act anywhere.",
+            "in": "query",
+            "name": "include_unscoped",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "With `region`: also keep the instances that restrict no region (no `authzScope`, or one without `regions`), which may act anywhere.",
+              "title": "Include Unscoped",
+              "type": "boolean"
             }
           },
           {

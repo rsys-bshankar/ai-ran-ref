@@ -24,7 +24,8 @@ from sqlalchemy.sql import ColumnElement, Select
 from smo_shared.errors import FrameworkError, framework_error
 from smo_shared.timeutil import as_utc
 
-from .models import Alarm, ManagedEntity
+from . import scoping
+from .models import Alarm
 
 # The order of the console: the worst first. `indeterminate` is a real severity that says nothing about how bad it is, so it sorts after the four
 # graded ones; a cleared alarm (severity `cleared`, HISTORY.md §5) is last.
@@ -40,12 +41,14 @@ def severity_rank(column=Alarm.severity) -> ColumnElement:
 
 def filtered_alarms(stmt: Select, *, managed_element_ref: str | None = None, managed_function_ref: str | None = None, severity: str | None = None,
                     ack_state: str | None = None, open_only: bool = False, probable_cause: str | None = None,
-                    since: datetime.datetime | None = None, until: datetime.datetime | None = None, region: str | None = None) -> Select:
+                    since: datetime.datetime | None = None, until: datetime.datetime | None = None, region: str | None = None,
+                    site_cluster: str | None = None) -> Select:
     """`stmt` (a select over `alarm`) narrowed by the console's filters; `None` (or `open_only=False`) leaves a filter out.
 
     `severity` must already be the stored lower-case form. `managed_function_ref` matches a flat ref, a full DN, or an RDN that ends a stored DN.
     `open_only` drops cleared alarms. `since` is inclusive and `until` exclusive, both on `raised_at`. `region` keeps the alarms of the elements
-    registered in that region (ADR 0005's column); it narrows, it does not authorize: the caller's scope is applied by the route.
+    registered in that region (ADR 0005's column) and `site_cluster` those of that site cluster (PR-GUI-9.3); they narrow, they do not authorize:
+    the caller's scope is applied by the route.
     """
     if managed_element_ref:
         stmt = stmt.where(Alarm.managed_element_ref == managed_element_ref)
@@ -64,9 +67,7 @@ def filtered_alarms(stmt: Select, *, managed_element_ref: str | None = None, man
         stmt = stmt.where(Alarm.raised_at >= as_utc(since))
     if until:
         stmt = stmt.where(Alarm.raised_at < as_utc(until))
-    if region:
-        stmt = stmt.where(Alarm.managed_element_ref.in_(select(ManagedEntity.managed_element_ref).where(ManagedEntity.region == region)))
-    return stmt
+    return scoping.narrowed_to_place(stmt, Alarm.managed_element_ref, region, site_cluster)
 
 
 # ---------------------------------------------------------------- keyset cursors

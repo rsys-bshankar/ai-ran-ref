@@ -658,11 +658,24 @@ def export_topology(managed_element_ref: str | None = None, db: Session = Depend
     return {"entities": entities, "relationships": relationships}
 
 
+def _links_in_place(db: Session, links: list[dict], region: str | None, site_cluster: str | None) -> list[dict]:
+    """PR-GUI-9.3: the `links` (from `topology.cell_links`) with an element in the place at either end; all of them when no filter is given.
+
+    The links are derived in Python from every element's cell guards (the type of a link needs every owner of a cell id), so the place is resolved
+    in SQL to a set of references and the links are kept by membership."""
+    refs = scoping.place_refs(region, site_cluster)
+    if refs is None:
+        return links
+    inside = set(db.scalars(refs))
+    return [link for link in links if link["aElement"] in inside or link["bElement"] in inside]
+
+
 @app.get("/topology/links")
 def topology_links(managed_element_ref: str | None = None, link_type: Literal["INTRA_ELEMENT", "INTER_ELEMENT", "AMBIGUOUS", "EXTERNAL"] | None = None,
                    reciprocal: bool | None = Query(None, description="`false`: only the relations the other side does not declare back."),
                    limit: int | None = Query(None, ge=1, le=MAX_LIMIT, description="Page size; given (or `offset`), the answer is the page envelope."),
                    offset: int | None = Query(None, ge=0, le=MAX_OFFSET),
+                   region: str | None = scoping.RegionFilter, site_cluster: str | None = scoping.SiteClusterFilter,
                    db: Session = Depends(get_session)):
     """PR-MGT-10.2: the neighbour relations declared in the cell guards, each with its link type (`topology.py`): both cells on one element
     (`INTRA_ELEMENT`), on different elements (`INTER_ELEMENT`), a cell id several elements claim (`AMBIGUOUS`) or none does (`EXTERNAL`), and whether
@@ -670,8 +683,11 @@ def topology_links(managed_element_ref: str | None = None, link_type: Literal["I
 
     PR-GUI-9.4: `reciprocal` keeps the reciprocal (`true`) or the one-sided (`false`) relations. With neither `limit` nor `offset` the answer is
     `{"items": [...]}`, every link, as it always was; with either, it is the standard page envelope `{items, total, limit, offset}` (`limit`
-    defaults to 100)."""
-    links = topology.cell_links(db, managed_element_ref, link_type)
+    defaults to 100).
+
+    PR-GUI-9.3: `region` and `site_cluster` keep the links with an element of that place at either end (an `EXTERNAL` or `AMBIGUOUS` link has no
+    b-side element, so only its a-side counts)."""
+    links = _links_in_place(db, topology.cell_links(db, managed_element_ref, link_type), region, site_cluster)
     if reciprocal is not None:
         links = [link for link in links if link["reciprocal"] is reciprocal]
     if limit is None and offset is None:
@@ -680,10 +696,12 @@ def topology_links(managed_element_ref: str | None = None, link_type: Literal["I
 
 
 @app.get("/topology/links/counts")
-def topology_link_counts(managed_element_ref: str | None = None, db: Session = Depends(get_session)):
+def topology_link_counts(managed_element_ref: str | None = None, region: str | None = scoping.RegionFilter,
+                         site_cluster: str | None = scoping.SiteClusterFilter, db: Session = Depends(get_session)):
     """PR-GUI-9.4: how many declared neighbour relations there are, without the list: `{"total", "notReciprocal", "external", "ambiguous",
-    "intraElement", "interElement"}`. `managed_element_ref` counts only the links with that element at either end."""
-    links = topology.cell_links(db, managed_element_ref)
+    "intraElement", "interElement"}`. `managed_element_ref` counts only the links with that element at either end; `region` and `site_cluster`
+    (PR-GUI-9.3) only the links with an element of that place at either end."""
+    links = _links_in_place(db, topology.cell_links(db, managed_element_ref), region, site_cluster)
     by_type = {kind: sum(1 for link in links if link["linkType"] == kind) for kind in topology.CELL_LINK_TYPES}
     return {"total": len(links), "notReciprocal": sum(1 for link in links if not link["reciprocal"]), "external": by_type["EXTERNAL"],
             "ambiguous": by_type["AMBIGUOUS"], "intraElement": by_type["INTRA_ELEMENT"], "interElement": by_type["INTER_ELEMENT"]}
@@ -1749,7 +1767,10 @@ def unsubscribe_from_safeguard_refusals(subscription_id: uuid.UUID, db: Session 
 def list_safeguard_refusals(invoker_id_: str | None = Query(default=None, alias="invoker_id"), code: str | None = None,
                             since: datetime.datetime | None = None, limit: int = PageLimit, offset: int = PageOffset,
                             db: Session = Depends(get_session)):
-    """AI-10.6: the refusals recorded, newest first, whether or not anyone was subscribed. Narrow by rApp (`invoker_id`), `code` and `since`."""
+    """AI-10.6: the refusals recorded, newest first, whether or not anyone was subscribed. Narrow by rApp (`invoker_id`), `code` and `since`.
+
+    Not narrowed by `region` or `site_cluster` (PR-GUI-9.3): a refusal records the rApp and the code, not the elements of the change it refused,
+    so it cannot be placed; the list is fleet-wide."""
     stmt = select(SafeguardRefusal).order_by(SafeguardRefusal.occurred_at.desc(), SafeguardRefusal.refusal_id)
     if invoker_id_:
         stmt = stmt.where(SafeguardRefusal.invoker_id == invoker_id_)
@@ -1966,9 +1987,11 @@ def expire_due_approvals(db: Session = Depends(get_session)):
 @app.get("/rapp-approvals")
 def list_approvals(status: Literal["PENDING", "APPROVED", "REJECTED", "EXPIRED", "REFUSED"] | None = None,
                    invoker_id_: str | None = Query(default=None, alias="invoker_id"), since: datetime.datetime | None = None,
+                   region: str | None = scoping.RegionFilter, site_cluster: str | None = scoping.SiteClusterFilter,
                    limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """AI-11.2: the approval queue, newest first. `status=PENDING` is the inbox. Requests whose time has passed are lapsed first. Names other rApps'
-    actions: internal-only at R1 (an rApp reads its own request by id)."""
+    actions: internal-only at R1 (an rApp reads its own request by id). PR-GUI-9.3: `region` and `site_cluster` keep the requests whose change
+    touches at least one element of that place (`managedElements`, recorded when the request was parked)."""
     lapse_due_approvals(db)
     stmt = select(RAppActionApproval).order_by(RAppActionApproval.created_at.desc(), RAppActionApproval.approval_id)
     if status:
@@ -1977,6 +2000,9 @@ def list_approvals(status: Literal["PENDING", "APPROVED", "REJECTED", "EXPIRED",
         stmt = stmt.where(RAppActionApproval.invoker_id == invoker_id_)
     if since:
         stmt = stmt.where(RAppActionApproval.created_at >= as_utc(since))
+    in_place = scoping.json_refs_in_place(db, RAppActionApproval.managed_elements, region, site_cluster)
+    if in_place is not None:
+        stmt = stmt.where(in_place)
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [_approval_view(r) for r in page["items"]]}
 
@@ -2158,13 +2184,15 @@ def list_decision_records(invoker_id_: str | None = Query(default=None, alias="i
                           approval_id: uuid.UUID | None = None, disposition: Literal["DIRECT", "APPROVED", "ROLLBACK", "REJECTED", "EXPIRED", "REFUSED"] | None = None,
                           model_version: str | None = None, since: datetime.datetime | None = None, until: datetime.datetime | None = None,
                           after: str | None = Query(None, description=AFTER_DESCRIPTION),
+                          region: str | None = scoping.RegionFilter, site_cluster: str | None = scoping.SiteClusterFilter,
                           limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """AI-13.3: why rApps acted, newest first: one record per config job an rApp made (and per approval that ended with none). Narrow by rApp (`invoker_id`),
     `job_id`, `approval_id`, `disposition`, `model_version` and the time (`since` inclusive, `until` exclusive). `?total=false` skips the count. Names other rApps'
     actions: internal-only at R1 (an rApp reads a record by id). PR-GUI-9.5: `after` pages by keyset in the same order (occurredAt newest first, decisionId):
-    the answer is then `{items, limit, nextCursor, hasMore}`."""
+    the answer is then `{items, limit, nextCursor, hasMore}`. PR-GUI-9.3: `region` and `site_cluster` keep the records whose `managedElements` name at
+    least one element of that place (any element matches; a record with no element never does)."""
     stmt = _decision_filters(select(RAppDecisionRecord), invoker_id_=invoker_id_, job_id=job_id, approval_id=approval_id, disposition=disposition,
-                             model_version=model_version, since=since, until=until)
+                             model_version=model_version, since=since, until=until, db=db, region=region, site_cluster=site_cluster)
     if after is not None:
         if after:
             t, i = alarm_query.decode_cursor("d", after, 2)
@@ -2181,8 +2209,9 @@ def list_decision_records(invoker_id_: str | None = Query(default=None, alias="i
 
 def _decision_filters(stmt, *, invoker_id_: str | None = None, job_id: uuid.UUID | None = None, approval_id: uuid.UUID | None = None,
                       disposition: str | None = None, model_version: str | None = None, since: datetime.datetime | None = None,
-                      until: datetime.datetime | None = None):
-    """`stmt` (a select over `rapp_decision_record`) narrowed by the filters of `GET /decision-records`; `None` leaves one out. `since` inclusive, `until` exclusive."""
+                      until: datetime.datetime | None = None, db: Session | None = None, region: str | None = None, site_cluster: str | None = None):
+    """`stmt` (a select over `rapp_decision_record`) narrowed by the filters of `GET /decision-records`; `None` leaves one out. `since` inclusive, `until` exclusive.
+    `region` and `site_cluster` (PR-GUI-9.3) keep the records touching an element of that place and need `db` (the SQL dialect of the JSON expansion)."""
     for column, value in ((RAppDecisionRecord.invoker_id, invoker_id_), (RAppDecisionRecord.job_id, job_id), (RAppDecisionRecord.approval_id, approval_id),
                           (RAppDecisionRecord.disposition, disposition), (RAppDecisionRecord.model_version, model_version)):
         if value is not None:
@@ -2191,6 +2220,10 @@ def _decision_filters(stmt, *, invoker_id_: str | None = None, job_id: uuid.UUID
         stmt = stmt.where(RAppDecisionRecord.occurred_at >= as_utc(since))
     if until:
         stmt = stmt.where(RAppDecisionRecord.occurred_at < as_utc(until))
+    if db is not None:
+        in_place = scoping.json_refs_in_place(db, RAppDecisionRecord.managed_elements, region, site_cluster)
+        if in_place is not None:
+            stmt = stmt.where(in_place)
     return stmt
 
 
@@ -2241,17 +2274,19 @@ def _decision_csv_rows(db: Session, stmt):
 @app.get("/decision-records/export.csv", response_class=StreamingResponse, responses={200: {"content": {"text/csv": {}}, "description": "The records as CSV"}})
 def export_decision_records(since: datetime.datetime, until: datetime.datetime | None = None, invoker_id_: str | None = Query(default=None, alias="invoker_id"),
                             disposition: Literal["DIRECT", "APPROVED", "ROLLBACK", "REJECTED", "EXPIRED", "REFUSED"] | None = None,
+                            region: str | None = scoping.RegionFilter, site_cluster: str | None = scoping.SiteClusterFilter,
                             db: Session = Depends(get_session)):
     """PR-GUI-9.5: the decision records of a time span as a streamed CSV file (`Content-Disposition: attachment`), oldest first, one header row then one
     row per record (the fields of `GET /decision-records`; `managedElements` joined by `;`). `since` (inclusive) is required, `until` (exclusive)
-    defaults to now, and the span is at most 31 days (422 otherwise); at most 1,000,000 rows. `invoker_id` and `disposition` narrow it. Internal-only
-    at R1, like the list."""
+    defaults to now, and the span is at most 31 days (422 otherwise); at most 1,000,000 rows. `invoker_id`, `disposition`, `region` and `site_cluster`
+    (as on the list) narrow it. Internal-only at R1, like the list."""
     start, end = as_utc(since), as_utc(until) if until else datetime.datetime.now(datetime.UTC)
     if end <= start:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="`until` must be after `since`")
     if end - start > datetime.timedelta(days=DECISION_EXPORT_MAX_DAYS):
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"the span from `since` to `until` is at most {DECISION_EXPORT_MAX_DAYS} days")
-    stmt = _decision_filters(select(RAppDecisionRecord), invoker_id_=invoker_id_, disposition=disposition, since=start, until=end)
+    stmt = _decision_filters(select(RAppDecisionRecord), invoker_id_=invoker_id_, disposition=disposition, since=start, until=end,
+                             db=db, region=region, site_cluster=site_cluster)
     name = f"decision-records-{start:%Y%m%dT%H%M%SZ}-{end:%Y%m%dT%H%M%SZ}.csv"
     return StreamingResponse(_decision_csv_rows(db, stmt), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": f'attachment; filename="{name}"'})
@@ -2451,11 +2486,12 @@ def _alarm_filters(managed_element_ref: str | None = None, severity: str | None 
                    probable_cause: str | None = None,
                    since: datetime.datetime | None = Query(None, description="raisedAt at or after this time."),
                    until: datetime.datetime | None = Query(None, description="raisedAt before this time."),
-                   region: str | None = Query(None, description="The region of the alarm's managed element (ADR 0005).")) -> dict:
+                   region: str | None = Query(None, description="The region of the alarm's managed element (ADR 0005)."),
+                   site_cluster: str | None = scoping.SiteClusterFilter) -> dict:
     """The filters `GET /alarms`, `/alarms/counts` share, as keyword arguments for `alarm_query.filtered_alarms`; 422 for a severity outside PerceivedSeverity."""
     return {"managed_element_ref": managed_element_ref, "managed_function_ref": managed_function_ref,
             "severity": _perceived_severity(severity) if severity else None, "ack_state": ack_state, "open_only": open_only,
-            "probable_cause": probable_cause, "since": since, "until": until, "region": region}
+            "probable_cause": probable_cause, "since": since, "until": until, "region": region, "site_cluster": site_cluster}
 
 
 @app.get("/alarms")
@@ -2466,8 +2502,8 @@ def query_alarms(request: Request, filters: dict = Depends(_alarm_filters), afte
     `managed_function_ref` (W10-alarm-cellref) narrows to the alarms raised
     on one managed function, e.g. a cell's `NRCellDU=101`.
 
-    PR-GUI-9.4/9.5: `ack_state`, `open_only` (no cleared alarms), `probable_cause`, `since`/`until` (raisedAt, inclusive/exclusive) and `region` (the
-    managed element's) narrow further. `after` switches to keyset paging in the console order: severity (critical first), raisedAt newest first, alarmId;
+    PR-GUI-9.4/9.5: `ack_state`, `open_only` (no cleared alarms), `probable_cause`, `since`/`until` (raisedAt, inclusive/exclusive), `region` and
+    (PR-GUI-9.3) `site_cluster` (the managed element's) narrow further. `after` switches to keyset paging in the console order: severity (critical first), raisedAt newest first, alarmId;
     the answer is then `{items, limit, nextCursor, hasMore}` (`nextCursor` null on the last page). Without `after` the answer and its order are unchanged.
 
     PR-SEC-10.6: a caller with a scope claim sees only the alarms of the elements inside it (the list is filtered, never refused: naming an element outside
@@ -2527,13 +2563,15 @@ def _hourly_alarm_counts(db: Session, filtered) -> list[dict]:
 
 
 @app.get("/alarms/stats")
-def alarm_stats(request: Request, window_hours: int = Query(24, ge=1, le=24 * 31), region: str | None = None, db: Session = Depends(get_session)):
+def alarm_stats(request: Request, window_hours: int = Query(24, ge=1, le=24 * 31), region: str | None = None,
+                site_cluster: str | None = scoping.SiteClusterFilter, db: Session = Depends(get_session)):
     """PR-GUI-9.8: `{"windowHours", "mttaSeconds", "acked", "open"}`. `mttaSeconds`: the mean time to acknowledge, the mean of ackTime - raisedAt over
     the alarms acknowledged within the last `window_hours` (null when none was); `acked`: how many those are; `open`: the alarms not cleared now
-    (whatever their age). `region` narrows to the elements of one region; filtered to the caller's scope claim. An alarm acknowledged before the
+    (whatever their age). `region` and `site_cluster` narrow to the elements of one region or site cluster; filtered to the caller's scope claim. An alarm acknowledged before the
     ack time was recorded (revision 0034) has none and is not counted."""
     since = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=window_hours)
-    base = alarm_query.filtered_alarms(scoping.scoped_to_elements(select(Alarm), scoping.request_scope(request), Alarm.managed_element_ref), region=region)
+    base = alarm_query.filtered_alarms(scoping.scoped_to_elements(select(Alarm), scoping.request_scope(request), Alarm.managed_element_ref),
+                                       region=region, site_cluster=site_cluster)
     acked = base.where(Alarm.acknowledged_at.is_not(None), Alarm.acknowledged_at >= since).subquery()
     mean, n = db.execute(select(func.avg(alarm_query.seconds_between(db, acked.c.acknowledged_at, acked.c.raised_at)), func.count()).select_from(acked)).one()
     open_count = db.scalar(select(func.count()).select_from(base.where(Alarm.severity != "cleared").subquery()))
@@ -3192,11 +3230,13 @@ def unsubscribe_fm(subscription_id: uuid.UUID, request: Request, db: Session = D
 
 
 @app.get("/o1-adaptor-endpoints")
-def list_o1_adaptor_endpoints(request: Request, health_status: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+def list_o1_adaptor_endpoints(request: Request, health_status: str | None = None, region: str | None = scoping.RegionFilter,
+                               site_cluster: str | None = scoping.SiteClusterFilter, limit: int = PageLimit, offset: int = PageOffset,
                                db: Session = Depends(get_session)):
     """The registered O1 adaptor endpoints, one per managed element, with the element's `region` and `tenant` (PR-SEC-10.2). A caller with a scope claim sees only the
-    endpoints of the elements inside it (PR-SEC-10.6)."""
+    endpoints of the elements inside it (PR-SEC-10.6). `region` and `site_cluster` keep the endpoints of the elements of that place (PR-GUI-9.3)."""
     stmt = scoping.scoped_to_elements(select(O1AdaptorEndpoint), scoping.request_scope(request), O1AdaptorEndpoint.managed_element_ref)
+    stmt = scoping.narrowed_to_place(stmt, O1AdaptorEndpoint.managed_element_ref, region, site_cluster)
     if health_status:
         stmt = stmt.where(O1AdaptorEndpoint.health_status == health_status)
     page = paginate(db, stmt, limit, offset)
@@ -3212,9 +3252,16 @@ def list_o1_adaptor_endpoints(request: Request, health_status: str | None = None
 
 
 @app.get("/config-jobs")
-def list_write_config_jobs(request: Request, status: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
+def list_write_config_jobs(request: Request, status: str | None = None, region: str | None = scoping.RegionFilter,
+                            site_cluster: str | None = scoping.SiteClusterFilter, limit: int = PageLimit, offset: int = PageOffset,
                             db: Session = Depends(get_session)):
+    """The config jobs. `status` narrows; `region` and `site_cluster` (PR-GUI-9.3) keep the jobs with at least one target element (a sub-change's
+    element) in that place. A caller with a scope claim sees only the jobs all of whose elements are inside it (PR-SEC-10)."""
     stmt = select(WriteConfigJob)
+    place = scoping.place_refs(region, site_cluster)
+    if place is not None:
+        stmt = stmt.where(select(WriteConfigSubChange.id).where(WriteConfigSubChange.job_id == WriteConfigJob.job_id,
+                                                                WriteConfigSubChange.managed_element_ref.in_(place)).exists())
     scope = scoping.request_scope(request)
     if scope is not None:
         # PR-SEC-10: only the jobs all of whose elements are inside the caller's scope (an element not registered counts as outside it)

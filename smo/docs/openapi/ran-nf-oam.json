@@ -2176,7 +2176,7 @@
   "paths": {
     "/alarms": {
       "get": {
-        "description": "`severity` filter (GUI pass) \u2014 the alarm console filters by ME and\nby perceivedSeverity; `severity=cleared` isolates the cleared history.\n`managed_function_ref` (W10-alarm-cellref) narrows to the alarms raised\non one managed function, e.g. a cell's `NRCellDU=101`.\n\nPR-GUI-9.4/9.5: `ack_state`, `open_only` (no cleared alarms), `probable_cause`, `since`/`until` (raisedAt, inclusive/exclusive) and `region` (the\nmanaged element's) narrow further. `after` switches to keyset paging in the console order: severity (critical first), raisedAt newest first, alarmId;\nthe answer is then `{items, limit, nextCursor, hasMore}` (`nextCursor` null on the last page). Without `after` the answer and its order are unchanged.\n\nPR-SEC-10.6: a caller with a scope claim sees only the alarms of the elements inside it (the list is filtered, never refused: naming an element outside\nthe scope in `managed_element_ref` gives an empty page, the same as an element with no alarms).",
+        "description": "`severity` filter (GUI pass) \u2014 the alarm console filters by ME and\nby perceivedSeverity; `severity=cleared` isolates the cleared history.\n`managed_function_ref` (W10-alarm-cellref) narrows to the alarms raised\non one managed function, e.g. a cell's `NRCellDU=101`.\n\nPR-GUI-9.4/9.5: `ack_state`, `open_only` (no cleared alarms), `probable_cause`, `since`/`until` (raisedAt, inclusive/exclusive), `region` and\n(PR-GUI-9.3) `site_cluster` (the managed element's) narrow further. `after` switches to keyset paging in the console order: severity (critical first), raisedAt newest first, alarmId;\nthe answer is then `{items, limit, nextCursor, hasMore}` (`nextCursor` null on the last page). Without `after` the answer and its order are unchanged.\n\nPR-SEC-10.6: a caller with a scope claim sees only the alarms of the elements inside it (the list is filtered, never refused: naming an element outside\nthe scope in `managed_element_ref` gives an empty page, the same as an element with no alarms).",
         "operationId": "query_alarms_alarms_get",
         "parameters": [
           {
@@ -2361,6 +2361,26 @@
               ],
               "description": "The region of the alarm's managed element (ADR 0005).",
               "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -2675,6 +2695,26 @@
               ],
               "description": "The region of the alarm's managed element (ADR 0005).",
               "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           }
         ],
@@ -3059,7 +3099,7 @@
     },
     "/alarms/stats": {
       "get": {
-        "description": "PR-GUI-9.8: `{\"windowHours\", \"mttaSeconds\", \"acked\", \"open\"}`. `mttaSeconds`: the mean time to acknowledge, the mean of ackTime - raisedAt over\nthe alarms acknowledged within the last `window_hours` (null when none was); `acked`: how many those are; `open`: the alarms not cleared now\n(whatever their age). `region` narrows to the elements of one region; filtered to the caller's scope claim. An alarm acknowledged before the\nack time was recorded (revision 0034) has none and is not counted.",
+        "description": "PR-GUI-9.8: `{\"windowHours\", \"mttaSeconds\", \"acked\", \"open\"}`. `mttaSeconds`: the mean time to acknowledge, the mean of ackTime - raisedAt over\nthe alarms acknowledged within the last `window_hours` (null when none was); `acked`: how many those are; `open`: the alarms not cleared now\n(whatever their age). `region` and `site_cluster` narrow to the elements of one region or site cluster; filtered to the caller's scope claim. An alarm acknowledged before the\nack time was recorded (revision 0034) has none and is not counted.",
         "operationId": "alarm_stats_alarms_stats_get",
         "parameters": [
           {
@@ -3088,6 +3128,26 @@
                 }
               ],
               "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           }
         ],
@@ -4173,7 +4233,7 @@
     },
     "/cell-guards": {
       "get": {
-        "description": "The guard query any rApp uses (e.g. the EnergySaving rApp never\nsleeps an EMERGENCY cell, nor two cells of one sectorGroup at once). PR-SEC-10.6: only the elements inside the caller's scope claim.",
+        "description": "The guard query any rApp uses (e.g. the EnergySaving rApp never\nsleeps an EMERGENCY cell, nor two cells of one sectorGroup at once). PR-SEC-10.6: only the elements inside the caller's scope claim.\nPR-GUI-9.3: `region` and `site_cluster` keep the cells of the elements of that place.",
         "operationId": "query_cell_guards_cell_guards_get",
         "parameters": [
           {
@@ -4259,6 +4319,46 @@
                 }
               ],
               "title": "Incident Zone"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -4971,6 +5071,7 @@
     },
     "/config-jobs": {
       "get": {
+        "description": "The config jobs. `status` narrows; `region` and `site_cluster` (PR-GUI-9.3) keep the jobs with at least one target element (a sub-change's\nelement) in that place. A caller with a scope claim sees only the jobs all of whose elements are inside it (PR-SEC-10).",
         "operationId": "list_write_config_jobs_config_jobs_get",
         "parameters": [
           {
@@ -4987,6 +5088,46 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -6213,7 +6354,7 @@
     },
     "/decision-records": {
       "get": {
-        "description": "AI-13.3: why rApps acted, newest first: one record per config job an rApp made (and per approval that ended with none). Narrow by rApp (`invoker_id`),\n`job_id`, `approval_id`, `disposition`, `model_version` and the time (`since` inclusive, `until` exclusive). `?total=false` skips the count. Names other rApps'\nactions: internal-only at R1 (an rApp reads a record by id). PR-GUI-9.5: `after` pages by keyset in the same order (occurredAt newest first, decisionId):\nthe answer is then `{items, limit, nextCursor, hasMore}`.",
+        "description": "AI-13.3: why rApps acted, newest first: one record per config job an rApp made (and per approval that ended with none). Narrow by rApp (`invoker_id`),\n`job_id`, `approval_id`, `disposition`, `model_version` and the time (`since` inclusive, `until` exclusive). `?total=false` skips the count. Names other rApps'\nactions: internal-only at R1 (an rApp reads a record by id). PR-GUI-9.5: `after` pages by keyset in the same order (occurredAt newest first, decisionId):\nthe answer is then `{items, limit, nextCursor, hasMore}`. PR-GUI-9.3: `region` and `site_cluster` keep the records whose `managedElements` name at\nleast one element of that place (any element matches; a record with no element never does).",
         "operationId": "list_decision_records_decision_records_get",
         "parameters": [
           {
@@ -6356,6 +6497,46 @@
               ],
               "description": "Keyset paging: the `nextCursor` of the previous page; an empty value asks for the first page. When given, the answer is `{items, limit, nextCursor, hasMore}` and `offset` and `total` are not used.",
               "title": "After"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -6514,7 +6695,7 @@
     },
     "/decision-records/export.csv": {
       "get": {
-        "description": "PR-GUI-9.5: the decision records of a time span as a streamed CSV file (`Content-Disposition: attachment`), oldest first, one header row then one\nrow per record (the fields of `GET /decision-records`; `managedElements` joined by `;`). `since` (inclusive) is required, `until` (exclusive)\ndefaults to now, and the span is at most 31 days (422 otherwise); at most 1,000,000 rows. `invoker_id` and `disposition` narrow it. Internal-only\nat R1, like the list.",
+        "description": "PR-GUI-9.5: the decision records of a time span as a streamed CSV file (`Content-Disposition: attachment`), oldest first, one header row then one\nrow per record (the fields of `GET /decision-records`; `managedElements` joined by `;`). `since` (inclusive) is required, `until` (exclusive)\ndefaults to now, and the span is at most 31 days (422 otherwise); at most 1,000,000 rows. `invoker_id`, `disposition`, `region` and `site_cluster`\n(as on the list) narrow it. Internal-only at R1, like the list.",
         "operationId": "export_decision_records_decision_records_export_csv_get",
         "parameters": [
           {
@@ -6582,6 +6763,46 @@
                 }
               ],
               "title": "Disposition"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           }
         ],
@@ -7078,6 +7299,7 @@
     },
     "/element-onboarding": {
       "get": {
+        "description": "MGT-14.5: the onboarding rows, narrowed by `status`, `software_check` and (PR-GUI-9.3) the `region` and `site_cluster` of the row's element.\nA caller with a scope claim sees only the rows of the elements inside it.",
         "operationId": "list_element_onboarding_element_onboarding_get",
         "parameters": [
           {
@@ -7123,6 +7345,46 @@
                 }
               ],
               "title": "Software Check"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -10735,7 +10997,7 @@
     },
     "/managed-entities/health": {
       "get": {
-        "description": "PR-GUI-9.8: the health map. `{\"groups\": [{\"key\", \"elements\", \"unhealthy\", \"worstSeverity\"}], \"healthScore\"}`, one group per `group_by` value\n(`region` or `site_cluster`; elements without one are the group `null`), ordered by unhealthy count then key. Unhealthy: an element with an open\ncritical or major alarm. worstSeverity: the worst graded severity of an open alarm in the group, or null. healthScore: 100 x (elements - unhealthy)\n/ elements over all the groups, one decimal, null when there are no elements. `region` narrows to one region; the caller's scope claim applies.",
+        "description": "PR-GUI-9.8: the health map. `{\"groups\": [{\"key\", \"elements\", \"unhealthy\", \"worstSeverity\"}], \"healthScore\"}`, one group per `group_by` value\n(`region` or `site_cluster`; elements without one are the group `null`), ordered by unhealthy count then key. Unhealthy: an element with an open\ncritical or major alarm. worstSeverity: the worst graded severity of an open alarm in the group, or null. healthScore: 100 x (elements - unhealthy)\n/ elements over all the groups, one decimal, null when there are no elements. `region` narrows to one region and `site_cluster` (PR-GUI-9.3) to one\nsite cluster; the caller's scope claim applies.",
         "operationId": "fleet_health_managed_entities_health_get",
         "parameters": [
           {
@@ -10766,6 +11028,26 @@
                 }
               ],
               "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           }
         ],
@@ -10882,9 +11164,126 @@
         "summary": "Fleet Health"
       }
     },
+    "/managed-entities/scopes": {
+      "get": {
+        "description": "PR-GUI-9.3: the places the console's scope picker offers: `{\"regions\": [{\"region\", \"elements\", \"siteClusters\": [{\"siteCluster\", \"elements\"}]}]}`,\none entry per region with its element count and its site clusters (each with its count), regions and clusters by name with `null` (not set)\nlast. Elements without a region are the region `null`; without a cluster, the cluster `null`. One SQL GROUP BY; the caller's scope claim applies.",
+        "operationId": "fleet_scopes_managed_entities_scopes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Fleet Scopes"
+      }
+    },
     "/managed-entities/worst": {
       "get": {
-        "description": "PR-GUI-9.8: the elements with open alarms, worst first: `[{managedElementRef, region, siteCluster, critical, major, openAlarms}]` ranked by open\ncritical alarms, then open major, then all open alarms (then the reference), in one SQL query. An element with no open alarm is not listed.\n`region` narrows to one region; the caller's scope claim applies.",
+        "description": "PR-GUI-9.8: the elements with open alarms, worst first: `[{managedElementRef, region, siteCluster, critical, major, openAlarms}]` ranked by open\ncritical alarms, then open major, then all open alarms (then the reference), in one SQL query. An element with no open alarm is not listed.\n`region` narrows to one region and `site_cluster` (PR-GUI-9.3) to one site cluster; the caller's scope claim applies.",
         "operationId": "worst_elements_managed_entities_worst_get",
         "parameters": [
           {
@@ -10913,6 +11312,26 @@
                 }
               ],
               "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           }
         ],
@@ -14614,7 +15033,7 @@
     },
     "/o1-adaptor-endpoints": {
       "get": {
-        "description": "The registered O1 adaptor endpoints, one per managed element, with the element's `region` and `tenant` (PR-SEC-10.2). A caller with a scope claim sees only the\nendpoints of the elements inside it (PR-SEC-10.6).",
+        "description": "The registered O1 adaptor endpoints, one per managed element, with the element's `region` and `tenant` (PR-SEC-10.2). A caller with a scope claim sees only the\nendpoints of the elements inside it (PR-SEC-10.6). `region` and `site_cluster` keep the endpoints of the elements of that place (PR-GUI-9.3).",
         "operationId": "list_o1_adaptor_endpoints_o1_adaptor_endpoints_get",
         "parameters": [
           {
@@ -14631,6 +15050,46 @@
                 }
               ],
               "title": "Health Status"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -17337,7 +17796,7 @@
     },
     "/rapp-approvals": {
       "get": {
-        "description": "AI-11.2: the approval queue, newest first. `status=PENDING` is the inbox. Requests whose time has passed are lapsed first. Names other rApps'\nactions: internal-only at R1 (an rApp reads its own request by id).",
+        "description": "AI-11.2: the approval queue, newest first. `status=PENDING` is the inbox. Requests whose time has passed are lapsed first. Names other rApps'\nactions: internal-only at R1 (an rApp reads its own request by id). PR-GUI-9.3: `region` and `site_cluster` keep the requests whose change\ntouches at least one element of that place (`managedElements`, recorded when the request was parked).",
         "operationId": "list_approvals_rapp_approvals_get",
         "parameters": [
           {
@@ -17394,6 +17853,46 @@
                 }
               ],
               "title": "Since"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -19122,7 +19621,7 @@
     },
     "/safeguard-refusals": {
       "get": {
-        "description": "AI-10.6: the refusals recorded, newest first, whether or not anyone was subscribed. Narrow by rApp (`invoker_id`), `code` and `since`.",
+        "description": "AI-10.6: the refusals recorded, newest first, whether or not anyone was subscribed. Narrow by rApp (`invoker_id`), `code` and `since`.\n\nNot narrowed by `region` or `site_cluster` (PR-GUI-9.3): a refusal records the rApp and the code, not the elements of the change it refused,\nso it cannot be placed; the list is fleet-wide.",
         "operationId": "list_safeguard_refusals_safeguard_refusals_get",
         "parameters": [
           {
@@ -19871,6 +20370,7 @@
     },
     "/software-campaigns": {
       "get": {
+        "description": "MGT-15.1: the campaigns, narrowed by `status`. PR-GUI-9.3: `region` and `site_cluster` keep a campaign when any of its elements (the `elements`\nfixed at creation, which every wave's jobs are made from) is in that place; with `region` alone, also a campaign whose selector chose that region\n(its elements may have moved since). A caller with a scope claim sees only the campaigns none of whose jobs is outside it (PR-SEC-10).",
         "operationId": "list_software_campaigns_software_campaigns_get",
         "parameters": [
           {
@@ -19897,6 +20397,46 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -21700,7 +22240,7 @@
     },
     "/topology/links": {
       "get": {
-        "description": "PR-MGT-10.2: the neighbour relations declared in the cell guards, each with its link type (`topology.py`): both cells on one element\n(`INTRA_ELEMENT`), on different elements (`INTER_ELEMENT`), a cell id several elements claim (`AMBIGUOUS`) or none does (`EXTERNAL`), and whether\nthe other side declares the relation back (`reciprocal`). `managed_element_ref` keeps the links with that element at either end.\n\nPR-GUI-9.4: `reciprocal` keeps the reciprocal (`true`) or the one-sided (`false`) relations. With neither `limit` nor `offset` the answer is\n`{\"items\": [...]}`, every link, as it always was; with either, it is the standard page envelope `{items, total, limit, offset}` (`limit`\ndefaults to 100).",
+        "description": "PR-MGT-10.2: the neighbour relations declared in the cell guards, each with its link type (`topology.py`): both cells on one element\n(`INTRA_ELEMENT`), on different elements (`INTER_ELEMENT`), a cell id several elements claim (`AMBIGUOUS`) or none does (`EXTERNAL`), and whether\nthe other side declares the relation back (`reciprocal`). `managed_element_ref` keeps the links with that element at either end.\n\nPR-GUI-9.4: `reciprocal` keeps the reciprocal (`true`) or the one-sided (`false`) relations. With neither `limit` nor `offset` the answer is\n`{\"items\": [...]}`, every link, as it always was; with either, it is the standard page envelope `{items, total, limit, offset}` (`limit`\ndefaults to 100).\n\nPR-GUI-9.3: `region` and `site_cluster` keep the links with an element of that place at either end (an `EXTERNAL` or `AMBIGUOUS` link has no\nb-side element, so only its a-side counts).",
         "operationId": "topology_links_topology_links_get",
         "parameters": [
           {
@@ -21795,6 +22335,46 @@
                 }
               ],
               "title": "Offset"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           }
         ],
@@ -21913,7 +22493,7 @@
     },
     "/topology/links/counts": {
       "get": {
-        "description": "PR-GUI-9.4: how many declared neighbour relations there are, without the list: `{\"total\", \"notReciprocal\", \"external\", \"ambiguous\",\n\"intraElement\", \"interElement\"}`. `managed_element_ref` counts only the links with that element at either end.",
+        "description": "PR-GUI-9.4: how many declared neighbour relations there are, without the list: `{\"total\", \"notReciprocal\", \"external\", \"ambiguous\",\n\"intraElement\", \"interElement\"}`. `managed_element_ref` counts only the links with that element at either end; `region` and `site_cluster`\n(PR-GUI-9.3) only the links with an element of that place at either end.",
         "operationId": "topology_link_counts_topology_links_counts_get",
         "parameters": [
           {
@@ -21930,6 +22510,46 @@
                 }
               ],
               "title": "Managed Element Ref"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           }
         ],

@@ -1,5 +1,9 @@
 """PR-SEC-10.3: an instance is created with a scope claim, which is put on its invoker at SME; an upgrade keeps it and a rollback restores it. And the rApp's own calls to
-bootstrap-complete and performance (which the gateway now lets an rApp make) are for its own instance only."""
+bootstrap-complete and performance (which the gateway now lets an rApp make) are for its own instance only. PR-GUI-9.3: the `region` / `include_unscoped`
+filters of `GET /instances`, matched against the stored claim in SQL.
+
+Fixtures: `client`, `db_session_factory` and `FakeR1Response` from `test_main.py` (a fresh SQLite per test); `sme` below stands in for R1 (SME, NFO,
+Onboarding). Run with: `cd smo/rapp-mgmt && PYTHONPATH=.:../shared python -m pytest tests/test_scope.py -q`."""
 
 import uuid
 
@@ -154,3 +158,42 @@ def test_an_operator_and_a_call_that_did_not_come_through_the_gateway_are_as_bef
     assert client.post(f"/instances/{other['instanceId']}/bootstrap-complete", headers=internal).status_code == 200
     assert client.post(f"/instances/{mine['instanceId']}/performance", json={"cpu": 2}).status_code == 200
     assert client.post(f"/instances/{uuid.uuid4()}/performance", json={"cpu": 1}, headers=internal).status_code == 404
+
+
+@pytest.fixture
+def scoped_instances(client, sme):
+    """Four instances by name: `eu` (regions eu), `eu-us` (regions eu and us), `tenant-only` (tenants acme: no region restriction) and `unscoped`."""
+    claims = {"eu": {"regions": ["eu"]}, "eu-us": {"regions": ["eu", "us"]}, "tenant-only": {"tenants": ["acme"]}, "unscoped": None}
+    ids = {}
+    for name, claim in claims.items():
+        ids[name] = _create(client, **({"authzScope": claim} if claim else {})).json()["instanceId"]
+    return ids
+
+
+def _listed(client, **params):
+    """The instance ids `GET /instances` answers for `params`, as a set, and the page total."""
+    body = client.get("/instances", params=params).json()
+    return {i["instanceId"] for i in body["items"]}, body["total"]
+
+
+def test_region_filter_keeps_the_instances_scoped_to_it_and_the_unscoped(client, scoped_instances):
+    """PR-GUI-9.3: by default `region` keeps the instances whose claim lists it AND those that restrict no region (they may act there too)."""
+    ids, total = _listed(client, region="us")
+    assert ids == {scoped_instances["eu-us"], scoped_instances["tenant-only"], scoped_instances["unscoped"]} and total == 3
+
+
+def test_region_filter_without_the_unscoped(client, scoped_instances):
+    """`include_unscoped=false` keeps only the instances whose `authzScope.regions` names the region; the page total agrees."""
+    ids, total = _listed(client, region="eu", include_unscoped="false")
+    assert ids == {scoped_instances["eu"], scoped_instances["eu-us"]} and total == 2
+    assert _listed(client, region="nowhere", include_unscoped="false") == (set(), 0)
+
+
+def test_without_region_include_unscoped_changes_nothing(client, scoped_instances):
+    """`include_unscoped` alone filters nothing: every instance is listed, as before the filter existed."""
+    assert _listed(client, include_unscoped="false")[1] == 4
+
+
+def test_region_filter_value_is_bounded(client, scoped_instances):
+    """An empty region is a 422, not a filter that matches only the unscoped instances."""
+    assert client.get("/instances", params={"region": ""}).status_code == 422

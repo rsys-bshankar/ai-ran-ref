@@ -2,7 +2,7 @@
 
 The routes of this router read the registry (`managed_entity`) and the open alarms (`alarm`) and answer aggregates computed in SQL, one query each,
 so the console shows a health map and a ranking without reading every alarm. `main.py` includes this router BEFORE the vendors router (`vendors.py`),
-whose `GET /managed-entities/{managed_element_ref}` would otherwise take `health` and `worst` for element references.
+whose `GET /managed-entities/{managed_element_ref}` would otherwise take `health`, `worst` and `scopes` for element references.
 
 Definitions (also in the module README, section 2.4):
   - an element is **unhealthy** when it has at least one open (not cleared) alarm of severity critical or major;
@@ -10,7 +10,8 @@ Definitions (also in the module README, section 2.4):
   - **worstSeverity** of a group is the worst graded severity (critical, major, minor, warning) of an open alarm on any of its elements; null when none.
 
 Every answer is limited to the caller's scope claim (ADR 0005, `scoping.py`): a scoped caller's map and ranking hold only the elements it may see.
-The site cluster is a grouping only: it is not part of the scope rule. The one write here, `PUT /managed-entities/{me}/site-cluster`, is an admin's
+The site cluster is a grouping only: it is not part of the scope rule. `GET /managed-entities/scopes` (PR-GUI-9.3) lists the regions and site clusters
+that exist, for the console's scope picker. The one write here, `PUT /managed-entities/{me}/site-cluster`, is an admin's
 call in the GUI backend's rules.
 """
 
@@ -61,8 +62,8 @@ def set_site_cluster(managed_element_ref: str, body: SiteClusterBody, db: Sessio
     return {"managedElementRef": me.managed_element_ref, "siteCluster": me.site_cluster}
 
 
-def _element_alarm_summary(request: Request, region: str | None):
-    """A subquery with one row per managed element the caller may see (narrowed to `region` when given): its `region`, `site_cluster`, the counts of its
+def _element_alarm_summary(request: Request, region: str | None, site_cluster: str | None = None):
+    """A subquery with one row per managed element the caller may see (narrowed to `region` and `site_cluster` when given): its `region`, `site_cluster`, the counts of its
     open `critical`, `major` and all open alarms, and `worst_rank`, the best (lowest) rank among its open graded alarms (NULL when it has none)."""
     rank = alarm_query.severity_rank()
     open_alarms = select(Alarm.managed_element_ref.label("ref"),
@@ -78,17 +79,20 @@ def _element_alarm_summary(request: Request, region: str | None):
     stmt = scoping.scoped_to_elements(stmt, scoping.request_scope(request), ManagedEntity.managed_element_ref)
     if region:
         stmt = stmt.where(ManagedEntity.region == region)
+    if site_cluster:
+        stmt = stmt.where(ManagedEntity.site_cluster == site_cluster)
     return stmt.subquery()
 
 
 @router.get("/managed-entities/health")
 def fleet_health(request: Request, group_by: Literal["region", "site_cluster"] = "region", region: str | None = None,
-                 db: Session = Depends(get_session)):
+                 site_cluster: str | None = scoping.SiteClusterFilter, db: Session = Depends(get_session)):
     """PR-GUI-9.8: the health map. `{"groups": [{"key", "elements", "unhealthy", "worstSeverity"}], "healthScore"}`, one group per `group_by` value
     (`region` or `site_cluster`; elements without one are the group `null`), ordered by unhealthy count then key. Unhealthy: an element with an open
     critical or major alarm. worstSeverity: the worst graded severity of an open alarm in the group, or null. healthScore: 100 x (elements - unhealthy)
-    / elements over all the groups, one decimal, null when there are no elements. `region` narrows to one region; the caller's scope claim applies."""
-    elements = _element_alarm_summary(request, region)
+    / elements over all the groups, one decimal, null when there are no elements. `region` narrows to one region and `site_cluster` (PR-GUI-9.3) to one
+    site cluster; the caller's scope claim applies."""
+    elements = _element_alarm_summary(request, region, site_cluster)
     key = elements.c[group_by]
     unhealthy = func.sum(case((elements.c.worst_rank <= UNHEALTHY_RANK, 1), else_=0))           # NULL worst_rank (no graded open alarm) counts 0
     rows = db.execute(select(key.label("key"), func.count().label("elements"), unhealthy.label("unhealthy"), func.min(elements.c.worst_rank).label("worst"))
@@ -100,13 +104,37 @@ def fleet_health(request: Request, group_by: Literal["region", "site_cluster"] =
 
 
 @router.get("/managed-entities/worst")
-def worst_elements(request: Request, limit: int = Query(10, ge=1, le=100), region: str | None = None, db: Session = Depends(get_session)):
+def worst_elements(request: Request, limit: int = Query(10, ge=1, le=100), region: str | None = None,
+                   site_cluster: str | None = scoping.SiteClusterFilter, db: Session = Depends(get_session)):
     """PR-GUI-9.8: the elements with open alarms, worst first: `[{managedElementRef, region, siteCluster, critical, major, openAlarms}]` ranked by open
     critical alarms, then open major, then all open alarms (then the reference), in one SQL query. An element with no open alarm is not listed.
-    `region` narrows to one region; the caller's scope claim applies."""
-    elements = _element_alarm_summary(request, region)
+    `region` narrows to one region and `site_cluster` (PR-GUI-9.3) to one site cluster; the caller's scope claim applies."""
+    elements = _element_alarm_summary(request, region, site_cluster)
     rows = db.execute(select(elements).where(elements.c.open_alarms > 0)
                       .order_by(elements.c.critical.desc(), elements.c.major.desc(), elements.c.open_alarms.desc(), elements.c.managed_element_ref)
                       .limit(limit)).all()
     return [{"managedElementRef": row.managed_element_ref, "region": row.region, "siteCluster": row.site_cluster,
              "critical": int(row.critical), "major": int(row.major), "openAlarms": int(row.open_alarms)} for row in rows]
+
+
+@router.get("/managed-entities/scopes")
+def fleet_scopes(request: Request, db: Session = Depends(get_session)):
+    """PR-GUI-9.3: the places the console's scope picker offers: `{"regions": [{"region", "elements", "siteClusters": [{"siteCluster", "elements"}]}]}`,
+    one entry per region with its element count and its site clusters (each with its count), regions and clusters by name with `null` (not set)
+    last. Elements without a region are the region `null`; without a cluster, the cluster `null`. One SQL GROUP BY; the caller's scope claim applies."""
+    stmt = scoping.scoped_to_elements(select(ManagedEntity.region, ManagedEntity.site_cluster, func.count().label("n")),
+                                      scoping.request_scope(request), ManagedEntity.managed_element_ref)
+    rows = db.execute(stmt.group_by(ManagedEntity.region, ManagedEntity.site_cluster)).all()
+    regions: dict[str | None, dict] = {}
+    for row in rows:
+        entry = regions.setdefault(row.region, {"region": row.region, "elements": 0, "siteClusters": []})
+        entry["elements"] += row.n
+        entry["siteClusters"].append({"siteCluster": row.site_cluster, "elements": row.n})
+
+    def by_name(value: str | None) -> tuple[bool, str]:
+        # `null` after every name, whatever the database's NULL ordering (Postgres sorts NULL last, SQLite first)
+        return value is None, value or ""
+
+    for entry in regions.values():
+        entry["siteClusters"].sort(key=lambda c: by_name(c["siteCluster"]))
+    return {"regions": [regions[key] for key in sorted(regions, key=by_name)]}

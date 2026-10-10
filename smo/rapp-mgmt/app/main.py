@@ -11,9 +11,9 @@ from contextlib import suppress
 from typing import Literal
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 
@@ -695,15 +695,43 @@ def get_operator_api(instance_id: uuid.UUID, db: Session = Depends(get_session))
     return {"instanceId": str(inst.instance_id), "state": inst.state, "operatorApiBase": inst.operator_api_base if _serves(inst) else None}
 
 
+def _instances_in_region(db: Session, region: str, include_unscoped: bool):
+    """PR-GUI-9.3: the condition "this instance may act in `region`": its `authz_scope` (PR-SEC-10.3) lists `region` under `regions`, or, with
+    `include_unscoped`, it restricts no region (no claim at all, or a claim of tenants only: ADR 0005 leaves an axis it does not name unrestricted).
+
+    Computed in SQL so the page count stays exact. The JSON column is spelled per dialect: Postgres `json_array_elements_text(authz_scope -> 'regions')`
+    (a missing key is NULL, which expands to no rows), SQLite `json_each(authz_scope, '$.regions')`; `json_each` and the derived column list are not
+    portable to the other side, hence the branch."""
+    if db.get_bind().dialect.name == "postgresql":
+        regions_json = RAppInstance.authz_scope["regions"]                                # `->`: JSON, not the text of `->>`
+        items = func.json_array_elements_text(regions_json).table_valued("value").render_derived(name="scope_region")
+    else:
+        regions_json = func.json_extract(RAppInstance.authz_scope, "$.regions")
+        items = func.json_each(RAppInstance.authz_scope, "$.regions").table_valued("value")
+    listed = exists(select(items.c.value).where(items.c.value == region))
+    if not include_unscoped:
+        return listed
+    return or_(listed, RAppInstance.authz_scope.is_(None), regions_json.is_(None))
+
+
 @app.get("/instances")
-def list_instances(state: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
-                    db: Session = Depends(get_session)):
+def list_instances(state: str | None = None,
+                   region: str | None = Query(None, min_length=1, max_length=100,
+                                              description="Keep the instances whose `authzScope.regions` lists this region (ADR 0005)."),
+                   include_unscoped: bool = Query(True, description="With `region`: also keep the instances that restrict no region "
+                                                                    "(no `authzScope`, or one without `regions`), which may act anywhere."),
+                   limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    """The rApp instances, paged. `state` narrows. PR-GUI-9.3: `region` keeps the instances whose `authzScope.regions` lists it and, unless
+    `include_unscoped=false`, the instances that restrict no region (they may touch an element of any region); without `region`,
+    `include_unscoped` does nothing."""
     # lazy upgradeTimeoutSeconds enforcement (upgrade.py) for every upgrade in flight
     for old in list(db.scalars(select(RAppInstance).where(RAppInstance.state == InstanceState.UPGRADING))):
         _sweep_overdue_upgrade(db, old)
     stmt = select(RAppInstance)
     if state:
         stmt = stmt.where(RAppInstance.state == state)
+    if region:
+        stmt = stmt.where(_instances_in_region(db, region, include_unscoped))
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"instanceId": str(i.instance_id), "packageId": str(i.package_id), "state": i.state,
              "autonomyMode": i.autonomy_mode, "operatorApiBase": i.operator_api_base, "authzScope": i.authz_scope} for i in page["items"]]}
