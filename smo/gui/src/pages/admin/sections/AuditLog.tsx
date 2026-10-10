@@ -1,18 +1,20 @@
 /** The audit log (`admin.audit`, handoff `Admin.dc.html`): every mutating call the BFF proxied (allowed or denied) plus sign-ins and user
  * administration, newest first, filtered by user, event and time range (24 h, 7 d, 30 d, all; optional "until") and keyset-paged on the server
  * (`GET /api/admin/audit?username&action&since&until&limit&after_id`: "Older" asks for the rows below the page's last id, "Newer" goes back).
- * "Export CSV" downloads the rows the filters select (`GET /api/admin/audit.csv`, streamed, at most 1,000,000 rows; the export is itself
- * audited). Each row carries an outcome badge: the HTTP status of a proxied call, or the word for a refused sign-in or a denied call. */
+ * "Export…" starts an asynchronous export job of the rows the filters select (GUI-9.5b, `data/exports.ts`; no span limit, so "All" exports
+ * too; the request and the download are themselves audited), downloaded from the Exports page. Each row carries an outcome badge: the HTTP status of a proxied call, or the word for a refused sign-in or a denied call. */
 import { useEffect, useMemo, useState } from "react";
 
 import type { AuditEntry } from "../../../api/types";
+import { ExportJobButton } from "../../../components/ExportJobButton";
 import { Card, DataTable } from "../../../components/ui";
+import { auditExport } from "../../../data/exports";
 import { Badge, type Tone } from "../../../kit/Badge";
 import { Segmented } from "../../../kit/Segmented";
 import { Stale } from "../../../kit/states";
 import { formatTime } from "../../../lib/domain";
 import { usePreferences } from "../../../shell/ThemeProvider";
-import { AUDIT_ACTIONS, auditCsvHref, useAuditPage } from "../data/queries";
+import { useAuditActions, useAuditPage } from "../data/queries";
 
 const REFUSED = ["DENIED", "LOGIN_FAILED", "LOGIN_LOCKED", "LOGIN_REFUSED"];
 
@@ -48,6 +50,7 @@ export function AuditLog() {
   useEffect(() => { setCursors([null]); }, [filterKey]);
   const afterId = cursors[cursors.length - 1];
   const page = useAuditPage({ ...filters, limit, afterId });
+  const actions = useAuditActions().data?.actions ?? [];
   const next = page.data?.nextAfterId ?? null;
   const shownFrom = (cursors.length - 1) * limit;
   return (
@@ -55,12 +58,12 @@ export function AuditLog() {
       <input placeholder="User" value={username} onChange={(e) => setUsername(e.target.value)} aria-label="Filter by user" />
       <select value={action} onChange={(e) => setAction(e.target.value)} aria-label="Filter by action">
         <option value="">All actions</option>
-        {AUDIT_ACTIONS.map((a) => <option key={a}>{a}</option>)}
+        {actions.map((a) => <option key={a}>{a}</option>)}
       </select>
       <Segmented<AuditRange> label="Time range" value={range} onChange={setRange}
         options={[{ id: "24h", label: "24 h" }, { id: "7d", label: "7 d" }, { id: "30d", label: "30 d" }, { id: "all", label: "All" }]} />
       <input type="datetime-local" aria-label="Until" title="Only rows before this time (optional)" value={until} onChange={(e) => setUntil(e.target.value)} />
-      <a className="btn small" href={auditCsvHref(filters)} download>Export CSV</a>
+      <ExportJobButton what="the audit log" request={auditExport(filters)} />
     </>}>
       <p className="muted small">Append-only. Every mutating call the BFF proxies (allowed or denied) plus sign-ins and user administration.</p>
       <DataTable rows={page.data?.items} loading={page.isLoading} error={page.data ? undefined : page.error} rowKey={(e) => String(e.id)} empty="No entries." columns={[

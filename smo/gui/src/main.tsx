@@ -45,6 +45,7 @@ const Configuration = lazy(() => import("./pages/configuration").then((m) => ({ 
 const Software = lazy(() => import("./pages/software").then((m) => ({ default: m.Software })));
 const ElementDetail = lazy(() => import("./pages/element").then((m) => ({ default: m.ElementDetail })));
 const Decisions = lazy(() => import("./pages/decisions").then((m) => ({ default: m.Decisions })));
+const Exports = lazy(() => import("./pages/exports").then((m) => ({ default: m.Exports })));
 const DecisionDetail = lazy(() => import("./pages/decisions").then((m) => ({ default: m.DecisionDetail })));
 
 const queryClient = new QueryClient({
@@ -108,6 +109,7 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="elements/:me" element={<ElementDetail />} />
                 <Route path="preferences" element={<Preferences />} />
                 <Route path="security" element={<Security />} />
+                <Route path="exports" element={<RequireAuth minRole="operator"><Exports /></RequireAuth>} />
                 <Route path="admin" element={<RequireAuth minRole="admin"><Admin /></RequireAuth>} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />

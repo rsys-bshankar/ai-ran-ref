@@ -151,6 +151,12 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("DELETE", "/rapp-mgmt/kill-all", "admin"),
     ("GET", "/rapp-mgmt/kill-all", "viewer"),
     ("PUT", "/ran-nf-oam/managed-entities/me-1/site-cluster", "admin"),
+    # GUI-10.1: the FM subscription form and the FM / PM Unsubscribe buttons are operator actions; listing them stays a read
+    ("POST", "/ran-nf-oam/fm-subscriptions", "operator"),
+    ("DELETE", "/ran-nf-oam/fm-subscriptions/s-1", "operator"),
+    ("DELETE", "/ran-nf-oam/pm-subscriptions/s-1", "operator"),
+    ("POST", "/ran-nf-oam/pm-subscriptions", "operator"),
+    ("GET", "/ran-nf-oam/fm-subscriptions", "viewer"),
 ])
 def test_minimum_role_per_route(method, path, minimum):
     order = ["viewer", "operator", "admin"]

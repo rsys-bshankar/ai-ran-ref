@@ -1,13 +1,13 @@
-/** Section `decisions.table`: the decision records matching the filter bar, newest first, in the shared server table without a count
- * (`withTotal: false`: the list is only paged forward). A row click selects it for the chain panel; the first row is selected when nothing is.
- * The time links to the record's own page. */
+/** Section `decisions.table`: the decision records matching the filter bar and the global scope, newest first, paged by keyset (GUI-9.5b,
+ * `kit/KeysetTable`: the route's `after` cursor and `nextCursor`, so a deep page of a large range costs the same as the first; no count). A row
+ * click selects it for the chain panel; the first row is selected when nothing is. The time links to the record's own page. */
 import { useCallback } from "react";
 import { Link } from "react-router-dom";
 
 import type { Query } from "../../../api/client";
 import type { DecisionRecord } from "../../../api/types";
 import { Card, Id, StateBadge } from "../../../components/ui";
-import { ServerTable } from "../../../kit/ServerTable";
+import { KeysetTable } from "../../../kit/KeysetTable";
 import { DISPOSITION_MEANING, formatTime } from "../../../lib/domain";
 import { DECISION_RECORDS } from "../data/queries";
 
@@ -22,8 +22,8 @@ export function DecisionTable({ query, selected, onSelect }: DecisionTableProps)
     else if (!selected && rows[0]) onSelect(rows[0]);
   }, [selected?.decisionId]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <Card section="decisions.table" title="Decision records" sub="newest first · paged on the server">
-      <ServerTable<DecisionRecord> path={DECISION_RECORDS} query={query} withTotal={false} rowKey={(r) => r.decisionId}
+    <Card section="decisions.table" title="Decision records" sub="newest first · paged on the server by cursor">
+      <KeysetTable<DecisionRecord> path={DECISION_RECORDS} query={query} rowKey={(r) => r.decisionId}
         onRowClick={onSelect} selectedKey={selected?.decisionId ?? null} onRows={onRows}
         empty="No decision has been recorded for these filters." columns={[
           { header: "When", render: (r) => <Link to={`/decisions/${r.decisionId}`} onClick={(e) => e.stopPropagation()}>{formatTime(r.occurredAt)}</Link> },

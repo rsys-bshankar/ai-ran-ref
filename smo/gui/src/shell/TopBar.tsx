@@ -1,4 +1,4 @@
-/** The top bar (64 px, BRIEF §2, handoff `Topbar.dc.html`): breadcrumb (section / page), the ⌘K jump search, a live-data chip, the
+/** The top bar (64 px, BRIEF §2, handoff `Topbar.dc.html`): breadcrumb (section / page), the scope picker (GUI-9.3, `ScopePicker.tsx`), the ⌘K jump search, a live-data chip, the
  * notifications button (critical alarms and waiting approvals from the "nav" summary, with a short list of where to go), the moon button to the
  * Preferences page, and help (keyboard shortcuts and where the runbook lives). The live chip says "Live · pushed" while the summary stream
  * (`shell/LiveEvents.tsx`, SCALE.md P7) is open, and "Live · polling" while it is not (connecting, refused, or a browser without EventSource). */
@@ -11,6 +11,7 @@ import { Icon } from "../kit/icons";
 import { formatCount } from "../kit/Kpi";
 import { GlobalSearch } from "./GlobalSearch";
 import { crumbOf } from "./nav";
+import { ScopePicker } from "./ScopePicker";
 
 /** The notifications button and its popover. */
 function Notifications() {
@@ -72,6 +73,7 @@ export function TopBar() {
   return (
     <header className="topbar">
       <nav className="crumb" aria-label="Breadcrumb"><span>{section}</span><span aria-hidden>/</span><strong aria-current="page">{page}</strong></nav>
+      <ScopePicker />
       <GlobalSearch />
       <div className="topbar-tools">
         {connected

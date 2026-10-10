@@ -25,6 +25,7 @@ import { ArtifactVersions, Repositories, Storages } from "./sections/Registry";
 import { TrainingNow, WaitingForGovernance } from "./sections/SideCards";
 import { StageBoard } from "./sections/StageBoard";
 import { TrainingJobs } from "./sections/TrainingJobs";
+import { ScopeNote } from "../../kit/ScopeNote";
 
 export { Mlmf } from "./sections/Mlmf";
 export { useModelNames } from "./data/queries";
@@ -40,7 +41,7 @@ export function Aiml() {
   return (
     <>
       <PageHeader eyebrow="MLMR · AIMgF · MLLF · MLMF" title="AI/ML"
-        subtitle={<>Model registration → training → validation → certification → deployment → inference, per <code>docs/call-flows/02-aiml-model-train-to-inference.md</code></>}
+        subtitle={<>Model registration → training → validation → certification → deployment → inference, per <code>docs/call-flows/02-aiml-model-train-to-inference.md</code> <ScopeNote summary={summary.data} keys={["models", "trainingJobs", "mlmfBreaches"]} /></>}
         actions={<Can method="POST" path={MODELS}><button type="button" className="btn primary" onClick={() => setRegistering(true)}>Register model</button></Can>} />
       <Tabs value={tab} onChange={setTab} tabs={[
         { id: "models", label: "Models", count: count(summary.data, "models.total") },

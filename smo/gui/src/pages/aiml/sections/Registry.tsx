@@ -2,7 +2,7 @@
  * (label, model and group counts), its model storages (profiles, addresses, supported features) and every model's artifact versions as download
  * links (`GET /mlmr/models/{id}/artifact/{version}` through the BFF). All three are server-paged and read-only: the BFF exposes no write on
  * repositories or storages (README, Known limits). MLMR serves no list of a model's artifact versions; they are counted from its
- * `artifactLocation`, which ends in the latest version. */
+ * `artifactLocation` (`model-artifact:<model id>:<latest version>`, data/board.ts `ARTIFACT_LOCATION_RE`). */
 import type { Model } from "../../../api/types";
 import { Card, Id } from "../../../components/ui";
 import { ServerTable } from "../../../kit/ServerTable";
@@ -46,7 +46,7 @@ export function ArtifactVersions() {
         { header: "Model", render: (m) => <><strong>{m.modelType}</strong> <span className="muted">v{m.version}</span></> },
         { header: "Location", render: (m) => m.artifactLocation ? <code className="small">{m.artifactLocation}</code> : <span className="muted">—</span> },
         { header: "Versions", render: (m) => {
-          const versions = artifactVersions(m.artifactLocation);
+          const versions = artifactVersions(m.artifactLocation, m.modelId);
           return versions.length === 0 ? <span className="muted">none</span>
             : <span className="row wrap">{versions.slice(0, 10).map((v) => <a key={v} className="small" href={artifactHref(m.modelId, v)} download>v{v}</a>)}{versions.length > 10 && <span className="xs muted">+{versions.length - 10} older</span>}</span>;
         } },

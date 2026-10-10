@@ -15,7 +15,7 @@ Network performance, the monitors that watch it, and what was done when a thresh
 | kpis.monitors | sections/Monitors.tsx | assurance monitors, server-paged; click → panel | `/sa-smos/monitors` | 15 s | 1 call/page |
 | kpis.monitor | sections/MonitorPanel.tsx | evaluate, remediate, escalate; actions taken | `/sa-smos/remedial-actions?monitor_id=&limit=1` | 15 s | 1 call |
 | kpis.escalations | sections/Escalations.tsx | newest 5 escalated actions + true count | `/sa-smos/remedial-actions?outcome=ESCALATED&limit=5` | 15 s | 1 call |
-| kpis.pm | sections/PmSubscriptions.tsx | PM subscriptions, server-paged; new subscription | `/ran-nf-oam/pm-subscriptions`, `/o1-adaptor-endpoints` | 15 s | 1–2 calls |
+| kpis.pm | sections/PmSubscriptions.tsx | PM subscriptions, server-paged; new subscription; Unsubscribe (operator: BFF rule `DELETE /ran-nf-oam/pm-subscriptions/{id}`, GUI-10.1) | `/ran-nf-oam/pm-subscriptions`, `/o1-adaptor-endpoints` | 15 s | 1–2 calls |
 | kpis.definitions / schedules | sections/KpiDefinitions.tsx (+ KpiDialogs.tsx) | KPI catalogue and DME publishing schedules | `/ran-nf-oam/kpi-definitions?limit=200`, `/kpi-schedules` | 15 s | 2 calls |
 | kpis.rapp | sections/RappPerformance.tsx | one instance's self-reported metrics | `/rapp-mgmt/instances`, `/…/{id}/performance?limit=100` | 15 s | 2 calls |
 | kpis.mdaRequest | sections/MdaRequestForm.tsx | request an analysis (operator and up; a viewer sees a note) | `/mdaf/mda-functions` (form only), `POST /mdaf/mda-requests` | — | 0–1 call |

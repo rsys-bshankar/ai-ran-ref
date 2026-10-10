@@ -9,6 +9,7 @@ import { keepPreviousData } from "@tanstack/react-query";
 import type { Query } from "../api/client";
 import { POLL, useSmoPage } from "../api/hooks";
 import { DataTable, type Column } from "../components/ui";
+import { scopeKey, useScope } from "../data/scope";
 import { usePreferences } from "../shell/ThemeProvider";
 import { Pager } from "./Pager";
 import { Stale } from "./states";
@@ -36,7 +37,9 @@ export function KeysetTable<T>({ path, query, columns, rowKey, refetchInterval =
   const { prefs } = usePreferences();
   const [limit, setLimit] = useState<number>(prefs.rowsPerPage);
   const [cursors, setCursors] = useState<string[]>([""]);
-  const filterKey = JSON.stringify(query ?? {});
+  // a change of the global scope (data/scope.ts, added to the query by useSmoPage) is a filter change too
+  const scope = scopeKey(useScope());
+  const filterKey = JSON.stringify([query ?? {}, scope]);
   useEffect(() => { setCursors([""]); }, [filterKey, resetKey, limit]);
   const index = cursors.length - 1;
   const q = useMemo(() => ({ ...(query ?? {}), after: cursors[index], limit }), [filterKey, cursors, index, limit]); // eslint-disable-line react-hooks/exhaustive-deps

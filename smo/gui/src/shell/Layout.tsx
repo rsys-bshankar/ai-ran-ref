@@ -1,6 +1,6 @@
 /** The signed-in console frame: sidebar, top bar and the routed page (BRIEF §2). Below 800 px the sidebar stacks above the content
  * (styles.css). Also owns the change-password dialog the sidebar opens, and the one pushed-summary stream of the tab (`LiveEvents`, for the
- * visible page's summary and the sidebar's). */
+ * visible page's summary and the sidebar's) and the global scope read from the URL (`ScopeProvider`, GUI-9.3). */
 import { Suspense, useState, type FormEvent } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 
@@ -11,6 +11,7 @@ import { useToast } from "../components/Toast";
 import { summaryPageOf } from "../data/events";
 import { Skeleton } from "../kit/states";
 import { LiveEvents } from "./LiveEvents";
+import { ScopeProvider } from "./ScopeProvider";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
@@ -21,6 +22,7 @@ export function Layout() {
   const { pathname } = useLocation();
   if (!me) return null;
   return (
+    <ScopeProvider>
     <LiveEvents page={summaryPageOf(pathname)} disabled={!!me.mfaEnrolmentRequired}>
     <div className="shell">
       <Sidebar onChangePassword={() => setPwOpen(true)} />
@@ -31,6 +33,7 @@ export function Layout() {
       {pwOpen && <ChangePassword onClose={() => setPwOpen(false)} />}
     </div>
     </LiveEvents>
+    </ScopeProvider>
   );
 }
 

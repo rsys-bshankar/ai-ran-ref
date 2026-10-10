@@ -27,6 +27,7 @@ Only the visible tab's boxes load. Every action is a role-gated `ActionButton` /
   boxes read. "Used by" per schema (mockup) is not served.
 - The job list rows carry no wave progress or requester label beyond `requestedBy` (the list route does not return waves); the detail does.
 - Sub-changes of a job come in one answer (the job detail is not paged); the box counts them and lists the first 50, the drawer lists all.
+- **Scope** (GUI-9.3): config jobs (any target element in the scope), O1 endpoints and element onboarding follow the top bar's scope; vendor capabilities and CM schemas are not tied to an element and are network-wide.
 
 ## Troubleshooting
 

@@ -84,12 +84,14 @@ export function modelActions(state: string, gate?: { trainingApproved: boolean; 
   }
 }
 
-export type StepStatus = "done" | "current" | "todo";
+/** Where a model stands on its pipeline (GUI-10.5: named apart from the flow boards' `StepStatus` in `lib/flows.ts`, which has more states). */
+export type PipelineStepStatus = "done" | "current" | "todo";
 
-export function pipelineSteps(state: string): { state: string; status: StepStatus }[] {
+/** The model pipeline's steps for a model in `state`: done before it, current at it, to do after it; every step done for an ended model. */
+export function pipelineSteps(state: string): { state: string; status: PipelineStepStatus }[] {
   const idx = MODEL_PIPELINE.indexOf(state as (typeof MODEL_PIPELINE)[number]);
   if (state === "DEPRECATED" || state === "RETIRED" || state === "FAILED") {
-    return MODEL_PIPELINE.map((s) => ({ state: s, status: "done" as StepStatus }));
+    return MODEL_PIPELINE.map((s) => ({ state: s, status: "done" as PipelineStepStatus }));
   }
   return MODEL_PIPELINE.map((s, i) => ({ state: s, status: i < idx ? "done" : i === idx ? "current" : "todo" }));
 }
@@ -372,7 +374,9 @@ export function stagedPayload(staged: StagedForm, guard: GuardForm | null): { ok
     const minutes = (text: string, name: string): number | string => { const n = Number(text); return Number.isInteger(n) && n >= 1 && n <= 10_080 ? n : `${name} must be a whole number of minutes, 1 to 10080`; };
     const baseline = minutes(guard.baselineMinutes, "Baseline");
     const observation = minutes(guard.observationMinutes, "Observation");
-    const percent = Number(guard.maxRegressionPercent);
+    // GUI-10.3: Number("") and Number("  ") are 0, so a blank field would be sent as "no regression allowed"; it is refused instead
+    const percentText = guard.maxRegressionPercent.trim();
+    const percent = percentText === "" ? NaN : Number(percentText);
     if (typeof baseline === "string") return { ok: false, error: baseline };
     if (typeof observation === "string") return { ok: false, error: observation };
     if (!Number.isFinite(percent) || percent < 0) return { ok: false, error: "Allowed regression must be a number, 0 or more" };

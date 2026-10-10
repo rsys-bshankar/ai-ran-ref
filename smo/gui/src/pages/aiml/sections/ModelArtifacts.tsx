@@ -16,7 +16,7 @@ export function ModelArtifacts({ id }: { id: string }) {
   const lifecycle = useModelLifecycle(id);
   const m = model.data;
   const l = lifecycle.data;
-  const versions = artifactVersions(m?.artifactLocation);
+  const versions = artifactVersions(m?.artifactLocation, id);
   return (
     <Card section="aiml.artifacts" title="Artifacts & deployment" sub="MLMR artifact store · MLLF node groups">
       {!m ? <Skeleton lines={2} /> : <>

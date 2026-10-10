@@ -2,7 +2,7 @@
  * access control (MSAC) lists are RAN NF OAM's (`/ran-nf-oam/msac/...`, read through the BFF proxy by `kit/ServerTable`). */
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { api, ApiError, buildQuery, type RequestOptions } from "../../../api/client";
+import { api, ApiError, type RequestOptions } from "../../../api/client";
 import type { AuditEntry, GuiUser, Page } from "../../../api/types";
 import { useToast } from "../../../components/Toast";
 
@@ -13,10 +13,11 @@ export const MSAC = {
   rules: "/ran-nf-oam/msac/access-rules",
 } as const;
 
-/** The audit events the BFF writes (gui-bff/app/main.py `_audit` callers), offered as the action filter. */
-export const AUDIT_ACTIONS = ["PROXY", "DENIED", "LOGIN", "LOGIN_FAILED", "LOGIN_LOCKED", "LOGIN_REFUSED", "MFA_CHALLENGE", "BREAK_GLASS_LOGIN",
-  "RECOVERY_CODE_USED", "LOGOUT", "TOKEN", "PASSWORD_CHANGED", "TOTP_ENROL_STARTED", "TOTP_ENROLLED", "TOTP_RESET", "RECOVERY_CODES_REGENERATED",
-  "USER_CREATED", "USER_UPDATED", "USER_DELETED", "USER_SESSIONS_REVOKED", "AUDIT_EXPORTED"] as const;
+/** The audit actions the BFF writes (`GET /api/admin/audit/actions`, gui-bff/app/main.py `AUDIT_ACTIONS`, GUI-10.4), offered as the action filter;
+ * the BFF's test fails when its code writes an action the list lacks, so the filter cannot drift from the log. */
+export function useAuditActions() {
+  return useQuery<{ actions: string[] }, ApiError>({ queryKey: ["bff", "admin", "audit-actions"], queryFn: ({ signal }) => api("/admin/audit/actions", { signal }), staleTime: 3_600_000 });
+}
 
 /** Every GUI user. The BFF answers the whole list (no paging: users number in the tens to hundreds). */
 export function useAdminUsers() {
@@ -43,11 +44,6 @@ export function useAuditPage(q: AuditQuery) {
     refetchInterval: q.afterId === null ? 10_000 : false,
     placeholderData: keepPreviousData,
   });
-}
-
-/** The download link of the audit rows the filters select (`GET /api/admin/audit.csv`, streamed by the BFF, at most 1,000,000 rows). */
-export function auditCsvHref(q: Pick<AuditQuery, "username" | "action" | "since" | "until">): string {
-  return `/api/admin/audit.csv${buildQuery(auditFilters(q))}`;
 }
 
 /** A BFF admin call (create, patch, delete a user …): toast the outcome and refetch the admin reads. */

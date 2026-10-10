@@ -17,7 +17,7 @@ This folder is the design hand-off the console redesign was built from, kept wit
 | Shell (BRIEF §2) | `src/shell/`: `Layout`, `Sidebar` (grouped nav, SVG icons, summary badges, pinned rApps, user card), `TopBar` (breadcrumb, ⌘K search over pages and `/api/search`, live chip, notifications, preferences, help), `LiveEvents` (pushed summaries), `nav.ts` (the one navigation table) |
 | Shared primitives (BRIEF §3) | `src/kit/` (one file each) and `src/components/ui.tsx` / `charts.tsx` (restyled, extended) |
 | Preferences (BRIEF §4d) | `src/pages/preferences/`, `src/shell/ThemeProvider.tsx`, `src/data/preferences.ts`, `public/theme-boot.js` (no flash of the wrong theme); stored by the BFF (`GET`/`PUT /api/me/preferences`) |
-| Server tables (SCALE P1) | `src/kit/ServerTable.tsx` + `Pager.tsx`: the backend pages and counts, "Showing 1–50 of N"; `src/kit/KeysetTable.tsx` for cursor-paged routes (alarms) |
+| Server tables (SCALE P1) | `src/kit/ServerTable.tsx` + `Pager.tsx`: the backend pages and counts, "Showing 1–50 of N"; `src/kit/KeysetTable.tsx` for cursor-paged routes (alarms, decision records) |
 | Summary counts (SCALE P2) | `src/data/summary.ts` over the BFF's `GET /api/summary/{page}` (true totals, 5 s shared cache) |
 | Pushed updates (SCALE P7) | `src/data/events.ts` (rules) and `src/shell/LiveEvents.tsx` (one `EventSource` per tab on `GET /api/events`): pushed summaries land in the summary cache and refetch the affected lists |
 | Targeted invalidation (SCALE P8) | `src/data/keys.ts`, used by `useSmoAction` |
@@ -31,6 +31,10 @@ the console uses them: the summary counts are pushed over Server-Sent Events (`s
 "Live · pushed"), the ⌘K box searches elements, rApps, alarms, models and decisions on the server, and the pages show the network health score,
 health map and worst elements, mean time to acknowledge, alarm correlation and group counts, the one-call global stop, per-rApp headline KPIs,
 training epoch / ETA, intent fulfilment percent and conflict counts, DME late detection, sign-in history, recovery-code slots and user last-active,
-and export the decision records and the audit log as CSV. What is still missing: a global scope picker, async (job-based) exports, node
-utilisation (FOCOM collects no CPU or memory measurement), per-cell rApp state history (the rApp's own data), and a server "attention" aggregate for
-the Dashboard. Until each is filled, the widget that needs it is hidden or shows "—", and the page README's "Known limits" names it.
+export the decision records and the audit log as asynchronous jobs (the Exports page), and page the Decisions table by keyset. Round 3
+(GUI-9.3, 9.5b, 9.8b) added the global scope picker (`src/data/scope.ts`, `src/shell/ScopePicker.tsx`: region → site cluster in the URL, applied
+to every scopable read, the summaries and the event topics, with a "network-wide" note on what it cannot narrow), the Dashboard's "Needs your
+attention" in one server call (`GET /api/summary/attention`, first load 6 calls), the export jobs, and node CPU / memory utilisation from FOCOM
+(the topology inspector and a pool's resources). What is still missing: GPU utilisation (no module measures it), and SCALE.md's Dashboard
+target of 3 calls (it is 6). Until each is filled, the widget that needs it is hidden or shows "—", and the page README's "Known limits" names
+it. The energy-saving rApp's per-cell state history is the rApp's own data, drawn by its declared page.

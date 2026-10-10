@@ -11,6 +11,7 @@ import fixture from "../../../auth/permissions.fixture.json";
 import { fakeBff, mountWith, type Call } from "../../../testing/bff";
 import { byText, cleanup, click, settle, type } from "../../../testing/dom";
 import { Kpis } from "../index";
+import { PmSubscriptions } from "../sections/PmSubscriptions";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 beforeEach(() => { document.body.innerHTML = ""; window.location.hash = ""; });
@@ -168,5 +169,29 @@ describe("kept tabs", () => {
     bff("viewer");
     const second = await open();
     expect(second.container.querySelector('[data-section="kpis.definitions"]')!.textContent).toContain("DRB.UEThpDl");
+  });
+});
+
+describe("PM subscriptions", () => {
+  // GUI-10.1: the BFF now has a rule for DELETE /pm-subscriptions/{id} (operator): an operator's Unsubscribe is drawn and sends it; a viewer's is not
+  it("draws Unsubscribe for an operator only", async () => {
+    const list = { items: [{ subscriptionId: "p-1", managedElementRef: "du-01", counterType: "DRB.UEThpDl", deliveryMethod: "pull", granularityPeriod: 900 }], total: 1, limit: 50, offset: 0 };
+    const subs = (role: string) => fakeBff({
+      "GET /me": { username: "ana", role, csrfToken: "c", local: true }, "GET /permissions": { role, rules: fixture },
+      "GET /smo/ran-nf-oam/pm-subscriptions": list, "DELETE /smo/ran-nf-oam/pm-subscriptions/p-1": { status: 204 },
+      "GET /smo/ran-nf-oam/o1-adaptor-endpoints": { items: [], total: 0, limit: 500, offset: 0 }, "GET /smo/ran-nf-oam/kpi-definitions": { items: [], total: 0, limit: 50, offset: 0 },
+    });
+    const calls = subs("operator");
+    const op = await mountWith(<AuthProvider><PmSubscriptions /></AuthProvider>);
+    await settle(6);
+    await click(byText(op.container, "button", "Unsubscribe")!);
+    await settle();
+    expect(calls.some((c) => c.method === "DELETE" && c.path === "/smo/ran-nf-oam/pm-subscriptions/p-1")).toBe(true);
+    cleanup();
+    subs("viewer");
+    const viewer = await mountWith(<AuthProvider><PmSubscriptions /></AuthProvider>);
+    await settle(6);
+    expect(viewer.container.querySelector("tbody")!.textContent).toContain("du-01");
+    expect(byText(viewer.container, "button", "Unsubscribe")).toBeNull();
   });
 });

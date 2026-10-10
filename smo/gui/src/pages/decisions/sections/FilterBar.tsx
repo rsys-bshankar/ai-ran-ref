@@ -1,20 +1,28 @@
 /** Section `decisions.filters`: the list's filters, each one a query parameter of the route — rApp (invoker id), outcome, model version, a time
  * range (default the last 24 h, SCALE.md: 100k records a day need a range) and an optional "until". `?job=` / `?approval=` in the address narrow
- * the list to one config job or one approval request; then the range starts at "all", so an older record still shows. "Export CSV" downloads
- * the records of the current range, rApp and outcome (RAN NF OAM's streamed export, at most 31 days; "All" has no start, so it cannot export). */
+ * the list to one config job or one approval request; then the range starts at "all", so an older record still shows. "Export…" (operator)
+ * starts an asynchronous export job of the records of the current range, rApp, outcome and scope (GUI-9.5b, `data/exports.ts`; no span limit,
+ * so "All" exports too); the file is downloaded from the Exports page. */
 import { Link } from "react-router-dom";
 
+import { useAuth } from "../../../auth/AuthContext";
+import { roleAtLeast } from "../../../auth/rbac";
+import { ExportJobButton } from "../../../components/ExportJobButton";
 import { Card, Field, Id } from "../../../components/ui";
+import { decisionsExport } from "../../../data/exports";
+import { useScope } from "../../../data/scope";
 import { Segmented } from "../../../kit/Segmented";
 import type { Query } from "../../../api/client";
-import { DISPOSITIONS, exportLink, type DecisionFilter, type Range } from "../data/queries";
+import { DISPOSITIONS, type DecisionFilter, type Range } from "../data/queries";
 
 /** Props of {@link FilterBar}. */
 export interface FilterBarProps { filter: DecisionFilter; range: Range; onChange: (patch: Partial<DecisionFilter>) => void; onRange: (r: Range) => void; query?: Query }
 
 /** The filter bar. */
 export function FilterBar({ filter, range, onChange, onRange, query }: FilterBarProps) {
-  const link = query ? exportLink(query) : null;
+  const { me } = useAuth();
+  const scope = useScope();
+  const canExport = !!me && roleAtLeast(me.role, "operator");
   return (
     <Card section="decisions.filters">
       <div className="row gap wrap">
@@ -31,9 +39,10 @@ export function FilterBar({ filter, range, onChange, onRange, query }: FilterBar
             options={[{ id: "1h", label: "1 h" }, { id: "24h", label: "24 h" }, { id: "7d", label: "7 d" }, { id: "all", label: "All" }]} />
         </Field>
         <Field label="Until" hint="optional"><input type="datetime-local" aria-label="Until" value={filter.until} onChange={(e) => onChange({ until: e.target.value })} /></Field>
-        {link && ("href" in link
-          ? <a className="btn small" href={link.href} download title="rApp, outcome and time range apply; model version, job and approval do not">Export CSV</a>
-          : <span className="small muted" role="note">{link.reason}</span>)}
+        {query && canExport && (
+          <ExportJobButton what="decision records" request={decisionsExport(query, scope)}
+            note={filter.model || filter.job || filter.approval ? "The model version, job and approval filters narrow the table only; the file holds every record of the other filters." : null} />
+        )}
       </div>
       {(filter.job || filter.approval) && (
         <p className="small">Narrowed to {filter.job ? <>job <Id value={filter.job} /></> : <>request <Id value={filter.approval} /></>}. <Link to="/decisions">Show all</Link></p>

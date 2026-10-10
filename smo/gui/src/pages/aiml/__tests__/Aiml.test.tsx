@@ -19,7 +19,7 @@ const A = "aaaaaaaa-0000-4000-8000-000000000001";
 const B = "bbbbbbbb-0000-4000-8000-000000000002";
 const C = "cccccccc-0000-4000-8000-000000000003";
 const page = <T,>(items: T[]) => ({ items, total: items.length, limit: 500, offset: 0 });
-const model = (id: string, type: string) => ({ modelId: id, modelType: type, version: "1.0", artifactLocation: id === A ? "s3://m/coverage:2" : null, description: `${type} use`, author: null, owner: "ops", inputDataType: null, outputDataType: null, targetEnvironments: [] });
+const model = (id: string, type: string) => ({ modelId: id, modelType: type, version: "1.0", artifactLocation: id === A ? `model-artifact:${A}:2` : null, description: `${type} use`, author: null, owner: "ops", inputDataType: null, outputDataType: null, targetEnvironments: [] });
 const life = (id: string, state: string, runtime = "NOT_DEPLOYED") => ({ modelId: id, modelLifecycleState: state, runtimeLifecycleState: runtime, trainingJobId: null, clearedNodeGroups: [], nfDeploymentDescriptorId: null, nfDeploymentId: null, trainingApproved: false, validationApproved: false });
 const job = (id: string, status: string) => ({ epoch: id === J1 ? 7 : null, totalEpochs: id === J1 ? 20 : null, etaSeconds: id === J1 ? 252 : null, trainingJobId: id, modelId: C, modelCoordinationGroupId: null, producerId: "smo-gui", status, runId: null, trainingDataset: null, validationDataset: null, modelMetrics: null, nfDeploymentId: null, currentStep: "TRAINING", steps: { DATA_EXTRACTION: "FINISHED", TRAINING: "RUNNING", TRAINED_MODEL: "NOT_STARTED" } });
 const J1 = "11111111-1111-4111-8111-111111111111";

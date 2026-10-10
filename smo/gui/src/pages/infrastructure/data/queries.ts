@@ -25,6 +25,29 @@ export const PATHS = {
   poolResources: (poolId: string) => `/focom/resource-pools/${poolId}/resources`,
 } as const;
 
+/** A node's utilisation (FOCOM `GET /resources/{id}/utilisation`, GUI-9.8b): the newest `CPU_UTILIZATION` and `MEMORY_UTILIZATION` performance
+ * records ingested for the resource, in percent (0–100); null where none was ingested. `at` is the newer of the two collection times. */
+export interface Utilisation { resourceId: string; cpuPercent: number | null; memoryPercent: number | null; at: string | null }
+
+/** At most this many resource ids per batched utilisation read (FOCOM refuses more). */
+export const UTILISATION_BATCH = 100;
+
+/** The utilisation of one resource (the topology inspector); null asks nothing. */
+export function useResourceUtilisation(resourceId: string | null) {
+  return useSmo<Utilisation>(resourceId ? `/focom/resources/${encodeURIComponent(resourceId)}/utilisation` : null, undefined, { refetchInterval: POLL.inventory });
+}
+
+/** The utilisation of the resources a table shows, in one read (`GET /focom/utilisation?resource_ids=a,b`, at most 100 ids, duplicates once). */
+export function useUtilisationBatch(resourceIds: string[]) {
+  const ids = [...new Set(resourceIds)].sort().slice(0, UTILISATION_BATCH);
+  return useSmo<Utilisation[]>(ids.length ? "/focom/utilisation" : null, { resource_ids: ids.join(",") }, { refetchInterval: POLL.inventory });
+}
+
+/** "42.5 %", or "—". */
+export function formatPercent(v: number | null | undefined): string {
+  return v === null || v === undefined ? "—" : `${v.toFixed(1)} %`;
+}
+
 /** The NF deployment states the NFO list filters on (`?state=`). */
 export const DEPLOYMENT_STATES = ["INITIAL", "INSTANTIATING", "RUNNING", "UPDATING", "TERMINATING", "ABNORMAL", "DELETING"] as const;
 

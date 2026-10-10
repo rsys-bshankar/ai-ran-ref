@@ -25,9 +25,10 @@ Pure rules (fix hint, graph layout and the 200-node cap; counting a list for the
   time ("Between"); the tile counts both.
 - The focus picker suggests up to 20 elements whose ref or name contains the text; it still takes any exact ref typed.
 - The mockup's "Cells in scope … DUs · metro-a" is shown as "cells with guards" (only a cell with a guard is known to the registry) and the
-  total of managed elements; there is no region scope on the links route.
+  total of managed elements; the region comes from the top bar's scope picker (below), not from a picker on this page.
 - Alarm badges on cells (the mockup's "cell-7 LOS") are not shown: no route joins alarms to cells per element in one call.
 - The graph shows only relations declared in cell guards (`neighbourRefs`); TEIV RAN-domain relations (Xn, F1) are not modelled by the backend.
+- **Scope** (GUI-9.3): the link list and its counts (either end in the scope), the cell guards and the element list follow the top bar's scope; the TEIV export (`/topology`) and a relation (`/topology/relation`) are network-wide.
 
 ## Troubleshooting
 

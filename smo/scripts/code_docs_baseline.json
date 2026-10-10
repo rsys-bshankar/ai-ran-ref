@@ -51,9 +51,9 @@
     "focom": {
       "files_without_description": 0,
       "functions_without_description": 0,
-      "items_requiring_description": 114,
+      "items_requiring_description": 118,
       "source_files": 8,
-      "tests": 76,
+      "tests": 81,
       "tests_without_docstring": 0
     },
     "fuzz": {
@@ -75,17 +75,17 @@
     "gui-bff": {
       "files_without_description": 0,
       "functions_without_description": 95,
-      "items_requiring_description": 215,
-      "source_files": 30,
-      "tests": 328,
+      "items_requiring_description": 256,
+      "source_files": 32,
+      "tests": 361,
       "tests_without_docstring": 272
     },
     "gui/src": {
-      "files_without_description": 28,
-      "functions_without_description": 84,
-      "items_requiring_description": 698,
-      "source_files": 345,
-      "tests": 382,
+      "files_without_description": 27,
+      "functions_without_description": 81,
+      "items_requiring_description": 731,
+      "source_files": 356,
+      "tests": 414,
       "tests_without_docstring": 135
     },
     "intent-service": {
@@ -108,7 +108,7 @@
       "files_without_description": 0,
       "functions_without_description": 0,
       "items_requiring_description": 54,
-      "source_files": 37,
+      "source_files": 38,
       "tests": 0,
       "tests_without_docstring": 0
     },
@@ -186,18 +186,18 @@
     },
     "ran-nf-oam": {
       "files_without_description": 1,
-      "functions_without_description": 246,
-      "items_requiring_description": 523,
-      "source_files": 60,
-      "tests": 605,
+      "functions_without_description": 243,
+      "items_requiring_description": 529,
+      "source_files": 61,
+      "tests": 622,
       "tests_without_docstring": 516
     },
     "rapp-mgmt": {
       "files_without_description": 1,
       "functions_without_description": 27,
-      "items_requiring_description": 97,
+      "items_requiring_description": 99,
       "source_files": 14,
-      "tests": 137,
+      "tests": 141,
       "tests_without_docstring": 90
     },
     "sa-smos": {
@@ -227,10 +227,10 @@
     "samples/energy-saving-rapp": {
       "files_without_description": 1,
       "functions_without_description": 46,
-      "items_requiring_description": 90,
+      "items_requiring_description": 93,
       "source_files": 18,
-      "tests": 46,
-      "tests_without_docstring": 45
+      "tests": 51,
+      "tests_without_docstring": 44
     },
     "samples/mobility-optimization-rapp": {
       "files_without_description": 1,
@@ -251,8 +251,8 @@
     "scripts": {
       "files_without_description": 0,
       "functions_without_description": 2,
-      "items_requiring_description": 354,
-      "source_files": 78,
+      "items_requiring_description": 380,
+      "source_files": 79,
       "tests": 0,
       "tests_without_docstring": 0
     },

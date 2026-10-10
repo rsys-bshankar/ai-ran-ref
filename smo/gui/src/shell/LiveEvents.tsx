@@ -3,12 +3,14 @@
  * rises and the user turned the alarm sound on (Preferences), and reconnects with a doubling back-off (1 s … 60 s) when the stream fails or
  * the BFF ends it (it does after 30 min). A hidden tab closes its stream, as a hidden tab stops polling, and opens it again when shown. If a
  * page's topic is refused twice before the stream ever opened (a 403 on a count the role cannot read), it falls back to "summary:nav" only until
- * the user opens another page. A user who must enrol a one-time code first gets no stream (`disabled`). */
+ * the user opens another page. A user who must enrol a one-time code first gets no stream (`disabled`). Under a scope (`data/scope.ts`) every topic
+ * is scoped and a scope change reopens the stream; on the Dashboard the stream also carries `summary:attention` (`event: attention`). */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { applySummaryEvent, beep, browserSource, criticalRose, LiveContext, nextBackoff, streamUrl, topicsFor, type SourceFactory,
-  type SummaryEvent } from "../data/events";
+import { applyAttentionEvent, applySummaryEvent, beep, browserSource, criticalRose, LiveContext, nextBackoff, streamUrl, topicsFor, type SourceFactory,
+  type AttentionEvent, type SummaryEvent } from "../data/events";
+import { useScope } from "../data/scope";
 import type { SummaryPage } from "../data/summary";
 import { usePreferences } from "./ThemeProvider";
 
@@ -25,7 +27,8 @@ export function LiveEvents({ page, source = browserSource, disabled = false, chi
   const [refused, setRefused] = useState<SummaryPage | null>(null);
   useEffect(() => { setRefused(null); }, [page]);
   const critical = useRef<number | null>(null);
-  const topics = useMemo(() => topicsFor(page && refused !== page ? page : null), [page, refused]);
+  const scope = useScope();
+  const topics = useMemo(() => topicsFor(page && refused !== page ? page : null, scope), [page, refused, scope]);
   const key = topics.join(",");
 
   useEffect(() => {
@@ -36,6 +39,8 @@ export function LiveEvents({ page, source = browserSource, disabled = false, chi
 
   useEffect(() => {
     if (!visible || disabled) { setConnected(false); return; }
+    // a new set of topics (another scope) starts a new reading of the critical count, so a wider scope does not sound as a rise
+    critical.current = null;
     let es: ReturnType<SourceFactory> = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let backoff = 0;
@@ -60,6 +65,14 @@ export function LiveEvents({ page, source = browserSource, disabled = false, chi
           if (criticalRose(critical.current, crit) && soundRef.current) beep();
           critical.current = crit;
         }
+      });
+      es.addEventListener("attention", (msg) => {
+        let ev: AttentionEvent;
+        try { ev = JSON.parse(String(msg.data)) as AttentionEvent; } catch { return; }
+        if (!ev || !Array.isArray(ev.groups)) return;
+        opened = true;
+        setConnected(true);
+        applyAttentionEvent(qc, ev);
       });
       es.onerror = () => {
         setConnected(false);

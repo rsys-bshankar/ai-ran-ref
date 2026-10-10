@@ -30,6 +30,9 @@ terminate) and links to `/flows/07?subject=<instance>`; it costs no call.
 - Rollouts: no canary or wave progress; an upgrade is one replacement instance, resolved as a whole. The replacement id is in the instance drawer (the list row does not carry it).
 - Package names in the instance table come from one read of the newest 500 packages; past that a row shows the package id.
 - The autonomy mode cannot be changed: rApp Management has no route for it (it is fixed at CreateInstance).
+- **Scope** (GUI-9.3): rApp instances follow the top bar's region (the instances authorised for it, plus those with no region scope: `include_unscoped`, rApp Management's default); packages know no region and their tile says "network-wide" under a scope.
+- The package drawer's signature says what Onboarding reports (`signatureVerified`: verified against its trust store, or accepted unsigned);
+  Onboarding serves no trust-store mode and no signer name, so neither is shown (GUI-10.2).
 
 ## Troubleshooting
 

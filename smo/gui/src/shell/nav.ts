@@ -36,6 +36,7 @@ export const NAV_GROUPS: NavGroup[] = [
   { title: "Account", items: [
     { to: "/preferences", label: "Preferences", icon: "prefs" },
     { to: "/security", label: "Account security", icon: "security" },
+    { to: "/exports", label: "Exports", icon: "download", minRole: "operator" },
     { to: "/admin", label: "Admin", icon: "admin", minRole: "admin" },
   ] },
 ];

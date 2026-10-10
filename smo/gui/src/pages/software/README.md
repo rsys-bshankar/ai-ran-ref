@@ -25,6 +25,7 @@ first; Continue during an unexpired pause asks and sends `force: true`. `campaig
 - The element job list has no status or time filter (the route takes only `managed_element_ref`), so "failed first" is not offered.
 - "New alarms" per element (mockup column) is not served; the gate's own detail says how many alarms failed it.
 - Region, tenant and entity type in the form are free text: no route lists the values in use.
+- **Scope** (GUI-9.3): a campaign matches when its selector names the region or any of its element jobs is in the scope; software management jobs are network-wide.
 
 ## Troubleshooting
 

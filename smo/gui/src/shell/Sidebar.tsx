@@ -1,6 +1,7 @@
 /** The sidebar (248 px, BRIEF §2): the Radisys mark and product name, the environment chip (healthy/total SMO modules from `/api/modules/status`),
  * the grouped navigation with count badges (one summary call, `useSummary("nav")`), the user's pinned rApps under "rApps", and the user card
- * with role, one-time-code state, password change and sign-out. A user who must enrol a one-time code first sees only "Account security". */
+ * with role, one-time-code state, password change and sign-out. A user who must enrol a one-time code first sees only "Account security".
+ * Every link keeps the global scope (`?region=&cluster=`, GUI-9.3), and the badges count within it. */
 import { NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -11,6 +12,7 @@ import type { ModulesStatus } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/rbac";
 import { KEYS } from "../data/keys";
+import { useScope, withScopeSearch } from "../data/scope";
 import { sum, useSummary } from "../data/summary";
 import { Icon } from "../kit/icons";
 import { formatCount } from "../kit/Kpi";
@@ -19,13 +21,14 @@ import { NAV_GROUPS } from "./nav";
 /** The rApps the user pinned (at most 5, kept by the GUI backend), listed under the one "rApps" entry. */
 export function PinnedRapps() {
   const pins = usePins();
+  const search = withScopeSearch("", useScope());
   const items = pins.data?.items ?? [];
   if (items.length === 0) return null;
   return (
     <ul className="pins" aria-label="Pinned rApps">
       {items.map((p) => (
         <li key={p.instanceId}>
-          <NavLink to={`/rapps/${p.instanceId}`} className={({ isActive }) => (isActive ? "nav sub active" : "nav sub")} title={`${p.name ?? ""} ${p.version ?? ""} ${p.state ?? ""}`.trim()}>
+          <NavLink to={{ pathname: `/rapps/${p.instanceId}`, search }} className={({ isActive }) => (isActive ? "nav sub active" : "nav sub")} title={`${p.name ?? ""} ${p.version ?? ""} ${p.state ?? ""}`.trim()}>
             <span className="nav-icon" aria-hidden>↳</span>{p.name ?? `${p.instanceId.slice(0, 8)}…`}
           </NavLink>
         </li>
@@ -54,6 +57,7 @@ export function Sidebar({ onChangePassword }: { onChangePassword: () => void }) 
   const { me, logout } = useAuth();
   const enrolOnly = !!me?.mfaEnrolmentRequired;
   const nav = useSummary("nav", { enabled: !!me && !enrolOnly, refetchInterval: 30_000 });
+  const search = withScopeSearch("", useScope());
   if (!me) return null;
   return (
     <nav className="sidebar" aria-label="Main">
@@ -73,7 +77,7 @@ export function Sidebar({ onChangePassword }: { onChangePassword: () => void }) 
                 const n_ = n.badge ? sum(nav.data, n.badge.keys) : null;
                 return (
                   <li key={n.to}>
-                    <NavLink to={n.to} end={n.to === "/"} className={({ isActive }) => (isActive ? "nav active" : "nav")}>
+                    <NavLink to={{ pathname: n.to, search }} end={n.to === "/"} className={({ isActive }) => (isActive ? "nav active" : "nav")}>
                       <Icon name={n.icon} />
                       <span className="nav-label">{n.label}</span>
                       {n.badge && n_ !== null && n_ > 0 && <span className={`nav-count ${n.badge.tone}`} title={`${n_} ${n.badge.title}`}>{formatCount(n_, 999)}</span>}

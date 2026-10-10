@@ -7,6 +7,15 @@ import { ActionButton, Can, DataTable, Drawer, Id, KeyValue, StateBadge } from "
 import { formatTime } from "../../../lib/domain";
 import { packageBase, usePackageArtifacts, usePackageUsage } from "../data/queries";
 
+/** What Onboarding reports about a package's signature (GUI-10.2). Onboarding serves only `signatureVerified`: true when the CSAR's signature
+ * verified against the publisher keys of its trust store (`ONBOARDING_TRUST_STORE`), false when it was accepted without that (unsigned, with no
+ * signature required); it serves no trust-store mode and no signer, so neither is claimed here. */
+export function signatureText(verified: boolean | null | undefined): string {
+  if (verified === true) return "verified against Onboarding's trust store";
+  if (verified === false) return "not verified (accepted unsigned: no signature was required)";
+  return "not reported";
+}
+
 /** The drawer of `pkg`. */
 export function PackageDrawer({ pkg, onClose }: { pkg: Package; onClose: () => void }) {
   const base = packageBase(pkg.packageId);
@@ -18,7 +27,7 @@ export function PackageDrawer({ pkg, onClose }: { pkg: Package; onClose: () => v
       <div className="row between"><StateBadge state={pkg.state} /><Link className="btn small" to={`/flows/06?subject=${pkg.packageId}`}>Track in flow 06 →</Link></div>
       <KeyValue items={[
         ["Package ID", <code>{pkg.packageId}</code>], ["Vendor / type", `${pkg.vendor ?? "—"} / ${pkg.applicationType}`],
-        ["TOSCA entry definitions", pkg.toscaEntryDefinitions], ["Signature", pkg.signatureVerified ? "verified (dev cert)" : "unverified"],
+        ["TOSCA entry definitions", pkg.toscaEntryDefinitions], ["Signature", signatureText(pkg.signatureVerified)],
         ["NF deployment descriptor", pkg.nfDeploymentDescriptorId && <code>{pkg.nfDeploymentDescriptorId}</code>],
         ["Instances using it", usage.data ? String(active.length) : "…"],
         ["AI capabilities", pkg.aiCapabilities ? <code className="small">{JSON.stringify(pkg.aiCapabilities)}</code> : <span className="muted">none declared</span>],

@@ -30,6 +30,7 @@ RAN pages share.
   guards only. Writable-or-not per attribute is not served either.
 - Live attribute values come from the element itself (`/config`); the tree holds names only. A read can fail when the endpoint is down (503).
 - Host key in the overview: the route answers 422 for an endpoint that is not ssh; the card then says so.
+- **Scope** (GUI-9.3): the element's own reads are by element; its alarm list and cell guards also carry the top bar's scope, so an element outside the scope shows them empty (clear the scope with "All network").
 
 ## Troubleshooting
 

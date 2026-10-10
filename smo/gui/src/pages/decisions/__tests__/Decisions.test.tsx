@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Tests of the Decisions page (pages/decisions): the record table (filters as query parameters, the default 24 h range, paging), the summary
- * tiles, the CSV export link (current range, rApp and outcome; none for "All"), the chain panel that follows the selected row, the one-record route with its integrity check, and the config job's link back to its
+ * tiles, the export job (current range, rApp, outcome and scope; "All" from the first record; operators only), keyset paging, the chain panel that follows the selected row, the one-record route with its integrity check, and the config job's link back to its
  * record. Run: `npx vitest run src/pages/decisions`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -55,7 +55,7 @@ describe("the decision list", () => {
     expect(rows[0].querySelector("a")?.getAttribute("href")).toBe(`/decisions/${DID}`);
     expect(rows[1].textContent).toContain("none given");
     const asked = calls.find((c) => c.path === "/smo/ran-nf-oam/decision-records")!;
-    expect(asked.query.get("total")).toBe("false");
+    expect(asked.query.get("after")).toBe("");                                      // keyset-paged from the first page (GUI-9.5b)
     expect(asked.query.get("limit")).toBe("50");                                    // the user's rows-per-page preference (default 50)
     const since = Date.parse(asked.query.get("since") ?? "");
     expect(Math.abs(Date.now() - 86_400_000 - since)).toBeLessThan(60_000);        // the last 24 h by default
@@ -74,41 +74,73 @@ describe("the decision list", () => {
     const last = calls.filter((c) => c.path === "/smo/ran-nf-oam/decision-records").at(-1)!;
     expect(last.query.get("invoker_id")).toBe("api-invoker-0a1b");
     expect(last.query.get("disposition")).toBe("REJECTED");
-    expect(last.query.get("offset")).toBe("0");
+    expect(last.query.get("after")).toBe("");
   });
 
-  // Pins down: the export link carries the range and the rApp / outcome filters; "All" (no start) offers no export and says why.
-  it("links the CSV export with the current filters, and not for All", async () => {
-    bff();
+  // Pins down: "Export…" starts an export job with the range, rApp and outcome; "All" exports from the first record; the job is announced with a
+  // link to the Exports page (GUI-9.5b)
+  it("starts an export job with the current filters, also for All", async () => {
+    const OPERATOR = { "GET /me": { username: "ops", role: "operator", csrfToken: "c", local: true, totpEnrolled: true }, "GET /permissions": { role: "operator", rules } };
+    const calls = bff({ ...OPERATOR, "POST /exports": { status: 202, body: { id: "e1", kind: "decisions", state: "QUEUED", params: {} } } });
     const { container } = await mountWith(<AuthProvider><Decisions /></AuthProvider>, { at: "/decisions" });
     await settle();
     const select = container.querySelector("select[aria-label='Filter by outcome']") as HTMLSelectElement;
     select.value = "APPROVED";
     select.dispatchEvent(new Event("change", { bubbles: true }));
     await settle();
-    const link = byText<HTMLAnchorElement>(container, "a", "Export CSV")!;
-    const url = new URL(link.getAttribute("href")!, "http://x");
-    expect(url.pathname).toBe("/api/smo/ran-nf-oam/decision-records/export.csv");
-    expect(url.searchParams.get("disposition")).toBe("APPROVED");
-    expect(url.searchParams.get("since")).not.toBeNull();
+    expect(byText(container, "a", "Export CSV")).toBeNull();                       // the streamed link is gone
+    await click(byText(document.body, "button", "Export…")!);
+    await click(byText(document.body, "button", "Start export")!);
+    await settle();
+    const post = calls.filter((c) => c.method === "POST" && c.path === "/exports").at(-1)!;
+    expect(post.body).toMatchObject({ kind: "decisions", disposition: "APPROVED" });
+    expect(Math.abs(Date.now() - 86_400_000 - Date.parse((post.body as { since: string }).since))).toBeLessThan(60_000);
+    expect(document.body.textContent).toContain("The export is queued");
+    expect(document.body.querySelector("a[href='/exports']")).not.toBeNull();
+    await click(byText(document.body, "button", "Close")!);
     await click(byText(container, "button", "All")!);
     await settle();
-    expect(byText(container, "a", "Export CSV")).toBeNull();
-    expect(container.textContent).toContain("Pick a time range");
+    await click(byText(document.body, "button", "Export…")!);
+    await click(byText(document.body, "button", "Start export")!);
+    await settle();
+    expect((calls.filter((c) => c.path === "/exports").at(-1)!.body as { since: string }).since).toBe("1970-01-01T00:00:00.000Z");
   });
 
-  // Pins down: pages: Older asks for the next page only when the server says there is one.
-  it("pages: Older asks for the next page only when the server says there is one", async () => {
-    const calls = bff({ "GET /smo/ran-nf-oam/decision-records": (c: Call) => ({ items: [record({ decisionId: `d-${c.query.get("offset")}` })], limit: 50, offset: Number(c.query.get("offset")), hasMore: c.query.get("offset") === "0" }) });
+  // Pins down: a viewer is offered no export (decisions exports need the operator role), and a refused export says why in the dialog.
+  it("offers no export to a viewer and says why an export was refused", async () => {
+    bff();
+    const viewer = await mountWith(<AuthProvider><Decisions /></AuthProvider>, { at: "/decisions" });
+    await settle();
+    expect(byText(viewer.container, "button", "Export…")).toBeNull();
+    viewer.unmount();
+    bff({ "GET /me": { username: "ops", role: "operator", csrfToken: "c", local: true }, "GET /permissions": { role: "operator", rules },
+      "POST /exports": { status: 429, body: { title: "TOO_MANY_EXPORTS" } } });
     const { container } = await mountWith(<AuthProvider><Decisions /></AuthProvider>, { at: "/decisions" });
     await settle();
-    const list = () => calls.filter((c) => c.path === "/smo/ran-nf-oam/decision-records" && c.query.get("limit") !== "1");
+    await click(byText(container, "button", "Export…")!);
+    await click(byText(document.body, "button", "Start export")!);
+    await settle();
+    expect(document.body.textContent).toContain("three exports running");
+  });
+
+  // Pins down: the table pages by keyset: Next asks with the answer's nextCursor, Previous goes back without a cursor, and Next is off when
+  // the server says there is no more (GUI-9.5b).
+  it("pages by cursor: Next sends nextCursor, and stops when there is no more", async () => {
+    const calls = bff({ "GET /smo/ran-nf-oam/decision-records": (c: Call) => (c.query.get("after") === ""
+      ? { items: [record({ decisionId: "d-first" })], limit: 50, nextCursor: "cur-1", hasMore: true }
+      : { items: [record({ decisionId: "d-second" })], limit: 50, nextCursor: null, hasMore: false }) });
+    const { container } = await mountWith(<AuthProvider><Decisions /></AuthProvider>, { at: "/decisions" });
+    await settle();
+    const list = () => calls.filter((c) => c.path === "/smo/ran-nf-oam/decision-records");
     expect((byText(container, "button", "← Previous") as HTMLButtonElement).disabled).toBe(true);
     await click(byText(container, "button", "Next →")!);
     await settle();
-    expect(list().at(-1)!.query.get("offset")).toBe("50");
+    expect(list().at(-1)!.query.get("after")).toBe("cur-1");
+    expect(list().every((c) => !c.query.has("offset"))).toBe(true);
     expect((byText(container, "button", "Next →") as HTMLButtonElement).disabled).toBe(true);
-    expect((byText(container, "button", "← Previous") as HTMLButtonElement).disabled).toBe(false);
+    await click(byText(container, "button", "← Previous")!);
+    await settle();
+    expect(container.querySelector("tbody")!.textContent).toContain("APPROVED");
   });
 
   // Pins down: narrows to one job or one approval request when the address says so.

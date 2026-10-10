@@ -9,6 +9,7 @@ import { fakeBff, mountWith } from "../../testing/bff";
 import { cleanup, settle } from "../../testing/dom";
 import { jumpsFor } from "../GlobalSearch";
 import { crumbOf, NAV, NAV_GROUPS } from "../nav";
+import { ScopeProvider } from "../ScopeProvider";
 import { Sidebar } from "../Sidebar";
 
 afterEach(cleanup);
@@ -58,5 +59,24 @@ describe("Sidebar", () => {
     const counts = Array.from(container.querySelectorAll(".nav-count")).map((n) => n.textContent);
     expect(counts).toEqual(["18", "999+"]);
     expect(container.querySelectorAll(".nav-group .eyebrow")).toHaveLength(4);
+  });
+
+  // GUI-9.3 / 9.5b: under a scope every link keeps it and the badges are the scoped counts; Exports is in Account for an operator, not a viewer
+  it("keeps the scope in its links and counts within it; lists Exports for operators", async () => {
+    const calls = fakeBff({
+      "GET /me": { username: "ops", role: "operator", local: true, totpEnrolled: true },
+      "GET /permissions": { role: "operator", rules: [] },
+      "GET /modules/status": { checkedAt: "", modules: [] },
+      "GET /me/pins": { max: 5, items: [] },
+      "GET /summary/nav": { page: "nav", computedAt: "", partial: [], counts: {} },
+    });
+    const { container } = await mountWith(<AuthProvider><ScopeProvider><Sidebar onChangePassword={() => {}} /></ScopeProvider></AuthProvider>, { at: "/?region=north&cluster=c1" });
+    await settle(8);
+    expect(container.querySelector("a.nav[href^='/alarms']")?.getAttribute("href")).toBe("/alarms?region=north&cluster=c1");
+    expect(container.querySelector("a.nav[href^='/exports']")).not.toBeNull();
+    const nav = calls.find((c) => c.path === "/summary/nav")!;
+    expect([nav.query.get("region"), nav.query.get("site_cluster")]).toEqual(["north", "c1"]);
+    expect(crumbOf("/exports")).toEqual(["Account", "Exports"]);
+    expect(NAV.find((n) => n.to === "/exports")?.minRole).toBe("operator");
   });
 });

@@ -206,6 +206,8 @@ export function readInputs(specs: InputSpec[], values: Record<string, string | b
       if (!(spec.options ?? []).includes(text)) errors[spec.name] = "is not one of the options";
       else body[spec.name] = text;
     } else {
+      // GUI-10.3: Number("  ") is 0; a whitespace-only number is a blank field (required, or left out), never a zero
+      if (text.trim() === "") { if (spec.required) errors[spec.name] = "is required"; continue; }
       const n = Number(text);
       if (!Number.isFinite(n)) errors[spec.name] = "must be a number";
       else if (spec.type === "integer" && !Number.isInteger(n)) errors[spec.name] = "must be a whole number";

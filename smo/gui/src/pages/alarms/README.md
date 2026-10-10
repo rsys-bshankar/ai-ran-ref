@@ -14,7 +14,7 @@ Tabs (URL hash): `#ran` RAN NF alarms · `#ocloud` O-Cloud alarms · `#fm` FM su
 | alarms.rootcause | sections/RootCauseHint.tsx | the server's correlation: alarms of the same element within ±60 s (rule named) | `/ran-nf-oam/alarms/{id}/correlated?window_seconds=60` | 15 s | 1 call per selected alarm |
 | alarms.inject | sections/InjectAlarm.tsx | admin: inject a test alarm | `POST /ran-nf-oam/alarms/ingest` | — | 0 |
 | alarms.ocloud | sections/OCloudAlarms.tsx | FOCOM alarms, server-paged, severity / resource filters | `/focom/alarms?severity&resource_ref` | 5 s | 1 call |
-| alarms.fm | sections/FmSubscriptions.tsx | new FM subscription, list with Unsubscribe | `/ran-nf-oam/fm-subscriptions`, `/ran-nf-oam/o1-adaptor-endpoints` | 15 s | 2 calls |
+| alarms.fm | sections/FmSubscriptions.tsx | new FM subscription and Unsubscribe (operator: BFF rules `POST /ran-nf-oam/fm-subscriptions`, `DELETE …/{id}`, GUI-10.1), the list | `/ran-nf-oam/fm-subscriptions`, `/ran-nf-oam/o1-adaptor-endpoints` | 15 s | 2 calls |
 
 `sections/AlarmActions.tsx` holds the Ack / Unack / Clear buttons the table and the detail share.
 
@@ -29,6 +29,7 @@ First load (RAN tab): summary + one page + the hourly counts = 3 calls (SCALE.md
 - **Mean time to acknowledge** covers alarms acknowledged in the last 24 h; alarms acknowledged before the backend kept `ackTime` have none.
 - The managed element filter is a text box (exact match on `managed_element_ref`), not a list built from every alarm. The sparkline's hours are UTC.
 - "Assign…" from the mockup has no backend.
+- **Scope** (GUI-9.3): the RAN alarm list, its tiles, hourly counts and group counts follow the top bar's scope (`region`, `site_cluster`); the Region filter of the table overrides it. O-Cloud (FOCOM) alarms know no region and stay network-wide (the tiles say so).
 
 ## Troubleshooting
 

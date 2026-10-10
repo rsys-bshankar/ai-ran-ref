@@ -600,6 +600,31 @@ def test_audit_endpoint_lists_newest_first_and_filters(app):
     assert {e["action"] for e in admin.get("/api/admin/audit", params={"action": "LOGIN"}).json()["items"]} == {"LOGIN"}
 
 
+def _written_audit_actions() -> set[str]:
+    """The action names the BFF's code writes: the first argument of every `audit(...)` call in app/ that is a string literal."""
+    import ast
+    from pathlib import Path
+    found: set[str] = set()
+    for source in (Path(__file__).resolve().parent.parent / "app").glob("*.py"):
+        for node in ast.walk(ast.parse(source.read_text())):
+            name = node.func.id if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) else (
+                node.func.attr if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) else None)
+            if (name in ("audit", "_audit") and node.args
+                    and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str)):
+                found.add(node.args[0].value)
+    return found
+
+
+def test_the_served_audit_actions_are_exactly_the_ones_the_code_writes(app):
+    """GUI-10.4: `GET /api/admin/audit/actions` feeds the console's action filter; it fails here when an `audit(...)` call writes an action the
+    list lacks, or the list keeps one nothing writes any more. Admin only."""
+    from app.main import AUDIT_ACTIONS
+    assert set(AUDIT_ACTIONS) == _written_audit_actions()
+    body = login(app, "admin").get("/api/admin/audit/actions").json()
+    assert body["actions"] == sorted(AUDIT_ACTIONS)
+    assert login(app, "operator").get("/api/admin/audit/actions").status_code == 403
+
+
 def test_permissions_endpoint_exposes_the_rbac_table(app):
     body = login(app, "viewer").get("/api/permissions").json()
     assert body["role"] == "viewer"

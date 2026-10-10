@@ -102,6 +102,13 @@ SIGN_IN_HISTORY_ACTIONS = (*SIGN_IN_ACTIONS, "LOGIN_FAILED", "OIDC_LOGIN_FAILED"
 AUDIT_CSV_MAX_ROWS = 1_000_000
 AUDIT_CSV_BATCH = 1000
 AUDIT_CSV_COLUMNS = ("id", "at", "username", "role", "action", "method", "path", "statusCode", "detail")
+# GUI-10.4: every audit action the BFF writes (the first argument of each `audit(...)` call in app/), served by `GET /api/admin/audit/actions`
+# for the console's action filter. tests/test_main.py scans the source and fails when a call writes an action missing here, or one here is no
+# longer written.
+AUDIT_ACTIONS = ("AUDIT_EXPORTED", "BREAK_GLASS_LOGIN", "DENIED", "EXPORT_DELETED", "EXPORT_DOWNLOADED", "EXPORT_REQUESTED", "LOGIN", "LOGIN_FAILED",
+                 "LOGIN_LOCKED", "LOGIN_REFUSED", "LOGOUT", "MFA_CHALLENGE", "OIDC_LOGIN", "OIDC_LOGIN_FAILED", "PASSWORD_CHANGED", "PROXY", "RAPP_ACTION",
+                 "RECOVERY_CODES_REGENERATED", "RECOVERY_CODE_USED", "TOKEN", "TOTP_ENROLLED", "TOTP_ENROL_STARTED", "TOTP_RESET", "USER_CREATED",
+                 "USER_DELETED", "USER_SESSIONS_REVOKED", "USER_UPDATED")
 
 # RFC 7230 section 6.1 hop-by-hop headers, plus headers the BFF must own
 # itself: lengths/encodings are recomputed (httpx has already decoded the
@@ -1087,6 +1094,11 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             page = _paginate(s, stmt, limit, offset)
             items = [audit_view(e) for e in page["items"]]
         return {**page, "items": items, "nextAfterId": items[-1]["id"] if items and len(items) == int(limit) else None}
+
+    @app.get("/api/admin/audit/actions")
+    def list_audit_actions(session: Session = Depends(require_admin)):
+        """GUI-10.4: the audit actions the BFF writes (`AUDIT_ACTIONS`), sorted, for the audit log's action filter: `{"actions": [...]}`."""
+        return {"actions": sorted(AUDIT_ACTIONS)}
 
     @app.get("/api/admin/audit.csv", responses={200: {"description": "The audit rows as CSV, newest first", "content": {"text/csv": {}}}})
     def export_audit(username: str | None = None, action: str | None = None,

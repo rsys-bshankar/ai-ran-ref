@@ -4,6 +4,7 @@
  * table's severity filter. */
 import { Sparkline } from "../../../components/charts";
 import { Card } from "../../../components/ui";
+import { ScopeNote } from "../../../kit/ScopeNote";
 import { formatCount, Kpi } from "../../../kit/Kpi";
 import { ErrorRetry } from "../../../kit/states";
 import { count, openAlarms } from "../../../data/summary";
@@ -38,6 +39,7 @@ export function SeverityTiles({ severity, onSeverity }: { severity: string; onSe
         </Kpi>
       </div>
       {s && s.partial.length > 0 && <p className="small muted">Partial: {s.partial.join(", ")} did not answer; their counts show "—".</p>}
+      <ScopeNote summary={s} keys={["ocloudAlarms"]} />
     </Card>
   );
 }

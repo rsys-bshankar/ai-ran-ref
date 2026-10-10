@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../../auth/AuthContext";
 import { applySummaryEvent, criticalRose, listPathsFor, nextBackoff, summaryPageOf, topicsFor, useLive, type EventSourceLike } from "../../data/events";
 import { KEYS } from "../../data/keys";
+import { ScopeContext } from "../../data/scope";
 import { fakeBff, mountWith } from "../../testing/bff";
 import { cleanup, mount, settle, type } from "../../testing/dom";
 import { GlobalSearch, resultsFor } from "../GlobalSearch";
@@ -94,6 +95,23 @@ describe("LiveEvents", () => {
     expect(container.querySelector("#probe")?.textContent).toBe("off");
     await act(async () => { vi.advanceTimersByTime(1000); });
     expect(sources).toHaveLength(2);
+  });
+
+  // GUI-9.3 / 9.8b: under a scope the Dashboard's stream asks the scoped nav, dashboard and attention topics, and an attention event lands in the
+  // scoped attention cache entry the "Needs your attention" card reads
+  it("scopes the Dashboard's topics and applies attention events", async () => {
+    const sources: FakeSource[] = [];
+    const qc = new QueryClient();
+    await mount(
+      <QueryClientProvider client={qc}><ScopeContext.Provider value={{ scope: { region: "north", cluster: null }, setScope: () => {} }}>
+        <LiveEvents page="dashboard" source={(u) => { const s = new FakeSource(u); sources.push(s); return s; }}><span /></LiveEvents>
+      </ScopeContext.Provider></QueryClientProvider>,
+    );
+    expect(sources[0].url).toBe("/api/events?topics=summary:nav@north,summary:dashboard@north,summary:attention@north");
+    await act(async () => { sources[0].open(); });
+    await act(async () => { sources[0].emit("attention", { page: "attention", groups: [{ type: "approvals", total: 2, items: [] }], changed: ["approvals"],
+      scope: { region: "north", siteCluster: null }, unscoped: ["mlmf-breaches"] }); });
+    expect(qc.getQueryData<{ groups: { total: number }[]; unscoped: string[] }>(KEYS.attention("@north"))).toMatchObject({ groups: [{ total: 2 }], unscoped: ["mlmf-breaches"] });
   });
 
   // A page topic refused twice before the stream ever opened (a 403) falls back to the sidebar's topic alone; a disabled provider opens nothing.

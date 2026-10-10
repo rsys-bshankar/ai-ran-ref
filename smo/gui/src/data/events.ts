@@ -6,12 +6,17 @@
  * (`LIST_PATHS`). While the stream is open the summary polls fall back to once a minute (`LIVE_SUMMARY_POLL`), the top bar says
  * "Live · pushed", and the alarm list stops polling every 5 s. The stream itself is opened by `shell/LiveEvents.tsx`; this file holds the rules
  * it follows, kept free of React so they can be tested on their own. jsdom has no `EventSource`: the provider takes a factory, and a browser
- * without one just keeps polling. */
+ * without one just keeps polling.
+ *
+ * GUI-9.3: under a scope every topic is scoped (`summary:<page>@<region>[/<cluster>]`) and each event is written into the scoped cache entry.
+ * GUI-9.8b: the Dashboard also subscribes `summary:attention`, whose `event: attention` carries the "Needs your attention" groups
+ * (`applyAttentionEvent`). */
 import { createContext, useContext } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 
 import { KEYS } from "./keys";
-import type { Summary, SummaryPage } from "./summary";
+import { NO_SCOPE, scopeKey, topicSuffix, type Scope } from "./scope";
+import type { Attention, AttentionGroup, Summary, SummaryPage, SummaryScope } from "./summary";
 
 /** The summary pages the BFF can stream (gui-bff/app/summary.py `PAGES`). */
 export const STREAM_PAGES: readonly SummaryPage[] = ["nav", "dashboard", "alarms", "rapps", "approvals", "decisions", "infrastructure",
@@ -35,9 +40,14 @@ export function summaryPageOf(pathname: string): SummaryPage | null {
   return byRoute[first] ?? null;
 }
 
-/** The topics of one stream: always "summary:nav", plus the visible page's summary (at most 4 are allowed; this never asks more than 2). */
-export function topicsFor(page: SummaryPage | null): string[] {
-  return page && page !== "nav" ? ["summary:nav", `summary:${page}`] : ["summary:nav"];
+/** The topics of one stream: always "summary:nav", plus the visible page's summary, plus "summary:attention" on the Dashboard, each scoped to
+ * `scope` (at most 4 are allowed; this never asks more than 3). */
+export function topicsFor(page: SummaryPage | null, scope: Scope = NO_SCOPE): string[] {
+  const at = topicSuffix(scope);
+  const out = [`summary:nav${at}`];
+  if (page && page !== "nav") out.push(`summary:${page}${at}`);
+  if (page === "dashboard") out.push(`summary:attention${at}`);
+  return out;
 }
 
 /** The stream's URL for `topics` (same origin: the CSP's `connect-src 'self'` covers it, and the session cookie rides along). */
@@ -72,14 +82,26 @@ export function listPathsFor(changed: string[]): string[] {
   return [...out];
 }
 
-/** The body of one `event: summary`. */
-export interface SummaryEvent { page: string; counts: Record<string, number | null>; changed?: string[]; computedAt?: string; partial?: string[] }
+/** The body of one `event: summary` (a scoped topic's adds `topic`, `scope` and `unscoped`). */
+export interface SummaryEvent {
+  page: string; counts: Record<string, number | null>; changed?: string[]; computedAt?: string; partial?: string[];
+  topic?: string; scope?: SummaryScope | null; unscoped?: string[];
+}
+
+/** The body of one `event: attention` (`changed` names the group types whose total or rows moved). */
+export interface AttentionEvent { page: "attention"; groups: AttentionGroup[]; changed?: string[]; computedAt?: string; partial?: string[]; scope?: SummaryScope | null; unscoped?: string[] }
+
+/** The cache key part of an event's scope ("" for none). */
+function eventScopeKey(scope: SummaryScope | null | undefined): string {
+  return scope?.region ? scopeKey({ region: scope.region, cluster: scope.siteCluster ?? null }) : "";
+}
 
 /** Write one event's counts into the cache and, unless it is the stream's first event for that page (which only says what the page already
  * read), refetch the lists whose counts changed. Returns the list paths it invalidated. */
 export function applySummaryEvent(qc: QueryClient, ev: SummaryEvent, opts: { first: boolean }): string[] {
-  const body: Summary = { page: ev.page, computedAt: ev.computedAt ?? new Date().toISOString(), counts: ev.counts ?? {}, partial: ev.partial ?? [] };
-  qc.setQueryData(KEYS.summary(ev.page), body);
+  const body: Summary = { page: ev.page, computedAt: ev.computedAt ?? new Date().toISOString(), counts: ev.counts ?? {}, partial: ev.partial ?? [],
+    scope: ev.scope ?? null, unscoped: ev.unscoped ?? [] };
+  qc.setQueryData(KEYS.summary(ev.page, eventScopeKey(ev.scope)), body);
   if (opts.first) return [];
   const paths = listPathsFor(ev.changed ?? []);
   if (paths.length > 0) {
@@ -88,6 +110,14 @@ export function applySummaryEvent(qc: QueryClient, ev: SummaryEvent, opts: { fir
     });
   }
   return paths;
+}
+
+/** Write one attention event into the cache entry `useAttention` reads (the groups replace the old ones; the rows are refreshed by the event
+ * itself, so no list is refetched). */
+export function applyAttentionEvent(qc: QueryClient, ev: AttentionEvent): void {
+  const body: Attention = { page: "attention", computedAt: ev.computedAt, groups: ev.groups ?? [], partial: ev.partial ?? [], scope: ev.scope ?? null,
+    unscoped: ev.unscoped ?? [] };
+  qc.setQueryData(KEYS.attention(eventScopeKey(ev.scope)), body);
 }
 
 /** True when the number of critical alarms went up between two readings (a first reading is never a rise). */

@@ -35,10 +35,16 @@ function bff() {
       { module: "ran-nf-oam", healthy: true, latencyMs: 4, statusCode: 200, error: null, ready: true, version: "1", buildSha: "abc", builtAt: "x" },
       { module: "aimgf", healthy: false, latencyMs: 0, statusCode: 503, error: null, ready: null, version: null, buildSha: null, builtAt: null },
     ] },
-    "GET /smo/ran-nf-oam/alarms": page([alarm(1), alarm(2), alarm(3)]),
-    "GET /smo/ran-nf-oam/rapp-approvals": page([]),
+    "GET /summary/attention": (c: Call) => ({ page: "attention", computedAt: "2026-10-09T10:00:00Z", partial: ["sa-smos"],
+      scope: c.query.get("region") ? { region: c.query.get("region"), siteCluster: null } : null,
+      unscoped: c.query.get("region") ? ["mlmf-breaches", "escalations"] : [],
+      groups: [
+        { type: "critical-alarms", total: 37, items: [alarm(1), alarm(2), alarm(3)] },
+        { type: "approvals", total: 0, items: [] },
+        { type: "mlmf-breaches", total: 3, items: [{ reportId: "r1", subscriptionId: "s1", breachedFloor: true, reportedAt: "2026-10-09T09:00:00Z" }] },
+        { type: "escalations", total: null, items: [] },
+      ] }),
     "GET /smo/aimgf/mlmf/reports": page([]),
-    "GET /smo/sa-smos/remedial-actions": page([]),
     "GET /smo/ran-nf-oam/decision-records": page([]),
     "GET /smo/ran-nf-oam/managed-entities/health": (c: Call) => c.query.get("group_by") === "site_cluster"
       ? { groupBy: "site_cluster", healthScore: 50, groups: [{ key: "metro-a", elements: 2, unhealthy: 1, worstSeverity: "critical" }] }
@@ -72,8 +78,11 @@ describe("Dashboard", () => {
     expect(tile(container, "Network health")).toContain("unhealthy: 1 (open critical or major alarm)");
     expect(tile(container, "Open alarms")).toContain("900 unacked");
     const attention = container.querySelector("[data-section='dashboard.attention']")!;
-    expect(attention.querySelectorAll("li")).toHaveLength(3);
+    expect(attention.querySelectorAll("[data-group='critical-alarms'] li")).toHaveLength(3);
     expect(attention.textContent).toContain("+34 more");
+    // a group whose module did not answer says so; the scope note is absent without a scope
+    expect(attention.querySelector("[data-group='escalations']")!.textContent).toContain("did not answer");
+    expect(attention.querySelector(".scope-note")).toBeNull();
   });
 
   // scripts/gui_smoke.py matches /Modules healthy\s*(\d+)\/(\d+)/ on the page text, and the #health anchor stays
@@ -118,13 +127,17 @@ describe("Dashboard", () => {
     expect(trend.querySelectorAll("svg rect").length).toBe(48);
   });
 
-  // the first load makes at most 10 data calls (summary, module health, four top-3 lists, decisions, health, worst, hourly counts); trends wait for a click
-  it("keeps the first load within its call budget and loads trends on demand", async () => {
+  // the first load makes at most 6 page calls (summary, the one attention call, decisions, health, worst, hourly counts) plus the shell's module
+  // health (the sidebar's cache entry); the four attention lists are never asked one by one; trends wait for a click
+  it("keeps the first load within its call budget of 6 and loads trends on demand", async () => {
     const calls = bff();
     const { container } = await mountWith(<AuthProvider><Dashboard /></AuthProvider>);
     await settle(6);
-    const data = calls.filter((c) => c.path !== "/me" && c.path !== "/permissions");
-    expect(new Set(data.map((c) => `${c.path}?${c.query}`)).size).toBeLessThanOrEqual(10);
+    const data = calls.filter((c) => c.path !== "/me" && c.path !== "/permissions" && c.path !== "/modules/status");
+    expect(new Set(data.map((c) => `${c.path}?${c.query}`)).size).toBeLessThanOrEqual(6);
+    expect(calls.filter((c) => c.path === "/summary/attention")).toHaveLength(1);
+    for (const p of ["/smo/ran-nf-oam/rapp-approvals", "/smo/sa-smos/remedial-actions", "/smo/aimgf/mlmf/reports"]) expect(calls.some((c) => c.path === p)).toBe(false);
+    expect(calls.some((c) => c.path === "/smo/ran-nf-oam/alarms")).toBe(false);
     expect(calls.some((c) => c.path === "/smo/rapp-mgmt/instances")).toBe(false);
     for (const c of data.filter((d) => d.path.startsWith("/smo/") && d.query.has("limit"))) expect(Number(c.query.get("limit"))).toBeLessThanOrEqual(10);
     await click(byText(container, "button", "Show trends")!);

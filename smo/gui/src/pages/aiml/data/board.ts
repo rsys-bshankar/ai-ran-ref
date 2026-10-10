@@ -60,10 +60,17 @@ export function buildBoard(models: Model[], lifecycles: ModelLifecycle[], breach
   return { columns, off };
 }
 
-/** The artifact versions of a model, newest first: MLMR's `artifactLocation` ends in ":<latest version>" and versions count up from 1. */
-export function artifactVersions(artifactLocation: string | null | undefined): number[] {
-  const latest = artifactLocation ? Number(artifactLocation.split(":").pop()) : 0;
-  if (!Number.isInteger(latest) || latest <= 0) return [];
+/** The location MLMR writes when an artifact is uploaded (`mlmr/app/main.py`, upload route: `model-artifact:<model id>:<version>`); MLMR serves no
+ * list of versions, so this documented pattern is the only source. Anything else (an external URI registered with the model, `s3://…`,
+ * `http://host:8080/…`) holds no MLMR version. */
+export const ARTIFACT_LOCATION_RE = /^model-artifact:([0-9A-Fa-f-]{1,64}):([1-9][0-9]{0,8})$/;
+
+/** The artifact versions of a model, newest first (GUI-10.6): from an MLMR artifact location (`ARTIFACT_LOCATION_RE`, versions count up from 1),
+ * and none for any other location; with `modelId`, a location naming another model holds none either. */
+export function artifactVersions(artifactLocation: string | null | undefined, modelId?: string): number[] {
+  const m = ARTIFACT_LOCATION_RE.exec(artifactLocation ?? "");
+  if (!m || (modelId !== undefined && m[1].toLowerCase() !== modelId.toLowerCase())) return [];
+  const latest = Number(m[2]);
   return Array.from({ length: latest }, (_, i) => latest - i);
 }
 

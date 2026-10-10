@@ -8,6 +8,7 @@ import { Card } from "../../../components/ui";
 import { count } from "../../../data/summary";
 import { formatCount } from "../../../kit/Kpi";
 import { Meter } from "../../../kit/Meter";
+import { ScopeNote } from "../../../kit/ScopeNote";
 import { Skeleton } from "../../../kit/states";
 import { useAlarmHours, useDashboardSummary } from "../data/queries";
 import type { AlarmHour } from "../data/types";
@@ -41,7 +42,7 @@ export function AlarmTrend() {
             ))}
           </div>
           <Meter thick parts={SEVERITY_PARTS.map((p) => ({ key: p.key, tone: p.tone, value: count(s, `alarms.${p.key}`) ?? 0 }))} />
-          <p className="muted small">Unacknowledged: {formatCount(count(s, "alarms.unacked"))} · O-Cloud (FOCOM) alarms: {formatCount(count(s, "ocloudAlarms.total"))}</p>
+          <p className="muted small">Unacknowledged: {formatCount(count(s, "alarms.unacked"))} · O-Cloud (FOCOM) alarms: {formatCount(count(s, "ocloudAlarms.total"))} <ScopeNote summary={s} keys={["ocloudAlarms"]} /></p>
         </>
       )}
     </Card>

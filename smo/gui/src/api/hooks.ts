@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from "@ta
 
 import { useToast } from "../components/Toast";
 import { invalidateAfter } from "../data/keys";
+import { scopeQuery, useScope } from "../data/scope";
 import { ApiError, smo, type Query } from "./client";
 import type { Page } from "./types";
 
@@ -24,8 +25,10 @@ export function unwrapPage<T>(data: unknown): T {
 }
 
 /** GET one SMO module path through the BFF. Keyed by path + query, so any
- * page reading the same resource shares one cache entry. */
+ * page reading the same resource shares one cache entry. A route the global scope narrows (`data/scope.ts` SCOPED_ROUTES) gets the
+ * scope's `region` / `site_cluster` added, unless the caller set them (GUI-9.3). */
 export function useSmo<T>(path: string | null, query?: Query, opts: Partial<UseQueryOptions<T, ApiError>> = {}) {
+  query = scopeQuery(path, query, useScope());
   return useQuery<T, ApiError>({
     queryKey: ["smo", path, query ?? {}],
     queryFn: async ({ signal }) => unwrapPage<T>(await smo<unknown>(path!, { query, signal })),
@@ -35,8 +38,9 @@ export function useSmo<T>(path: string | null, query?: Query, opts: Partial<UseQ
   });
 }
 
-/** GET a list and keep its envelope (`total` or `hasMore`), for a page that pages: `useSmo` unwraps it to the bare array. */
+/** GET a list and keep its envelope (`total` or `hasMore`), for a page that pages: `useSmo` unwraps it to the bare array. Scoped as `useSmo`. */
 export function useSmoPage<T>(path: string | null, query?: Query, opts: Partial<UseQueryOptions<Page<T>, ApiError>> = {}) {
+  query = scopeQuery(path, query, useScope());
   return useQuery<Page<T>, ApiError>({
     queryKey: ["smo", path, "page", query ?? {}],
     queryFn: ({ signal }) => smo<Page<T>>(path!, { query, signal }),

@@ -182,6 +182,10 @@ RULES: list[Rule] = [
     _rule("PUT", "/ran-nf-oam/kpi-schedules/{id}", A),
     _rule("DELETE", "/ran-nf-oam/kpi-schedules/{id}", A),
     _rule("POST", "/ran-nf-oam/(pm-subscriptions|software-management-jobs|o1-adaptor-endpoints|o1-adaptor-endpoints/discover)", O),
+    # GUI-10.1: the FM subscription form and the FM / PM Unsubscribe buttons: subscribing an element's alarms or measurements to the SMO, and ending it,
+    # is an operator action like creating the PM subscription above
+    _rule("POST", "/ran-nf-oam/fm-subscriptions", O),
+    _rule("DELETE", "/ran-nf-oam/(fm-subscriptions|pm-subscriptions)/{id}", O),
     _rule("POST", "/ran-nf-oam/software-management-jobs/{id}/advance", O),
     _rule("POST", "/ran-nf-oam/o1-adaptor-endpoints/{id}/heartbeat", A),   # what the ME's adaptor sends: simulation
     # GUI-9.7: a pinned SSH host key is the trust anchor of the O1 session, so re-pinning or unpinning one is admin; who pinned it is the

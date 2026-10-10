@@ -8,6 +8,7 @@ import { AuthProvider } from "../../../auth/AuthContext";
 import { fakeBff, mountWith, type Call } from "../../../testing/bff";
 import { byText, cleanup, click, settle } from "../../../testing/dom";
 import { Rapps } from "..";
+import { signatureText } from "../sections/PackageDrawer";
 import { instanceLifecycle } from "../data/lifecycle";
 import { pickAttention } from "../sections/PinnedAttention";
 
@@ -155,5 +156,15 @@ describe("rApps helpers", () => {
     expect(out).toHaveLength(6);
     expect(out[0].state).toBe("RUNNING");
     expect(new Set(out.map((r) => r.instanceId)).size).toBe(6);
+  });
+});
+
+describe("the package signature", () => {
+  // GUI-10.2: the drawer says what Onboarding reports (verified against its trust store, or accepted unsigned) and never claims a "dev cert"
+  it("says what Onboarding reports and nothing more", () => {
+    expect(signatureText(true)).toBe("verified against Onboarding's trust store");
+    expect(signatureText(false)).toContain("not verified");
+    expect(signatureText(undefined)).toBe("not reported");
+    for (const v of [true, false, undefined]) expect(signatureText(v)).not.toMatch(/dev/i);
   });
 });

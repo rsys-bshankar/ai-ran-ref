@@ -3,6 +3,7 @@
  * one-row page filtered `fulfilled=false` / `in_conflict=true`). Those two toggle the table's fulfilment filter. */
 import { count } from "../../../data/summary";
 import { Kpi, formatCount } from "../../../kit/Kpi";
+import { ScopeNote } from "../../../kit/ScopeNote";
 import { ErrorRetry } from "../../../kit/states";
 import { useIntentFlagCount, useIntentSummary, type IntentFlag } from "../data/queries";
 
@@ -28,6 +29,7 @@ export function SummaryTiles({ flag = "", onFlag }: { flag?: IntentFlag; onFlag?
           onClick={onFlag ? () => toggle("in-conflict") : undefined} foot={flag === "in-conflict" ? "filtering the table · click to clear" : "a handler reported a conflict"} />
       </div>
       {s && s.partial.length > 0 && <span className="small muted">Partial: {s.partial.join(", ")} did not answer.</span>}
+      <ScopeNote summary={s} keys={["intents"]} />
     </section>
   );
 }

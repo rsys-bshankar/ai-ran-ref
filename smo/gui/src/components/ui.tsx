@@ -1,12 +1,13 @@
 /** The pre-redesign shared components every page still uses: page header, card, tabs (with the URL-hash tab hook), state badges and severity chips,
  * ids, key–value lists, the client table, drawer, modal, form field, and the role-gated `ActionButton` / `Can`. Restyled through styles.css; the
  * redesign's new primitives live in `kit/` (STRUCTURE.md §5). `StateBadge`'s `TONES` table is the one place a backend state gets its colour. */
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import type { Query } from "../api/client";
 import { useSmoAction, type SmoAction } from "../api/hooks";
 import { useAuth } from "../auth/AuthContext";
 import { sevClass } from "../kit/Badge";
+import { useOptionalToast } from "./Toast";
 import { shortId } from "../lib/domain";
 
 // ---------------------------------------------------------------- layout bits
@@ -59,16 +60,19 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: 
 
 /** A tab id kept in the URL hash, so reloads and shared links land on the same tab. */
 export function useHashTab<T extends string>(ids: readonly T[], fallback: T): [T, (t: T) => void] {
-  const read = () => {
+  // GUI-10.9: `read` is stable while the tab ids and the fallback are (a page passes a constant array, so its contents are the key), and the
+  // hashchange listener is added once, not again on every render
+  const key = ids.join("|");
+  const read = useCallback((): T => {
     const h = window.location.hash.slice(1) as T;
     return ids.includes(h) ? h : fallback;
-  };
+  }, [key, fallback]); // eslint-disable-line react-hooks/exhaustive-deps
   const [tab, setTab] = useState<T>(read);
   useEffect(() => {
     const onHash = () => setTab(read());
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
-  });
+  }, [read]);
   return [tab, (t: T) => { window.history.replaceState(null, "", `#${t}`); setTab(t); }];
 }
 
@@ -99,6 +103,8 @@ const TONES: Record<string, string> = {
   CONGESTED: "bad", NORMAL: "ok",
   // AI-11 / AI-13: approval requests and decision records (PENDING, APPROVED-> ok, REJECTED, FAILED are above)
   APPROVED: "ok", EXPIRED: "muted", REFUSED: "bad", DIRECT: "info", ROLLBACK: "warn", UNCHAINED: "warn", MISMATCH: "bad", PENDING_APPROVAL: "warn",
+  // GUI-9.5b: export jobs (RUNNING and EXPIRED are above)
+  QUEUED: "info", DONE: "ok",
 };
 
 /** The tone of a backend state name ("ok", "warn", "bad", "info", "muted"): the one table every page colours states by. */
@@ -118,11 +124,28 @@ export function SeverityChip({ severity }: { severity: string }) {
   return <span className={`sev sev-${sevClass(severity)} sev-${severity.toLowerCase()}`}>{severity}</span>;
 }
 
-/** A shortened id in mono; a click copies the full id. */
+/** Copies `text` to the clipboard; resolves false (never rejects) where the browser refuses (no permission, an insecure context, no clipboard). */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (!navigator.clipboard) return false;
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A shortened id in mono; a click copies the full id and says whether it worked (GUI-10.8: a refused copy is caught and told, not an unhandled
+ * rejection). */
 export function Id({ value }: { value: string | null | undefined }) {
+  const toast = useOptionalToast();
   if (!value) return <span className="muted">—</span>;
+  const onCopy = async () => {
+    const ok = await copyText(value);
+    toast?.push(ok ? { tone: "success", text: "Copied" } : { tone: "error", text: `Could not copy (the browser refused); the id is ${value}` });
+  };
   return (
-    <code className="id" title={`${value} (click to copy)`} onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(value); }}>
+    <code className="id" title={`${value} (click to copy)`} onClick={(e) => { e.stopPropagation(); void onCopy(); }}>
       {shortId(value)}
     </code>
   );

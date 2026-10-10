@@ -10,6 +10,7 @@ import { keepPreviousData } from "@tanstack/react-query";
 import type { Query } from "../api/client";
 import { POLL, useSmoPage } from "../api/hooks";
 import { DataTable, type Column } from "../components/ui";
+import { scopeKey, useScope } from "../data/scope";
 import { usePreferences } from "../shell/ThemeProvider";
 import { Pager } from "./Pager";
 import { Stale } from "./states";
@@ -35,7 +36,9 @@ export function ServerTable<T>({ path, query, columns, rowKey, withTotal = true,
   const { prefs } = usePreferences();
   const [limit, setLimit] = useState<number>(prefs.rowsPerPage);
   const [offset, setOffset] = useState(0);
-  const filterKey = JSON.stringify(query ?? {});
+  // a change of the global scope (data/scope.ts, added to the query by useSmoPage) is a filter change too
+  const scope = scopeKey(useScope());
+  const filterKey = JSON.stringify([query ?? {}, scope]);
   useEffect(() => { setOffset(0); }, [filterKey]);
   const q = useMemo(() => ({ ...(query ?? {}), limit, offset, total: withTotal ? undefined : false }), [filterKey, limit, offset, withTotal]); // eslint-disable-line react-hooks/exhaustive-deps
   const page = useSmoPage<T>(path, q, { refetchInterval, placeholderData: keepPreviousData });

@@ -98,7 +98,7 @@ export function TopologyLevels({ tree, q, path, onPath, selected, onSelect }: {
             <span><i className="h-ok" />Healthy</span><span><i className="h-warn" />Degraded</span><span><i className="h-bad" />Faulty</span><span><i className="h-unknown" />No health data</span>
           </div>
           {tree.notes.map((n) => <p key={n} className="gap-note">{n}</p>)}
-          <p className="gap-note">Colour by GPU or CPU is not offered: no module serves node utilisation yet. At most {TOPOLOGY_LIMIT} workloads and alarms are read.</p>
+          <p className="gap-note">Colour by utilisation is not offered (CPU and memory are read per resource, in the inspector; GPU is measured by no module). At most {TOPOLOGY_LIMIT} workloads and alarms are read.</p>
         </>}
       </QueryState>
     </Card>

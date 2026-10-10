@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import type { NfDeployment, NfDescriptor } from "../../../api/types";
 import { Card, Id, StateBadge } from "../../../components/ui";
+import { ScopeNote } from "../../../kit/ScopeNote";
 import { count } from "../../../data/summary";
 import { formatCount, Kpi } from "../../../kit/Kpi";
 import { ServerTable } from "../../../kit/ServerTable";
@@ -27,6 +28,7 @@ export function NfDeployments() {
             onClick={() => setState(state === s ? "" : s)} title={`Show only ${s} deployments`} foot={`of ${formatCount(count(summary.data, "deployments.total"))}`} />;
         })}
       </div>
+      <ScopeNote summary={summary.data} keys={["deployments"]} />
       <Card section="infrastructure.deployments" title="NF deployments" sub="Created by rApp Management / SO SMOS; the GUI heals, scales or terminates them."
         actions={<select value={state} onChange={(e) => setState(e.target.value)} aria-label="State"><option value="">All states</option>{DEPLOYMENT_STATES.map((s) => <option key={s}>{s}</option>)}</select>}>
         <ServerTable<NfDeployment> path={PATHS.deployments} query={{ state: state || undefined }} rowKey={(d) => d.nfDeploymentId} empty="No NF deployments."

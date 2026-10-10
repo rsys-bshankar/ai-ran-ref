@@ -22,6 +22,8 @@ Tabs (URL hash): `#limits` · `#refusals` · `#watchers`. "Stop all rApp writes"
   rApp, whoever stopped it; there is no "resume only what stop-all stopped".
 - Each table row reads its instance's safeguards (one call per row of the page): there is no list route of safeguards.
 - The refusal count per rApp is in the detail card only (one more call per row would double the page's calls).
+- **Scope** (GUI-9.3): the rApp instances follow the top bar's region (instances authorised for it, plus the unscoped ones); the refusals
+  record no managed element, so `/safeguard-refusals` cannot be scoped and the refusal card says "network-wide" under a scope.
 - "Near their rate limit" and "holding for approval" tiles, table filters on them, and bulk "hold selected" are not built: no server count or filter.
 
 ## Troubleshooting

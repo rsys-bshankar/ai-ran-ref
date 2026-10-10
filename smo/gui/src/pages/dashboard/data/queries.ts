@@ -1,19 +1,18 @@
 /** Every API path, query and polling interval the Dashboard uses (STRUCTURE.md rule 4). First load: the summary counts (`/api/summary/dashboard`),
- * module health (`/api/modules/status`, shared with the sidebar's cache entry), the four "needs attention" top-3 lists, the latest decisions, the
- * fleet health by region (health score and map, one call), the worst elements and the 24 hourly alarm buckets: 10 calls, every list bounded and
- * asked with `total=false` (SCALE.md P2, P4); every aggregate is computed on the server. The model and rApp trend sparklines load only when their
- * box is opened. */
+ * the "needs attention" groups in one call (`/api/summary/attention`, GUI-9.8b), the latest decisions, the fleet health by region (health score
+ * and map, one call), the worst elements and the 24 hourly alarm buckets: 6 calls, every list bounded and asked with `total=false` (SCALE.md P2,
+ * P4); every aggregate is computed on the server. Module health (`/api/modules/status`) is the shell's read (the sidebar's environment chip, same
+ * cache entry), so it adds no request. The model and rApp trend sparklines load only when their box is opened. Every read is narrowed by the
+ * global scope where its route takes one (`data/scope.ts`). */
 import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { api, smo } from "../../../api/client";
 import { POLL, unwrapPage, useSmo } from "../../../api/hooks";
-import type { Alarm, Approval, DecisionRecord, InstanceSummary, MlmfReport, ModulesStatus, PerfReport, RemedialAction } from "../../../api/types";
+import type { DecisionRecord, InstanceSummary, MlmfReport, ModulesStatus, PerfReport } from "../../../api/types";
 import { KEYS } from "../../../data/keys";
-import { useSummary } from "../../../data/summary";
+import { useAttention, useSummary } from "../../../data/summary";
 import type { AlarmHour, FleetHealth, WorstElement } from "./types";
 
-/** How many items each "needs attention" group shows (SCALE.md: max 3 each, then "+N more"). */
-export const ATTENTION_TOP = 3;
 /** How many decisions the autonomy feed shows. */
 export const FEED_SIZE = 6;
 /** How many elements the "Worst DUs" ranking shows. */
@@ -23,7 +22,6 @@ export const DRILL_PAGE = 50;
 
 /** Polling of the bounded lists: the counts come from the summary (15 s), the lists only need to follow it loosely. */
 const LIST_POLL = 60_000;
-const top = { limit: ATTENTION_TOP, total: false } as const;
 
 /** The Dashboard's summary counts (gui-bff/app/summary.py `PAGES["dashboard"]`). */
 export const useDashboardSummary = () => useSummary("dashboard");
@@ -33,14 +31,9 @@ export function useModulesStatus() {
   return useQuery<ModulesStatus>({ queryKey: KEYS.modulesStatus, queryFn: () => api("/modules/status"), refetchInterval: POLL.status });
 }
 
-/** The newest critical RAN alarms, at most three. */
-export const useCriticalAlarms = () => useSmo<Alarm[]>("/ran-nf-oam/alarms", { severity: "critical", ...top }, { refetchInterval: LIST_POLL });
-/** The newest pending rApp approvals, at most three. */
-export const usePendingApprovals = () => useSmo<Approval[]>("/ran-nf-oam/rapp-approvals", { status: "PENDING", ...top }, { refetchInterval: LIST_POLL });
-/** The newest MLMF reports that breached their guard-KPI floor, at most three. */
-export const useBreaches = () => useSmo<MlmfReport[]>("/aimgf/mlmf/reports", { breached_only: true, ...top }, { refetchInterval: LIST_POLL });
-/** SA SMOS remedial actions that escalated, at most three. */
-export const useEscalations = () => useSmo<RemedialAction[]>("/sa-smos/remedial-actions", { outcome: "ESCALATED", ...top }, { refetchInterval: LIST_POLL });
+/** "Needs your attention": critical alarms, pending approvals, MLMF breaches and escalations, the newest three of each with their totals, in one
+ * BFF call (`GET /api/summary/attention?limit=3`, pushed as `event: attention` while the stream is open). */
+export const useNeedsAttention = () => useAttention();
 /** The latest decision records (newest first). */
 export const useRecentDecisions = () => useSmo<DecisionRecord[]>("/ran-nf-oam/decision-records", { limit: FEED_SIZE, total: false }, { refetchInterval: LIST_POLL });
 

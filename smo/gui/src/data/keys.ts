@@ -11,7 +11,10 @@ export const KEYS = {
   me: ["bff", "me"] as const,
   modulesStatus: ["bff", "modules-status"] as const,
   preferences: ["bff", "preferences"] as const,
-  summary: (page: string) => ["bff", "summary", page] as const,
+  /** A page's summary counts under a scope (`data/scope.ts` scopeKey: "" for the whole network). */
+  summary: (page: string, scope = "") => ["bff", "summary", page, scope] as const,
+  /** The Dashboard's attention groups under a scope; under "summary" so an action's refetch of the counts refetches them too. */
+  attention: (scope = "") => ["bff", "summary", "attention", scope] as const,
   summaryAll: ["bff", "summary"] as const,
   rapps: ["bff", "rapps"] as const,
   pins: ["bff", "pins"] as const,

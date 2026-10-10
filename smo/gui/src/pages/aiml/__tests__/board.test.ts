@@ -41,11 +41,18 @@ describe("stage board", () => {
     expect(board.off).toEqual({ FAILED: 1 });
   });
 
-  // MLMR's artifactLocation ends in the latest version; versions count up from 1 and an absent or odd location means none.
-  it("reads the artifact versions from the location", () => {
-    expect(artifactVersions("s3://bucket/m:3")).toEqual([3, 2, 1]);
+  // GUI-10.6: the versions come only from the location MLMR writes on upload (`model-artifact:<model id>:<latest>`), counting up from 1; an
+  // absent location, an external URI (whose last ":" part may be a port) or another model's location holds none
+  it("reads the artifact versions from MLMR's own location pattern only", () => {
+    const id = "0b9f3f1e-1111-4222-8333-444455556666";
+    expect(artifactVersions(`model-artifact:${id}:3`)).toEqual([3, 2, 1]);
+    expect(artifactVersions(`model-artifact:${id}:3`, id.toUpperCase())).toEqual([3, 2, 1]);
+    expect(artifactVersions(`model-artifact:${id}:3`, "another-model")).toEqual([]);
     expect(artifactVersions(null)).toEqual([]);
-    expect(artifactVersions("s3://bucket/m:latest")).toEqual([]);
+    expect(artifactVersions("s3://bucket/m:3")).toEqual([]);
+    expect(artifactVersions("http://models.example:8080")).toEqual([]);
+    expect(artifactVersions(`model-artifact:${id}:0`)).toEqual([]);
+    expect(artifactVersions(`model-artifact:${id}:latest`)).toEqual([]);
   });
 
   // Roll back is only legal from PROMOTED, deprecate from CERTIFIED or PROMOTED, retire from DEPRECATED or FAILED (aimgf statemachine).

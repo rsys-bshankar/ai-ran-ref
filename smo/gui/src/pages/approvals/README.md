@@ -27,6 +27,7 @@ The tab badge is `approvals.PENDING` from `/api/summary/approvals` (never the le
 - "Approve similar for 1 hour", grouped queue, bulk approve of a group and Undo are not built (no backend support; BRIEF §5).
 - Decided with "Every outcome": the route has no "not pending" filter, so pending rows of the page are left out in the browser.
 - Change-window approvals (GUI-7.1) and model gate approvals (GUI-7.3) are not in this inbox yet; the page says so.
+- **Scope** (GUI-9.3): a request matches a region or site cluster when its change touches an element there (`managedElements`, recorded when it was parked); a request with no element is absent under any scope.
 
 ## Troubleshooting
 

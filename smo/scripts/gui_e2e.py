@@ -28,7 +28,7 @@ from playwright.sync_api import sync_playwright
 
 SMO = Path(__file__).resolve().parent.parent
 PAGES = ["/", "/flows", "/rapps", "/safeguards", "/approvals", "/decisions", "/aiml", "/alarms", "/kpis", "/policy",
-         "/topology", "/configuration", "/software", "/infrastructure", "/data", "/preferences", "/security", "/admin"]
+         "/topology", "/configuration", "/software", "/infrastructure", "/data", "/preferences", "/security", "/exports", "/admin"]
 # The pages checked again in every theme × accent: the ones with the most kinds of text-on-colour (tiles, badges, severity chips, buttons, links).
 THEME_PAGES = ["/", "/alarms", "/approvals", "/preferences"]
 THEMES = ["dark", "light"]

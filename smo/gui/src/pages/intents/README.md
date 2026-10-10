@@ -29,6 +29,7 @@ The cards view reads one page of 6 intents and each card's reports (7 calls).
   is not done for the same reason. The callout lists the conflicts of the newest conflict report among the card's 20 newest reports.
 - **Negotiation feedback**: the satisfaction index the buttons send is 30 / 70 / 100 (TS 28.312 leaves the scale to the consumer).
 - **Utility formulas** are read-only: the BFF exposes no write on `/intent-utility-formulas`. "Used by N intents" is not served.
+- **Scope** (GUI-9.3): intents know no region; under a scope the tiles say "network-wide".
 
 ## Troubleshooting
 

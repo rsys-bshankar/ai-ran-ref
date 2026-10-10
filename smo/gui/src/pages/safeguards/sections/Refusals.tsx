@@ -1,10 +1,12 @@
 /** Section `safeguards.refusals` (tab "Refusals"): every time the platform refused an rApp, newest first, paged on the server and bounded in time
- * (default the last 7 days); filters are the route's own `code`, `invoker_id` and `since`. The reason is a badge with its code. */
+ * (default the last 7 days); filters are the route's own `code`, `invoker_id` and `since`. The reason is a badge with its code. A refusal records
+ * no managed element, so the route cannot be scoped (GUI-9.3): under a scope the card says "network-wide". */
 import { useMemo, useState } from "react";
 
 import type { RefusalCode, SafeguardRefusal } from "../../../api/types";
 import { Card, Id } from "../../../components/ui";
 import { Badge } from "../../../kit/Badge";
+import { ScopeNote } from "../../../kit/ScopeNote";
 import { Segmented } from "../../../kit/Segmented";
 import { ServerTable } from "../../../kit/ServerTable";
 import { formatTime, REFUSAL_CODES, REFUSAL_MEANING } from "../../../lib/domain";
@@ -17,7 +19,7 @@ export function Refusals() {
   const [range, setRange] = useState<RefusalRange>("7d");
   const since = useMemo(() => refusalSince(range), [range]);
   return (
-    <Card section="safeguards.refusals" title="Refusals, newest first" sub="every write a safeguard stopped" actions={<>
+    <Card section="safeguards.refusals" title="Refusals, newest first" sub={<>every write a safeguard stopped <ScopeNote always /></>} actions={<>
       <Segmented<RefusalRange> label="Refusal time range" value={range} onChange={setRange}
         options={[{ id: "24h", label: "24 h" }, { id: "7d", label: "7 d" }, { id: "30d", label: "30 d" }, { id: "all", label: "All" }]} />
       <select value={code} onChange={(e) => setCode(e.target.value as RefusalCode | "")} aria-label="Reason">

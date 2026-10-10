@@ -203,6 +203,13 @@ describe("readInputs", () => {
     expect(readInputs(specs, { reason: "x" }).body).toEqual({ reason: "x" });
   });
 
+  // GUI-10.3: a whitespace-only number is blank: left out when optional, "is required" when required, never sent as 0
+  it("never reads a whitespace-only number as zero", () => {
+    expect(readInputs(specs, { reason: "x", level: "   ", gain: " " }).body).toEqual({ reason: "x" });
+    expect(readInputs([{ name: "n", label: "N", type: "integer", required: true }], { n: "  " }).errors).toEqual({ n: "is required" });
+    expect(readInputs([{ name: "n", label: "N", type: "number" }], { n: " 2.5 " }).body).toEqual({ n: 2.5 });
+  });
+
   it("a required boolean must be answered", () => {
     expect(readInputs([{ name: "f", label: "F", type: "boolean", required: true }], {}).errors).toEqual({ f: "is required" });
     expect(readInputs([{ name: "f", label: "F", type: "boolean", required: true }], { f: false }).body).toEqual({ f: false });

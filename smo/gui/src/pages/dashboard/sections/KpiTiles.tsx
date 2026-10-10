@@ -1,11 +1,13 @@
 /** The five headline tiles of the Dashboard (`dashboard.tiles`, handoff `Main.dc.html`): network health, open alarms with their severity mix,
  * autonomous actions in 24 h, approvals waiting, model guard breaches. Every number is a true total from the summary call (SCALE.md P2), never
  * the length of a list page. Network health is RAN NF OAM's `healthScore` (share of managed elements with no open critical or major alarm,
- * ran-nf-oam/app/fleet.py), read from the same health-by-region call the map makes. */
+ * ran-nf-oam/app/fleet.py), read from the same health-by-region call the map makes. Under a scope every tile but the model breaches is narrowed;
+ * that one says "network-wide" (the BFF's `unscoped`). */
 import { formatCount, Kpi } from "../../../kit/Kpi";
 import { Meter } from "../../../kit/Meter";
 import { ErrorRetry } from "../../../kit/states";
 import { Badge } from "../../../kit/Badge";
+import { ScopeNote } from "../../../kit/ScopeNote";
 import { count, openAlarms } from "../../../data/summary";
 import { useDashboardSummary, useFleetHealth } from "../data/queries";
 
@@ -45,7 +47,7 @@ export function KpiTiles() {
         <Kpi label="Awaiting approval" value={formatCount(pending)} to="/approvals" tone={pending ? "warm" : undefined}
           foot={pending === null ? undefined : pending ? "held for a person to decide" : "nothing waiting"} />
         <Kpi label="Model guard breaches" value={formatCount(breaches)} unit={models === null ? undefined : `/ ${formatCount(models)} models`} to="/aiml#mlmf"
-          tone={breaches ? "warm" : undefined} foot="MLMF reports under their guard-KPI floor" />
+          tone={breaches ? "warm" : undefined} foot={<>MLMF reports under their guard-KPI floor <ScopeNote summary={s} keys={["mlmfBreaches", "models"]} /></>} />
       </div>
       {summary.error && !s && <ErrorRetry error={summary.error} onRetry={() => void summary.refetch()} />}
       {s && s.partial.length > 0 && <p className="small t-warn" role="status">Partial: {s.partial.join(", ")} did not answer; their counts read "—".</p>}

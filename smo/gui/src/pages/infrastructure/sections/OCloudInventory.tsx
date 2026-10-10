@@ -1,14 +1,15 @@
 /** Infrastructure → O-Cloud inventory (`infrastructure.inventory`, BRIEF §4e feature 6): a level picker from where the O-Cloud is to what it
  * holds (locations → sites → node clusters → cluster resources → infrastructure resources), then provisioning requests and performance jobs, then
  * the O2-IMS pools, deployment managers and resource types. One level is listed at a time, as a server-paged table of that level's FOCOM route.
- * Picking a resource pool lists its resources below (`infrastructure.pool-resources`), with deprovision and the admin "provision a resource". */
-import { useState } from "react";
+ * Picking a resource pool lists its resources below (`infrastructure.pool-resources`), with their CPU and memory utilisation (one batched FOCOM
+ * read for the page shown, `GET /focom/utilisation?resource_ids=`, GUI-9.8b), deprovision and the admin "provision a resource". */
+import { useCallback, useState } from "react";
 
 import type { OCloudResource, ResourcePool } from "../../../api/types";
 import { ActionButton, Can, Card, Field, Id } from "../../../components/ui";
 import { ServerTable } from "../../../kit/ServerTable";
 import { parseJsonObject } from "../../../lib/domain";
-import { INVENTORY_LEVELS, INVENTORY_POLL, PATHS } from "../data/queries";
+import { formatPercent, INVENTORY_LEVELS, INVENTORY_POLL, PATHS, useUtilisationBatch } from "../data/queries";
 import { LEVEL_SPECS } from "./InventoryColumns";
 
 const GROUP_LABEL = { place: "Where it is", work: "Work on it", ims: "O2-IMS inventory" } as const;
@@ -49,12 +50,18 @@ export function OCloudInventory() {
 function PoolResources({ pool }: { pool: string }) {
   const [spec, setSpec] = useState('{"resourceTypeId": "", "description": "GPU node"}');
   const parsed = parseJsonObject(spec);
+  const [shown, setShown] = useState<string[]>([]);
+  const onRows = useCallback((rows: OCloudResource[]) => setShown(rows.map((r) => r.resourceId)), []);
+  const util = useUtilisationBatch(shown);
+  const of = (id: string) => util.data?.find((u) => u.resourceId === id);
   return (
     <Card section="infrastructure.pool-resources" title={<>Resources in pool <code>{pool}</code></>}>
-      <ServerTable<OCloudResource> path={PATHS.poolResources(pool)} rowKey={(r) => r.resourceId} empty="No resources in this pool." refetchInterval={INVENTORY_POLL} columns={[
+      <ServerTable<OCloudResource> path={PATHS.poolResources(pool)} rowKey={(r) => r.resourceId} empty="No resources in this pool." refetchInterval={INVENTORY_POLL} onRows={onRows} columns={[
         { header: "Resource", render: (r) => <Id value={r.resourceId} /> },
         { header: "Type", render: (r) => r.resourceTypeId }, { header: "Description", render: (r) => r.description ?? "—" },
         { header: "Parent", render: (r) => <Id value={r.parentId} /> },
+        { header: "CPU", render: (r) => <span className="num" title={of(r.resourceId)?.at ?? "no measurement"}>{formatPercent(of(r.resourceId)?.cpuPercent)}</span> },
+        { header: "Memory", render: (r) => <span className="num">{formatPercent(of(r.resourceId)?.memoryPercent)}</span> },
         { header: "", className: "actions", render: (r) => <ActionButton label="Deprovision" tone="danger" confirm="Deprovision this resource?" action={{ method: "DELETE", path: `/focom/resources/${r.resourceId}`, success: "Resource deprovisioned" }} /> },
       ]} />
       <Can method="POST" path="/focom/resources/provision">

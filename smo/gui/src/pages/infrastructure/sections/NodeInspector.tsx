@@ -1,11 +1,15 @@
 /** Infrastructure → Topology, the inspector (`infrastructure.inspector`): the selected topology node's kind, health and why, its TEIV attributes,
- * what sits under it and what runs on it, and utilisation, which no module serves (BRIEF §5: shown as "—" with a gap note). A resource can be
+ * what sits under it and what runs on it, and, for a resource, its CPU and memory utilisation from FOCOM (`GET /focom/resources/{id}/utilisation`,
+ * GUI-9.8b: the newest CPU_UTILIZATION / MEMORY_UTILIZATION performance records; "—" when none was ingested). GPU utilisation is measured by no
+ * module and stays "—"; the other kinds are not measured (utilisation is per resource). A resource can be
  * deprovisioned from here (the same role-gated call as the inventory tab); a workload links to the NF deployments tab, where its actions live. */
 import type { ReactNode } from "react";
 
 import { ActionButton, Card, KeyValue } from "../../../components/ui";
 import { Badge } from "../../../kit/Badge";
 import { Empty } from "../../../kit/states";
+import { formatTime } from "../../../lib/domain";
+import { formatPercent, useResourceUtilisation } from "../data/queries";
 import { HEALTH_LABEL, HEALTH_TONE, KIND_LABEL } from "../data/topology";
 import type { TopoTree } from "../data/types";
 
@@ -13,6 +17,21 @@ import type { TopoTree } from "../data/types";
 function show(v: unknown) {
   if (v === null || v === undefined || v === "") return <span className="muted">—</span>;
   return typeof v === "object" ? <code className="small">{JSON.stringify(v)}</code> : String(v);
+}
+
+/** The utilisation block of a node: a resource's CPU and memory (one FOCOM read while it is selected); any other kind says it is not measured. */
+function UtilisationOf({ kind, resourceId }: { kind: string; resourceId: string }) {
+  const u = useResourceUtilisation(kind === "resource" ? resourceId : null);
+  if (kind !== "resource") return <p className="small muted">Measured per resource: select a resource to see its CPU and memory.</p>;
+  const d = u.data;
+  return (
+    <>
+      <KeyValue items={[["CPU", formatPercent(d?.cpuPercent)], ["Memory", formatPercent(d?.memoryPercent)], ["GPU", "—"], ["Measured", d?.at ? formatTime(d.at) : "—"]]} />
+      {u.error && <p className="small t-warn">Utilisation unavailable: {u.error.message}</p>}
+      {d && d.cpuPercent === null && d.memoryPercent === null && <p className="gap-note">FOCOM holds no CPU_UTILIZATION or MEMORY_UTILIZATION record for this resource yet.</p>}
+      <p className="gap-note">GPU utilisation is measured by no module.</p>
+    </>
+  );
 }
 
 /** The inspector. */
@@ -34,8 +53,7 @@ export function NodeInspector({ tree, selected }: { tree: TopoTree | null; selec
         ...Object.entries(n.attributes).filter(([k]) => k !== "name").slice(0, 12).map(([k, v]) => [k, show(v)] as [string, ReactNode]),
       ]} />
       <div className="eyebrow">Utilisation</div>
-      <KeyValue items={[["GPU", "—"], ["CPU", "—"], ["Memory", "—"]]} />
-      <p className="gap-note">No module serves node utilisation yet.</p>
+      <UtilisationOf kind={n.kind} resourceId={n.ref} />
       {kids.length > 0 && <>
         <div className="eyebrow">Under it · {kids.length}</div>
         <KeyValue items={(["dm", "pool", "resource", "workload"] as const).map((k) => [KIND_LABEL[k], kids.filter((c) => c.kind === k).length] as [string, number]).filter(([, c]) => c > 0)} />

@@ -43,8 +43,10 @@ Selecting a model adds about 7 (detail, lifecycle, guard, governance, jobs). Eve
 - **Deprecate / Retire rationale**: AIMgF records a rationale only for governance events (roll back); deprecate and retire appear in the
   lifecycle history, and the rationale typed for them is sent but not stored.
 - **Registry writes**: the BFF exposes no write on repositories or storages; the Registry tab is read-only. MLMR has no list of a model's
-  artifact versions: they are counted from `artifactLocation` (ends in the latest version).
+  artifact versions: they are counted from `artifactLocation` when it has the form MLMR writes on upload, `model-artifact:<model id>:<latest>`
+  (`data/board.ts` `ARTIFACT_LOCATION_RE`, GUI-10.6); any other location (an external URI) lists no version.
 - **Inference card** of the mockup ("last 5 jobs") is not on the Models tab, to keep its first load within 7 calls; the Inference tab has them.
+- **Scope** (GUI-9.3): models, training and MLMF know no region; under a scope the page header says "network-wide".
 
 ## Troubleshooting
 

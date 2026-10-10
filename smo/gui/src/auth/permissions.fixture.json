@@ -389,6 +389,18 @@
   },
   {
     "method": "POST",
+    "pattern": "^/ran-nf-oam/fm-subscriptions$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-nf-oam/(fm-subscriptions|pm-subscriptions)/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/ran-nf-oam/software-management-jobs/[^/]+/advance$",
     "role": "operator",
     "queryMatch": {}

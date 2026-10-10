@@ -282,6 +282,26 @@ describe("the alarm page", () => {
     expect(calls.some((c) => c.path === "/smo/ran-nf-oam/fm-subscriptions")).toBe(true);
   });
 
+  // GUI-10.1: the BFF now has rules for the FM subscription form and Unsubscribe (operator): an operator sees both and they send the right
+  // calls; a viewer sees neither
+  it("draws the FM subscription form and Unsubscribe for an operator, not for a viewer", async () => {
+    const calls = bff("operator", { "POST /smo/ran-nf-oam/fm-subscriptions": { status: 201, body: {} }, "DELETE /smo/ran-nf-oam/fm-subscriptions/s-1": { status: 204 } });
+    window.location.hash = "#fm";
+    const { container } = await open();
+    await settle();
+    expect(container.textContent).toContain("New FM subscription");
+    await click(byText(container, "button", "Unsubscribe")!);
+    await settle();
+    expect(calls.some((c) => c.method === "DELETE" && c.path === "/smo/ran-nf-oam/fm-subscriptions/s-1")).toBe(true);
+    cleanup();
+    bff("viewer");
+    window.location.hash = "#fm";
+    const viewer = await open();
+    await settle();
+    expect(viewer.container.textContent).not.toContain("New FM subscription");
+    expect(byText(viewer.container, "button", "Unsubscribe")).toBeNull();
+  });
+
   // Pins down: correlated alarms are ordered nearest first with their offset; durations read as people say them.
   it("orders correlated alarms and formats durations", () => {
     const out = withDelta(alarm() as never, [alarm(), alarm({ alarmId: "x", raisedAt: plus(-59) }), alarm({ alarmId: "y", raisedAt: plus(3) })] as never[]);
