@@ -822,13 +822,12 @@ No steps open.
 
 #### PR-MGT-8 — Alarm lifecycle depth
 
-Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`); an unknown alarm is a 404 and `new_state` must be `ACKNOWLEDGED` or `UNACKNOWLEDGED` (`MGT-8.1`, `HISTORY.md` §10).
+Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`); an unknown alarm is a 404 and `new_state` must be `ACKNOWLEDGED` or `UNACKNOWLEDGED` (`MGT-8.1`, `HISTORY.md` §10). The list filters of MGT-8.4 are built (`HISTORY.md` "PR-GUI-1, 2 and 6 steps closed by the redesign").
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | MGT-8.2 | `alarm_history` table: every ack, clear and severity change | Migration; row per change | – |
 | MGT-8.3 | Comments: add and list | Route tests | – |
-| MGT-8.4 | List filters: severity, state, time range, element | Route tests | – |
 | MGT-8.5 | Repeat raise of the same `source_alarm_id`: update count and time instead of a new row (confirm today's behaviour first) **(verify)** | Test | – |
 | MGT-8.6 | Aging policy: auto-clear after N hours without a repeat | One run per interval | – |
 | MGT-8.7 | Suppression windows per element (planned work) | Alarm in a window is flagged | MGT-8.2 |

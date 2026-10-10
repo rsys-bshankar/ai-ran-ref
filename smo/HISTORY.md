@@ -2371,6 +2371,9 @@ Bookkeeping after PR-GUI-9 (#430), checked against the code before each step was
 - **GUI-2.1 and 2.2, the alarm console.** The list filters on the server (severity, ack state, open only, probable cause, time, region, site
   cluster; keyset paging), and Acknowledge / Clear are `rbac.py` rules (`PATCH /ran-nf-oam/alarms/{id}/ack` and `/clear`, operator). GUI-2.3 and
   2.4 wait on MGT-8; GUI-2.5 (an alarm CSV export) does not depend on MGT-8 any more and stays open.
+- **MGT-8.4, the alarm list filters.** `GET /ran-nf-oam/alarms` filters by `severity`, `ack_state`, `open_only` (the state), `since` / `until`
+  (raisedAt; the time range) and `managed_element_ref`, in SQL, built for the alarm console (PR-GUI-9b, 9.4); route tests in
+  `ran-nf-oam/tests/test_console_reads.py` and `test_main.py`. The rest of PR-MGT-8 (history, comments, repeats, aging, suppression) stays open.
 - **GUI-6.1 and 6.2, accessibility.** `scripts/gui_e2e.py` runs axe (WCAG 2 AA) over every page, and over four pages in both themes with every
   accent, in CI ("Every page of the GUI opens, and passes the accessibility checks"); the findings were fixed to zero serious or critical. i18n
   (6.3, 6.4) stays open.
