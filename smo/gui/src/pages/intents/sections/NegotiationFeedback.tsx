@@ -1,7 +1,7 @@
 /** The negotiation-feedback box of one intent card (feature 10, TS 28.312 IntentFulfilmentNegotiationFeedback): the outcomes the handler
  * offered in its newest negotiation report, the feedback already given, and "Satisfied?" buttons that answer an outcome with a
- * consumerSatisfactionIndex (`POST /intent-service/intents/{id}/negotiation-feedback`). The buttons are `ActionButton`s, so they show only where
- * the BFF's permission table allows the call; today it does not, and the box is read-only with a note (README, Known limits). */
+ * consumerSatisfactionIndex (`POST /intent-service/intents/{id}/negotiation-feedback`). The BFF's permission table allows it to an operator and up
+ * (GUI-9.7); a viewer sees the offered outcomes read-only. */
 import { useState } from "react";
 
 import { useAuth } from "../../../auth/AuthContext";
@@ -39,7 +39,7 @@ export function NegotiationFeedback({ intentId, negotiation }: { intentId: strin
         </div>
       ) : (
         <span className="small">{negotiation.outcomes.length} outcome{negotiation.outcomes.length === 1 ? "" : "s"} offered: {negotiation.outcomes.map((o) => `${o.possibleIntentOutcomeId} (${o.intentFulfilmentInfo.fulfilmentStatus})`).join(", ")}
-          <span className="gap-note"> · Sending feedback is not open to the console yet.</span></span>
+          <span className="gap-note"> · Sending feedback needs the operator role.</span></span>
       )}
     </div>
   );

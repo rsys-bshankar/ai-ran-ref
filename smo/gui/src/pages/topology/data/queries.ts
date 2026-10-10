@@ -1,9 +1,8 @@
 /** The RAN topology page's API knowledge (STRUCTURE.md rule 4): every path, query parameter and polling interval its sections read.
  * Sections call these hooks, never `useSmo` with a raw path. The module is RAN NF OAM (smo/docs/openapi/ran-nf-oam.json):
- * `/topology/links` (the neighbour relations declared in the cell guards, unpaged: the route takes only `managed_element_ref` and
- * `link_type`), `/topology/relation` (how two DNs stand in the containment tree), `/topology` (the TEIV export), `/managed-entities` and
- * `/cell-guards`. Two sections reading the same links share one cache entry (same path + query), so the tiles, the problem table and the
- * graph cost one call each per distinct filter. */
+ * `/topology/links` (the neighbour relations declared in the cell guards; filters `managed_element_ref`, `link_type`, `reciprocal`, paged
+ * with `limit`/`offset`), `/topology/links/counts` (the counts without the list), `/topology/relation` (how two DNs stand in the containment
+ * tree), `/topology` (the TEIV export), `/managed-entities` (with `search`) and `/cell-guards`. */
 import { POLL, useSmo, useSmoPage } from "../../../api/hooks";
 import type { CellLink, ManagedEntity } from "../../element/data/types";
 import { useUrlParam } from "../../element/data/url";
@@ -14,15 +13,32 @@ const BASE = "/ran-nf-oam";
  * elements claim. */
 export type ProblemKind = "oneway" | "external" | "ambiguous";
 
-/** The neighbour relations, optionally only those with `me` at either end. The route answers the whole list (no paging). */
+/** The neighbour relations route (a `kit/ServerTable` path: with `limit` it answers the page envelope). */
+export const LINKS_PATH = `${BASE}/topology/links`;
+
+/** `GET /topology/links/counts`. `notReciprocal` counts every relation not declared back, external and ambiguous ones included. */
+export interface LinkCountsAnswer { total: number; notReciprocal: number; external: number; ambiguous: number; intraElement: number; interElement: number }
+
+/** The relation counts, everywhere or around `me` (one small call; the list is never read for them). */
+export function useLinkCounts(me?: string | null) {
+  return useSmo<LinkCountsAnswer>(`${BASE}/topology/links/counts`, me ? { managed_element_ref: me } : undefined, { refetchInterval: POLL.inventory });
+}
+
+/** The relations declared one way between two managed cells: not reciprocal, minus the external and ambiguous ones (never reciprocal). */
+export function oneWayCount(c: LinkCountsAnswer): number {
+  return Math.max(0, c.notReciprocal - c.external - c.ambiguous);
+}
+
+/** The neighbour relations with `me` at either end, whole (one element's relations are few: the graph draws them all). */
 export function useLinks(me?: string | null, enabled = true) {
   return useSmo<CellLink[]>(`${BASE}/topology/links`, me ? { managed_element_ref: me } : undefined,
     { refetchInterval: POLL.inventory, enabled });
 }
 
-/** The managed elements of the first page (for the focus picker's suggestions; the route has no name search). */
-export function useElementOptions() {
-  return useSmo<ManagedEntity[]>(`${BASE}/managed-entities`, { limit: 100 }, { refetchInterval: POLL.inventory });
+/** Up to 20 managed elements whose ref or name contains `text` (RAN NF OAM `search`, case-insensitive), for the focus picker; none below 2 characters. */
+export function useElementOptions(text: string) {
+  const q = text.trim();
+  return useSmo<ManagedEntity[]>(q.length >= 2 ? `${BASE}/managed-entities` : null, { search: q, limit: 20, total: false }, { refetchInterval: false, staleTime: 30_000 });
 }
 
 /** One managed element with its cell guards, or nothing when none is focused. */

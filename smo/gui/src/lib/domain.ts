@@ -525,3 +525,12 @@ export function decisionQuery(form: { invoker: string; disposition: string; mode
   if (form.approval?.trim()) query.approval_id = form.approval.trim();
   return query;
 }
+
+/** A duration in seconds as "42 s", "4 min 12 s", "2 h 05 min" ("—" for null). */
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || Number.isNaN(seconds)) return "—";
+  const s = Math.round(seconds);
+  if (s < 60) return `${s} s`;
+  if (s < 3600) return `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`;
+  return `${Math.floor(s / 3600)} h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")} min`;
+}

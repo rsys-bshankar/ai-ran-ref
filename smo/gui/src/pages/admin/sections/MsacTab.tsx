@@ -1,13 +1,14 @@
 /** The "RAN access control (MSAC)" tab of Admin (`admin.msac`, BRIEF §4e feature 5): RAN NF OAM's roles, identities (USERNAME, EMAIL_ADDRESS,
  * PHONE_NUMBER, IP_ADDRESS, MACHINEUSER) and access rules (ALLOW or DENY of operations on a data-node selector), each a server-paged table. MSAC
- * decides what a config write may touch; the GUI roles decide what a person may click. Delete buttons are role-gated by `ActionButton`: the BFF's
- * permission table has no MSAC write rule today, so they render for nobody until one is added (gui-bff/app/rbac.py). */
+ * decides what a config write may touch; the GUI roles decide what a person may click. An admin creates roles, identities and rules (MsacForms.tsx)
+ * and deletes them; both are role-gated (`Can`, `ActionButton`) on the BFF's admin-only MSAC write rules (GUI-9.7). */
 import { ActionButton, Card, Id } from "../../../components/ui";
 import { Badge } from "../../../kit/Badge";
 import { Callout } from "../../../kit/Callout";
 import { ServerTable } from "../../../kit/ServerTable";
 import { MSAC } from "../data/queries";
 import type { MsacAccessRule, MsacIdentity, MsacRole } from "../data/types";
+import { NewIdentity, NewRole, NewRule } from "./MsacForms";
 
 /** A delete button for one MSAC object (shown only when the BFF allows the call). */
 function Delete({ path, id, name }: { path: string; id: string; name: string }) {
@@ -24,6 +25,7 @@ export function MsacTab() {
       </Callout>
       <div className="grid g2">
         <Card section="admin.msac.roles" title="Roles" sub="named sets of access rules">
+          <NewRole />
           <ServerTable<MsacRole> path={MSAC.roles} rowKey={(r) => r.id} empty="No MSAC roles." columns={[
             { header: "Role", render: (r) => <strong>{r.attributes.roleName}</strong> },
             { header: "Access rules", render: (r) => <span className="num">{r.attributes.accessRulesList.length}</span> },
@@ -32,6 +34,7 @@ export function MsacTab() {
           ]} />
         </Card>
         <Card section="admin.msac.identities" title="Identities" sub="who holds which roles">
+          <NewIdentity />
           <ServerTable<MsacIdentity> path={MSAC.identities} rowKey={(i) => i.id} empty="No MSAC identities." columns={[
             { header: "Identity", render: (i) => <strong className="mono small">{i.attributes.identityName}</strong> },
             { header: "Type", render: (i) => <Badge tone="info" plain>{i.attributes.identityType}</Badge> },
@@ -41,6 +44,7 @@ export function MsacTab() {
         </Card>
       </div>
       <Card section="admin.msac.rules" title="Access rules" sub="ALLOW or DENY of operations on the data nodes a selector picks">
+        <NewRule />
         <ServerTable<MsacAccessRule> path={MSAC.rules} rowKey={(r) => r.id} empty="No MSAC access rules." columns={[
           { header: "Rule", render: (r) => <strong>{r.attributes.ruleName}</strong> },
           { header: "Action", render: (r) => <Badge tone={r.attributes.actions === "ALLOW" ? "ok" : "bad"}>{r.attributes.actions}</Badge> },

@@ -30,7 +30,7 @@ accent colours and four text sizes, chosen per user on **Account → Preferences
 
 | Folder | What lives there |
 |---|---|
-| `src/shell/` | The frame: `Layout`, `Sidebar` (grouped navigation, count badges, pinned rApps, user card), `TopBar` (breadcrumb, ⌘K jump box, notifications, preferences, help), `ThemeProvider`, `nav.ts` (the one navigation table) |
+| `src/shell/` | The frame: `Layout`, `Sidebar` (grouped navigation, count badges, pinned rApps, user card), `TopBar` (breadcrumb, ⌘K search: page jumps plus the BFF's `/api/search`, live chip, notifications, preferences, help), `LiveEvents` (the summary stream), `ThemeProvider`, `nav.ts` (the one navigation table) |
 | `src/kit/` | Shared primitives, one per file: `Kpi`, `Meter`, `Segmented`, `Badge`, `Callout`, `Diff`, `Timeline`/`Steps`, `states` (skeleton, empty, error with retry, stale), `SectionBoundary`, `ServerTable` + `Pager`, `icons` |
 | `src/data/` | `summary.ts` (true counts from `GET /api/summary/{page}`), `keys.ts` (which reads an action refreshes), `preferences.ts` |
 | `src/pages/<page>/` | One folder per page: `index.tsx` (layout only), `sections/` (one box each, wrapped in a `SectionBoundary` so a crash stays in its box), `data/queries.ts` (the page's API paths and polling), `README.md` (the page's maintenance sheet: sections, calls, known limits, troubleshooting), `__tests__/` |
@@ -180,8 +180,12 @@ KPIs adds MDA functions, requests and report files (`/mdaf/mda-functions`, `/mda
 feedback on an intent and requesting an MDA analysis are drawn but have no button yet: the BFF's permission table does not allow those two
 routes (`OPEN_ITEMS.md` `PR-GUI-9`).
 
-Polling: alarms every 5 s, module health every 10 s, lists every 15 s, summary counts every 15 s (the sidebar's every 30 s), inventory every
-60 s, and only while the tab is visible (TanStack Query). An action refetches the reads of its own module, of the modules a call there is known
+Live updates: each tab opens one Server-Sent Events stream (`GET /api/events?topics=summary:nav,summary:<page>`, `src/data/events.ts`,
+`src/shell/LiveEvents.tsx`) while it is visible; each pushed summary is written into the summary cache and refetches only the lists whose counts
+changed (an alarm count change refetches the alarm list, a pending-approval change the approval queue), and the top bar says "Live · pushed".
+While it is open the summary counts and the alarm list are re-read only once a minute. Without it (connecting, refused, no EventSource) the
+console polls, top bar "Live · polling": alarms every 5 s, module health every 10 s, lists every 15 s, summary counts every 15 s (the sidebar's
+every 30 s), inventory every 60 s, and only while the tab is visible (TanStack Query). The stream reconnects with a 1 s → 60 s back-off. An action refetches the reads of its own module, of the modules a call there is known
 to change too (`src/data/keys.ts`, `CROSS_MODULE`: a rApp instantiation also changes NFO and Onboarding), and the counts.
 
 ## The rApp directory and the declared pages

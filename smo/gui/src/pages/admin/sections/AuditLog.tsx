@@ -1,19 +1,29 @@
 /** The audit log (`admin.audit`, handoff `Admin.dc.html`): every mutating call the BFF proxied (allowed or denied) plus sign-ins and user
- * administration, newest first, paged on the server (`GET /api/admin/audit?username&action&limit&offset`) with filters by user and event. Each row
- * carries an outcome badge: the HTTP status of a proxied call, or the word for a refused sign-in or a denied call. Time range and export are
- * ⚠ gaps: the route takes no time bounds and has no export job. */
-import { useState } from "react";
+ * administration, newest first, filtered by user, event and time range (24 h, 7 d, 30 d, all; optional "until") and keyset-paged on the server
+ * (`GET /api/admin/audit?username&action&since&until&limit&after_id`: "Older" asks for the rows below the page's last id, "Newer" goes back).
+ * "Export CSV" downloads the rows the filters select (`GET /api/admin/audit.csv`, streamed, at most 1,000,000 rows; the export is itself
+ * audited). Each row carries an outcome badge: the HTTP status of a proxied call, or the word for a refused sign-in or a denied call. */
+import { useEffect, useMemo, useState } from "react";
 
 import type { AuditEntry } from "../../../api/types";
 import { Card, DataTable } from "../../../components/ui";
 import { Badge, type Tone } from "../../../kit/Badge";
-import { Pager } from "../../../kit/Pager";
+import { Segmented } from "../../../kit/Segmented";
 import { Stale } from "../../../kit/states";
 import { formatTime } from "../../../lib/domain";
 import { usePreferences } from "../../../shell/ThemeProvider";
-import { AUDIT_ACTIONS, useAuditPage } from "../data/queries";
+import { AUDIT_ACTIONS, auditCsvHref, useAuditPage } from "../data/queries";
 
 const REFUSED = ["DENIED", "LOGIN_FAILED", "LOGIN_LOCKED", "LOGIN_REFUSED"];
+
+/** The time ranges of the filter, in milliseconds back from now ("all": no `since`). */
+export const AUDIT_RANGES = { "24h": 86_400_000, "7d": 7 * 86_400_000, "30d": 30 * 86_400_000, all: 0 } as const;
+export type AuditRange = keyof typeof AUDIT_RANGES;
+
+/** The ISO start of a range, rounded down to the minute so the query key holds still between renders; null for "all". */
+export function auditSince(range: AuditRange, now = Date.now()): string | null {
+  return AUDIT_RANGES[range] ? new Date(Math.floor((now - AUDIT_RANGES[range]) / 60_000) * 60_000).toISOString() : null;
+}
 
 /** The outcome of an entry: tone and text. A status code wins (a proxied call); otherwise a refused or denied event is "refused", the rest "ok". */
 export function auditOutcome(e: Pick<AuditEntry, "action" | "statusCode">): { tone: Tone; text: string } {
@@ -22,21 +32,35 @@ export function auditOutcome(e: Pick<AuditEntry, "action" | "statusCode">): { to
   return { tone: "ok", text: "ok" };
 }
 
-/** The filters, the table and the pager. */
+/** The filters, the table and the keyset pager. */
 export function AuditLog() {
   const { prefs } = usePreferences();
   const [username, setUsername] = useState("");
   const [action, setAction] = useState("");
+  const [range, setRange] = useState<AuditRange>("7d");
+  const [until, setUntil] = useState("");
   const [limit, setLimit] = useState<number>(prefs.rowsPerPage);
-  const [offset, setOffset] = useState(0);
-  const page = useAuditPage({ username: username.trim(), action, limit, offset });
+  const [cursors, setCursors] = useState<(number | null)[]>([null]);
+  const since = useMemo(() => auditSince(range), [range]);
+  const untilIso = until && !Number.isNaN(Date.parse(until)) ? new Date(until).toISOString() : null;
+  const filters = { username: username.trim(), action, since, until: untilIso };
+  const filterKey = JSON.stringify([filters, limit]);
+  useEffect(() => { setCursors([null]); }, [filterKey]);
+  const afterId = cursors[cursors.length - 1];
+  const page = useAuditPage({ ...filters, limit, afterId });
+  const next = page.data?.nextAfterId ?? null;
+  const shownFrom = (cursors.length - 1) * limit;
   return (
     <Card section="admin.audit" title="Audit log" sub="every mutating call, newest first" actions={<>
-      <input placeholder="User" value={username} onChange={(e) => { setUsername(e.target.value); setOffset(0); }} aria-label="Filter by user" />
-      <select value={action} onChange={(e) => { setAction(e.target.value); setOffset(0); }} aria-label="Filter by action">
+      <input placeholder="User" value={username} onChange={(e) => setUsername(e.target.value)} aria-label="Filter by user" />
+      <select value={action} onChange={(e) => setAction(e.target.value)} aria-label="Filter by action">
         <option value="">All actions</option>
         {AUDIT_ACTIONS.map((a) => <option key={a}>{a}</option>)}
       </select>
+      <Segmented<AuditRange> label="Time range" value={range} onChange={setRange}
+        options={[{ id: "24h", label: "24 h" }, { id: "7d", label: "7 d" }, { id: "30d", label: "30 d" }, { id: "all", label: "All" }]} />
+      <input type="datetime-local" aria-label="Until" title="Only rows before this time (optional)" value={until} onChange={(e) => setUntil(e.target.value)} />
+      <a className="btn small" href={auditCsvHref(filters)} download>Export CSV</a>
     </>}>
       <p className="muted small">Append-only. Every mutating call the BFF proxies (allowed or denied) plus sign-ins and user administration.</p>
       <DataTable rows={page.data?.items} loading={page.isLoading} error={page.data ? undefined : page.error} rowKey={(e) => String(e.id)} empty="No entries." columns={[
@@ -49,10 +73,20 @@ export function AuditLog() {
       ]} />
       {page.error && page.data && <div className="error-box" role="alert">Refresh failed: {page.error.message} <Stale updatedAt={page.dataUpdatedAt} after={0} /></div>}
       {page.data && (
-        <Pager offset={offset} limit={limit} shown={page.data.items.length} total={page.data.total} hasMore={page.data.hasMore}
-          onOffset={setOffset} onLimit={(l) => { setLimit(l); setOffset(0); }} />
+        <div className="pager" aria-label="Pages">
+          <span aria-live="polite">
+            {page.data.items.length === 0 ? "No rows" : <>Rows {(shownFrom + 1).toLocaleString("en-US")}–{(shownFrom + page.data.items.length).toLocaleString("en-US")}</>}
+            {cursors.length === 1 && page.data.total !== undefined && <> of <strong>{page.data.total.toLocaleString("en-US")}</strong></>}
+          </span>
+          <div className="row">
+            <label className="row small">Rows
+              <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} aria-label="Rows per page">{[25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}</select>
+            </label>
+            <button type="button" className="btn small" disabled={cursors.length === 1} onClick={() => setCursors((c) => c.slice(0, -1))}>← Newer</button>
+            <button type="button" className="btn small" disabled={next === null} onClick={() => next !== null && setCursors((c) => [...c, next])}>Older →</button>
+          </div>
+        </div>
       )}
-      <p className="gap-note">No time-range filter or export yet: the audit route takes no time bounds and has no export job.</p>
     </Card>
   );
 }

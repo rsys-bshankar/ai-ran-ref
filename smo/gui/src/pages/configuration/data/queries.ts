@@ -41,9 +41,12 @@ export function useKpiDefinitions() {
   return useSmo<KpiDef[]>(`${BASE}/kpi-definitions`, { limit: 100 }, { refetchInterval: POLL.inventory });
 }
 
+/** The host-key route of one endpoint (`GET`, admin `PUT` to pin; `DELETE …/{keyType}` to remove). */
+export const hostKeysPath = (endpointId: string) => `${ENDPOINTS_PATH}/${encodeURIComponent(endpointId)}/host-keys`;
+
 /** The SSH host keys pinned for one endpoint (only an `ssh` endpoint has any: the route answers 422 for another transport). */
 export function useHostKeys(endpointId: string | null) {
-  return useSmo<HostKey[]>(endpointId ? `${ENDPOINTS_PATH}/${encodeURIComponent(endpointId)}/host-keys` : null, undefined,
+  return useSmo<HostKey[]>(endpointId ? hostKeysPath(endpointId) : null, undefined,
     { refetchInterval: POLL.inventory, retry: false });
 }
 

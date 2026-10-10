@@ -1,14 +1,24 @@
 /** Configuration · KPI guard of a job (part of `configuration.job`): the guard the job declared (KPI, baseline and observation windows, allowed
  * regression, which way is better, whether a regression is rolled back) and what the worker's check found, per element. "Run KPI check"
- * (`POST /config-jobs/{id}/kpi-check`) is not exposed by the GUI BFF (gui-bff/app/rbac.py has no rule for it), so the guard is read-only
- * here and the worker's own run is the only check (README, Known limits). */
-import type { ConfigJob } from "../../../api/types";
-import { DataTable, Id } from "../../../components/ui";
+ * (`POST /config-jobs/{id}/kpi-check`, operator and up) runs the same check now with the job's own guard settings (the worker runs it by itself
+ * once the observation window has passed); `force` re-checks a job already checked. */
+import type { ConfigJob, KpiGuardSettings } from "../../../api/types";
+import { useAuth } from "../../../auth/AuthContext";
+import { ActionButton, DataTable, Id } from "../../../components/ui";
 import { Badge } from "../../../kit/Badge";
 import { describeGuardResult, formatTime } from "../../../lib/domain";
 
+/** The body of `POST /config-jobs/{id}/kpi-check` that repeats the job's guard (`requestedBy` the signed-in user, `force` when already checked). */
+export function kpiCheckBody(g: KpiGuardSettings, username: string, force: boolean) {
+  return {
+    kpi: g.kpi, baselineMinutes: g.baselineMinutes, observationMinutes: g.observationMinutes, maxRegressionPercent: g.maxRegressionPercent,
+    direction: g.direction, minSamples: g.minSamples, revert: g.revert, msacRole: g.msacRole ?? undefined, requestedBy: `smo-gui:${username}`, force,
+  };
+}
+
 /** The guard of `job`, or a line saying it has none. */
 export function KpiGuard({ job }: { job: ConfigJob }) {
+  const { me } = useAuth();
   const g = job.kpiGuard;
   if (!g) return <p className="muted small">No KPI guard: nothing checks a KPI after this job.</p>;
   const r = job.kpiGuardResult;
@@ -35,7 +45,11 @@ export function KpiGuard({ job }: { job: ConfigJob }) {
           { header: "Verdict", render: (e) => <Badge tone={e.verdict === "OK" ? "ok" : e.verdict === "REGRESSED" ? "bad" : "warn"}>{e.verdict}</Badge> },
         ]} />
       )}
-      <p className="gap-note">Run KPI check: the GUI BFF does not expose this call yet; the worker checks the guard once the observation window has passed.</p>
+      <div className="row between wrap">
+        <span className="small muted">The worker checks the guard once the observation window has passed; run it now to see the current verdict.</span>
+        <ActionButton label={r ? "Run KPI check again" : "Run KPI check"} confirm={g.revert ? "Run the KPI check now? Regressed elements are rolled back." : undefined}
+          action={{ method: "POST", path: `/ran-nf-oam/config-jobs/${job.jobId}/kpi-check`, json: kpiCheckBody(g, me?.username ?? "unknown", !!r), success: "KPI check done" }} />
+      </div>
     </>
   );
 }

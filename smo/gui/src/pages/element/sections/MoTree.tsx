@@ -1,12 +1,10 @@
 /** Element detail · managed-object tree (`element.mo`): the element's containment tree from its root DN (`GET /managed-objects/{dn}`).
  * A node's children load only when it is opened (`/children?limit=50`, "more" asks for 50 more), and "Expand 3 levels" loads the selected
  * node's subtree in one call (`/subtree?depth=3`, at most 1000 nodes). Selecting a node shows it in the attributes box (`?mo=`). "Refresh
- * from element" (`POST …/managed-objects/refresh`, a walk of the element's server) is not exposed by the GUI BFF, so it is hidden for every
- * role (`ActionButton`) and noted (README, Known limits). */
+ * from element" (`POST …/managed-objects/refresh`, a walk of the element's server) is an operator's call; a viewer does not see the button. */
 import { useEffect, useState } from "react";
 
 import { ActionButton, Card } from "../../../components/ui";
-import { useAuth } from "../../../auth/AuthContext";
 import { Empty, ErrorRetry, Skeleton } from "../../../kit/states";
 import { refreshPath, useChildren, useMo, useSelectedMo, useSubtree } from "../data/queries";
 import { rootDn, type ManagedObject } from "../data/types";
@@ -24,7 +22,6 @@ export function MoTree({ me }: { me: string }) {
   const [preloaded, setPreloaded] = useState<Map<string, ManagedObject[]>>(() => new Map());
   const [expandAt, setExpandAt] = useState<string | null>(null);
   const subtree = useSubtree(expandAt, 3);
-  const { can } = useAuth();
   useEffect(() => {
     if (!subtree.data) return;
     const kids = new Map(preloaded), opened = new Set(open);
@@ -43,7 +40,6 @@ export function MoTree({ me }: { me: string }) {
         <button type="button" className="btn small" disabled={!selected || subtree.isFetching} onClick={() => { setExpandAt(selected); void (expandAt === selected && subtree.refetch()); }}>Expand 3 levels</button>
         <ActionButton label="Refresh from element" action={{ method: "POST", path: refreshPath(me), success: "Tree refreshed from the element" }} />
       </>}>
-      {!can("POST", refreshPath(me)) && <p className="gap-note">Refresh from element: the GUI BFF does not expose the walk of an element's server yet.</p>}
       {subtree.data?.truncated && <p className="gap-note">The subtree stopped at 1000 nodes; open deeper nodes one by one.</p>}
       {root.error && (root.error.status === 404 ? <Empty title="This element is not in the containment tree yet." /> : <ErrorRetry error={root.error} onRetry={() => void root.refetch()} />)}
       {!root.data && !root.error && <Skeleton lines={5} />}

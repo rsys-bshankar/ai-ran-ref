@@ -8,18 +8,19 @@ import { Timeline, type TimelineItem } from "../../../kit/Timeline";
 import { formatTime } from "../../../lib/domain";
 import { AlarmActions } from "./AlarmActions";
 
-/** The lifecycle of an alarm, from the fields it carries. The backend keeps who acknowledged it but not when, so that step has no time. */
+/** The lifecycle of an alarm, from the fields it carries: raised, acknowledged (who, and when: `ackTime`), last changed, cleared (`clearTime`). */
 export function alarmLifecycle(alarm: Alarm): TimelineItem[] {
   const cleared = alarm.severity === "cleared" || !!alarm.clearedAt;
   const acked = alarm.ackState === "ACKNOWLEDGED";
   const items: TimelineItem[] = [
     { key: "raised", state: "done", title: "Raised", meta: <span className="muted small">{formatTime(alarm.raisedAt)}</span>, detail: `by ${alarm.managedElementRef} (${alarm.sourceAlarmId})` },
     { key: "ack", state: acked ? "done" : cleared ? "todo" : "now", title: acked ? "Acknowledged" : "Not acknowledged",
-      detail: acked ? `by ${alarm.ackUserId ?? "—"} (the time is not recorded)` : "waiting for an operator" },
+      meta: acked && alarm.ackTime ? <span className="muted small">{formatTime(alarm.ackTime)}</span> : undefined,
+      detail: acked ? `by ${alarm.ackUserId ?? "—"}${alarm.ackTime ? "" : " (time not recorded: acknowledged before the backend kept it)"}` : "waiting for an operator" },
   ];
   if (alarm.changedAt) items.push({ key: "changed", state: "done", title: "Last changed", meta: <span className="muted small">{formatTime(alarm.changedAt)}</span> });
   items.push(cleared
-    ? { key: "cleared", state: "done", title: "Cleared", meta: <span className="muted small">{formatTime(alarm.clearedAt)}</span>, detail: alarm.clearUserId ? `by ${alarm.clearUserId}` : "by the element" }
+    ? { key: "cleared", state: "done", title: "Cleared", meta: <span className="muted small">{formatTime(alarm.clearTime ?? alarm.clearedAt)}</span>, detail: alarm.clearUserId ? `by ${alarm.clearUserId}` : "by the element" }
     : { key: "cleared", state: "todo", title: "Not cleared" });
   return items;
 }
@@ -41,7 +42,8 @@ export function AlarmDetail({ alarm, onClose }: { alarm: Alarm | null; onClose: 
         ["rootCauseIndicator", alarm.rootCauseIndicator ? "yes" : "no"], ["proposedRepairActions", alarm.proposedRepairActions],
         ["correlationGroup", alarm.correlationGroup],
         ["correlatedNotifications", alarm.correlatedNotifications.length ? alarm.correlatedNotifications.map((c) => <div key={c}><code>{c}</code></div>) : null],
-        ["ackUserId", alarm.ackUserId], ["alarmChangedTime", formatTime(alarm.changedAt)], ["alarmClearedTime", formatTime(alarm.clearedAt)], ["clearUserId", alarm.clearUserId],
+        ["ackUserId", alarm.ackUserId], ["ackTime", alarm.ackTime ? formatTime(alarm.ackTime) : null], ["alarmChangedTime", formatTime(alarm.changedAt)],
+        ["alarmClearedTime", formatTime(alarm.clearTime ?? alarm.clearedAt)], ["clearUserId", alarm.clearUserId],
       ]} />
       <h3>Lifecycle</h3>
       <Timeline label="Alarm lifecycle" items={alarmLifecycle(alarm)} />

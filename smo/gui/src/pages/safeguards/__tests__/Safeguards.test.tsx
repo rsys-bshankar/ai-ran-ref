@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Tests of the Safeguards page (pages/safeguards): the per-rApp limits table and its approval-policy actions (AI-11.4), RBAC on them, the
- * "Stop all rApp writes" loop over the per-rApp stop with its confirm, and the tabs. Run: `npx vitest run src/pages/safeguards`. */
+ * one-call "Stop all rApp writes" (`PUT /rapp-mgmt/kill-all`) with its confirm and result, the admin's "Resume all", and the tabs. Run: `npx vitest run src/pages/safeguards`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../../../auth/AuthContext";
@@ -98,40 +98,54 @@ describe("holding an rApp's changes for approval (AI-11.4)", () => {
 
 describe("stopping every rApp at once", () => {
   const IID2 = "0b9f3f1e-4b0e-4a0c-9d6f-222222222222";
-  const three = { items: [
-    { instanceId: IID, packageId: "p", state: "RUNNING", autonomyMode: "ASSIST" },
-    { instanceId: IID2, packageId: "p", state: "RUNNING", autonomyMode: "AUTONOMOUS" },
-    { instanceId: "gone", packageId: "p", state: "UNDEPLOYED", autonomyMode: "SHADOW" },
-  ], limit: 200, offset: 0, total: 3 };
 
-  // Pins down: names how many rApps it will stop, then stops each one with the reason and says how it went.
-  it("names how many rApps it will stop, then stops each one with the reason and says how it went", async () => {
+  // Pins down: the confirm names the live and already-stopped counts; one PUT with the reason; the result lists stopped, already stopped and failed.
+  it("stops every rApp in one call and says how it went", async () => {
     const calls = bff("operator", null, {
-      "GET /smo/rapp-mgmt/instances": three,
-      [`PUT /smo/rapp-mgmt/instances/${IID}/kill`]: { invokerId: INVOKER },
-      [`PUT /smo/rapp-mgmt/instances/${IID2}/kill`]: { status: 409, body: { title: "NO_CREDENTIAL", detail: "no credential" } },
+      "GET /smo/rapp-mgmt/kill-all": { stopped: 1, instances: 3 },
+      "PUT /smo/rapp-mgmt/kill-all": { stopped: 1, alreadyStopped: 1, failed: [{ instanceId: IID2, error: "no credential" }] },
     });
     await open();
     await settle();
+    expect(byText(document.body, "button", "Resume all")).toBeNull();                 // resume is an admin's
     await click(byText(document.body, "button", "Stop all rApp writes")!);
     await settle();
     const dialog = document.querySelector("[role=dialog]") as HTMLElement;
-    expect(dialog.textContent).toContain("Stop all 2 rApps?");                         // the undeployed one cannot write: not counted
+    expect(dialog.textContent).toContain("stops the writes of 2 running rApp instances");
+    expect(dialog.textContent).toContain("1 of 3 are already stopped");
     expect(calls.some((c) => c.method === "PUT")).toBe(false);                        // nothing stopped before the confirm
     await type(dialog.querySelector("input") as HTMLInputElement, "storm");
-    await click(byText(dialog, "button", "Stop 2 rApps")!);
+    await click(byText(dialog, "button", "Stop all rApps")!);
     await settle(8);
     const puts = calls.filter((c) => c.method === "PUT");
-    expect(puts.map((c) => c.path)).toEqual([`/smo/rapp-mgmt/instances/${IID}/kill`, `/smo/rapp-mgmt/instances/${IID2}/kill`]);
+    expect(puts.map((c) => c.path)).toEqual(["/smo/rapp-mgmt/kill-all"]);
     expect(puts[0].body).toEqual({ reason: "storm" });
     const result = document.querySelector("[data-section='safeguards.stopall']")!.textContent ?? "";
-    expect(result).toContain("Stopped 1 rApp; 1 failed");
+    expect(result).toContain("Stopped 1 rApp · 1 already stopped · 1 failed");
     expect(result).toContain("no credential");
+  });
+
+  // Pins down: an admin resumes every stopped rApp with one DELETE after a confirm naming the count.
+  it("resumes all for an admin", async () => {
+    const calls = bff("admin", null, {
+      "GET /smo/rapp-mgmt/kill-all": { stopped: 4, instances: 5 },
+      "DELETE /smo/rapp-mgmt/kill-all": { resumed: 4, failed: [] },
+    });
+    await open();
+    await settle();
+    await click(byText(document.body, "button", "Resume all")!);
+    await settle();
+    const dialog = document.querySelector("[role=dialog]") as HTMLElement;
+    expect(dialog.textContent).toContain("resumes 4 stopped rApp instances");
+    await click(byText(dialog, "button", "Resume all")!);
+    await settle(8);
+    expect(calls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual(["/smo/rapp-mgmt/kill-all"]);
+    expect(document.querySelector("[data-section='safeguards.stopall']")!.textContent).toContain("Resumed 4 rApps");
   });
 
   // Pins down: cancelling the confirm stops nothing.
   it("cancelling the confirm stops nothing", async () => {
-    const calls = bff("operator", null, { "GET /smo/rapp-mgmt/instances": three });
+    const calls = bff("operator", null, { "GET /smo/rapp-mgmt/kill-all": { stopped: 0, instances: 2 } });
     await open();
     await settle();
     await click(byText(document.body, "button", "Stop all rApp writes")!);

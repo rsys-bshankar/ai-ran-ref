@@ -8,14 +8,13 @@ Route: `/security`    Design: handoff `Security.dc.html` (PR-SEC-7)
 | --- | --- | --- | --- | --- | --- |
 | security.tiles | sections/StatusTiles.tsx | two-step sign-in on/off, recovery codes left, sign-in method (local / single sign-on) | `/api/me` (session), `GET /api/me/totp` | on change | shared |
 | security.authenticator | sections/Authenticator.tsx | set up / confirm the one-time code, make new recovery codes (`components/TotpEnrolment`) | `/api/me/totp/begin`, `/confirm`, `/recovery-codes` | on change | shared |
-| security.recovery | sections/RecoveryCodes.tsx | how many recovery codes are left, one slot each | `GET /api/me/totp` | on change | 1 call (shared key `["bff","totp"]`) |
-| security.signins | sections/SignIns.tsx | gap note | — | — | 0 |
+| security.recovery | sections/RecoveryCodes.tsx | how many recovery codes are left; one masked slot per code, used ones struck through with their time | `GET /api/me/totp` | on change | 1 call (shared key `["bff","totp"]`) |
+| security.signins | sections/SignIns.tsx | your newest 20 sign-ins, failed sign-ins and sign-outs, with a warning on a failed one | `GET /api/me/sign-ins?limit=20` | 30 s stale | 1 call |
 
 ## Known limits
 
-- **Recent sign-ins** (BRIEF §5 "sign-in history"): no per-user route; sign-ins are only in the admin audit log. The box shows a gap note.
-- The server returns the recovery codes once and only their count afterwards, so used codes cannot be struck through and the codes cannot be
-  downloaded again; the box shows the count.
+- **Recent sign-ins** come from the console's audit log: no IP address or device is recorded beyond what the BFF writes in `detail`.
+- The server returns the recovery codes once; afterwards only which slots were used. The codes cannot be downloaded again.
 - Moving to a new device: an administrator resets the one-time code (Admin → Users), then the user sets it up again (the BFF has no self re-enrol).
 - Password age and "change password" from the mockup: not shown (no password age is served).
 

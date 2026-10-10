@@ -11,39 +11,40 @@ Model registration → training → validation → certification → deployment 
 | id | file | what it shows | API (via data/queries.ts) | refresh | budget |
 | --- | --- | --- | --- | --- | --- |
 | (tabs) | index.tsx | tab counts: models, training jobs, MLMF breaches | `/api/summary/aiml` | 15 s | 1 call |
-| aiml.board | sections/StageBoard.tsx | kanban by stage, count + first 5 per column, red outline under floor | `/mlmr/models?limit=500`, `/aimgf/model-lifecycles?limit=500`, `/aimgf/mlmf/subscriptions?limit=500`, `/aimgf/mlmf/reports?limit=100&total=false` | 15–60 s | 4 calls |
+| aiml.board | sections/StageBoard.tsx | kanban by stage, server count + first 5 per column, red outline under floor | `/aimgf/model-lifecycles/counts`; `/mlmr/models?limit=500`, `/aimgf/model-lifecycles?limit=500`, `/aimgf/mlmf/subscriptions?limit=500`, `/aimgf/mlmf/reports?limit=100&total=false` | 15–60 s | 5 calls |
 | aiml.table | sections/ModelTable.tsx | all models, server-paged, `model_type` filter, lifecycle buttons | `/mlmr/models` (+ the lifecycle read above) | 15 s | 1 call/page |
-| aiml.trainingTop | sections/SideCards.tsx | newest 5 IN_PROGRESS training jobs + true count | `/aimgf/training-jobs?status=IN_PROGRESS&limit=5` | 15 s | 1 call |
+| aiml.trainingTop | sections/SideCards.tsx | newest 5 IN_PROGRESS training jobs + true count, epoch bar and ETA when reported | `/aimgf/training-jobs?status=IN_PROGRESS&limit=5` | 15 s | 1 call |
 | aiml.waiting | sections/SideCards.tsx | models waiting for a governance decision, with their buttons | (board's lifecycle read) | — | 0 |
 | aiml.detail | sections/ModelDetail.tsx | selected model: states, MODEL_PIPELINE steps, buttons, edit, delete, facts | `/mlmr/models/{id}`, `/aimgf/models/{id}/lifecycle` | 15 s | 2 calls |
 | aiml.guard | sections/GuardKpiChart.tsx | guard KPI line with dashed floor, newest-report tiles | `/aimgf/mlmf/subscriptions?model_id=`, `/aimgf/mlmf/subscriptions/{id}/reports?limit=120` | 15 s | 2 calls |
 | aiml.governance | sections/Governance.tsx | governance history / all, model or runtime transitions; roll back, deprecate, retire with a rationale | `/aimgf/models/{id}/governance-history`, `/lifecycle-history?fsm=` | 15 s | 1 call/page |
 | aiml.artifacts | sections/ModelArtifacts.tsx | artifact downloads, upload, deploy to node groups | (detail's reads) | — | 0 |
 | aiml.runtime | sections/ModelRuntime.tsx | runtime state + actions, request inference, the model's jobs | `/aimgf/training-jobs?model_id=`, `/aimgf/inference-jobs?model_id=` | 15 s | 2 calls |
-| aiml.training | sections/TrainingJobs.tsx | every training job, status filter, Suspend / Resume / Cancel, metrics | `/aimgf/training-jobs?status=` | 15 s | 1 call/page |
+| aiml.training | sections/TrainingJobs.tsx | every training job, status filter, step, epoch progress + ETA, Suspend / Resume / Cancel, metrics | `/aimgf/training-jobs?status=` | 15 s | 1 call/page |
 | aiml.inference | sections/InferenceJobs.tsx | every inference job, status filter, resolve | `/aimgf/inference-jobs?status=` | 15 s | 1 call/page |
 | aiml.features | sections/FeatureGroups.tsx | feature groups (operator+), create, delete | `/aimgf/feature-groups` | 15 s | 1 call/page |
 | aiml.groups | sections/CoordinationGroups.tsx | coordination groups, retrain, create | `/mlmr/coordination-groups` | 15 s | 1 call/page |
 | aiml.mlmf | sections/Mlmf.tsx | MLMF subscriptions, reports of the selected one, subscribe, inject | `/aimgf/mlmf/subscriptions`, `/…/{id}/reports` | 15 s | 1–2 calls |
 | aiml.repositories / storages / artifactVersions | sections/Registry.tsx | MLMR repositories, storages, every model's artifact versions | `/mlmr/ml-model-repositories`, `/mlmr/storages`, `/mlmr/models` | 15 s | 3 calls |
 
-First load of the Models tab: 6 calls (summary, four board reads, the training card), pinned by `__tests__/Aiml.test.tsx`.
+First load of the Models tab: 7 calls (summary, stage counts, four board reads, the training card), pinned by `__tests__/Aiml.test.tsx`.
 Selecting a model adds about 7 (detail, lifecycle, guard, governance, jobs). Every other tab: 1–3.
 
 ## Known limits
 
-- **Counts by stage**: MLMR and AIMgF serve no count by lifecycle stage and the lifecycle list has no state filter, so the board reads up to
-  500 models and 500 lifecycles (the backend's MAX_LIMIT) and groups them in the browser; past 500 models it says the counts cover the first 500.
+- **Counts by stage** are AIMgF's counts by model lifecycle state (`/aimgf/model-lifecycles/counts`) plus MLMR's model total for models AIMgF
+  has no row for. They are by state, not runtime: a model with an active runtime is counted in its state's column but drawn under "Active
+  runtime", whose count is its cards. The cards still come from one read of up to 500 models and 500 lifecycles (the backend's MAX_LIMIT).
 - **"Top 5 by last change"**: no "last changed" time is served per model, so each column shows its first five in registry order.
 - **Guard-floor outline**: a model is outlined when the newest report of one of its MLMF subscriptions, among the 100 newest reports overall,
   breached. A model whose last report is older than those 100 is not outlined.
-- **Training epoch / ETA** (BRIEF §5): AIMgF reports the step a run reached (data extraction, training, trained model), not an epoch or a finish
-  estimate; the tab and the side card say so.
+- **Training epoch / ETA** show only when the run's runtime reports epochs (`POST /aimgf/training-jobs/{id}/progress`); the ETA is AIMgF's
+  linear estimate ((now − started) / epoch × epochs left), not a trainer forecast.
 - **Deprecate / Retire rationale**: AIMgF records a rationale only for governance events (roll back); deprecate and retire appear in the
   lifecycle history, and the rationale typed for them is sent but not stored.
 - **Registry writes**: the BFF exposes no write on repositories or storages; the Registry tab is read-only. MLMR has no list of a model's
   artifact versions: they are counted from `artifactLocation` (ends in the latest version).
-- **Inference card** of the mockup ("last 5 jobs") is not on the Models tab, to keep its first load within 6 calls; the Inference tab has them.
+- **Inference card** of the mockup ("last 5 jobs") is not on the Models tab, to keep its first load within 7 calls; the Inference tab has them.
 
 ## Troubleshooting
 

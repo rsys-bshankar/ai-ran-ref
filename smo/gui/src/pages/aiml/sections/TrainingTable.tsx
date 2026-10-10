@@ -1,12 +1,14 @@
 /** The training-job columns and dialogs shared by the Training tab (`TrainingJobs`, a server table) and the model's runtime box (one model's
  * jobs): job, target, producer, status, the step the runtime reported, its NFO runtime, the metrics (view, or write back as the trainer), and the
- * role-gated Suspend / Resume (`POST /aimgf/training-jobs/{id}/suspend|resume`, feature 7) and Cancel. Epoch and ETA are not served (⚠ gap). */
+ * role-gated Suspend / Resume (`POST /aimgf/training-jobs/{id}/suspend|resume`, feature 7) and Cancel. The progress column draws the epoch the
+ * runtime reported out of its total, with AIMgF's estimate of the time left (`epoch`, `totalEpochs`, `etaSeconds`, GUI-9.8). */
 import { useState, type ReactNode } from "react";
 
 import { useSmoAction } from "../../../api/hooks";
 import type { TrainingJob } from "../../../api/types";
 import { ActionButton, Can, DataTable, Id, Json, Modal, StateBadge, type Column } from "../../../components/ui";
-import { parseJsonObject } from "../../../lib/domain";
+import { UsageMeter } from "../../../kit/Meter";
+import { formatDuration, parseJsonObject } from "../../../lib/domain";
 import { TRAINING_JOBS, useModelNames } from "../data/queries";
 
 // OI-5-aiml-trainingjob-steps: the steps a run passes through, reported by its runtime
@@ -23,6 +25,7 @@ export function useTrainingColumns(): { columns: Column<TrainingJob>[]; dialogs:
     { header: "Producer", render: (j) => j.producerId },
     { header: "Status", render: (j) => <StateBadge state={j.status} /> },
     { header: "Step", render: (j) => j.steps ? <span className="small">{STEP_LABEL[j.currentStep]} <span className="muted">({j.steps[j.currentStep].toLowerCase().replace("_", " ")})</span></span> : "—" },
+    { header: "Progress", render: (j) => <TrainingProgress job={j} /> },
     { header: "Runtime", render: (j) => <Id value={j.nfDeploymentId} /> },
     { header: "Metrics", render: (j) => <div className="row gap">
       {j.modelMetrics && <button type="button" className="btn small" onClick={() => setMetricsFor(j)}>View</button>}
@@ -36,6 +39,17 @@ export function useTrainingColumns(): { columns: Column<TrainingJob>[]; dialogs:
     {writeFor && <WriteMetrics job={writeFor} onClose={() => setWriteFor(null)} />}
   </>;
   return { columns, dialogs };
+}
+
+/** "epoch 7 of 20" with a bar and "about 4 min 12 s left" when AIMgF estimated it; "—" when the runtime reported no epoch. */
+export function TrainingProgress({ job }: { job: TrainingJob }) {
+  if (job.epoch == null || !job.totalEpochs) return <span className="muted">—</span>;
+  return (
+    <span className="col" style={{ gap: 2, minWidth: 110 }}>
+      <UsageMeter used={job.epoch} limit={job.totalEpochs} label={`epoch ${job.epoch} of ${job.totalEpochs}`} />
+      <span className="xs muted">epoch {job.epoch}/{job.totalEpochs}{job.etaSeconds != null ? ` · about ${formatDuration(job.etaSeconds)} left` : ""}</span>
+    </span>
+  );
 }
 
 /** Suspend (IN_PROGRESS), Resume (SUSPENDED) and Cancel (either), each role-gated by the BFF table. */

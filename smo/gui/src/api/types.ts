@@ -4,7 +4,12 @@
 // local / totpEnrolled / mfaEnrolmentRequired: PR-SEC-7 (a user of the identity provider is not local and has no one-time code here;
 // mfaEnrolmentRequired is true for a local admin who must enrol one before anything else, GUI_ADMIN_MFA_REQUIRED)
 export interface Me { username: string; role: "viewer" | "operator" | "admin"; csrfToken?: string; local?: boolean; totpEnrolled?: boolean; mfaEnrolmentRequired?: boolean }
-export interface TotpStatus { available: boolean; enrolled: boolean; pending: boolean; recoveryCodesLeft: number; reason?: string }
+/** `GET /api/me/totp`: whether one-time codes are available and set up for the signed-in user, and the state of the recovery codes. */
+export interface TotpStatus {
+  available: boolean; enrolled: boolean; pending: boolean; recoveryCodesLeft: number; reason?: string;
+  // GUI-9.8: one entry per recovery-code slot (1..10) saying whether it was used and when; never the codes themselves (absent on an older BFF)
+  recoveryCodes?: { slot: number; used: boolean; usedAt: string | null }[];
+}
 export interface TotpBegin { secret: string; otpauthUri: string; issuer: string; account: string }
 export interface TotpConfirmed { status: string; recoveryCodes: string[]; recoveryCodesLeft: number }
 
@@ -89,6 +94,7 @@ export interface ModelLifecycle {
 export interface CertificationRecord {
   certificationRecordId: string; modelId: string; decision: string; decidedBy: string; rationale: string | null; decidedAt: string;
 }
+/** An AIMgF training job with the step and epoch progress its runtime reported. */
 export interface TrainingJob {
   trainingJobId: string; modelId: string | null; modelCoordinationGroupId: string | null; producerId: string;
   status: string; runId: string | null; trainingDataset: string | null; validationDataset: string | null;
@@ -100,6 +106,8 @@ export interface TrainingJob {
   // step's status (derived from it and `status`)
   currentStep: "DATA_EXTRACTION" | "TRAINING" | "TRAINED_MODEL";
   steps: Record<"DATA_EXTRACTION" | "TRAINING" | "TRAINED_MODEL", string>;
+  // GUI-9.8: how far the run is, as its runtime reported it, and the estimated seconds left (null when not computable); absent on an older AIMgF
+  epoch?: number | null; totalEpochs?: number | null; etaSeconds?: number | null; progressUpdatedAt?: string | null;
 }
 export interface InferenceJob {
   inferenceJobId: string; modelId: string; status: string; notificationDestination: string | null;
@@ -116,12 +124,15 @@ export interface MlmfSubscription { subscriptionId: string; modelId: string; met
 export interface MlmfReport { reportId: string; subscriptionId: string; metrics: Record<string, unknown>; breachedFloor: boolean; reportedAt: string }
 
 // ---- RAN NF OAM
+/** A RAN NF alarm (O1 FaultMnS, TS 28.532 fields) as RAN NF OAM lists it. */
 export interface Alarm {
   alarmId: string; sourceAlarmId: string; managedElementRef: string; severity: string; ackState: string;
   managedFunctionRef: string | null;  // W10-alarm-cellref: the cell it is about; null = the whole element
   raisedAt: string | null; correlationGroup: string | null; probableCause: string | null; specificProblem: string | null;
   rootCauseIndicator: boolean; correlatedNotifications: string[]; proposedRepairActions: string | null;
   alarmType: string | null; ackUserId: string | null; changedAt: string | null; clearedAt: string | null; clearUserId: string | null;
+  // PR-GUI-9.8: when it was acknowledged (null while unacknowledged; absent from an older backend) and cleared (`clearedAt` again)
+  ackTime?: string | null; clearTime?: string | null;
 }
 export interface PmSubscription { subscriptionId: string; managedElementRef: string; counterType: string; deliveryMethod: string; southboundEngine: string; granularityPeriod: number | null }
 export interface FmSubscription { subscriptionId: string; managedElementRef: string; deliveryMethod: string; southboundEngine: string }
@@ -164,7 +175,12 @@ export interface KpiScheduleRow {
 export interface SwmJob { jobId: string; managedElementRef: string; ruInstanceId: string | null; phase: string; status: string }
 
 // ---- Intent Service
-export interface Intent { intentId: string; intentAdminState: string; intentPriority: number; rmioId: string; intentMgmtPurpose: string | null; rmihId: string; userLabel: string | null; attributes: Record<string, unknown> }
+/** A TS 28.312 intent as Intent Service lists it: summary keys plus the full intent under `attributes`. */
+export interface Intent {
+  intentId: string; intentAdminState: string; intentPriority: number; rmioId: string; intentMgmtPurpose: string | null; rmihId: string; userLabel: string | null; attributes: Record<string, unknown>;
+  // GUI-9.8: from the newest fulfilment / conflict reports (null until a fulfilment report exists; absent on an older Intent Service)
+  fulfilmentPercent?: number | null; fulfilled?: boolean | null; inConflict?: boolean;
+}
 /** Wave 6: a TS 28.312 IntentReport — every report kind lives under `attributes` (intentFulfilmentReport, intentConflictReports, ...). */
 export interface IntentReport { reportId: string; intentId: string; attributes: Record<string, unknown> & { lastUpdatedTime: string } }
 export interface RmihCapability { intentHandlingCapabilityId: string; supportedExpectationObjectType: string; supportedExpectationTargetInfoList: { supportedTargetName: string }[] }
@@ -206,11 +222,21 @@ export interface DmeType { dmeTypeId: string; dmeTypeIdStruct: Record<string, st
 export interface DmeProducer { producerId: string; producerHealthCallbackUrl: string; jobCallbackUrl: string; supportedTypeIds: string[] }
 
 // ---- BFF admin
-export interface GuiUser { username: string; role: "viewer" | "operator" | "admin"; active: boolean; createdAt: string; breakGlass?: boolean; totpEnrolled?: boolean }
+/** A console user as `GET /api/admin/users` lists it. */
+export interface GuiUser {
+  username: string; role: "viewer" | "operator" | "admin"; active: boolean; createdAt: string; breakGlass?: boolean; totpEnrolled?: boolean;
+  // GUI-9.8: the user's newest audit row and newest successful sign-in (null: none; absent on an older BFF)
+  lastActiveAt?: string | null; lastSignInAt?: string | null;
+}
 export interface AuditEntry { id: number; at: string; username: string | null; role: string | null; action: string; method: string | null; path: string | null; statusCode: number | null; detail: string | null }
 
 // ---- GUI pass 2: DME, SME registries, onboarding/NFO detail
-export interface DataJob { dataJobId: string; dataDeliveryMode: string; dmeTypeId: string; productionJobDefinition: Record<string, unknown>; dataDeliveryMethod: string; deliveryDetails: Record<string, unknown>; consumerId: string; status: string }
+/** A DME data job (a consumer's subscription to a data type). */
+export interface DataJob {
+  dataJobId: string; dataDeliveryMode: string; dmeTypeId: string; productionJobDefinition: Record<string, unknown>; dataDeliveryMethod: string; deliveryDetails: Record<string, unknown>; consumerId: string; status: string;
+  // GUI-9.8: when a producer last delivered (null: never), the declared interval, and whether two intervals passed without one (null: no interval declared)
+  lastDeliveryAt?: string | null; expectedIntervalSeconds?: number | null; late?: boolean | null;
+}
 export interface DataOffer { offerId: string; dmeTypeId: string; dataDeliveryMethodsOffered: string[]; committedMethod: string | null; dataAvailabilityNotificationUri: string | null; dataOfferTerminationNotificationUri: string }
 export interface DmeTypeSubscription { subscriptionId: string; notificationDestination: string; owner: string }
 export interface SmeProvider { apfId: string; providerDomainInfo: string | null; serviceCount: number }

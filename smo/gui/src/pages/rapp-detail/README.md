@@ -7,7 +7,7 @@ Route: `/rapps/<instance>`    Design: handoff `RappDetail.dc.html`, SCALE.md "rA
 | id | file | what it shows | API (via data/queries.ts) | refresh | budget |
 | --- | --- | --- | --- | --- | --- |
 | rapp.header | sections/Header.tsx | name, version, owner, state, autonomy (read-only), Pin, Stop rApp (reason, confirm) / Resume | `/api/rapps/<id>`, `/api/me/pins`, `/rapp-mgmt/instances/<id>/safeguards`; `PUT\|DELETE …/kill`, `PUT\|DELETE /api/me/pins/<id>` | 15 s | 3 calls (shared) |
-| rapp.kpis | sections/KpiTiles.tsx | decisions 24 h, config jobs this hour vs. limit, performance reports, faults; headline KPI "—" | `/ran-nf-oam/decision-records?invoker_id=&since=&limit=1` (`total`); shared safeguards, performance, faults | 15 s | 1 call |
+| rapp.kpis | sections/KpiTiles.tsx | headline KPI (first metric of the newest report, the next three in the foot), decisions 24 h, config jobs this hour vs. limit, performance reports, faults | `/rapp-mgmt/instances/<id>/performance/latest`; `/ran-nf-oam/decision-records?invoker_id=&since=&limit=1` (`total`); shared safeguards, performance, faults | 15 s | 2 calls |
 | rapp.flows | sections/LifecycleFlows.tsx | flows 01, 06, 07 as one-line steppers (lib/flows.ts), each linking to `/flows/<id>?subject=`; flow 02 listed with a gap note | `/onboarding/packages/<pkg>/onboarding-status`, `/onboarding/packages/<pkg>/usage`, `/nfo/deployments/<workloadRef>`; shared instance, performance, faults | 15 s | 3 calls |
 | rapp.history | sections/LifecycleHistory.tsx | committed upgrades and rollbacks, 10 at a time, Roll back | `/rapp-mgmt/instances/<id>/versions` | 15 s | 1 call |
 | rapp.decisions | sections/RecentDecisions.tsx | latest 10 decisions, link to Decisions filtered (`/decisions?invoker=`) | `/ran-nf-oam/decision-records?invoker_id=&limit=10&total=false` | 15 s | 1 call |
@@ -22,7 +22,8 @@ One rApp, so every read is bounded: about 13 calls on first load, most of them s
 
 ## Known limits
 
-- Per-rApp headline KPI and cell-state distribution / swimlane (BRIEF §5): not served. The tile reads "—", the cells box is a gap note.
+- The headline KPI is the first metric the rApp reported in its newest report (rApps declare no headline metric).
+- Cell-state distribution / swimlane: the rApp's own data behind its declared operator API, not served by the platform (BRIEF §5); the cells box is a gap note.
 - The autonomy segmented control is read-only: rApp Management has no route to change the mode of an instance (fixed at CreateInstance).
 - Flow 02 for "the rApp's model" is not evaluated: the backend links no model to an rApp (packages declare no model id). The row links to the flow 02 board.
 - The Decisions page must read `?invoker=` to arrive filtered; until it does, the link opens the unfiltered list.

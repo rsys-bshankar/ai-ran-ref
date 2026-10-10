@@ -1,10 +1,10 @@
 /** Sections `kpis.mdaFunctions`, `kpis.mdaRequests` and `kpis.mdaReports` (RAN Analytics tab, feature 9): MDAF's TS 28.104 resources as
  * server-paged tables. Functions (label, domain, capabilities, the models behind them); requests (outputs, scope, delivery, who asked, active
  * now); reports filtered on the server by kind (`report_kind`: ANALYTICS, PREDICTION, DRIFT) with their outputs and a download of the report
- * file (`GET /mdaf/mda-reports/{id}/file` through the BFF). Read-only. */
+ * file (`GET /mdaf/mda-reports/{id}/file` through the BFF). A request can be cancelled (`DELETE /mdaf/mda-requests/{id}`, operator and up). */
 import { useState } from "react";
 
-import { Card, Id, Json, Modal, StateBadge } from "../../../components/ui";
+import { ActionButton, Card, Id, Json, Modal, StateBadge } from "../../../components/ui";
 import { formatTime } from "../../../lib/domain";
 import { Badge } from "../../../kit/Badge";
 import { ServerTable } from "../../../kit/ServerTable";
@@ -36,6 +36,8 @@ export function MdaRequests() {
         { header: "Delivery", render: (r) => r.attributes.reportingMethod },
         { header: "Requested by", render: (r) => r.attributes.requestedBy ?? <span className="muted">—</span> },
         { header: "State", render: (r) => <StateBadge state={r.attributes.active ? "ACTIVE" : "EXPIRED"} /> },
+        { header: "", className: "actions", render: (r) => <ActionButton label="Cancel" confirm="Cancel this analysis request? MDAF stops reporting on it."
+          action={{ method: "DELETE", path: `${MDA_REQUESTS}/${r.id}`, success: "Analysis request cancelled" }} /> },
       ]} />
     </Card>
   );

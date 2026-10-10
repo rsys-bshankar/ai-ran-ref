@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Tests of the KPIs & Assurance page (pages/kpis): Overview is the default tab, its tiles show the server-computed KPIs (and "—" with the
  * reason for one that is not defined), the worst-10 list is ranked lowest first, the escalations callout carries the true count, the range
- * reaches the KPI calls, the MDA request form is read-only under today's BFF table and sends a TS 28.104 body where a table allows it (feature 9),
+ * reaches the KPI calls, the MDA request form is read-only for a viewer and sends a TS 28.104 body for an operator (feature 9), a request can be cancelled,
  * MDA reports filter by kind and offer the file, and the pre-redesign tab ids (MLMF, Definitions) still work. `fetch` is stubbed by
  * `testing/bff.tsx` `fakeBff` with `auth/permissions.fixture.json`; no BFF runs. Run: `npx vitest run src/pages/kpis` from smo/gui. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,7 +17,6 @@ beforeEach(() => { document.body.innerHTML = ""; window.location.hash = ""; });
 
 const page = <T,>(items: T[], total = items.length) => ({ items, total, limit: 50, offset: 0 });
 const kpi = (name: string, unit: string, items: unknown[]) => ({ kpi: name, unit, from: "f", to: "t", groupBy: "all", filesScanned: 3, truncated: false, items });
-const MDA_RULE = { method: "POST", pattern: "^/mdaf/mda-requests$", role: "operator", queryMatch: {} };
 
 /** The fake BFF; `extraRules` go first in the permission table. */
 function bff(role: "viewer" | "operator" | "admin", extraRules: unknown[] = []) {
@@ -36,7 +35,8 @@ function bff(role: "viewer" | "operator" | "admin", extraRules: unknown[] = []) 
     "GET /smo/sa-smos/remedial-actions": (c: Call) => c.query.get("outcome") === "ESCALATED"
       ? page([{ actionId: "a-1", monitorId: "m-1", actionType: "CONFIG_CHANGE", autoExecuted: true, outcome: "ESCALATED" }], 4) : page([]),
     "GET /smo/mdaf/mda-functions": page([{ id: "fn-1", attributes: { userLabel: "mdaf-coverage-1", supportedMDACapabilities: ["COVERAGE_ANALYTICS_COVERAGE_PROBLEM_ANALYSIS"], supportedMDADomain: "RAN", mLModelRefList: [], aIMLInferenceFunctionRefList: [] } }]),
-    "GET /smo/mdaf/mda-requests": page([]),
+    "GET /smo/mdaf/mda-requests": page([{ id: "req-9", attributes: { requestedMDAOutputs: [{ mDAType: "COVERAGE" }], analyticsScope: null, reportingMethod: "FILE", requestedBy: "smo-gui", active: true } }]),
+    "DELETE /smo/mdaf/mda-requests/req-9": { status: 204 },
     "GET /smo/mdaf/mda-reports": (c: Call) => page([{ id: "rep-1", attributes: { mDAOutputs: [], mDARequestRef: null, mDAFunctionRef: "fn-1", reportKind: "DRIFT", scope: null, deliveredToRequestRefList: [], generatedAt: "2026-10-09T10:00:00Z" } }]
       .filter((r) => !c.query.get("report_kind") || r.attributes.reportKind === c.query.get("report_kind"))),
     "GET /smo/mdaf/reports": page([]), "GET /smo/mdaf/subscriptions": page([]), "GET /smo/ran-analytics/producers": page([]),
@@ -95,20 +95,32 @@ describe("the Overview tab", () => {
 });
 
 describe("RAN Analytics (feature 9)", () => {
-  // Today's BFF does not open POST /mdaf/mda-requests: the form is replaced by a read-only note and nothing can be sent.
-  it("keeps the request form read-only where the BFF does not allow it", async () => {
+  // An operator cancels an analysis request with DELETE after a confirm.
+  it("cancels an analysis request", async () => {
     window.location.hash = "#analytics";
-    bff("operator");
+    vi.stubGlobal("confirm", () => true);
+    const calls = bff("operator");
+    const { container } = await open();
+    const box = container.querySelector('[data-section="kpis.mdaRequests"]') as HTMLElement;
+    await click(byText(box, "button", "Cancel")!);
+    await settle();
+    expect(calls.some((c) => c.method === "DELETE" && c.path === "/smo/mdaf/mda-requests/req-9")).toBe(true);
+  });
+
+  // The BFF opens POST /mdaf/mda-requests to operators: a viewer gets a read-only note and nothing can be sent.
+  it("keeps the request form read-only for a viewer", async () => {
+    window.location.hash = "#analytics";
+    bff("viewer");
     const { container } = await open();
     const box = container.querySelector('[data-section="kpis.mdaRequest"]') as HTMLElement;
     expect(box.textContent).toContain("Read-only here");
     expect(byText(box, "button", "Request analysis")).toBeNull();
   });
 
-  // Where allowed, the request carries the function, the MDA type it supports, the entity scope and the delivery method.
-  it("requests an analysis where allowed", async () => {
+  // An operator's request carries the function, the MDA type it supports, the entity scope and the delivery method.
+  it("requests an analysis as an operator", async () => {
     window.location.hash = "#analytics";
-    const calls = bff("operator", [MDA_RULE]);
+    const calls = bff("operator");
     const { container } = await open();
     const box = container.querySelector('[data-section="kpis.mdaRequest"]') as HTMLElement;
     const [fn] = box.querySelectorAll("select") as NodeListOf<HTMLSelectElement>;

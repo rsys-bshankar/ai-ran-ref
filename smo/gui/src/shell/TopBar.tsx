@@ -1,10 +1,11 @@
 /** The top bar (64 px, BRIEF §2, handoff `Topbar.dc.html`): breadcrumb (section / page), the ⌘K jump search, a live-data chip, the
  * notifications button (critical alarms and waiting approvals from the "nav" summary, with a short list of where to go), the moon button to the
- * Preferences page, and help (keyboard shortcuts and where the runbook lives). The live chip says "polling": updates are fetched on an interval,
- * not pushed, until the BFF's event stream exists (SCALE.md P7, a back-end ask). */
+ * Preferences page, and help (keyboard shortcuts and where the runbook lives). The live chip says "Live · pushed" while the summary stream
+ * (`shell/LiveEvents.tsx`, SCALE.md P7) is open, and "Live · polling" while it is not (connecting, refused, or a browser without EventSource). */
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
+import { useLive } from "../data/events";
 import { count, useSummary } from "../data/summary";
 import { Icon } from "../kit/icons";
 import { formatCount } from "../kit/Kpi";
@@ -67,12 +68,15 @@ function Help() {
 export function TopBar() {
   const { pathname } = useLocation();
   const [section, page] = crumbOf(pathname);
+  const { connected } = useLive();
   return (
     <header className="topbar">
       <nav className="crumb" aria-label="Breadcrumb"><span>{section}</span><span aria-hidden>/</span><strong aria-current="page">{page}</strong></nav>
       <GlobalSearch />
       <div className="topbar-tools">
-        <span className="chip" title="Pages refresh on an interval while visible; a hidden tab does not poll"><span className="dot d-ok" />Live · polling</span>
+        {connected
+          ? <span className="chip" title="Counts are pushed by the server as they change"><span className="dot d-ok" />Live · pushed</span>
+          : <span className="chip" title="Pages refresh on an interval while visible; a hidden tab does not poll"><span className="dot d-warn" />Live · polling</span>}
         <Notifications />
         <Link className="btn icon" to="/preferences" aria-label="Appearance and preferences" title="Theme, text size, accent colour"><Icon name="moon" /></Link>
         <Help />

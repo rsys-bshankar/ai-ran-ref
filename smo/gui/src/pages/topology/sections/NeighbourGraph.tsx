@@ -1,7 +1,7 @@
 /** RAN topology · neighbour graph (`topology.graph`): one managed element in focus, its cells around it and its first-ring neighbours
  * around those (≤ 200 nodes, `data/graph.ts`). A dashed edge is a relation the other side does not declare back. The element is picked
- * with the search box (free text, with suggestions from the first page of `/managed-entities`: the route has no name search) and kept
- * in the URL (`?me=`). A neighbour that is a managed element opens its Element detail page. */
+ * with the search box (free text; from 2 characters, suggestions from RAN NF OAM's element search, `/managed-entities?search=`, asked 200 ms
+ * after the last key) and kept in the URL (`?me=`). A neighbour that is a managed element opens its Element detail page. */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -10,13 +10,14 @@ import { Segmented } from "../../../kit/Segmented";
 import { Empty, ErrorRetry, Skeleton } from "../../../kit/states";
 import { elementHref } from "../../element/data/types";
 import { buildGraph, type GraphFilter, type GraphNode } from "../data/graph";
+import { SEARCH_DEBOUNCE_MS, useDebounced } from "../../../shell/GlobalSearch";
 import { useElementOptions, useEntity, useLinks, useTopologyParams } from "../data/queries";
 
 /** The graph card. */
 export function NeighbourGraph() {
   const { me, setMe } = useTopologyParams();
-  const options = useElementOptions();
   const [text, setText] = useState(me ?? "");
+  const options = useElementOptions(useDebounced(text, SEARCH_DEBOUNCE_MS));
   const [filter, setFilter] = useState<GraphFilter>("all");
   useEffect(() => { setText(me ?? ""); }, [me]);
   const entity = useEntity(me);

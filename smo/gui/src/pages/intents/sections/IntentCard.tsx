@@ -1,6 +1,6 @@
 /** Section `intents.card`: one intent as a card (the selected intent under the table, or one card of the cards view). Admin state, priority, id
- * and label; a fulfilment `RingGauge` (share of targets the newest fulfilment report says are FULFILLED, "—" when it has none: the percent is a ⚠
- * gap); the expectation box; the handler and the time of the newest report; the role-gated actions and "Reports"; the conflict callout when the
+ * and label; a fulfilment `RingGauge` (Intent Service's `fulfilmentPercent`; for an older backend, the share of targets the newest fulfilment report
+ * says are FULFILLED; "—" when there is no fulfilment report); the expectation box; the handler and the time of the newest report; the role-gated actions and "Reports"; the conflict callout when the
  * handler reported conflicts; and the negotiation-feedback box. Reads the intent's newest CARD_REPORTS reports (one call). */
 import type { Intent } from "../../../api/types";
 import { RingGauge } from "../../../components/charts";
@@ -28,7 +28,7 @@ export function IntentCard({ intent, onReports }: { intent: Intent; onReports: (
           <h2>{intent.userLabel ?? <span className="muted">No label</span>}</h2>
         </div>
         <div className="col" style={{ alignItems: "center", gap: 2 }}>
-          <RingGauge value={f?.pct ?? null} size={72} label="Targets fulfilled" />
+          <RingGauge value={intent.fulfilmentPercent ?? f?.pct ?? null} size={72} label="Targets fulfilled" />
           <span className="xs muted">{f ? (f.targetsTotal ? `${f.targetsMet}/${f.targetsTotal} targets met` : f.status) : "no fulfilment report"}</span>
         </div>
       </div>
@@ -48,6 +48,7 @@ export function IntentCard({ intent, onReports }: { intent: Intent; onReports: (
         </div>
       </div>
       <NegotiationFeedback intentId={intent.intentId} negotiation={negotiation(reports.data)} />
+      {c.length === 0 && intent.inConflict && <Callout tone="warn" title="In conflict">The handler reported a conflict; its details are in an older report (Reports).</Callout>}
       {c.length > 0 && (
         <Callout tone="warn" title={`Conflict${c.length > 1 ? `s (${c.length})` : ""}`}>
           {c.map((x) => (

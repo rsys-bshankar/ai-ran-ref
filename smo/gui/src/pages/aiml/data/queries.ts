@@ -2,8 +2,8 @@
  * parameters only) and the bounds of the one-shot reads behind the stage board. Sections call the hooks here, never `useSmo` with a raw path,
  * so an API change touches this file only. Each tab reads only its own data (SCALE.md §4: load per tab).
  *
- * The stage board reads two whole lists at `BOARD_LIMIT` (the backend's MAX_LIMIT): MLMR has no "count by stage" and AIMgF's lifecycle list has no
- * state filter, so the board groups the lifecycles in the browser and says so when the list is longer than one read (README, Known limits). */
+ * The stage board's column counts come from AIMgF's `GET /model-lifecycles/counts` (SQL GROUP BY) and MLMR's model total; its cards from two
+ * bounded lists at `BOARD_LIMIT` (the backend's MAX_LIMIT), grouped in the browser (README, Known limits). */
 import type { Query } from "../../../api/client";
 import { POLL, useSmo, useSmoPage } from "../../../api/hooks";
 import type {
@@ -34,6 +34,8 @@ export const REPOSITORIES = "/mlmr/ml-model-repositories";
 export const STORAGES = "/mlmr/storages";
 /** DME data types, for the MLMF and feature-group forms. */
 export const DME_TYPES = "/dme/dme-types";
+/** AIMgF's count of lifecycle rows per state (GUI-9.8). */
+export const LIFECYCLE_COUNTS = "/aimgf/model-lifecycles/counts";
 /** The backend's MAX_LIMIT: the largest page one read can ask for. */
 export const BOARD_LIMIT = 500;
 /** How many recent MLMF reports the board reads to decide which model's latest report is under its floor. */
@@ -62,6 +64,11 @@ export function useAimlSummary() {
 /** Every registered model in one read (≤ BOARD_LIMIT), keyed by the same query wherever it is used so the board and the name lookups share it. */
 export function useModelIndex() {
   return useSmoPage<Model>(MODELS, { limit: BOARD_LIMIT }, { refetchInterval: POLL.inventory });
+}
+
+/** The number of lifecycle rows in each state, counted by AIMgF (largest first). */
+export function useLifecycleCounts() {
+  return useSmo<{ groups: { state: string; count: number }[] }>(LIFECYCLE_COUNTS, undefined, { refetchInterval: POLL.lists });
 }
 
 /** Every AIMgF lifecycle row in one read (≤ BOARD_LIMIT). */

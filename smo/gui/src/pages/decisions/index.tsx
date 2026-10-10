@@ -30,7 +30,7 @@ export function Decisions() {
   return (
     <>
       <PageHeader eyebrow="Explainability · audit" title="Decisions" subtitle="Why each rApp change was made: the inputs it decided on, the model version, its rationale, the job it became and who approved it" />
-      <SectionBoundary id="decisions.filters"><FilterBar filter={{ ...filter, job, approval }} range={range} onChange={onChange} onRange={onRange} /></SectionBoundary>
+      <SectionBoundary id="decisions.filters"><FilterBar filter={{ ...filter, job, approval }} range={range} onChange={onChange} onRange={onRange} query={query} /></SectionBoundary>
       <SectionBoundary id="decisions.tiles"><SummaryTiles /></SectionBoundary>
       <div className="grid g-main-side">
         <SectionBoundary id="decisions.table"><DecisionTable query={query} selected={selected} onSelect={setSelected} /></SectionBoundary>

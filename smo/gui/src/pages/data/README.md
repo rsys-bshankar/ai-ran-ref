@@ -7,8 +7,8 @@ working. Each tab mounts only its own sections.
 ## Sections
 | id | file | what it shows | API (via data/queries.ts) | refresh | budget |
 | --- | --- | --- | --- | --- | --- |
-| data.flow | sections/DataFlow.tsx | producers → data types → consumers, band width = jobs, ≤ 8 rows a column with "+N other" (`data/flow.ts`), job total badge, cut notes | `/dme/dme-types`, `/dme/data-jobs?limit=500`, `/dme/offers?limit=500` | 15 s | 3 calls |
-| data.jobs | sections/DataJobs.tsx | create a data job (methods the type's offers committed), server table with `?dme_type_id=` and `?consumer_id=` filters, terminate, JSON view; last delivery "—" | `/dme/data-jobs`, `/dme/offers?dme_type_id=` (after a type is chosen) | 15 s | 1 call/page |
+| data.flow | sections/DataFlow.tsx | producers → data types → consumers, band width = jobs, ≤ 8 rows a column with "+N other" (`data/flow.ts`), job total and late badges, cut notes | `/dme/dme-types`, `/dme/data-jobs?limit=500`, `/dme/offers?limit=500`, `/dme/data-jobs?late=true&limit=1` (total) | 15 s | 4 calls |
+| data.jobs | sections/DataJobs.tsx | create a data job (methods the type's offers committed), server table with `?dme_type_id=`, `?consumer_id=` and "late only" (`?late=true`) filters, last delivery with a LATE badge, terminate, JSON view | `/dme/data-jobs`, `/dme/offers?dme_type_id=` (after a type is chosen) | 15 s | 1 call/page |
 | data.producers | sections/Producers.tsx | registered producers, deregister | `/dme/production-capabilities` (unpaged) | 15 s | 1 call |
 | data.types | sections/Producers.tsx | data types, status, delete, admin "register a producer data type" | `/dme/dme-types` (unpaged) | 15 s | 1 call (shared) |
 | data.offers | sections/Offers.tsx | offers with a type filter, notify data ready, terminate, admin create | `/dme/offers` | 15 s | 1 call/page |
@@ -22,8 +22,9 @@ working. Each tab mounts only its own sections.
 First-load calls per tab: Flow & jobs 4 (types, flow jobs, flow offers, jobs page), Producers & offers 4, SME 5.
 
 ## Known limits
-- ⚠ **Last delivery and LATE**: DME records no delivery time for a job, so "Last delivery" shows "—", the "late" badge reads "late: —", and
-  there is no "late" filter (BRIEF §5, "DME late detection").
+- **LATE** is judged only for a job that declares an expected delivery interval (two intervals without a delivery); a job without one shows its
+  last delivery and never LATE. DME records a delivery when a producer posts records to it; a producer delivering straight to the consumer is
+  not seen.
 - The flow is drawn from the first 500 jobs and 500 offers; past that the box says so and the jobs table pages through all of them.
 - DME does not record which producer serves a job, so a type served by several producers counts in each producer's band.
 - Consumers are grouped by `consumerId`; there is no consumer category in DME.

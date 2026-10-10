@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-/** Tests of the AI/ML page (pages/aiml): the stage board (columns, counts, the red "under floor" outline), the first-load call budget of the
+/** Tests of the AI/ML page (pages/aiml): the stage board (columns, the server's stage counts, the red "under floor" outline), training progress
+ * (epoch bar and ETA), the first-load call budget of the
  * Models tab, the model detail with its governance history and the admin-only roll back with a rationale (feature 7), Suspend / Resume on
  * training jobs (feature 7), the Registry tab (feature 8), and that the pre-redesign tab ids still open their tab. `fetch` is stubbed by
  * `testing/bff.tsx` `fakeBff` with the permission table of `auth/permissions.fixture.json`; no BFF runs. Run: `npx vitest run src/pages/aiml`. */
@@ -20,7 +21,7 @@ const C = "cccccccc-0000-4000-8000-000000000003";
 const page = <T,>(items: T[]) => ({ items, total: items.length, limit: 500, offset: 0 });
 const model = (id: string, type: string) => ({ modelId: id, modelType: type, version: "1.0", artifactLocation: id === A ? "s3://m/coverage:2" : null, description: `${type} use`, author: null, owner: "ops", inputDataType: null, outputDataType: null, targetEnvironments: [] });
 const life = (id: string, state: string, runtime = "NOT_DEPLOYED") => ({ modelId: id, modelLifecycleState: state, runtimeLifecycleState: runtime, trainingJobId: null, clearedNodeGroups: [], nfDeploymentDescriptorId: null, nfDeploymentId: null, trainingApproved: false, validationApproved: false });
-const job = (id: string, status: string) => ({ trainingJobId: id, modelId: C, modelCoordinationGroupId: null, producerId: "smo-gui", status, runId: null, trainingDataset: null, validationDataset: null, modelMetrics: null, nfDeploymentId: null, currentStep: "TRAINING", steps: { DATA_EXTRACTION: "FINISHED", TRAINING: "RUNNING", TRAINED_MODEL: "NOT_STARTED" } });
+const job = (id: string, status: string) => ({ epoch: id === J1 ? 7 : null, totalEpochs: id === J1 ? 20 : null, etaSeconds: id === J1 ? 252 : null, trainingJobId: id, modelId: C, modelCoordinationGroupId: null, producerId: "smo-gui", status, runId: null, trainingDataset: null, validationDataset: null, modelMetrics: null, nfDeploymentId: null, currentStep: "TRAINING", steps: { DATA_EXTRACTION: "FINISHED", TRAINING: "RUNNING", TRAINED_MODEL: "NOT_STARTED" } });
 const J1 = "11111111-1111-4111-8111-111111111111";
 const J2 = "22222222-2222-4222-8222-222222222222";
 
@@ -32,6 +33,7 @@ function bff(role: "viewer" | "operator" | "admin") {
     "GET /summary/aiml": { page: "aiml", computedAt: "now", counts: { "models.total": 3, "trainingJobs.total": 2, "mlmfBreaches.total": 1 }, partial: [] },
     "GET /smo/mlmr/models": page([model(A, "coverage-model"), model(B, "load-model"), model(C, "steer-model")]),
     "GET /smo/aimgf/model-lifecycles": page([life(A, "PROMOTED", "ACTIVE"), life(C, "TRAINING")]),
+    "GET /smo/aimgf/model-lifecycles/counts": { groups: [{ state: "TRAINING", count: 40 }, { state: "PROMOTED", count: 1 }, { state: "RETIRED", count: 2 }] },
     "GET /smo/aimgf/mlmf/subscriptions": (c: Call) => page(c.query.get("model_id") && c.query.get("model_id") !== A ? [] : [{ subscriptionId: "s1", modelId: A, metricTypes: ["accuracy"], dmeTypeId: "d", guardKpiFloor: { accuracy: 0.85 }, notificationDestination: null }]),
     "GET /smo/aimgf/mlmf/reports": page([{ reportId: "r2", subscriptionId: "s1", metrics: { accuracy: 0.82 }, breachedFloor: true, reportedAt: "2026-10-09T11:00:00Z" }]),
     "GET /smo/aimgf/mlmf/subscriptions/s1/reports": page([
@@ -71,12 +73,22 @@ describe("the stage board", () => {
     expect(byText(container, "[role=tab]", /Models/)!.textContent).toContain("3");
   });
 
-  // SCALE.md §4: the Models tab's first load stays within its call budget (summary + four board reads + the running-training card).
-  it("loads the Models tab within six calls", async () => {
+  // Column counts are AIMgF's GROUP BY by state (not the cards read); off-board states come from it too.
+  it("counts each stage on the server", async () => {
+    const calls = bff("viewer");
+    const { container } = await open();
+    expect(calls.some((c) => c.path === "/smo/aimgf/model-lifecycles/counts")).toBe(true);
+    expect(column(container, "training").getAttribute("aria-label")).toBe("Training: 40");
+    expect(column(container, "promoted").getAttribute("aria-label")).toBe("Promoted: 1");
+    expect(container.querySelector('[data-section="aiml.board"]')!.textContent).toContain("2 retired");
+  });
+
+  // SCALE.md §4: the Models tab's first load stays within its call budget (summary + stage counts + four board reads + the running-training card).
+  it("loads the Models tab within seven calls", async () => {
     const calls = bff("viewer");
     await open();
     const data = calls.filter((c) => c.path.startsWith("/smo/") || c.path.startsWith("/summary/"));
-    expect(data.length).toBeLessThanOrEqual(6);
+    expect(data.length).toBeLessThanOrEqual(7);
   });
 });
 
@@ -130,7 +142,8 @@ describe("training jobs (feature 7)", () => {
     await click(byText(table, "button", "Resume")!);
     await settle();
     expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual([`/smo/aimgf/training-jobs/${J1}/suspend`, `/smo/aimgf/training-jobs/${J2}/resume`]);
-    expect(table.textContent).toContain("Epoch and time-to-finish are not shown");
+    expect(table.textContent).toContain("epoch 7/20 · about 4 min 12 s left");
+    expect(table.querySelector("[aria-label='epoch 7 of 20']")).not.toBeNull();
   });
 
   // A viewer sees the jobs but no control over them.

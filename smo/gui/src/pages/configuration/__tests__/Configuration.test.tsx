@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /** Tests of the Configuration page (pages/configuration) against a fake BFF: the job list shows halted jobs first, a staged job's detail
  * shows its waves, pause and controls only to a role that may use them, the tabs (vendors and schemas, endpoint trust, element onboarding)
- * render their server lists, onboarding's Apply is role-gated and posts, a new job dry-runs, and the wave-state rule. Run:
+ * render their server lists, "Run KPI check" posts the job's guard (operator), an admin pins and removes a host key, onboarding's Apply is
+ * role-gated and posts, a new job dry-runs, the key-paste parser, and the wave-state rule. Run:
  * `npx vitest run src/pages/configuration`. */
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +13,7 @@ import rules from "../../../auth/permissions.fixture.json";
 import { fakeBff, mountWith, type Call } from "../../../testing/bff";
 import { byText, cleanup, click, settle, type } from "../../../testing/dom";
 import { jobWaveState } from "../data/types";
+import { parseKeyInput } from "../sections/HostKeys";
 import { Configuration } from "../index";
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
@@ -46,10 +48,12 @@ function bff(role: "viewer" | "operator" | "admin") {
       if (p === "/vendor-capabilities") return { items: [{ vendorName: "vendor-b", supportedServices: ["PROV", "FM"], conformanceMode: "COMBINED", supportedVendorModes: ["O1_NETCONF"], schemaRef: { schemaName: "vendor-b-nrm", revision: "2.4" }, specSchemaRef: { schemaName: "3gpp-ts28541-nrnrm", revision: "19.6.0" }, discoveryUri: null, updatedAt: "2026-10-01T00:00:00Z" }], total: 1, limit: 25, offset: 0 };
       if (p === "/cm-schemas") return { items: [{ schemaName: "3gpp-ts28541-nrnrm", revision: "19.6.0", type: "DESCRIPTOR", location: "builtin:x.json", builtin: true, classCount: 12 }], total: 1, limit: 25, offset: 0 };
       if (p === "/o1-adaptor-endpoints") return { items: [{ endpointId: "ep-1", managedElementRef: "du-1", adaptorUri: "ssh://o1@h2", transport: "ssh", healthStatus: "ACTIVE", lastHeartbeatAt: null }], total: 1, limit: 25, offset: 0 };
-      if (p === "/o1-adaptor-endpoints/ep-1/host-keys") return { items: [] };
+      if (p === "/o1-adaptor-endpoints/ep-1/host-keys") return { items: role === "admin" ? [{ keyType: "ssh-ed25519", fingerprint: "SHA256:abc", pinnedBy: "smo-gui:root", pinnedAt: null }] : [] };
       if (p === "/element-onboarding") return { items: [{ managedElementRef: "du-9", status: "TEMPLATE_SELECTED", templateName: "du-std-v3", softwareVersion: "24.3.1", softwareBaseline: "24.3.1", softwareCheck: "MATCH", configJobId: null, detail: null, createdAt: null, updatedAt: null }], total: 1, limit: 25, offset: 0 };
       return { status: 404, body: { title: "NOT_FOUND" } };
     },
+    "PUT /smo/*": (c: Call) => ({ body: c.body }),
+    "DELETE /smo/*": { status: 204 },
     "POST /smo/*": (c: Call) => ((c.body as { dryRun?: boolean })?.dryRun
       ? { body: { dryRun: true, status: "WOULD_REJECT_SOME", waves: [["du-1"], ["du-2"]], changes: [{ managedElementRef: "du-1", managedFunctionRef: null, operation: "merge", verdict: "PASS", reason: null }, { managedElementRef: "du-2", managedFunctionRef: null, operation: "merge", verdict: "WOULD_REJECT", reason: "ENDPOINT_UNREACHABLE" }] } }
       : { status: 202, body: { jobId: J1, status: "PROCESSING" } }),
@@ -115,6 +119,41 @@ describe("Configuration page", () => {
     await click(byText(container, "td", "ssh")!);
     await settle();
     expect(container.textContent).toContain("No host key pinned");
+  });
+
+  // An operator runs the KPI check now with the job's own guard, attributed to the signed-in user; a viewer has no button.
+  it("runs the KPI check with the job's guard", async () => {
+    const viewer = await open("viewer", `/configuration?job=${J1}`);
+    expect(byText(viewer.container, "button", "Run KPI check")).toBeNull();
+    cleanup();
+    vi.stubGlobal("confirm", () => true);
+    const op = await open("operator", `/configuration?job=${J1}`);
+    await click(byText(op.container, "button", "Run KPI check")!);
+    await settle();
+    const post = op.calls.find((c) => c.method === "POST" && c.path.endsWith("/kpi-check"))!;
+    expect(post.path).toBe(`/smo/ran-nf-oam/config-jobs/${J1}/kpi-check`);
+    expect(post.body).toMatchObject({ kpi: "dlThroughputP10", baselineMinutes: 30, observationMinutes: 15, revert: true, requestedBy: "smo-gui:ana", force: false });
+  });
+
+  // Pinning is the trust anchor: only an admin sees the form and Remove; a pasted .pub line gives the key type and blob.
+  it("lets an admin pin and remove a host key", async () => {
+    window.location.hash = "#trust";
+    vi.stubGlobal("confirm", () => true);
+    const { container, calls } = await open("admin");
+    await click(byText(container, "td", "ssh")!);
+    await settle();
+    const area = container.querySelector("textarea[aria-label='Public key']") as HTMLTextAreaElement;
+    await typeArea(area, "ssh-ed25519 AAAAC3Nza du@host");
+    await click(byText(container, "button", "Pin key")!);
+    await settle();
+    const put = calls.find((c) => c.method === "PUT")!;
+    expect(put.path).toBe("/smo/ran-nf-oam/o1-adaptor-endpoints/ep-1/host-keys");
+    expect(put.body).toEqual({ keyType: "ssh-ed25519", publicKey: "AAAAC3Nza", pinnedBy: "smo-gui" });
+    await click(byText(container, "button", "Remove")!);
+    await settle();
+    expect(calls.find((c) => c.method === "DELETE")!.path).toBe("/smo/ran-nf-oam/o1-adaptor-endpoints/ep-1/host-keys/ssh-ed25519");
+    expect(parseKeyInput("h1 ecdsa-sha2-nistp256 AAAAE2", "ssh-rsa")).toEqual({ type: "ecdsa-sha2-nistp256", blob: "AAAAE2" });
+    expect(parseKeyInput("AAAAB3", "ssh-rsa")).toEqual({ type: "ssh-rsa", blob: "AAAAB3" });
   });
 
   // Apply shows only to an operator, asks first, and posts to the element's apply route.

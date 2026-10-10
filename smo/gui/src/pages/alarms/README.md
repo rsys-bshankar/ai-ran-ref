@@ -8,32 +8,30 @@ Tabs (URL hash): `#ran` RAN NF alarms · `#ocloud` O-Cloud alarms · `#fm` FM su
 
 | id | file | what it shows | API (via data/queries.ts) | refresh | budget |
 | --- | --- | --- | --- | --- | --- |
-| alarms.tiles | sections/SeverityTiles.tsx | count per severity (toggles the table filter), open total, time to acknowledge (—) | `/api/summary/alarms` | 15 s | 1 call (shared with the tab counts) |
-| alarms.table | sections/AlarmTable.tsx | RAN alarms, server-paged; filters severity, managed element, managed function (route params), ack state and show cleared (this page only) | `/ran-nf-oam/alarms?severity&managed_element_ref&managed_function_ref&limit&offset` | 5 s | 1 call per page |
-| alarms.detail | sections/AlarmDetail.tsx | selected alarm: Ack/Unack/Clear, TS 28.532 fields, lifecycle timeline | — (the table's row) | with the table | 0 |
-| alarms.rootcause | sections/RootCauseHint.tsx | heuristic: other alarms of the same element within 60 s | `/ran-nf-oam/alarms?managed_element_ref=<me>&limit=20&total=false` | 15 s | 1 call per selected alarm |
+| alarms.tiles | sections/SeverityTiles.tsx | count per severity (toggles the table filter), open total + unacknowledged, mean time to acknowledge (24 h), alarms raised per hour sparkline | `/api/summary/alarms`; `/ran-nf-oam/alarms/counts?group_by=hour` | 15 s (pushed when live) / 60 s | 1 call + 1 (shared with the Dashboard) |
+| alarms.table | sections/AlarmTable.tsx | RAN alarms, keyset-paged in console order (most severe, newest); filters severity, managed element, managed function, ack state, probable cause, show cleared (else `open_only=true`); group by probable cause / element / severity / ack state / region, a group opens a filtered table; "N new alarms — show" bar | `/ran-nf-oam/alarms?after&limit&severity&managed_element_ref&managed_function_ref&ack_state&probable_cause&open_only`; `/ran-nf-oam/alarms/counts?group_by=…` | 5 s, 60 s while live (an alarm count change refetches at once) | 1 call per page |
+| alarms.detail | sections/AlarmDetail.tsx | selected alarm: Ack/Unack/Clear, TS 28.532 fields, ack time, lifecycle timeline with ack and clear times | — (the table's row) | with the table | 0 |
+| alarms.rootcause | sections/RootCauseHint.tsx | the server's correlation: alarms of the same element within ±60 s (rule named) | `/ran-nf-oam/alarms/{id}/correlated?window_seconds=60` | 15 s | 1 call per selected alarm |
 | alarms.inject | sections/InjectAlarm.tsx | admin: inject a test alarm | `POST /ran-nf-oam/alarms/ingest` | — | 0 |
 | alarms.ocloud | sections/OCloudAlarms.tsx | FOCOM alarms, server-paged, severity / resource filters | `/focom/alarms?severity&resource_ref` | 5 s | 1 call |
 | alarms.fm | sections/FmSubscriptions.tsx | new FM subscription, list with Unsubscribe | `/ran-nf-oam/fm-subscriptions`, `/ran-nf-oam/o1-adaptor-endpoints` | 15 s | 2 calls |
 
 `sections/AlarmActions.tsx` holds the Ack / Unack / Clear buttons the table and the detail share.
 
-First load (RAN tab): summary + one page = 2 calls (SCALE.md §4 budget).
+First load (RAN tab): summary + one page + the hourly counts = 3 calls (SCALE.md §4 budget is 2; the hourly buckets are shared with the Dashboard's cache entry).
 
 ## Known limits
 
-- **Mean time to acknowledge** shows "—": the backend keeps who acknowledged an alarm but not when.
-- **Root-cause hint** is a client heuristic (same managed element, raised within 60 s, among the newest 20 alarms of that element), labelled as such.
-  Server-side correlation is `PR-MGT-9` / `MGT-10`.
-- **Group by** probable cause / element / cluster and bulk ack on a group are not built: they need group-by counts on the alarm route
-  (SCALE.md §5 ask 4). Rows are sorted most severe, then newest, within the page only.
-- **Ack state** and **show cleared** have no route parameter, so they narrow the current page only; the table says how many rows they hid.
-- The managed element filter is a text box (exact match on `managed_element_ref`), not a list built from every alarm.
-- No pushed updates (SSE, SCALE.md P7) and no "N new" bar yet: the visible page polls every 5 s. No 24 h trend sparkline (needs bucketed counts).
-- The lifecycle has no acknowledge time (not stored); "Assign…" from the mockup has no backend.
+- **Root-cause hint** is the server's stated rule (same managed element, raised within ±60 s), not a topology-aware root-cause analysis.
+- **Group by** shows the 50 largest groups; a group with no key ("(none)") cannot be listed by that key. Bulk ack on a group has no route.
+- The **"N new" bar** compares the summary's `alarms.total` with its value when the operator last looked; alarms raised outside the current
+  filters count too.
+- **Mean time to acknowledge** covers alarms acknowledged in the last 24 h; alarms acknowledged before the backend kept `ackTime` have none.
+- The managed element filter is a text box (exact match on `managed_element_ref`), not a list built from every alarm. The sparkline's hours are UTC.
+- "Assign…" from the mockup has no backend.
 
 ## Troubleshooting
 
 - Tiles show "—": the summary's module did not answer (`partial` is listed under the tiles); check `/api/summary/alarms`.
-- Table empty with a `?me=` link: the element name must match `managedElementRef` exactly.
+- Table empty with a `?me=` link: the element name must match `managedElementRef` exactly. Cleared alarms are hidden unless "show cleared" is on.
 - Ack / Clear missing: the role lacks `PATCH /ran-nf-oam/alarms/{id}/ack|clear` (operator and up).

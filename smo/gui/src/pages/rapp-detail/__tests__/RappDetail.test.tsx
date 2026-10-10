@@ -30,6 +30,7 @@ describe("RappDetail", () => {
     [`GET /smo/rapp-mgmt/instances/${IID}/performance`]: { items: [] }, [`GET /smo/rapp-mgmt/instances/${IID}/faults`]: { items: [] },
     [`GET /smo/rapp-mgmt/instances/${IID}/safeguards`]: { instanceId: IID, invokerId: "inv", killed: false, kill: null, limits: null },
     [`GET /smo/rapp-mgmt/instances/${IID}/versions`]: { versions: [], rollbackTarget: null },
+    [`GET /smo/rapp-mgmt/instances/${IID}/performance/latest`]: { instanceId: IID, at: "2026-10-09T10:00:00Z", metrics: { prbUsage: 41.25, energy: 3 } },
   });
   const open = () => mountWith(<AuthProvider><RappDetail /></AuthProvider>, { at: `/rapps/${IID}`, route: "/rapps/:instanceId" });
 
@@ -48,6 +49,17 @@ describe("RappDetail", () => {
     expect(buttons(container)).toContain("Evaluate now");
     expect(container.textContent).toContain("No performance reports.");
     expect(container.textContent).toContain("No faults reported.");
+  });
+
+  // the headline KPI tile is the first metric of the newest report, the others in its foot
+  it("shows the rApp's headline KPI", async () => {
+    detail(DECLARED);
+    const { container } = await open();
+    await settle(8);
+    const tiles = container.querySelector("[data-section='rapp.kpis']")!.textContent!;
+    expect(tiles).toContain("Headline KPI · prbUsage");
+    expect(tiles).toContain("41.3");
+    expect(tiles).toContain("energy 3");
   });
 
   // pins down: shows the access scope of the instance: the regions and tenants it may touch, or that it is unscoped

@@ -1,5 +1,5 @@
-/** The Alarms page (route /alarms, BRIEF §4 "Alarms", SCALE.md "Alarms · at scale", handoff `Alarms.dc.html`). Severity tiles over three tabs
- * kept in the URL hash: RAN (alarm table, detail panel, root-cause hint), O-Cloud, FM subscriptions. Only the visible tab's queries run. The
+/** The Alarms page (route /alarms, BRIEF §4 "Alarms", SCALE.md "Alarms · at scale", handoff `Alarms.dc.html`). Severity, MTTA and 24 h tiles over three
+ * tabs kept in the URL hash: RAN (alarm table with server filters and group-by, detail panel, the server's correlation hint), O-Cloud, FM subscriptions. Only the visible tab's queries run. The
  * severity filter and the selected alarm are the only state, shared by the sections; `?me=` in the address starts the managed element filter.
  * Sections and their calls: README.md. */
 import { useState } from "react";
@@ -31,7 +31,7 @@ export function Alarms() {
   const onSeverity = (s: string) => { setSeverity(s); if (tab !== "ran") setTab("ran"); };
   return (
     <>
-      <PageHeader eyebrow="O1 FaultMnS · FOCOM" title="Alarms" subtitle="Acknowledge / clear are recorded against your GUI user. The open list refreshes every 5 s." />
+      <PageHeader eyebrow="O1 FaultMnS · FOCOM" title="Alarms" subtitle="Acknowledge / clear are recorded against your GUI user. The list refreshes as alarm counts change (every 5 s while the top bar says polling)." />
       <SectionBoundary id="alarms.tiles"><SeverityTiles severity={severity} onSeverity={onSeverity} /></SectionBoundary>
       <Tabs value={tab} onChange={setTab} tabs={[
         { id: "ran", label: "RAN NF alarms (O1)", count: openAlarms(summary.data), tone: (count(summary.data, "alarms.critical") ?? 0) > 0 ? "bad" : undefined },

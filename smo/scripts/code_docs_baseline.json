@@ -82,10 +82,10 @@
     },
     "gui/src": {
       "files_without_description": 28,
-      "functions_without_description": 87,
-      "items_requiring_description": 656,
-      "source_files": 339,
-      "tests": 349,
+      "functions_without_description": 84,
+      "items_requiring_description": 698,
+      "source_files": 345,
+      "tests": 382,
       "tests_without_docstring": 135
     },
     "intent-service": {
@@ -107,8 +107,8 @@
     "migrations": {
       "files_without_description": 0,
       "functions_without_description": 0,
-      "items_requiring_description": 48,
-      "source_files": 35,
+      "items_requiring_description": 54,
+      "source_files": 37,
       "tests": 0,
       "tests_without_docstring": 0
     },
@@ -187,9 +187,9 @@
     "ran-nf-oam": {
       "files_without_description": 1,
       "functions_without_description": 246,
-      "items_requiring_description": 497,
-      "source_files": 57,
-      "tests": 580,
+      "items_requiring_description": 523,
+      "source_files": 60,
+      "tests": 605,
       "tests_without_docstring": 516
     },
     "rapp-mgmt": {

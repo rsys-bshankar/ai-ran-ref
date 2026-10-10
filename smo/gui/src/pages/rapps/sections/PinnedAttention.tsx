@@ -1,6 +1,7 @@
 /** "Pinned & needs attention" (SCALE.md, rApps: the instance cards become a strip): your pinned rApps, then FAULTED and UPGRADING ones, at
  * most six cards. Pins come from the BFF (`/api/me/pins`, shared with the sidebar); the faulted and upgrading rApps from the BFF directory
- * filtered by state (`/api/rapps?state=`), asked only when the summary counts any. Section id `rapps.pinned`. */
+ * filtered by state (`/api/rapps?state=`), asked only when the summary counts any. Each card shows the rApp's headline KPI (one batched read,
+ * `/rapp-mgmt/instances/performance/latest?ids=`). Section id `rapps.pinned`. */
 import { Link } from "react-router-dom";
 
 import { usePins, type RappSummary } from "../../../api/rapps";
@@ -8,7 +9,8 @@ import { Card, StateBadge } from "../../../components/ui";
 import { Icon } from "../../../kit/icons";
 import { Empty, Skeleton } from "../../../kit/states";
 import { count } from "../../../data/summary";
-import { useRappsInState, useRappsSummary } from "../data/queries";
+import { useLatestKpis, useRappsInState, useRappsSummary } from "../data/queries";
+import { HeadlineKpi } from "./HeadlineKpi";
 import { InstanceActions } from "./InstanceActions";
 import { LifecycleCell } from "./LifecycleCell";
 
@@ -37,6 +39,7 @@ export function PinnedAttention() {
   const upgrading = useRappsInState("UPGRADING", MAX_CARDS, nUpgrading > 0);
   const cards = pickAttention(pins.data?.items ?? [], nFaulted ? faulted.data?.items ?? [] : [], nUpgrading ? upgrading.data?.items ?? [] : []);
   const loading = !pins.data && pins.isLoading;
+  const kpis = useLatestKpis(cards.map((c) => c.instanceId));
   return (
     <Card section="rapps.pinned" title="Pinned & needs attention" sub={`your pins, then faulted and upgrading · max ${MAX_CARDS} here`}>
       {loading ? <Skeleton lines={2} /> : cards.length === 0
@@ -49,6 +52,7 @@ export function PinnedAttention() {
                   <Link to={`/rapps/${r.instanceId}`}><strong>{r.name ?? r.instanceId.slice(0, 8)}</strong></Link></div>
                 <span className="small muted">{r.version ?? "—"}{r.vendor ? ` · ${r.vendor}` : ""}</span>
                 <div className="row gap wrap"><StateBadge state={r.state} /><StateBadge state={r.autonomyMode} /></div>
+                <HeadlineKpi kpi={kpis.get(r.instanceId)} />
                 <LifecycleCell state={r.state} />
                 {r.state && <InstanceActions inst={{ instanceId: r.instanceId, state: r.state }} />}
               </div>

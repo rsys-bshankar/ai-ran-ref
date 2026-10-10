@@ -1,82 +1,104 @@
-/** The network health map (`dashboard.map`, handoff `Main.dc.html`): regions as tiles, click one to drill into its managed elements (server-paged,
- * each linking to the element page), Back returns to the regions (BRIEF §4b). What the backend serves limits it (BRIEF §5):
- * - there is no region list route, so the region names come from one page of managed elements; counts per tile are shown only when that page
- *   held the whole fleet (otherwise a count would be a guess);
- * - elements carry a region but no site cluster, so the region → cluster level is skipped;
- * - alarms carry no region, so tiles are not coloured by worst state. */
+/** The network health map (`dashboard.map`, handoff `Main.dc.html`, BRIEF §4b): regions as tiles, a region opens its site clusters, a site
+ * cluster opens its managed elements (server-paged, each linking to the element page); the crumb goes back up. Every tile is coloured by the
+ * worst open alarm severity of its elements and shows how many are unhealthy (an open critical or major alarm), all computed by RAN NF OAM
+ * (`GET /managed-entities/health?group_by=region|site_cluster`, ran-nf-oam/app/fleet.py). Elements with no region are counted but cannot be
+ * opened (no route filters "no region"); a region's elements with no site cluster open as the region's whole element list, labelled so. */
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Card } from "../../../components/ui";
-import { count } from "../../../data/summary";
 import { formatCount } from "../../../kit/Kpi";
 import { Icon } from "../../../kit/icons";
 import { ServerTable } from "../../../kit/ServerTable";
 import { QueryState } from "../../../kit/states";
-import { ELEMENTS_PATH, REGION_SAMPLE, useDashboardSummary, useElementSample } from "../data/queries";
-import type { ManagedEntity } from "../data/types";
+import { ELEMENTS_PATH, useFleetHealth } from "../data/queries";
+import type { HealthGroup, ManagedEntity, WorstSeverity } from "../data/types";
 
-/** The regions found on a page of elements, with the number of distinct elements in each, sorted by name; `unset` counts elements with no region. */
-export function regionsOf(rows: ManagedEntity[]): { regions: { name: string; elements: number }[]; unset: number } {
-  const by = new Map<string, Set<string>>();
-  const unset = new Set<string>();
-  for (const r of rows) {
-    if (!r.region) { unset.add(r.managedElementRef); continue; }
-    if (!by.has(r.region)) by.set(r.region, new Set());
-    by.get(r.region)!.add(r.managedElementRef);
-  }
-  return { regions: [...by.entries()].map(([name, s]) => ({ name, elements: s.size })).sort((a, b) => a.name.localeCompare(b.name)), unset: unset.size };
+/** The tile tone of a group's worst open severity: critical → bad, major → warn, anything else → ok. */
+export function toneOf(sev: WorstSeverity): "bad" | "warn" | "ok" {
+  return sev === "critical" ? "bad" : sev === "major" ? "warn" : "ok";
 }
 
-/** The map card: region tiles, or one region's elements. */
+/** True when a health answer has no group (no element at this level). */
+const noGroups = (d: unknown) => ((d as { groups?: unknown[] }).groups ?? []).length === 0;
+
+/** Where the map is: all regions, one region's clusters, or one cluster's (or one region's) elements. */
+type Level = { region: null } | { region: string; cluster?: undefined } | { region: string; cluster: string | null };
+
+/** One tile of the map. */
+function GroupTile({ g, kind, onOpen }: { g: HealthGroup; kind: string; onOpen?: () => void }) {
+  const label = g.key ?? `no ${kind}`;
+  const body = (
+    <>
+      <span className="eyebrow">{kind}</span>
+      <b>{label}</b>
+      <span className="small">{formatCount(g.elements)} elements · <span className={g.unhealthy ? "t-bad" : "muted"}>{formatCount(g.unhealthy)} unhealthy</span></span>
+      <span className="xs muted">{g.worstSeverity ? `worst open: ${g.worstSeverity}` : "no open alarm"}</span>
+    </>
+  );
+  const cls = `tile ${toneOf(g.worstSeverity)}`;
+  return onOpen
+    ? <button type="button" className={cls} onClick={onOpen} aria-label={`Open ${kind} ${label}`}>{body}</button>
+    : <div className={cls} title={`Elements without a ${kind} cannot be listed by ${kind}`}>{body}</div>;
+}
+
+/** The map card. */
 export function HealthMap() {
-  const [region, setRegion] = useState<string | null>(null);
-  const summary = useDashboardSummary();
-  const sample = useElementSample();
-  const total = count(summary.data, "elements.total");
-  const complete = (sample.data?.length ?? 0) < REGION_SAMPLE;      // a short page is the whole list: its counts are true
-  const found = regionsOf(sample.data ?? []);
+  const [level, setLevel] = useState<Level>({ region: null });
+  const regions = useFleetHealth("region");
+  const inRegion = level.region !== null;
+  const clusters = useFleetHealth("site_cluster", level.region, inRegion);
+  const atElements = inRegion && "cluster" in level && level.cluster !== undefined;
+  const cluster = atElements ? (level as { cluster: string | null }).cluster : undefined;
+  const score = regions.data?.healthScore;
   return (
     <Card section="dashboard.map" className="s2" title="Network health map"
-      sub={`${formatCount(total)} managed elements · regions → elements`}
+      sub={`${formatCount(regions.data?.groups.reduce((a, g) => a + g.elements, 0) ?? null)} managed elements · health score ${score == null ? "—" : `${score} %`} · regions → site clusters → elements`}
       actions={<Link className="btn small" to="/topology">Open topology</Link>}>
       <nav className="crumb" aria-label="Map level">
-        {region ? <button type="button" className="btn ghost small" onClick={() => setRegion(null)}>All regions</button> : <strong>All regions</strong>}
-        {region && <><span aria-hidden>›</span><strong>{region}</strong><span>· its managed elements</span></>}
-        {!region && <span>· click a region to open its elements</span>}
+        {inRegion ? <button type="button" className="btn ghost small" onClick={() => setLevel({ region: null })}>All regions</button> : <strong>All regions</strong>}
+        {inRegion && <><span aria-hidden>›</span>{atElements
+          ? <button type="button" className="btn ghost small" onClick={() => setLevel({ region: level.region })}>{level.region}</button>
+          : <strong>{level.region}</strong>}</>}
+        {atElements && <><span aria-hidden>›</span><strong>{cluster ?? "all elements"}</strong></>}
+        {!inRegion && <span>· click a region to open its site clusters</span>}
       </nav>
-      {region ? (
+      {atElements ? (
         <>
-          <ServerTable<ManagedEntity> path={ELEMENTS_PATH} query={{ region }} rowKey={(e) => `${e.managedElementRef}|${e.managedFunctionRef ?? ""}`}
-            empty="No elements in this region." columns={[
+          <ServerTable<ManagedEntity> path={ELEMENTS_PATH} query={{ region: level.region, site_cluster: cluster ?? undefined }}
+            rowKey={(e) => `${e.managedElementRef}|${e.managedFunctionRef ?? ""}`} empty="No elements here." columns={[
               { header: "Element", render: (e) => <Link to={`/elements/${encodeURIComponent(e.managedElementRef)}`}>{e.managedElementRef}</Link> },
               { header: "Function", render: (e) => e.managedFunctionRef ? <code className="small">{e.managedFunctionRef}</code> : <span className="muted">—</span> },
+              { header: "Site cluster", render: (e) => e.siteCluster ?? <span className="muted">—</span> },
               { header: "Type", render: (e) => e.entityType ?? "—" },
               { header: "Vendor", render: (e) => e.vendorName ?? "—" },
-              { header: "Tenant", render: (e) => e.tenant ?? "—" },
             ]} />
           <div className="row between">
-            <button type="button" className="btn small" onClick={() => setRegion(null)}><Icon name="back" size={14} />Back to all regions</button>
+            <button type="button" className="btn small" onClick={() => setLevel({ region: level.region })}><Icon name="back" size={14} />Back to {level.region}</button>
             <Link className="small" to="/alarms">Open the alarm console →</Link>
           </div>
         </>
+      ) : inRegion ? (
+        <QueryState q={clusters} isEmpty={noGroups} empty={<p className="muted">No elements in this region.</p>}>
+          {clusters.data && (
+            <>
+              <div className="tiles">
+                {clusters.data.groups.map((g) => <GroupTile key={g.key ?? "∅"} g={g} kind="site cluster" onOpen={() => setLevel({ region: level.region, cluster: g.key })} />)}
+              </div>
+              {clusters.data.groups.some((g) => g.key === null) && <p className="small muted">"no site cluster" opens every element of {level.region}; an admin sets a cluster on the element page.</p>}
+            </>
+          )}
+        </QueryState>
       ) : (
-        <QueryState q={sample} isEmpty={() => found.regions.length === 0}
-          empty={<p className="muted">No managed element has a region set{found.unset ? ` (${found.unset} without one)` : ""}. Set it with PUT /managed-entities/&#123;me&#125;/scope.</p>}>
-          <div className="tiles">
-            {found.regions.map((r) => (
-              <button key={r.name} type="button" className="tile" onClick={() => setRegion(r.name)} aria-label={`Open region ${r.name}`}>
-                <span className="eyebrow">region</span>
-                <b>{r.name}</b>
-                <span className="small muted">{complete ? `${formatCount(r.elements)} elements` : "open to count"}</span>
-              </button>
-            ))}
-          </div>
-          {complete && found.unset > 0 && <p className="small muted">{found.unset} elements have no region.</p>}
-          {!complete && <p className="gap-note">Regions found among the first {REGION_SAMPLE} elements; a region list with counts is not served yet.</p>}
+        <QueryState q={regions} isEmpty={noGroups}
+          empty={<p className="muted">No managed elements yet. A region is set with PUT /managed-entities/&#123;me&#125;/scope.</p>}>
+          {regions.data && (
+            <div className="tiles">
+              {regions.data.groups.map((g) => <GroupTile key={g.key ?? "∅"} g={g} kind="region" onOpen={g.key === null ? undefined : () => setLevel({ region: g.key! })} />)}
+            </div>
+          )}
         </QueryState>
       )}
-      <p className="gap-note">Not shown yet: site clusters (elements carry no cluster) and colour by worst state (alarms carry no region).</p>
     </Card>
   );
 }

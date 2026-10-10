@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Tests of the Decisions page (pages/decisions): the record table (filters as query parameters, the default 24 h range, paging), the summary
- * tiles, the chain panel that follows the selected row, the one-record route with its integrity check, and the config job's link back to its
+ * tiles, the CSV export link (current range, rApp and outcome; none for "All"), the chain panel that follows the selected row, the one-record route with its integrity check, and the config job's link back to its
  * record. Run: `npx vitest run src/pages/decisions`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -75,6 +75,26 @@ describe("the decision list", () => {
     expect(last.query.get("invoker_id")).toBe("api-invoker-0a1b");
     expect(last.query.get("disposition")).toBe("REJECTED");
     expect(last.query.get("offset")).toBe("0");
+  });
+
+  // Pins down: the export link carries the range and the rApp / outcome filters; "All" (no start) offers no export and says why.
+  it("links the CSV export with the current filters, and not for All", async () => {
+    bff();
+    const { container } = await mountWith(<AuthProvider><Decisions /></AuthProvider>, { at: "/decisions" });
+    await settle();
+    const select = container.querySelector("select[aria-label='Filter by outcome']") as HTMLSelectElement;
+    select.value = "APPROVED";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    await settle();
+    const link = byText<HTMLAnchorElement>(container, "a", "Export CSV")!;
+    const url = new URL(link.getAttribute("href")!, "http://x");
+    expect(url.pathname).toBe("/api/smo/ran-nf-oam/decision-records/export.csv");
+    expect(url.searchParams.get("disposition")).toBe("APPROVED");
+    expect(url.searchParams.get("since")).not.toBeNull();
+    await click(byText(container, "button", "All")!);
+    await settle();
+    expect(byText(container, "a", "Export CSV")).toBeNull();
+    expect(container.textContent).toContain("Pick a time range");
   });
 
   // Pins down: pages: Older asks for the next page only when the server says there is one.

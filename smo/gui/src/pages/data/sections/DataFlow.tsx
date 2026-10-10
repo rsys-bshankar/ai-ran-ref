@@ -8,7 +8,7 @@ import { Badge } from "../../../kit/Badge";
 import { formatCount } from "../../../kit/Kpi";
 import { Empty, QueryState } from "../../../kit/states";
 import { buildFlow, type FlowLink, type FlowNode } from "../data/flow";
-import { FLOW_LIMIT, useDmeTypes, useFlowJobs, useFlowOffers } from "../data/queries";
+import { FLOW_LIMIT, useDmeTypes, useFlowJobs, useFlowOffers, useLateJobCount } from "../data/queries";
 
 const W = 900;
 const BOX = 210;
@@ -56,6 +56,13 @@ function Bands({ links, from, to, x1, x2, max }: { links: FlowLink[]; from: Flow
   );
 }
 
+/** "N late": data jobs with a declared interval that went two intervals without a delivery (DME's `late` filter, counted on the server). */
+function LateBadge() {
+  const late = useLateJobCount();
+  const n = late.data?.total;
+  return <Badge tone={n ? "bad" : n === 0 ? "ok" : "mute"} title="Jobs whose producer missed two declared delivery intervals">{n === undefined ? "late: —" : `${formatCount(n)} late`}</Badge>;
+}
+
 /** The box. */
 export function DataFlow() {
   const types = useDmeTypes();
@@ -69,7 +76,7 @@ export function DataFlow() {
   const max = flow ? Math.max(1, ...flow.left.map((l) => l.value), ...flow.right.map((l) => l.value)) : 1;
   return (
     <Card section="data.flow" title="Data flow" sub="producers → data types → consumers · width = jobs · smaller ones folded into “other”"
-      actions={<><Badge tone="info">{formatCount(total ?? null)} data jobs</Badge><Badge tone="mute" title="DME records no delivery time, so lateness is not known">late: —</Badge></>}>
+      actions={<><Badge tone="info">{formatCount(total ?? null)} data jobs</Badge><LateBadge /></>}>
       <QueryState q={{ ...types, error: types.error ?? jobs.error, data: flow ?? undefined, refetch: () => { void types.refetch(); void jobs.refetch(); } }}
         isEmpty={() => !flow || (flow.types.length === 0 && flow.consumers.length === 0)}
         empty={<Empty title="No DME types or data jobs yet.">Register a producer type on the Producers & offers tab, then create a data job.</Empty>}>

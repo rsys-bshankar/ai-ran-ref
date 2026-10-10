@@ -62,3 +62,29 @@ export function useRappsInState(state: string, limit: number, enabled: boolean) 
     refetchInterval: POLL.lists,
   });
 }
+
+/** The newest numeric metrics an instance reported (rApp Management `GET /instances/{id}/performance/latest`, GUI-9.8): `at` null and `metrics`
+ * empty when it reported none. */
+export interface LatestKpi { instanceId: string; at: string | null; metrics: Record<string, number> }
+
+/** The most ids the batched read takes. */
+export const LATEST_BATCH_MAX = 50;
+
+/** The headline KPI of one instance: the first metric of its newest report (the order the rApp reported them in), or null when it reported none. */
+export function headlineOf(kpi: LatestKpi | undefined): { name: string; value: number; others: number } | null {
+  const entries = Object.entries(kpi?.metrics ?? {});
+  if (entries.length === 0) return null;
+  const [name, value] = entries[0];
+  return { name, value, others: entries.length - 1 };
+}
+
+/** The newest metrics of up to 50 instances in one call (`GET /instances/performance/latest?ids=a,b`), by instance id; no call for none. */
+export function useLatestKpis(ids: string[]) {
+  const wanted = [...new Set(ids)].slice(0, LATEST_BATCH_MAX);
+  const q = useSmo<LatestKpi[]>(wanted.length ? `${INSTANCES_PATH}/performance/latest` : null, { ids: wanted.join(",") }, { refetchInterval: POLL.lists });
+  const byId = new Map((q.data ?? []).map((k) => [k.instanceId, k]));
+  return { get: (id: string) => byId.get(id), query: q };
+}
+
+/** The newest metrics of one instance (the rApp detail page's headline tile). */
+export const useLatestKpi = (id: string) => useSmo<LatestKpi>(`${instanceBase(id)}/performance/latest`, undefined, { refetchInterval: POLL.lists });

@@ -7,7 +7,7 @@ import type { Intent } from "../../api/types";
 import { Can, PageHeader, Tabs, useHashTab } from "../../components/ui";
 import { count } from "../../data/summary";
 import { SectionBoundary } from "../../kit/SectionBoundary";
-import { INTENTS, useIntentSummary } from "./data/queries";
+import { INTENTS, useIntentSummary, type IntentFlag } from "./data/queries";
 import { Dispatches } from "./sections/Dispatches";
 import { Handlers } from "./sections/Handlers";
 import { IntentCard } from "./sections/IntentCard";
@@ -43,10 +43,11 @@ export function Policy() {
 function IntentsTab() {
   const [selected, setSelected] = useState<Intent | null>(null);
   const [reportsFor, setReportsFor] = useState<Intent | null>(null);
+  const [flag, setFlag] = useState<IntentFlag>("");
   return (
     <div className="stack">
-      <SectionBoundary id="intents.tiles"><SummaryTiles /></SectionBoundary>
-      <SectionBoundary id="intents.table"><IntentTable selected={selected?.intentId ?? null} onSelect={setSelected} onReports={setReportsFor} /></SectionBoundary>
+      <SectionBoundary id="intents.tiles"><SummaryTiles flag={flag} onFlag={setFlag} /></SectionBoundary>
+      <SectionBoundary id="intents.table"><IntentTable selected={selected?.intentId ?? null} onSelect={setSelected} onReports={setReportsFor} flag={flag} onFlag={setFlag} /></SectionBoundary>
       {selected && <>
         <div className="row between"><span className="eyebrow">Selected intent</span><button type="button" className="btn ghost small" onClick={() => setSelected(null)}>Close</button></div>
         <SectionBoundary id="intents.card"><IntentCard key={selected.intentId} intent={selected} onReports={setReportsFor} /></SectionBoundary>

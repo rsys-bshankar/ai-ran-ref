@@ -20,6 +20,8 @@ export interface ManagedEntity {
   managedElementRef: string; managedFunctionRef: string | null; entityType: string | null; vendorName: string | null; o1Protocol: string | null;
   o1AdaptorEndpointId: string | null; supportedServices: string[] | null; conformanceMode: string | null;
   cellGuards: Record<string, CellGuard>; region: string | null; tenant: string | null;
+  /** PR-GUI-9.8: the site cluster the element is grouped under on the health map (null: none; absent on an older RAN NF OAM). */
+  siteCluster?: string | null;
 }
 
 /** A neighbour relation's type (topology.py `CELL_LINK_TYPES`). */

@@ -11,7 +11,7 @@ RAN pages share.
 
 | id | file | what it shows | API (via data/queries.ts) | refresh | budget |
 | --- | --- | --- | --- | --- | --- |
-| element.header | sections/Header.tsx | ref, root DN, vendor and O1 protocol, type, region / tenant, critical alarm badge; Neighbours, Upgrade software, New config job | `/managed-entities/{me}`, `/alarms?managed_element_ref&severity=critical&limit=1` | 60 s / 10 s | 2 calls |
+| element.header | sections/Header.tsx | ref, root DN, vendor and O1 protocol, type, region / tenant, site cluster (admin edits it in place), critical alarm badge; Neighbours, Upgrade software, New config job | `/managed-entities/{me}`, `/alarms?managed_element_ref&severity=critical&limit=1`; PUT `/managed-entities/{me}/site-cluster` | 60 s / 10 s | 2 calls |
 | element.overview | sections/Overview.tsx | critical / all alarms, cells and guards, config changes, neighbour relations (one-way count); O1 endpoint card (adaptor, services, conformance, host key, onboarding) | `/alarms?…&limit=1` total, `/config-history?limit=1` total, `/topology/links?managed_element_ref`, `/o1-adaptor-endpoints/{id}/host-keys`, `/element-onboarding/{me}` | 10–60 s | 5 calls |
 | element.history | sections/ConfigHistory.tsx | every dispatched write, newest first, server-paged, function filter; pick "from" / "to"; "Undo job…" (rollback with preview) | `/managed-entities/{me}/config-history?limit&offset&managed_function_ref`; POST `/config-jobs/{id}/rollback` | 15 s | 1 call/page |
 | element.diff | sections/SnapshotDiff.tsx | -/+ lines between the two picked snapshots (`kit/Diff`) | `/managed-entities/{me}/config-history/diff?from_snapshot&to_snapshot` | on pick | 1 call |
@@ -22,8 +22,7 @@ RAN pages share.
 
 ## Known limits
 
-- **Refresh from element** (`POST …/managed-objects/refresh`) is not exposed by the GUI BFF (no rule in `gui-bff/app/rbac.py`): the button is
-  hidden for every role and the box says so.
+- **Refresh from element** walks the element's server synchronously; a large element can take a while and the button waits for it.
 - **Config history is offset-paged**, not keyset: the route has no `after=` cursor (SCALE.md asks for one).
 - **Roll back to a snapshot** is "undo the job that wrote it": the backend's rollback route undoes a whole job from its snapshots
   (`POST /config-jobs/{id}/rollback`); there is no "restore this snapshot" route.

@@ -1,8 +1,7 @@
 /** Section `kpis.mdaRequest` (RAN Analytics tab, feature 9): "Request an analysis", a TS 28.104 MDA request to MDAF (`POST
  * /mdaf/mda-requests`): the MDA function, the output (an MDA type the function supports), the scope (managed entities) and how reports are
  * delivered (FILE, STREAMING, NOTIFICATION). The report kind (ANALYTICS, PREDICTION, DRIFT) is not part of a request: MDAF types each report, and
- * the reports table filters by it. The form shows only where the BFF's permission table allows the call; today it does not, and the box says so
- * (README, Known limits). */
+ * the reports table filters by it. The BFF's permission table allows the call to an operator and up (GUI-9.7); a viewer sees a read-only note. */
 import { useState } from "react";
 
 import { useSmo } from "../../../api/hooks";
@@ -29,7 +28,7 @@ export function MdaRequestForm() {
   return (
     <Card section="kpis.mdaRequest" title="Request an analysis" sub="MDAF · POST /mda-requests · TS 28.104">
       {allowed ? <Form /> : (
-        <Callout tone="info" title="Read-only here">Requesting an analysis is not open to the console yet (the GUI BFF does not expose <code>POST /mdaf/mda-requests</code>). The functions, requests and reports below are live.</Callout>
+        <Callout tone="info" title="Read-only here">Requesting an analysis needs the operator role. The functions, requests and reports below are live.</Callout>
       )}
     </Card>
   );

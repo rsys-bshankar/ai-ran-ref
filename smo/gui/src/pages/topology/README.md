@@ -9,20 +9,21 @@ The Dashboard's "Open topology" link lands here. Every element in a graph node, 
 | id | file | what it shows | API (via data/queries.ts) | refresh | budget |
 | --- | --- | --- | --- | --- | --- |
 | topology.export | sections/ExportTeiv.tsx | "Export (TEIV JSON)" download in the header | `GET /ran-nf-oam/topology[?managed_element_ref]` | on click | 0 on load |
-| topology.tiles | sections/RelationTiles.tsx | cells with guards, elements, relations, not reciprocal, external, ambiguous (problem tiles filter the table) | `/topology/links` (shared), `/cell-guards?limit=1` total, `/managed-entities?limit=1` total | 60 s | 3 calls |
-| topology.graph | sections/NeighbourGraph.tsx | the focused element, its cells and first-ring neighbours (≤ 200 nodes, dashed = not reciprocal); picker with suggestions | `/topology/links?managed_element_ref`, `/managed-entities/{me}`, `/managed-entities?limit=100` (suggestions) | 60 s | 1 + 2 when focused |
+| topology.tiles | sections/RelationTiles.tsx | cells with guards, elements, relations, not reciprocal (between managed cells), external, ambiguous (problem tiles filter the table) | `/topology/links/counts`, `/cell-guards?limit=1` total, `/managed-entities?limit=1` total | 60 s | 3 calls |
+| topology.graph | sections/NeighbourGraph.tsx | the focused element, its cells and first-ring neighbours (≤ 200 nodes, dashed = not reciprocal); picker with server-search suggestions | `/topology/links?managed_element_ref`, `/managed-entities/{me}`, `/managed-entities?search=&limit=20` (from 2 characters, 200 ms after typing) | 60 s | 2 when focused + 1 per pause in typing |
 | topology.check | sections/RelationCheck.tsx | how DN A stands to DN B in the containment tree | `/topology/relation?a&b` | on Check | 0 on load |
 | topology.element | sections/ElementSummary.tsx | vendor, type, region/tenant, cells, sector groups, incident zones, non-NORMAL guards, links | `/managed-entities/{me}` (shared with the graph) | 60 s | 0 extra |
-| topology.problems | sections/ProblemRelations.tsx | relations that need attention (not reciprocal / external / ambiguous), everywhere or around the focused element, with the fix and a link to the cell guards | `/topology/links` (shared with the tiles) or `?managed_element_ref` (shared with the graph) | 60 s | 0 extra |
+| topology.problems | sections/ProblemRelations.tsx | relations that need attention (not reciprocal between elements or within one / external / ambiguous), server-paged, everywhere or around the focused element, with the fix and a link to the cell guards | `/topology/links?reciprocal=false&link_type=INTER_ELEMENT\|INTRA_ELEMENT` or `?link_type=EXTERNAL\|AMBIGUOUS`, `&managed_element_ref&limit&offset` | 60 s | 1 call/page |
 
-Pure rules (counts, problem filter, fix hint, graph layout and the 200-node cap) are in `data/graph.ts`.
+Pure rules (fix hint, graph layout and the 200-node cap; counting a list for the graph) are in `data/graph.ts`.
 
 ## Known limits
 
-- `/topology/links` is not paged and has no `reciprocal` filter: the page reads the whole list once (shared by the tiles and the problem
-  table) and counts, filters and pages it (50 rows) in the browser. The counts are true totals, but at 10k elements the answer is large.
-  Backend ask: `limit`/`offset` and a `reciprocal=false` filter on `/topology/links`, or relation counts in `/bff/summary` (SCALE.md P1/P2).
-- `/managed-entities` has no name search: the focus picker suggests the first 100 elements and otherwise takes the exact ref typed.
+- RAN NF OAM computes the relations from every cell guard on each call (the counts and each page alike); paging bounds what the browser gets,
+  not the server's work.
+- "Not reciprocal" between elements and within one element are two server filters (`link_type` cannot be OR-ed), so the table shows one at a
+  time ("Between"); the tile counts both.
+- The focus picker suggests up to 20 elements whose ref or name contains the text; it still takes any exact ref typed.
 - The mockup's "Cells in scope … DUs · metro-a" is shown as "cells with guards" (only a cell with a guard is known to the registry) and the
   total of managed elements; there is no region scope on the links route.
 - Alarm badges on cells (the mockup's "cell-7 LOS") are not shown: no route joins alarms to cells per element in one call.

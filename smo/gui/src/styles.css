@@ -208,6 +208,8 @@ svg { display: block; }
 .search-results { position: absolute; top: calc(100% + 6px); width: 100%; max-width: 460px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md); box-shadow: var(--shadow); z-index: 30; padding: 6px; list-style: none; margin: 0; max-height: 420px; overflow-y: auto; }
 .search-results li > a, .search-results li > button { display: flex; width: 100%; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 6px; color: var(--text); background: none; border: 0; font: inherit; text-align: left; cursor: pointer; }
 .search-results li.on > a, .search-results li.on > button, .search-results li > a:hover { background: var(--volt-soft); text-decoration: none; }
+.search-results .search-group { display: block; padding: 8px 10px 2px; }
+.search-results .search-note { padding: 6px 10px; }
 .popover { position: absolute; right: 0; top: calc(100% + 8px); width: min(380px, 92vw); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md); box-shadow: var(--shadow); z-index: 30; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .rel { position: relative; }
 

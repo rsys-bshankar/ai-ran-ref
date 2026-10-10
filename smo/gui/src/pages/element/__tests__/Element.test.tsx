@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 /** Tests of the Element detail page (pages/element, route /elements/:me) against a fake BFF: the header and overview from the element's
  * reads, the managed-object tree loading a node's children only when it is opened, two picked snapshots diffed, the cell guard editor shown
- * only to a role that may write guards (admin) and its PUT body, and the DN helpers. Run: `npx vitest run src/pages/element`. */
+ * only to a role that may write guards (admin) and its PUT body, the admin's site-cluster editor in the header, "Refresh from element" for an
+ * operator, and the DN helpers. Run: `npx vitest run src/pages/element`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../../../auth/AuthContext";
 import rules from "../../../auth/permissions.fixture.json";
 import { fakeBff, mountWith, type Call } from "../../../testing/bff";
-import { byText, cleanup, click, settle } from "../../../testing/dom";
+import { byText, cleanup, click, settle, type } from "../../../testing/dom";
 import { functionRefOf, rootDn } from "../data/types";
 import { ElementDetail } from "../index";
 
@@ -16,7 +17,7 @@ beforeEach(() => { document.body.innerHTML = ""; window.location.hash = ""; });
 
 const ENTITY = {
   managedElementRef: "du-03", managedFunctionRef: null, entityType: "DU", vendorName: "vendor-a", o1Protocol: "NETCONF", o1AdaptorEndpointId: "ep-1",
-  supportedServices: ["PROV", "FM"], conformanceMode: "SPEC", region: "eu-west", tenant: "acme",
+  supportedServices: ["PROV", "FM"], conformanceMode: "SPEC", region: "eu-west", tenant: "acme", siteCluster: "metro-a",
   cellGuards: { "cell-8": { cellClass: "COVERAGE_CRITICAL", sectorGroup: "sg-12", incidentZone: "iz-1", neighbourRefs: ["cell-7", "cell-9"] } },
 };
 const ROOT = "ManagedElement=du-03";
@@ -44,6 +45,7 @@ function bff(role: "viewer" | "operator" | "admin") {
       return { status: 404, body: { title: "NOT_FOUND" } };
     },
     "PUT /smo/*": (c: Call) => c.body,
+    "POST /smo/*": { status: 202, body: {} },
   });
 }
 
@@ -113,6 +115,38 @@ describe("Element detail page", () => {
     const put = admin.calls.find((c) => c.method === "PUT")!;
     expect(decodeURIComponent(put.path)).toBe("/smo/ran-nf-oam/managed-entities/du-03/cells/cell-8/guards");
     expect(put.body).toEqual({ cellClass: "EMERGENCY", sectorGroup: "sg-12", incidentZone: "iz-1", neighbourRefs: ["cell-7", "cell-9"] });
+  });
+});
+
+describe("Element writes opened by GUI-9.7 / 9.8", () => {
+  // The header shows the site cluster; only an admin edits it, and the PUT carries the new value (empty clears it).
+  it("lets an admin set the site cluster", async () => {
+    const op = await open("operator");
+    const header = () => document.querySelector("[data-section='element.header']") as HTMLElement;
+    expect(header().textContent).toContain("site cluster metro-a");
+    expect(byText(header(), "button", "Edit cluster")).toBeNull();
+    cleanup();
+    const admin = await open("admin");
+    await click(byText(header(), "button", "Edit cluster")!);
+    const input = header().querySelector("input[aria-label='Site cluster']") as HTMLInputElement;
+    await type(input, "metro-b");
+    await click(byText(header(), "button", "Save")!);
+    await settle();
+    const put = admin.calls.find((c) => c.method === "PUT")!;
+    expect(decodeURIComponent(put.path)).toBe("/smo/ran-nf-oam/managed-entities/du-03/site-cluster");
+    expect(put.body).toEqual({ siteCluster: "metro-b" });
+    expect(op).toBeDefined();
+  });
+
+  // An operator may walk the element's server again ("Refresh from element"); a viewer may not.
+  it("offers Refresh from element to an operator", async () => {
+    const viewer = await open("viewer", "#mo");
+    expect(byText(viewer.container, "button", "Refresh from element")).toBeNull();
+    cleanup();
+    const op = await open("operator", "#mo");
+    await click(byText(op.container, "button", "Refresh from element")!);
+    await settle();
+    expect(op.calls.some((c) => c.method === "POST" && decodeURIComponent(c.path) === "/smo/ran-nf-oam/managed-entities/du-03/managed-objects/refresh")).toBe(true);
   });
 });
 

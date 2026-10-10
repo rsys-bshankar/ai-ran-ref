@@ -24,7 +24,8 @@ First-load calls per tab: Topology 4 (topology, workloads, alarms, summary), NF 
 
 ## Known limits
 - ⚠ **Node utilisation** (GPU / CPU / memory) is not served by any module: the inspector shows "—" with a gap note and "colour by GPU / CPU"
-  is not offered (BRIEF §5).
+  is not offered (BRIEF §5). PR-GUI-9.8 looked at FOCOM and left it out on purpose: FOCOM collects no CPU or memory measurement and no
+  dictionary names one (focom/README.md, "No node utilisation"), so a utilisation route would invent the numbers.
 - **Health** of a resource comes from open O-Cloud alarms naming it (`resourceRef`); FOCOM's `/resources/{id}/status` answers a constant
   "healthy", so it is not used. Deployment managers have no health data ("No health data"). Pools and O-Clouds take the worst of what is under them.
 - TEIV (`/focom/topology`) has **no deployment-manager → pool relationship**, and NFO places a workload on the O-Cloud (`clusterId` = O-Cloud id),

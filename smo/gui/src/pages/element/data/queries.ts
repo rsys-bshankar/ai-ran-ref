@@ -18,6 +18,8 @@ export const guardPath = (me: string, cell: string) => `${entityPath(me)}/cells/
 export const GUARDS_PATH = `${BASE}/cell-guards`;
 /** The route that re-reads an element's objects from its server. */
 export const refreshPath = (me: string) => `${entityPath(me)}/managed-objects/refresh`;
+/** The site cluster of an element (`PUT {"siteCluster": "metro-a" | null}`, admin). */
+export const siteClusterPath = (me: string) => `${entityPath(me)}/site-cluster`;
 
 /** The element with its cell guards; 404 when it is not registered. */
 export function useEntity(me: string) {

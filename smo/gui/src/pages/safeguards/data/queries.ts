@@ -1,10 +1,10 @@
 /** The Safeguards page's API knowledge (STRUCTURE.md rule 4): rApp instances and their safeguards (rApp Management), the stop switch
- * (`PUT/DELETE /rapp-mgmt/instances/{id}/kill`), limits and approval policy per invoker, the stopped list, refusals (`invoker_id`, `code`,
+ * (`PUT/DELETE /rapp-mgmt/instances/{id}/kill`) and the global one (`/rapp-mgmt/kill-all`), limits and approval policy per invoker, the stopped list, refusals (`invoker_id`, `code`,
  * `since`) and watchers at RAN NF OAM. Counts come from a list's `total` with `limit=1` (one row read, the server counts) or the BFF summary. */
 import type { Query } from "../../../api/client";
 import { smo } from "../../../api/client";
 import { useSmo, useSmoPage } from "../../../api/hooks";
-import type { InstanceSafeguards, InstanceSummary, Page } from "../../../api/types";
+import type { InstanceSafeguards } from "../../../api/types";
 import { useSummary } from "../../../data/summary";
 
 /** rApp instances (rApp Management). */
@@ -61,13 +61,27 @@ export function useInvokerRefusalCount(since: string, invokerId: string | null) 
   return useTotal(invokerId ? REFUSALS : null, { since, invoker_id: invokerId ?? undefined });
 }
 
-/** Every instance that can still write (not UNDEPLOYED), read page by page, for "Stop all rApp writes". */
-export async function fetchStoppableInstances(pageSize = 200): Promise<InstanceSummary[]> {
-  const out: InstanceSummary[] = [];
-  for (let offset = 0; ; offset += pageSize) {
-    const page = await smo<Page<InstanceSummary>>(INSTANCES, { query: { limit: pageSize, offset } });
-    out.push(...page.items.filter((i) => i.state !== "UNDEPLOYED"));
-    const more = page.total !== undefined ? offset + page.items.length < page.total : page.hasMore ?? page.items.length === pageSize;
-    if (!more || page.items.length === 0) return out;
-  }
+/** The one-call global stop of every rApp's writes (rApp Management GUI-9.6): `GET` counts, `PUT` stops all (operator), `DELETE` resumes all (admin). */
+export const KILL_ALL = "/rapp-mgmt/kill-all";
+
+/** `GET /rapp-mgmt/kill-all`: how many live instances (not UNDEPLOYED) there are and how many of them are stopped. */
+export interface KillAllCount { stopped: number; instances?: number }
+/** `PUT /rapp-mgmt/kill-all`: what the global stop did. */
+export interface KillAllResult { stopped: number; alreadyStopped: number; failed: { instanceId: string; error: string }[] }
+/** `DELETE /rapp-mgmt/kill-all`: what the global resume did. */
+export interface ResumeAllResult { resumed: number; failed: { instanceId: string; error: string }[] }
+
+/** The stop count, read only when the stop-all dialog needs it (`enabled`). */
+export function useKillAllCount(enabled: boolean) {
+  return useSmo<KillAllCount>(KILL_ALL, undefined, { enabled, refetchInterval: false });
+}
+
+/** Stop every rApp's writes in one call; the BFF records the signed-in user as `requestedBy`. */
+export function stopAll(reason: string): Promise<KillAllResult> {
+  return smo<KillAllResult>(KILL_ALL, { method: "PUT", json: { reason: reason.trim() || null } });
+}
+
+/** Resume every stopped rApp in one call (admin). */
+export function resumeAll(): Promise<ResumeAllResult> {
+  return smo<ResumeAllResult>(KILL_ALL, { method: "DELETE" });
 }

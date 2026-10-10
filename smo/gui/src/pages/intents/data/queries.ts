@@ -1,7 +1,8 @@
 /** The Intents page's API knowledge (STRUCTURE.md rule 4): the Intent Service paths it reads and writes, their query parameters (the OpenAPI
- * `GET` parameters only: `admin_state` on intents, `intent_id` on reports, `status` on autonomy dispatches) and the bounds of its one-shot reads.
- * Sections call the hooks here, never `useSmo` with a raw path. Counts come from the BFF summary "intents" (`intents.ACTIVATED`,
- * `intents.DEACTIVATED`, `intents.total`), never from a list. */
+ * `GET` parameters only: `admin_state`, `fulfilled`, `in_conflict` on intents, `intent_id` on reports, `status` on autonomy dispatches) and the
+ * bounds of its one-shot reads. Sections call the hooks here, never `useSmo` with a raw path. Counts come from the BFF summary "intents"
+ * (`intents.ACTIVATED`, `intents.DEACTIVATED`, `intents.total`) or a list's server `total` (not fulfilled, in conflict), never from rows. */
+import type { Query } from "../../../api/client";
 import { POLL, useSmo, useSmoPage } from "../../../api/hooks";
 import type { InstanceSummary, Intent, IntentReport, Rmih } from "../../../api/types";
 import { useSummary } from "../../../data/summary";
@@ -35,9 +36,22 @@ export function useIntentSummary() {
   return useSummary("intents");
 }
 
+/** The fulfilment filters of the intent list (Intent Service GUI-9.8 `fulfilled`, `in_conflict`); "" is none. */
+export type IntentFlag = "" | "not-fulfilled" | "fulfilled" | "in-conflict";
+
+/** The list parameters of a fulfilment filter. */
+export function flagQuery(flag: IntentFlag): Query {
+  return flag === "not-fulfilled" ? { fulfilled: false } : flag === "fulfilled" ? { fulfilled: true } : flag === "in-conflict" ? { in_conflict: true } : {};
+}
+
+/** How many intents match a fulfilment filter (the `total` of a one-row page, counted by Intent Service). */
+export function useIntentFlagCount(flag: Exclude<IntentFlag, "">) {
+  return useSmoPage<Intent>(INTENTS, { ...flagQuery(flag), limit: 1 });
+}
+
 /** One page of intents for the cards view. */
-export function useIntentPage(adminState: string, offset: number) {
-  return useSmoPage<Intent>(INTENTS, { admin_state: adminState || undefined, limit: CARDS_PER_PAGE, offset });
+export function useIntentPage(adminState: string, offset: number, flag: IntentFlag = "") {
+  return useSmoPage<Intent>(INTENTS, { admin_state: adminState || undefined, ...flagQuery(flag), limit: CARDS_PER_PAGE, offset });
 }
 
 /** The newest reports of one intent (null: no call). */

@@ -66,3 +66,20 @@ export function artifactVersions(artifactLocation: string | null | undefined): n
   if (!Number.isInteger(latest) || latest <= 0) return [];
   return Array.from({ length: latest }, (_, i) => latest - i);
 }
+
+/** The board's counts from the server: per column, the models whose lifecycle state is in it (AIMgF's GROUP BY), plus the models AIMgF has no row
+ * for in "Registered" (`modelsTotal` − rows, when the model total is known); per off-board state, its count. The "Active runtime" column has no
+ * server count (the counts are by model state, not runtime), so it is absent and the board counts its cards. */
+export function stageCounts(groups: { state: string; count: number }[], modelsTotal: number | null | undefined): { columns: Partial<Record<StageId, number>>; off: Record<string, number> } {
+  const columns: Partial<Record<StageId, number>> = { registered: 0, training: 0, validating: 0, promoted: 0 };
+  const off: Record<string, number> = {};
+  let rows = 0;
+  for (const g of groups) {
+    rows += g.count;
+    const stage = stageOf(g.state, "NOT_DEPLOYED");
+    if (stage) columns[stage] = (columns[stage] ?? 0) + g.count;
+    else off[g.state] = (off[g.state] ?? 0) + g.count;
+  }
+  if (typeof modelsTotal === "number" && modelsTotal > rows) columns.registered = (columns.registered ?? 0) + modelsTotal - rows;
+  return { columns, off };
+}

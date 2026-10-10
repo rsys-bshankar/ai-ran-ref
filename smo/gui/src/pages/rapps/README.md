@@ -7,9 +7,9 @@ Route: `/rapps` (tabs in the hash: `#directory` (default), `#instances`, `#packa
 | id | file | what it shows | API (via data/queries.ts) | refresh | budget |
 | --- | --- | --- | --- | --- | --- |
 | rapps.tiles | sections/SummaryTiles.tsx | running / upgrading / faulted / deploying instances, packages | `/api/summary/rapps` | 15 s | 1 call (shared by the tab pills, pipeline chips and strip) |
-| rapps.pinned | sections/PinnedAttention.tsx | pinned, then FAULTED and UPGRADING rApps, max 6 cards | `/api/me/pins` (shared with the sidebar); `/api/rapps?state=FAULTED\|UPGRADING&limit=6` only when the summary counts any | 15 s | 0–2 calls |
+| rapps.pinned | sections/PinnedAttention.tsx | pinned, then FAULTED and UPGRADING rApps, max 6 cards, each with its headline KPI | `/api/me/pins` (shared with the sidebar); `/api/rapps?state=FAULTED\|UPGRADING&limit=6` only when the summary counts any; `/rapp-mgmt/instances/performance/latest?ids=` for the cards | 15 s | 0–3 calls |
 | rapps.directory | sections/Directory.tsx | every rApp, search, state / owner / page / pinned filters, star to pin | `/api/rapps` (BFF, server paging) | 15 s | 1 call/page |
-| rapps.instances | sections/InstanceTable.tsx (+ InstanceDrawer, InstanceActions, UpgradeModal, VersionHistory, LifecycleCell) | instance server table, state filter, flow 07 lifecycle column | `/rapp-mgmt/instances?state=&limit=&offset=`; package names `/onboarding/packages?limit=500` | 15 s / 60 s | 2 calls |
+| rapps.instances | sections/InstanceTable.tsx (+ InstanceDrawer, InstanceActions, UpgradeModal, VersionHistory, LifecycleCell, HeadlineKpi) | instance server table, state filter, flow 07 lifecycle column, headline KPI column | `/rapp-mgmt/instances?state=&limit=&offset=`; package names `/onboarding/packages?limit=500`; `/rapp-mgmt/instances/performance/latest?ids=<the page's ids>` | 15 s / 60 s | 3 calls |
 | rapps.onboard | sections/OnboardForm.tsx | onboard a CSAR | `POST /onboarding/packages` | — | 0 |
 | rapps.packages | sections/PackagesTable.tsx (+ PackageDrawer, CreateInstance) | package pipeline counts (filter chips), package server table, Deploy, lifecycle calls | summary; `/onboarding/packages?state=` | 15 s | 1 call/page |
 | rapps.rollouts | sections/Rollouts.tsx | instances UPGRADING, with resolve actions | `/rapp-mgmt/instances?state=UPGRADING` | 15 s | 2 calls |
@@ -23,7 +23,8 @@ terminate) and links to `/flows/07?subject=<instance>`; it costs no call.
 ## Known limits
 
 - Autonomy mix, actions in 24 h and refusals per rApp: not served by the backend (no per-mode count, no per-rApp decision/refusal count in the summary). Tiles say so.
-- Per-rApp headline KPI and health meter (BRIEF §5): not served; not shown.
+- The headline KPI is the first metric of an rApp's newest performance report (rApps declare no headline metric); the batched read covers at most
+  50 instances, so a 100-row page shows it for the first 50. A per-rApp health meter is not served; not shown.
 - Directory grouping by category: packages declare no category the backend serves.
 - Facets (autonomy mode, owner, vendor) and bulk actions on the instance table: rApp Management's list filters by `state` only. The Directory tab has owner and search through the BFF.
 - Rollouts: no canary or wave progress; an upgrade is one replacement instance, resolved as a whole. The replacement id is in the instance drawer (the list row does not carry it).

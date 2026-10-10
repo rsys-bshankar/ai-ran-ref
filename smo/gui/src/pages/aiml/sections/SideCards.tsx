@@ -1,5 +1,5 @@
 /** Sections `aiml.trainingTop` and `aiml.waiting`: the Models tab's two side cards. "Training now" lists the newest five IN_PROGRESS training
- * jobs with the true count of them and the step each reached (epoch and ETA are a ⚠ gap); "Waiting for governance" lists the models whose next
+ * jobs with the true count of them and the step each reached, or its epoch progress and ETA when the runtime reports epochs; "Waiting for governance" lists the models whose next
  * step is a governance decision (approve training or validation, submit, approve, certify), from the lifecycle list the stage board already
  * read (no extra call), with their role-gated decision buttons. A click on a model selects it. */
 import type { TrainingJob } from "../../../api/types";
@@ -7,6 +7,7 @@ import { Card, StateBadge } from "../../../components/ui";
 import { Empty, ErrorRetry, Skeleton } from "../../../kit/states";
 import { useLifecycleIndex, useModelIndex, useModelNames, useRunningTraining } from "../data/queries";
 import { ModelActions } from "./ModelActions";
+import { TrainingProgress } from "./TrainingTable";
 
 const STEP: Record<TrainingJob["currentStep"], string> = { DATA_EXTRACTION: "data extraction", TRAINING: "training", TRAINED_MODEL: "trained model" };
 
@@ -26,12 +27,11 @@ export function TrainingNow({ onSelect, onSeeAll }: { onSelect: (id: string) => 
                   {j.modelId
                     ? <button type="button" className="btn ghost small" onClick={() => onSelect(j.modelId!)}>{name(j.modelId) ?? j.modelId.slice(0, 8)}</button>
                     : <span className="small">group {j.modelCoordinationGroupId?.slice(0, 8)}</span>}
-                  <span className="xs muted">{j.steps ? `step: ${STEP[j.currentStep]}` : "—"}</span>
+                  {j.epoch != null && j.totalEpochs ? <TrainingProgress job={j} /> : <span className="xs muted">{j.steps ? `step: ${STEP[j.currentStep]}` : "—"}</span>}
                   <StateBadge state={j.status} />
                 </li>
               ))}
             </ul>}
-      <p className="gap-note">Epoch and ETA are not served by AIMgF.</p>
     </Card>
   );
 }

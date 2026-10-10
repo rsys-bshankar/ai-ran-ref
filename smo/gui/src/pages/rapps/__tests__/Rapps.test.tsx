@@ -80,6 +80,19 @@ describe("rApps page", () => {
     expect(calls.filter((c) => c.path === "/smo/rapp-mgmt/instances").at(-1)!.query.get("state")).toBe("RUNNING");
   });
 
+  // the headline KPI column reads the page's newest metrics in one batched call (ids of the rows shown), first metric shown
+  it("shows each instance's headline KPI from one batched read", async () => {
+    const calls = bff({}, { "GET /smo/rapp-mgmt/instances/performance/latest": { items: [{ instanceId: IID, at: "2026-10-09T10:00:00Z", metrics: { prbUsage: 41.25, energy: 3 } }] } });
+    const { container } = await open("instances");
+    await settle(8);
+    const batch = calls.filter((c) => c.path === "/smo/rapp-mgmt/instances/performance/latest");
+    expect(batch).toHaveLength(1);
+    expect(batch[0].query.get("ids")).toBe(IID);
+    const table = container.querySelector("[data-section='rapps.instances']")!.textContent!;
+    expect(table).toContain("prbUsage 41.3");
+    expect(table).toContain("+1");
+  });
+
   // Rollouts lists only UPGRADING instances, with the resolve actions
   it("lists the rollouts in progress", async () => {
     const calls = bff({ "instances.UPGRADING": 1 });

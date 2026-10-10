@@ -1,6 +1,7 @@
 /** The Users box of Admin (`admin.users`, handoff `Admin.dc.html`): every GUI user with avatar, role (editable), sign-in method (local or the
  * identity provider), status, one-time code state, break-glass flag and the user actions (reset password, revoke sessions, reset the one-time code,
- * (de)activate, delete). "Last active" is a ⚠ data gap (BRIEF §5): the BFF keeps no last-activity time, so the column reads "—". */
+ * (de)activate, delete), and when each was last active (the newest audit row of the user: sign-ins, changes, refusals; plain reads are not
+ * audited) and last signed in (`lastActiveAt`, `lastSignInAt` of `GET /api/admin/users`, GUI-9.8). */
 import { useState } from "react";
 
 import type { GuiUser } from "../../../api/types";
@@ -53,7 +54,9 @@ export function UsersTable() {
           <input type="checkbox" checked={Boolean(u.breakGlass)} disabled={isSsoUser(u)} aria-label={`Break-glass for ${u.username}`}
                  onChange={(e) => patch(u.username, { breakGlass: e.target.checked }, `${u.username} ${e.target.checked ? "is now" : "is no longer"} a break-glass account`)} />
         ) },
-        { header: <span title="Not recorded by the BFF yet">Last active</span>, render: () => <span className="muted" title="Not recorded by the BFF yet">—</span> },
+        { header: <span title="The user's newest audited action (reads are not audited)">Last active</span>,
+          render: (u) => u.lastActiveAt ? <span className="mono small">{formatTime(u.lastActiveAt)}</span> : <span className="muted">never</span> },
+        { header: "Last sign-in", render: (u) => u.lastSignInAt ? <span className="mono small">{formatTime(u.lastSignInAt)}</span> : <span className="muted">never</span> },
         { header: "Created", render: (u) => <span className="mono small">{formatTime(u.createdAt)}</span> },
         { header: "", className: "actions", render: (u) => (
           <div className="row gap end">
@@ -66,7 +69,6 @@ export function UsersTable() {
         ) },
       ]} />
       <p className="muted small">Role changes apply on the user's next request; password resets, deactivation and &quot;Revoke sessions&quot; end their existing sessions. A break-glass account can sign in with its password and one-time code even when the console accepts only the identity provider; it needs a one-time code to sign in at all.</p>
-      <p className="gap-note">Last active: not recorded by the BFF yet.</p>
       {creating && <CreateUser onClose={() => setCreating(false)} />}
       {resetting && <ResetPassword username={resetting} onClose={() => setResetting(null)} />}
     </Card>

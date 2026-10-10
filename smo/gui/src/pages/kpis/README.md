@@ -18,8 +18,8 @@ Network performance, the monitors that watch it, and what was done when a thresh
 | kpis.pm | sections/PmSubscriptions.tsx | PM subscriptions, server-paged; new subscription | `/ran-nf-oam/pm-subscriptions`, `/o1-adaptor-endpoints` | 15 s | 1–2 calls |
 | kpis.definitions / schedules | sections/KpiDefinitions.tsx (+ KpiDialogs.tsx) | KPI catalogue and DME publishing schedules | `/ran-nf-oam/kpi-definitions?limit=200`, `/kpi-schedules` | 15 s | 2 calls |
 | kpis.rapp | sections/RappPerformance.tsx | one instance's self-reported metrics | `/rapp-mgmt/instances`, `/…/{id}/performance?limit=100` | 15 s | 2 calls |
-| kpis.mdaRequest | sections/MdaRequestForm.tsx | request an analysis (read-only today, see limits) | `/mdaf/mda-functions` (form only) | — | 0–1 call |
-| kpis.mdaFunctions / mdaRequests / mdaReports | sections/MdaLists.tsx | TS 28.104 functions, requests, reports (kind filter, file download) | `/mdaf/mda-functions`, `/mda-requests`, `/mda-reports?report_kind=` | 15 s | 3 calls |
+| kpis.mdaRequest | sections/MdaRequestForm.tsx | request an analysis (operator and up; a viewer sees a note) | `/mdaf/mda-functions` (form only), `POST /mdaf/mda-requests` | — | 0–1 call |
+| kpis.mdaFunctions / mdaRequests / mdaReports | sections/MdaLists.tsx | TS 28.104 functions, requests (Cancel: `DELETE /mdaf/mda-requests/{id}`), reports (kind filter, file download) | `/mdaf/mda-functions`, `/mda-requests`, `/mda-reports?report_kind=` | 15 s | 3 calls |
 | kpis.analyticsReports / producers / analyticsSubs | sections/AnalyticsLegacy.tsx | legacy MDAF reports, producers, subscriptions | `/mdaf/reports`, `/ran-analytics/producers`, `/mdaf/subscriptions` | 15 s | 3–4 calls |
 | kpis.producerTools | sections/ProducerTools.tsx | admin: register a producer, publish a report | `/dme/dme-types` | — | 1 call |
 | kpis.newMonitor | sections/RegisterMonitor.tsx | register a monitor (operator+) | `/so-smos/orders`, `/mlmr/coordination-groups`, `/rapp-mgmt/instances` | 15 s | 3 calls |
@@ -37,9 +37,8 @@ route, so each tile is its own computation. The KPI reads poll every 60 s.
   `group_by=cell` and is left out to keep the Overview's call count down.
 - **Assurance monitors "breaching first"**: SA SMOS keeps no breach state on a monitor and the list has no such filter; the table is in server
   order and says so. "Now" values per monitor are not served (a monitor is evaluated on demand in its panel).
-- **Request an analysis** (feature 9): `POST /mdaf/mda-requests` is not in the BFF's permission table (`gui-bff/app/rbac.py`), so the form is
-  replaced by a read-only note; it appears by itself once the BFF allows the route. The report kind (ANALYTICS / PREDICTION / DRIFT) is not part
-  of a request (MDAF types each report), so it is a filter on the reports table instead.
+- **Request an analysis** (feature 9): the report kind (ANALYTICS / PREDICTION / DRIFT) is not part of a request (MDAF types each report), so it
+  is a filter on the reports table instead.
 - **Scope picker** of the mockup: not built (no scope parameter on the KPI route beyond one element or cell).
 
 ## Troubleshooting

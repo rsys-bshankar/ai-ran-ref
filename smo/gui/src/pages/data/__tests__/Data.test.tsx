@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 /** Data & Exposure: the flow tab draws producers → types → consumers from DME types and one bounded page of jobs and offers (≤ 8 rows a column,
- * "+N other", a note when the page is cut), the jobs table is server-paged with its filters as query params and shows last delivery as a gap,
+ * "+N other", a note when the page is cut), the late badge counts DME's late jobs, the jobs table is server-paged with its filters (late only included) as query params and shows the last
+ * delivery with a LATE badge,
  * the old `#dme` / `#sme` tab ids still land, and the pure flow aggregation. Run: `npx vitest run src/pages/data` from smo/gui. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DataJob, DmeType } from "../../../api/types";
 import { AuthProvider } from "../../../auth/AuthContext";
 import rules from "../../../auth/permissions.fixture.json";
-import { fakeBff, mountWith } from "../../../testing/bff";
-import { byText, cleanup, settle } from "../../../testing/dom";
+import { fakeBff, mountWith, type Call } from "../../../testing/bff";
+import { byText, cleanup, click, settle } from "../../../testing/dom";
 import { Data } from "..";
 import { buildFlow } from "../data/flow";
 
@@ -18,7 +19,7 @@ beforeEach(() => { document.body.innerHTML = ""; window.location.hash = ""; });
 const type = (id: string, name: string, producerIds: string[]): DmeType => ({ dmeTypeId: id, dmeTypeIdStruct: {}, typeName: name, producerIds, typeStatus: "ENABLED" });
 const job = (id: string, typeId: string, consumer: string): DataJob => ({ dataJobId: id, dmeTypeId: typeId, consumerId: consumer, dataDeliveryMode: "CONTINUOUS", dataDeliveryMethod: "PUSH_HTTP", productionJobDefinition: {}, deliveryDetails: {}, status: "ACTIVE" });
 const TYPES = [type("t-1", "RAN.PmCell", ["ran-nf-oam"]), type("t-2", "RAN.Coverage", ["ran-analytics", "ran-nf-oam"])];
-const JOBS = [job("j-1", "t-1", "energy-saving"), job("j-2", "t-1", "mobility"), job("j-3", "t-2", "energy-saving")];
+const JOBS = [{ ...job("j-1", "t-1", "energy-saving"), lastDeliveryAt: "2026-10-09T10:00:00Z", expectedIntervalSeconds: 60, late: true }, job("j-2", "t-1", "mobility"), job("j-3", "t-2", "energy-saving")];
 
 /** The fake BFF: two types, three jobs on a page that says there are 900, one offer, and empty SME lists. */
 function bff() {
@@ -26,7 +27,7 @@ function bff() {
     "GET /me": { username: "ana", role: "admin", csrfToken: "c", local: true, totpEnrolled: true, mfaEnrolmentRequired: false },
     "GET /permissions": { role: "admin", rules },
     "GET /smo/dme/dme-types": TYPES,
-    "GET /smo/dme/data-jobs": { items: JOBS, total: 900, limit: 500, offset: 0 },
+    "GET /smo/dme/data-jobs": (c: Call) => (c.query.get("late") === "true" ? { items: JOBS.slice(0, 1), total: 4, limit: 1, offset: 0 } : { items: JOBS, total: 900, limit: 500, offset: 0 }),
     "GET /smo/dme/offers": { items: [{ offerId: "o-1", dmeTypeId: "t-1", dataDeliveryMethodsOffered: ["PUSH_HTTP"], committedMethod: "PUSH_HTTP", dataAvailabilityNotificationUri: null, dataOfferTerminationNotificationUri: "x" }], total: 1, limit: 500, offset: 0 },
     "GET /smo/dme/production-capabilities": [],
     "GET /smo/dme/type-subscriptions": { items: [], total: 0, limit: 50, offset: 0 },
@@ -51,8 +52,8 @@ describe("the flow & jobs tab", () => {
     expect(flowJobs).toBeTruthy();
   });
 
-  // The jobs table pages on the server, and its last-delivery column is a gap, not a time.
-  it("pages the jobs on the server and shows last delivery as a gap", async () => {
+  // The jobs table pages on the server, shows the last delivery with LATE, and "late only" is the route's `late=true`.
+  it("pages the jobs on the server and shows last delivery and LATE", async () => {
     const calls = bff();
     const { container } = await open();
     await settle(8);
@@ -61,7 +62,12 @@ describe("the flow & jobs tab", () => {
     expect(table.querySelectorAll("tbody tr").length).toBe(3);
     expect(table.querySelector(".pager")?.textContent).toContain("900");
     expect(calls.some((c) => c.path === "/smo/dme/data-jobs" && c.query.get("offset") === "0" && c.query.get("limit") !== "500")).toBe(true);
-    expect(table.querySelector(".gap-note")).toBeTruthy();
+    expect(table.textContent).toContain("LATE");
+    expect(table.textContent).toContain("never");
+    expect(container.querySelector('[data-section="data.flow"]')?.textContent).toContain("4 late");
+    await click(table.querySelector(".check input") as HTMLElement);
+    await settle();
+    expect(calls.filter((c) => c.path === "/smo/dme/data-jobs").at(-1)!.query.get("late")).toBe("true");
   });
 });
 

@@ -1,23 +1,36 @@
-/** "Worst DUs" (`dashboard.worst`, handoff `Main.dc.html`). ⚠ Data gap (BRIEF §5, SCALE.md P4): no route ranks elements by their open alarms on the
- * server, and ranking them in the browser would need every alarm. So the box says so and links to the critical and major alarms instead. */
+/** "Worst DUs" (`dashboard.worst`, handoff `Main.dc.html`): the managed elements with the most open critical, then major, then any alarms,
+ * ranked by RAN NF OAM in one SQL query (`GET /managed-entities/worst?limit=10`, ran-nf-oam/app/fleet.py). Each row links to the element page
+ * and to the alarm console filtered on it. An element with no open alarm is never listed, so an empty box means a quiet network. */
 import { Link } from "react-router-dom";
 
 import { Card } from "../../../components/ui";
-import { count } from "../../../data/summary";
 import { formatCount } from "../../../kit/Kpi";
-import { useDashboardSummary } from "../data/queries";
+import { QueryState } from "../../../kit/states";
+import { useWorstElements, WORST_TOP } from "../data/queries";
 
-/** The box: its gap note and the links that stand in for the ranking. */
+/** The ranking card. */
 export function WorstDus() {
-  const s = useDashboardSummary().data;
+  const worst = useWorstElements();
   return (
-    <Card section="dashboard.worst" title="Worst DUs" sub="needs a ranking on the server">
-      <p className="kpi-v" aria-label="not available">—</p>
-      <p className="gap-note">Not available yet: the backend has no ranking of elements by open alarms.</p>
-      <ul className="list">
-        <li><span className="sev sev-cr">critical</span><span className="grow">{formatCount(count(s, "alarms.critical"))} alarms</span><Link className="small" to="/alarms">Alarms →</Link></li>
-        <li><span className="sev sev-mj">major</span><span className="grow">{formatCount(count(s, "alarms.major"))} alarms</span><Link className="small" to="/alarms">Alarms →</Link></li>
-      </ul>
+    <Card section="dashboard.worst" title="Worst DUs" sub={`top ${WORST_TOP} by open critical, major, then all alarms`}
+      actions={<Link to="/alarms" className="small">Alarms →</Link>}>
+      <QueryState q={worst} empty={<p className="muted">No element has an open alarm.</p>}>
+        <ol className="list worst-list">
+          {(worst.data ?? []).map((w) => (
+            <li key={w.managedElementRef}>
+              <span className="grow">
+                <Link to={`/elements/${encodeURIComponent(w.managedElementRef)}`}>{w.managedElementRef}</Link>
+                <span className="xs muted"> {[w.region, w.siteCluster].filter(Boolean).join(" · ")}</span>
+              </span>
+              {w.critical > 0 && <span className="sev sev-cr" title="open critical alarms">{formatCount(w.critical)}</span>}
+              {w.major > 0 && <span className="sev sev-mj" title="open major alarms">{formatCount(w.major)}</span>}
+              <Link className="small" to={`/alarms?me=${encodeURIComponent(w.managedElementRef)}`} aria-label={`${w.openAlarms} open alarms on ${w.managedElementRef}`}>
+                {formatCount(w.openAlarms)} open
+              </Link>
+            </li>
+          ))}
+        </ol>
+      </QueryState>
     </Card>
   );
 }

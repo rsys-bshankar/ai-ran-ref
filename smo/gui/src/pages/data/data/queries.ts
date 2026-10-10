@@ -37,6 +37,11 @@ export function useFlowJobs() {
   return useSmoPage<DataJob>(PATHS.dataJobs, { limit: FLOW_LIMIT, offset: 0 });
 }
 
+/** How many data jobs are late (two declared intervals without a delivery): the `total` of a one-row page filtered `late=true`. */
+export function useLateJobCount() {
+  return useSmoPage<DataJob>(PATHS.dataJobs, { late: true, limit: 1 });
+}
+
 /** The offers the data-flow view counts per type: one bounded page. */
 export function useFlowOffers() {
   return useSmoPage<DataOffer>(PATHS.offers, { limit: FLOW_LIMIT, offset: 0 });

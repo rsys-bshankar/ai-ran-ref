@@ -1,7 +1,8 @@
 /** Every API path, query and polling interval the Dashboard uses (STRUCTURE.md rule 4). First load: the summary counts (`/api/summary/dashboard`),
- * module health (`/api/modules/status`, shared with the sidebar's cache entry), the four "needs attention" top-3 lists, the latest decisions and
- * one page of managed elements for the region tiles: 8 calls, every list bounded and asked with `total=false` (SCALE.md P2, P4). The model and
- * rApp trend sparklines load only when their box is opened. */
+ * module health (`/api/modules/status`, shared with the sidebar's cache entry), the four "needs attention" top-3 lists, the latest decisions, the
+ * fleet health by region (health score and map, one call), the worst elements and the 24 hourly alarm buckets: 10 calls, every list bounded and
+ * asked with `total=false` (SCALE.md P2, P4); every aggregate is computed on the server. The model and rApp trend sparklines load only when their
+ * box is opened. */
 import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { api, smo } from "../../../api/client";
@@ -9,14 +10,14 @@ import { POLL, unwrapPage, useSmo } from "../../../api/hooks";
 import type { Alarm, Approval, DecisionRecord, InstanceSummary, MlmfReport, ModulesStatus, PerfReport, RemedialAction } from "../../../api/types";
 import { KEYS } from "../../../data/keys";
 import { useSummary } from "../../../data/summary";
-import type { ManagedEntity } from "./types";
+import type { AlarmHour, FleetHealth, WorstElement } from "./types";
 
 /** How many items each "needs attention" group shows (SCALE.md: max 3 each, then "+N more"). */
 export const ATTENTION_TOP = 3;
 /** How many decisions the autonomy feed shows. */
 export const FEED_SIZE = 6;
-/** How many managed elements the region tiles read to learn the region names (no region list route exists). */
-export const REGION_SAMPLE = 100;
+/** How many elements the "Worst DUs" ranking shows. */
+export const WORST_TOP = 10;
 /** The page size of the drill-down from a region to its elements. */
 export const DRILL_PAGE = 50;
 
@@ -43,11 +44,21 @@ export const useEscalations = () => useSmo<RemedialAction[]>("/sa-smos/remedial-
 /** The latest decision records (newest first). */
 export const useRecentDecisions = () => useSmo<DecisionRecord[]>("/ran-nf-oam/decision-records", { limit: FEED_SIZE, total: false }, { refetchInterval: LIST_POLL });
 
-/** One page of managed elements, read for the region names on it (the list is ordered by element, so a large fleet may hide a region). */
-export const useElementSample = () =>
-  useSmo<ManagedEntity[]>("/ran-nf-oam/managed-entities", { limit: REGION_SAMPLE, total: false }, { refetchInterval: POLL.inventory });
+/** The fleet's health (RAN NF OAM `GET /managed-entities/health`, ran-nf-oam/app/fleet.py): one group per region, or per site cluster of one
+ * region, each with its element count, unhealthy count (an open critical or major alarm) and worst open severity, plus the `healthScore`
+ * (100 × healthy / elements). The region level also feeds the "Network health" tile (same cache entry, no extra call). */
+export const useFleetHealth = (groupBy: "region" | "site_cluster", region?: string | null, enabled = true) =>
+  useSmo<FleetHealth>("/ran-nf-oam/managed-entities/health", { group_by: groupBy, region: region ?? undefined }, { refetchInterval: LIST_POLL, enabled });
 
-/** The managed-elements route a region drills into (a `kit/ServerTable` path; the filter is `?region=`). */
+/** The elements with the most open critical, then major, then any alarms (`GET /managed-entities/worst`, ranked in SQL; a bare list). */
+export const useWorstElements = () =>
+  useSmo<WorstElement[]>("/ran-nf-oam/managed-entities/worst", { limit: WORST_TOP }, { refetchInterval: LIST_POLL });
+
+/** The alarms raised in each of the last 24 hours, by severity (`GET /alarms/counts?group_by=hour`, oldest first). */
+export const useAlarmHours = () =>
+  useSmo<{ groupBy: string; groups: AlarmHour[] }>("/ran-nf-oam/alarms/counts", { group_by: "hour" }, { refetchInterval: LIST_POLL });
+
+/** The managed-elements route a region or site cluster drills into (a `kit/ServerTable` path; filters `?region=` and `?site_cluster=`). */
 export const ELEMENTS_PATH = "/ran-nf-oam/managed-entities";
 
 /** The last 40 MLMF reports, for the model KPI sparklines; only while the trends box is open. */

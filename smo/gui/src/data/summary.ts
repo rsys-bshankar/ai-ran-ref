@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api, ApiError } from "../api/client";
 import { POLL } from "../api/hooks";
+import { LIVE_SUMMARY_POLL, useLive } from "./events";
 import { KEYS } from "./keys";
 
 /** The pages the BFF serves a summary for (gui-bff/app/summary.py `PAGES`). */
@@ -15,12 +16,15 @@ export type SummaryPage = "nav" | "dashboard" | "alarms" | "rapps" | "approvals"
 /** The body of `GET /api/summary/{page}`. */
 export interface Summary { page: string; computedAt: string; counts: Record<string, number | null>; partial: string[] }
 
-/** The summary of one page, refreshed every `POLL.summary` while the tab is visible. */
+/** The summary of one page, refreshed every `POLL.summary` while the tab is visible, or only once a minute while the summary stream is open
+ * (`data/events.ts` writes each pushed update into this same cache entry). */
 export function useSummary(page: SummaryPage, opts: { enabled?: boolean; refetchInterval?: number } = {}) {
+  const { connected } = useLive();
+  const polled = opts.refetchInterval ?? POLL.summary;
   return useQuery<Summary, ApiError>({
     queryKey: KEYS.summary(page),
     queryFn: ({ signal }) => api<Summary>(`/summary/${page}`, { signal }),
-    refetchInterval: opts.refetchInterval ?? POLL.summary,
+    refetchInterval: connected ? Math.max(polled, LIVE_SUMMARY_POLL) : polled,
     enabled: opts.enabled ?? true,
     staleTime: 4_000,
   });
@@ -54,7 +58,7 @@ export function byState(s: Summary | undefined, prefix: string): Record<string, 
   return out;
 }
 
-/** Open RAN alarms: every alarm but the cleared ones (the backend has no "open" filter, so total − cleared). */
+/** Open RAN alarms: every alarm but the cleared ones (total − cleared, both from the same summary). */
 export function openAlarms(s: Summary | undefined): number | null {
   const total = count(s, "alarms.total");
   const cleared = count(s, "alarms.cleared");

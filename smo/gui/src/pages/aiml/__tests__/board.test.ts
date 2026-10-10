@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { MlmfReport, MlmfSubscription, Model, ModelLifecycle } from "../../../api/types";
-import { artifactVersions, breachedModels, buildBoard, stageOf } from "../data/board";
+import { artifactVersions, breachedModels, buildBoard, stageCounts, stageOf } from "../data/board";
 import { endOfLifeEvents } from "../sections/Governance";
 
 const model = (id: string, type = "m"): Model => ({ modelId: id, modelType: type, version: "1", artifactLocation: null, description: null, author: null, owner: null, inputDataType: null, outputDataType: null, targetEnvironments: [] });
@@ -54,5 +54,13 @@ describe("stage board", () => {
     expect(endOfLifeEvents("CERTIFIED").map((e) => e.event)).toEqual(["DEPRECATE"]);
     expect(endOfLifeEvents("FAILED").map((e) => e.event)).toEqual(["RETIRE"]);
     expect(endOfLifeEvents("TRAINING")).toEqual([]);
+  });
+
+  // The server's counts by state land in their columns; models AIMgF has no row for count as Registered; end-of-life states are off the board.
+  it("turns the server's state counts into column counts", () => {
+    const out = stageCounts([{ state: "TRAINING", count: 4 }, { state: "TRAINED", count: 1 }, { state: "PROMOTED", count: 2 }, { state: "RETIRED", count: 3 }], 15);
+    expect(out.columns).toEqual({ registered: 5, training: 5, validating: 0, promoted: 2 });
+    expect(out.off).toEqual({ RETIRED: 3 });
+    expect(stageCounts([], null).columns.registered).toBe(0);
   });
 });

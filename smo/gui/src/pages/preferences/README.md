@@ -17,7 +17,8 @@ writes them with `PUT /api/me/preferences` (gui-bff/app/preferences.py).
 
 ## Known limits
 
-- The alarm sound preference is stored, but no page plays a sound yet: it needs the pushed alarm stream (SCALE.md P7).
+- The alarm sound plays only while the pushed summary stream is open (top bar "Live · pushed"), when the critical alarm count rises; a browser
+  that blocks audio until the page was clicked stays silent until then.
 - "Network local" time zone from the mockup is not offered: no backend serves the network's time zone.
 
 ## Troubleshooting
