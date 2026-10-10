@@ -64,6 +64,7 @@ def _bundle(tmp_path, text=SAMPLE):
 
 
 def test_the_parser_reads_comments_quotes_concatenation_and_nesting():
+    """The YANG parser reads block and line comments, quoted strings joined with `+`, and nested statements."""
     tree = yang.parse('module m { /* c */ namespace "urn:" + "x"; // trailing\n leaf a { type string; } }')
     assert tree[0][0] == "module" and tree[0][1] == "m"
     keywords = {c[0]: c for c in tree[0][2]}
@@ -71,6 +72,9 @@ def test_the_parser_reads_comments_quotes_concatenation_and_nesting():
 
 
 def test_classes_attributes_types_and_enums(tmp_path):
+    """The ingest of a sample module gives the classes (not nested lists or containers) with each attribute's type, enum, range, fraction digits
+    and pattern, following typedefs, choices and groupings.
+    """
     b = _bundle(tmp_path)
     assert set(b.classes) == {"Radio", "Plain", "Aug"}  # nested list / container are attributes, not classes
     radio = b.classes["Radio"]
@@ -86,11 +90,13 @@ def test_classes_attributes_types_and_enums(tmp_path):
 
 
 def test_unresolved_groupings_are_reported_and_the_revision_is_the_newest(tmp_path):
+    """A grouping that cannot be found is reported as unresolved, and the bundle's revision is the newest revision date of its modules."""
     b = _bundle(tmp_path)
     assert b.unresolved == {"top3gpp:Top_Grp"} and b.revision() == "2025-03-09"
 
 
 def test_a_grouping_in_another_file_resolves_and_a_cycle_terminates(tmp_path):
+    """A grouping defined in another input file resolves, and groupings that use each other end instead of recursing for ever."""
     (tmp_path / "a.yang").write_text("module a { grouping G { leaf fromG { type string; } uses H; } grouping H { uses G; leaf fromH { type int8; } } }")
     (tmp_path / "b.yang").write_text("module b { container C { uses G; } }")
     b = yang.ingest([tmp_path / "a.yang", tmp_path / "b.yang"])
@@ -112,6 +118,7 @@ def test_a_library_supplies_definitions_but_no_classes_and_the_input_wins(tmp_pa
 
 
 def test_without_the_library_the_same_input_leaves_the_grouping_unresolved(tmp_path):
+    """Without the library module, a grouping from it stays unresolved and nothing is made up for it."""
     (tmp_path / "own.yang").write_text("module own { list Radio { key id; uses top:Top_Grp; leaf n { type string; } } }")
     b = yang.ingest([tmp_path / "own.yang"])
     assert b.unresolved == {"top:Top_Grp"} and b.classes["Radio"] == {"n": {"type": "string"}} and not b.library_used
@@ -132,6 +139,9 @@ def test_no_bundled_yang_descriptor_has_an_unresolved_grouping_any_more():
 
 
 def test_the_3gpp_common_attributes_are_in_the_o1_nrm_classes(client):
+    """The O1 NRM classes carry the 3GPP common attributes (`id`, `userLabel`), and a type from a library typedef (a port number) has its range
+    instead of `any`.
+    """
     classes = _full(client, "o-ran-wg10-o1nrm")
     assert {"id", "userLabel"} <= set(classes["EP_E2"]) and {"id", "userLabel"} <= set(classes["NearRTRICFunction"])
     assert classes["EP_D2C"]["localPortNumber"] == {"type": "integer", "range": [[0, 65535]]}   # an `inet:port-number`, `any` before the library
@@ -143,6 +153,7 @@ def _full(client, name):
 
 
 def test_the_wg10_o1nrm_classes_are_bundled(client):
+    """The bundled WG10 O1 NRM descriptor has the O-RU, near-RT RIC, endpoint and policy classes with their attributes and enums."""
     classes = _full(client, "o-ran-wg10-o1nrm")
     assert {"ORU", "NearRTRICFunction", "EP_E2", "EP_D2C", "EP_D2U", "NESPolicy", "NESPolicyRelation", "RRMPolicyRBAlloc", "D2Params"} <= set(classes)
     assert classes["ORU"] == {"id": {"type": "string"}, "oRUControllerList": {"type": "array"}, "ruInstanceId": {"type": "string"}}
@@ -151,17 +162,20 @@ def test_the_wg10_o1nrm_classes_are_bundled(client):
 
 
 def test_the_wg5_odu_and_ocu_classes_are_bundled(client):
+    """The bundled WG5 O-DU and O-CU descriptors have their classes."""
     du, cu = _full(client, "o-ran-wg5-du-mp"), _full(client, "o-ran-wg5-cu-mp")
     assert "CTIFunction" in du and len(du) >= 30 and {"PDCPConfig", "SecurityHandling"} <= set(cu)
 
 
 def test_the_combined_descriptor_is_the_union(client):
+    """The combined WG10 plus WG5 descriptor is exactly the union of the three parts."""
     combined = _full(client, "o-ran-wg10-wg5")
     parts = {**_full(client, "o-ran-wg10-o1nrm"), **_full(client, "o-ran-wg5-du-mp"), **_full(client, "o-ran-wg5-cu-mp")}
     assert combined == parts
 
 
 def test_a_vendor_conforms_to_the_wg10_model_and_writes_are_checked(client, dispatched):
+    """A vendor in COMBINED mode with the WG10 descriptor may write its classes and the 3GPP ones, and an unknown enum value or attribute is 422."""
     rev = next(s["revision"] for s in client.get("/cm-schemas").json()["items"] if s["schemaName"] == "o-ran-wg10-o1nrm")
     _vendor(client, "oran", conformanceMode="COMBINED", schemaRef={"schemaName": "o-ran-wg10-o1nrm", "revision": rev})
     _endpoint(client, vendor="oran")
@@ -175,6 +189,7 @@ def test_a_vendor_conforms_to_the_wg10_model_and_writes_are_checked(client, disp
 
 
 def test_a_dn_function_ref_picks_the_class_from_its_last_rdn(client, dispatched):
+    """For a DN function ref the class checked is the last RDN's, so an attribute of another class is refused."""
     rev = next(s["revision"] for s in client.get("/cm-schemas").json()["items"] if s["schemaName"] == "o-ran-wg10-o1nrm")
     _vendor(client, "oran", conformanceMode="COMBINED", schemaRef={"schemaName": "o-ran-wg10-o1nrm", "revision": rev})
     _endpoint(client, vendor="oran")
@@ -184,6 +199,7 @@ def test_a_dn_function_ref_picks_the_class_from_its_last_rdn(client, dispatched)
 
 
 def test_a_vendor_conforms_to_the_combined_wg10_wg5_model(client, dispatched):
+    """A vendor in OWN mode with the combined descriptor may write WG10 and WG5 classes and not the 3GPP ones."""
     rev = next(s["revision"] for s in client.get("/cm-schemas").json()["items"] if s["schemaName"] == "o-ran-wg10-wg5")
     _vendor(client, "oran", conformanceMode="OWN", schemaRef={"schemaName": "o-ran-wg10-wg5", "revision": rev})
     _endpoint(client, vendor="oran")
@@ -219,6 +235,9 @@ module acme-limits {
 
 
 def test_ranges_lengths_patterns_and_fraction_digits_are_captured(tmp_path):
+    """The YANG front end captures ranges (most derived wins, `|` alternatives, `max`, native bounds), lengths, accumulated patterns and fraction
+    digits, and not an inverted pattern.
+    """
     (tmp_path / "limits.yang").write_text(CONSTRAINED)
     limits = yang.ingest([tmp_path / "limits.yang"]).classes["Limits"]
     assert limits["pct"] == {"type": "integer", "range": [[0, 100]]}
@@ -233,6 +252,7 @@ def test_ranges_lengths_patterns_and_fraction_digits_are_captured(tmp_path):
 
 
 def test_the_openapi_front_end_captures_minimum_maximum_length_and_pattern(tmp_path):
+    """The OpenAPI front end of the ingest script turns minimum, maximum, maxLength and pattern into range, length and pattern entries."""
     import importlib.util
     spec = importlib.util.spec_from_file_location("ingest_cm_schema", Path(__file__).resolve().parents[2] / "scripts" / "ingest_cm_schema.py")
     cm = importlib.util.module_from_spec(spec)
@@ -270,6 +290,9 @@ def test_a_value_outside_the_leafs_type_or_range_is_refused_before_anything_is_s
 
 
 def test_a_range_in_the_3gpp_spec_descriptor_is_checked_too(client, dispatched):
+    """Ranges in the bundled 3GPP descriptor are enforced for a SPEC vendor: an in-range value is written and an out-of-range one is 422 naming the
+    range.
+    """
     _vendor(client, "plain3gpp", conformanceMode="SPEC")
     _endpoint(client, vendor="plain3gpp")
     ok = _write(client, className="GNBDUFunction", attributeChanges={"gnbDuId": 1234, "gnbIdLength": 24})
@@ -311,6 +334,7 @@ def test_a_dry_run_runs_every_check_and_sends_nothing(client, dispatched, db_ses
 
 
 def test_a_dry_run_is_denied_where_the_real_write_would_be(client, dispatched):
+    """A dry run for entire-RAN scope with no MSAC role is 403, as the real write would be, and nothing is sent."""
     resp = client.post("/config-jobs", json={"requestedBy": "rapp", "scope": "entire-RAN", "dryRun": True,
                                              "changes": [{"managedElementRef": "ME-A", "attributeChanges": {"a": 1}}]})
     assert resp.status_code == 403 and "MSAC_ACCESS_DENIED" in str(resp.json())

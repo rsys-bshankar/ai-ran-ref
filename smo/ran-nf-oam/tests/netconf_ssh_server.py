@@ -13,6 +13,7 @@ NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
 
 
 def hello(caps: list[str]) -> bytes:
+    """The server's `<hello>` message, end-of-message framed, offering the given capabilities."""
     body = "".join(f"<capability>{c}</capability>" for c in caps)
     return f'<hello xmlns="{NS}"><capabilities>{body}</capabilities></hello>'.encode() + EOM
 
@@ -96,6 +97,8 @@ class NetconfTestServer:
 
 
 def _read_until(channel, buffer, marker):
+    """Reads from the channel until `marker` is in the buffer; returns (message before the marker, the rest), or (None, b'') when the peer closed first.
+    """
     while marker not in buffer:
         data = channel.recv(65536)
         if not data:
@@ -106,6 +109,8 @@ def _read_until(channel, buffer, marker):
 
 
 def _converse(channel, b: Behaviour):
+    """The server side of one NETCONF session, driven by a `Behaviour`: sends the hello (or closes after it), then answers each RPC with the edit, get-config or candidate-step reply the behaviour names, in end-of-message or chunked framing (optionally split into small writes). Every request received is recorded in `behaviour.received`. Also used by the TLS test server.
+    """
     if b.hello_text is not None:
         channel.sendall(b.hello_text.encode() + EOM)
     else:

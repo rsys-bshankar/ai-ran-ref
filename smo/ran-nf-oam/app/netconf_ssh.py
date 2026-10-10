@@ -45,6 +45,8 @@ CLIENT_HELLO = (f'<hello xmlns="{NETCONF_BASE_NS}"><capabilities><capability>{BA
 
 
 class NetconfSshError(Exception):
+    """A transport-level NETCONF failure. `reason` is one of the EditResult reason codes (NETCONF_TIMEOUT, NETCONF_UNREACHABLE, NETCONF_RPC_FAILED) and `detail` a short explanation that never contains a secret; callers turn it into an EditResult or log it.
+    """
     def __init__(self, reason: str, detail: str = ""):
         super().__init__(f"{reason}: {detail}" if detail else reason)
         self.reason, self.detail = reason, detail
@@ -150,6 +152,8 @@ class NetconfSession:
 
     def __init__(self, adaptor_uri: str, timeout: float | None = None, credential_ref: str | None = None,
                  host_keys: list[tuple[str, str]] | None = None):
+        """Parses the endpoint URI (NetconfSshError when it is malformed) and stores the connection settings; nothing is opened until the session is entered. `timeout` bounds every connect and read (default NETCONF_TIMEOUT_SECONDS); `host_keys` are the (type, base64) keys pinned for the endpoint.
+        """
         self.user, self.host, self.port = parse_ssh_uri(adaptor_uri)
         self.credential_ref, self.host_keys = credential_ref, host_keys
         self.timeout = NETCONF_TIMEOUT_SECONDS if timeout is None else timeout
@@ -171,6 +175,8 @@ class NetconfSession:
         self.close()
 
     def close(self) -> None:
+        """Closes the channel and then the SSH client, ignoring errors from either (closing must not hide the failure that led to it). Safe to call twice.
+        """
         for resource in (self._channel, self._client):
             try:
                 if resource is not None:
@@ -180,6 +186,8 @@ class NetconfSession:
         self._channel = self._client = None
 
     def _connect(self) -> None:
+        """Opens the SSH connection and its `netconf` subsystem, then exchanges hellos. The host-key policy is set before connecting, agent and key-search are off so only the endpoint's own credential is tried, and every paramiko failure is mapped to a NetconfSshError: a changed or unknown host key, refused authentication, and other SSH errors are NETCONF_RPC_FAILED; a timeout is NETCONF_TIMEOUT; a socket error is NETCONF_UNREACHABLE.
+        """
         client = self._client = paramiko.SSHClient()
         _host_key_policy(client, self.host, self.port, self.host_keys)
         password, key_file = credentials_for(self.credential_ref)
@@ -207,6 +215,8 @@ class NetconfSession:
         self._hello()
 
     def _hello(self) -> None:
+        """Sends the client hello and reads the server's. The session fails (NETCONF_RPC_FAILED) unless the server offers base:1.0 or base:1.1; chunked framing is used from here on only when the server offers 1.1 (the client always offers both).
+        """
         self._send_raw(CLIENT_HELLO.encode() + EOM)             # the hello is always end-of-message framed
         hello = parse_reply_any(self._read_eom(), "hello")
         self.server_capabilities = [c.text.strip() for c in hello.iter() if c.tag.rsplit("}", 1)[-1] == "capability" and c.text]
@@ -216,6 +226,8 @@ class NetconfSession:
 
     # --- framing -------------------------------------------------------------------------------------------------
     def _send_raw(self, data: bytes) -> None:
+        """Writes bytes to the channel; a timeout is NETCONF_TIMEOUT, a TLS refusal NETCONF_RPC_FAILED, any other socket error NETCONF_UNREACHABLE.
+        """
         try:
             self._channel.sendall(data)
         except TimeoutError as exc:
@@ -226,6 +238,8 @@ class NetconfSession:
             raise NetconfSshError("NETCONF_UNREACHABLE", f"send failed: {exc}") from exc
 
     def _more(self) -> None:
+        """Reads up to 64 KiB from the channel into the buffer. An empty read (the peer closed) is NETCONF_UNREACHABLE; a buffer above MAX_MESSAGE is NETCONF_RPC_FAILED, so a hostile or broken server cannot make the process buffer without bound.
+        """
         try:
             data = self._channel.recv(65536)
         except (TimeoutError, socket.timeout) as exc:
@@ -247,6 +261,8 @@ class NetconfSession:
         return message.decode("utf-8", "replace")
 
     def _read_chunked(self) -> str:
+        """Reads one base:1.1 message (RFC 6242 section 4.2): chunks of `#<size>` until the `##` terminator, joined. A header that does not match, a zero or oversized chunk, or a message above MAX_MESSAGE is NETCONF_RPC_FAILED.
+        """
         message = b""
         while True:
             while not (match := re.match(rb"\n#(?:(\d+)|#)\n", self._buffer)):
@@ -274,6 +290,8 @@ class NetconfSession:
 
 
 def parse_reply_any(text: str, expected: str):
+    """The root element of a reply, parsed with defusedxml, when it is the `expected` element (`rpc-reply` or `hello`); otherwise NetconfSshError NETCONF_RPC_FAILED.
+    """
     root = parse_reply(text) if expected == "rpc-reply" else _parse_named(text, expected)
     if root is None:
         raise NetconfSshError("NETCONF_RPC_FAILED", f"the server did not answer with <{expected}>")
@@ -281,6 +299,8 @@ def parse_reply_any(text: str, expected: str):
 
 
 def _parse_named(text: str, name: str):
+    """Parses `text` with defusedxml (entity-expansion and external-entity XML is refused like any unparseable text) and returns the root when its local name is `name`, else None.
+    """
     import defusedxml.ElementTree as ET
     from defusedxml.common import DefusedXmlException
     try:
@@ -362,6 +382,8 @@ def open_session(adaptor_uri: str, credential_ref: str | None = None, host_keys:
 def send_edit_config(adaptor_uri: str, target_ref: str, attribute_changes: dict, message_id: str, operation: str = "merge",
                      managed_function_ref: str | None = None, credential_ref: str | None = None,
                      host_keys: list[tuple[str, str]] | None = None) -> EditResult:
+    """One edit on the element over NETCONF (SSH or TLS by the URI), as `netconf_client.send_edit_config` does over HTTP. The RPC is built for the URI's `?model=` (a YANG list entry) or as the `<managed-object>` shape. On the running datastore it is one `<edit-config>`; with `?datastore=candidate` it is a lock, edit, commit, unlock transaction. A refused operation or a transport failure is returned as a non-applied EditResult with the reason and detail, never raised (a malformed URI option is the exception: ValueError from `model_of` and `datastore_of`).
+    """
     model = yang_payload.model_of(adaptor_uri)
     datastore = yang_payload.datastore_of(adaptor_uri)
     try:
@@ -406,6 +428,8 @@ def send_edit_configs(adaptor_uri: str, edits: list[dict], message_id: str, cred
 
 def send_get_config(adaptor_uri: str, target_ref: str, message_id: str, managed_function_ref: str | None = None,
                     credential_ref: str | None = None, host_keys: list[tuple[str, str]] | None = None) -> dict | None:
+    """Read-after-write over NETCONF: the attributes of the managed object (the model's list entry when the URI names a model) as a dict, `{}` when the entry does not exist, or None when the read failed (the failure is logged).
+    """
     model = yang_payload.model_of(adaptor_uri)
     profile = yang_payload.PROFILES[model] if model else None
     try:

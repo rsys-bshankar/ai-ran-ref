@@ -17,6 +17,8 @@ def _cell(neighbours=(), group=None, zone=None):
 
 @pytest.fixture
 def network(db_session_factory):
+    """Fixture: four elements whose cell guards declare neighbours of every kind: same element, another element, an unmanaged cell, and a cell id claimed by two elements.
+    """
     db = db_session_factory()
     _element(db, "ME-1", {"101": _cell(["102", "201", "999"], group="S1", zone="Z1"),                 # 102: same element; 201: another; 999: unmanaged
                           "102": _cell(["101"], group="S1", zone="Z1")})
@@ -36,6 +38,8 @@ def _by_pair(items):
 
 
 def test_each_declared_relation_has_a_type(client, network):
+    """Each declared neighbour relation is typed INTRA_ELEMENT, INTER_ELEMENT, EXTERNAL (nobody claims it) or AMBIGUOUS (several do, and the other element is not guessed).
+    """
     links = _by_pair(_links(client))
     assert links[("101", "102")]["linkType"] == "INTRA_ELEMENT"
     assert links[("101", "201")]["linkType"] == "INTER_ELEMENT"
@@ -44,12 +48,15 @@ def test_each_declared_relation_has_a_type(client, network):
 
 
 def test_a_relation_says_whether_the_other_side_declares_it_back(client, network):
+    """`reciprocal` says whether the other cell lists this one as a neighbour too."""
     links = _by_pair(_links(client))
     assert links[("101", "102")]["reciprocal"] is True and links[("101", "201")]["reciprocal"] is True
     assert links[("202", "301")]["reciprocal"] is False and links[("101", "999")]["reciprocal"] is False
 
 
 def test_the_sector_group_and_the_incident_zone_are_compared(client, network):
+    """Each link says whether its cells share a sector group and an incident zone; with no other side there is nothing to compare, which is not 'same'.
+    """
     links = _by_pair(_links(client))
     assert (links[("101", "102")]["sameSectorGroup"], links[("101", "102")]["sameIncidentZone"]) == (True, True)
     assert (links[("101", "201")]["sameSectorGroup"], links[("101", "201")]["sameIncidentZone"]) == (False, True)
@@ -57,6 +64,7 @@ def test_the_sector_group_and_the_incident_zone_are_compared(client, network):
 
 
 def test_the_links_can_be_narrowed_by_element_and_by_type(client, network):
+    """The list can be narrowed by link type, and by element at either end; an unknown link type is a 422."""
     assert {i["linkType"] for i in _links(client, link_type="INTER_ELEMENT")} == {"INTER_ELEMENT"}
     assert {(i["aCell"], i["bCell"]) for i in _links(client, link_type="INTER_ELEMENT")} == {("101", "201"), ("201", "101")}
     ends = _links(client, managed_element_ref="ME-2")                                                  # at either end
@@ -65,6 +73,7 @@ def test_the_links_can_be_narrowed_by_element_and_by_type(client, network):
 
 
 def test_a_cell_is_not_its_own_neighbour(client, db_session_factory):
+    """A cell that lists itself as a neighbour gives no link."""
     db = db_session_factory()
     _element(db, "ME-1", {"101": _cell(["101"])})
     db.commit()
@@ -73,6 +82,7 @@ def test_a_cell_is_not_its_own_neighbour(client, db_session_factory):
 
 
 def test_no_cells_no_links(client):
+    """With no cells registered the list is empty."""
     assert _links(client) == []
 
 
@@ -84,6 +94,8 @@ DNS = {"root": "ManagedElement=ME-1", "du": "ManagedElement=ME-1,GNBDUFunction=1
 
 @pytest.fixture
 def tree(db_session_factory):
+    """Fixture: a small containment tree for ME-1 (root, a DU function with two cells, a CU-UP function) and a root of ME-2, keyed by the `DNS` map.
+    """
     db = db_session_factory()
     for ref in ("ME-1", "ME-2"):
         db.add(ManagedEntity(managed_element_ref=ref, entity_type="O-DU", o1_protocol="NETCONF", cell_guards={}))
@@ -102,10 +114,12 @@ def tree(db_session_factory):
     ("c1", "c2", "SIBLING"), ("c1", "cu", "SAME_ELEMENT"), ("du", "cu", "SIBLING"), ("c1", "other", "DIFFERENT_ELEMENT"),
 ])
 def test_how_two_managed_objects_are_related(client, tree, a, b, relation):
+    """The relation of two DNs is SAME, ANCESTOR, DESCENDANT, SIBLING, SAME_ELEMENT or DIFFERENT_ELEMENT as the table says."""
     resp = client.get("/topology/relation", params={"a": DNS[a], "b": DNS[b]})
     assert resp.status_code == 200 and resp.json() == {"a": DNS[a], "b": DNS[b], "relation": relation}
 
 
 def test_a_dn_that_is_not_in_the_tree_is_404(client, tree):
+    """A relation involving a DN that is not in the tree is 404 MANAGED_OBJECT_NOT_FOUND."""
     resp = client.get("/topology/relation", params={"a": DNS["c1"], "b": "ManagedElement=GHOST"})
     assert resp.status_code == 404 and resp.json()["detail"]["title"] == "MANAGED_OBJECT_NOT_FOUND"

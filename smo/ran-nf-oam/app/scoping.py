@@ -38,6 +38,8 @@ def scope_denied(detail: str = "the caller's scope does not cover this managed e
 
 
 def element_permitted(db: Session, scope: Scope | None, ref: str) -> bool:
+    """Whether the caller's scope covers the managed element `ref`: True without a claim (no query is made); otherwise True only for a registered element whose region and tenant the scope permits. An unregistered element is not permitted, so a scoped caller cannot tell it from an out-of-scope one.
+    """
     if scope is None:
         return True
     row = db.execute(select(ManagedEntity.region, ManagedEntity.tenant).where(ManagedEntity.managed_element_ref == ref)).one_or_none()     # column select: never a stale identity-map row

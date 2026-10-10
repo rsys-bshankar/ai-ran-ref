@@ -70,6 +70,7 @@ def _events(fleet):
 # ---- 11.4: the hook
 
 def test_a_rapp_without_a_policy_writes_at_once(client, fleet):
+    """An rApp with no approval policy writes at once, as before, and no approval request exists."""
     resp = _write(client)
     assert resp.status_code == 202 and resp.json()["status"] == "COMPLETED" and resp.json()["jobId"]
     assert fleet["values"]["ME-1"] == "20"
@@ -77,6 +78,7 @@ def test_a_rapp_without_a_policy_writes_at_once(client, fleet):
 
 
 def test_a_rapp_with_a_policy_is_parked_and_nothing_is_written(client, fleet):
+    """An rApp with an approval policy gets 202 PENDING_APPROVAL with no job; nothing is written or created, and the rApp can read its own request."""
     _hold(client)
     resp = _write(client)
     body = resp.json()
@@ -91,6 +93,7 @@ def test_a_rapp_with_a_policy_is_parked_and_nothing_is_written(client, fleet):
 
 
 def test_only_the_rapp_with_the_policy_is_held(client, fleet):
+    """Only the rApp the policy names is held; other rApps and an SMO module on its own account write at once."""
     _hold(client)
     assert _write(client, headers=OTHER).json()["status"] == "COMPLETED"
     assert _write(client, headers=GUI, refs=ELEMENTS[2:3]).json()["status"] == "COMPLETED"      # the GUI's own write, an SMO module on its own account
@@ -98,6 +101,7 @@ def test_only_the_rapp_with_the_policy_is_held(client, fleet):
 
 
 def test_a_policy_on_the_rapp_holds_a_write_made_for_it_by_an_smo_module(client, fleet):
+    """A write an SMO module makes on behalf of the held rApp is held too."""
     _hold(client)
     through_dme = {"X-R1-Invoker-Id": "dme-module", "X-R1-Role": "internal", "X-R1-On-Behalf-Of": "es-client"}
     assert _write(client, headers=through_dme).json()["status"] == "PENDING_APPROVAL"
@@ -105,6 +109,7 @@ def test_a_policy_on_the_rapp_holds_a_write_made_for_it_by_an_smo_module(client,
 
 
 def test_a_dry_run_is_not_held_and_checks_still_run_before_a_request_is_parked(client, fleet):
+    """A dry run is never held, and the normal checks (here the access gate) refuse a write before it is parked."""
     _hold(client)
     dry = _write(client, dryRun=True)
     assert dry.status_code == 200 and dry.json()["dryRun"] is True
@@ -115,6 +120,7 @@ def test_a_dry_run_is_not_held_and_checks_still_run_before_a_request_is_parked(c
 
 
 def test_the_replay_of_a_parked_request_is_the_same_request(client, fleet):
+    """Repeating a request with the same Idempotency-Key gives the same approval and parks one request."""
     _hold(client)
     key = {"Idempotency-Key": "park-1"}
     first = _write(client, headers={**ES, **key}).json()
@@ -123,6 +129,7 @@ def test_the_replay_of_a_parked_request_is_the_same_request(client, fleet):
 
 
 def test_the_safeguards_still_apply_before_a_request_is_parked(client, fleet):
+    """A kill switch refuses a write before it can be parked."""
     _hold(client)
     client.put("/rapp-kill/es-client", json={"requestedBy": "alice", "reason": "stop"})
     assert _write(client).status_code == 403
@@ -132,6 +139,9 @@ def test_the_safeguards_still_apply_before_a_request_is_parked(client, fleet):
 # ---- 11.2: the queue
 
 def test_approving_makes_the_job_from_the_request_and_closes_it(client, fleet):
+    """Approving makes the job from the request as the rApp sent it, writes it, and closes the request APPROVED with the approver, reason and job
+    id.
+    """
     _hold(client)
     approval_id = _parked(client, value=25)
     resp = _approve(client, approval_id, reason="looks right")
@@ -146,6 +156,7 @@ def test_approving_makes_the_job_from_the_request_and_closes_it(client, fleet):
 
 
 def test_rejecting_writes_nothing_and_says_why(client, fleet):
+    """Rejecting closes the request REJECTED with the reason and writes nothing."""
     _hold(client)
     approval_id = _parked(client)
     resp = _reject(client, approval_id, reason="not in this window")
@@ -155,6 +166,7 @@ def test_rejecting_writes_nothing_and_says_why(client, fleet):
 
 
 def test_a_request_is_decided_once(client, fleet):
+    """A decided request cannot be decided again (409 APPROVAL_NOT_PENDING), and the write happened once."""
     _hold(client)
     approval_id = _parked(client)
     assert _approve(client, approval_id).status_code == 200
@@ -165,6 +177,7 @@ def test_a_request_is_decided_once(client, fleet):
 
 
 def test_an_unknown_request_is_404(client, fleet):
+    """An unknown approval id is 404 on read, approve and reject."""
     missing = "00000000-0000-0000-0000-000000000001"
     assert client.get(f"/rapp-approvals/{missing}").status_code == 404
     assert _approve(client, missing).json()["detail"]["title"] == "APPROVAL_NOT_FOUND"
@@ -172,6 +185,7 @@ def test_an_unknown_request_is_404(client, fleet):
 
 
 def test_an_rapp_can_never_decide_an_approval_not_even_for_another_rapp(client, fleet):
+    """An rApp cannot approve or reject any request, whoever it names as decider: 403 ROLE_NOT_PERMITTED and the request stays pending."""
     _hold(client)
     approval_id = _parked(client)
     for headers in (ES, OTHER):
@@ -182,6 +196,9 @@ def test_an_rapp_can_never_decide_an_approval_not_even_for_another_rapp(client, 
 
 
 def test_the_requester_cannot_decide_its_own_action(client, fleet):
+    """The requester cannot decide its own action under its invoker id or the name it gave as requester, nor through a call carrying its own id
+    (403 APPROVAL_SELF_DECISION).
+    """
     _hold(client)
     approval_id = _parked(client)
     for who in ("es-client", "es-rapp"):                                       # the invoker id, and the name the rApp gave as requestedBy
@@ -192,6 +209,7 @@ def test_the_requester_cannot_decide_its_own_action(client, fleet):
 
 
 def test_the_queue_lists_newest_first_filters_and_pages(client, fleet):
+    """The approval queue is newest first and can be filtered by status, rApp and time and paged."""
     _hold(client)
     _hold(client, invoker="ts-client")
     first = _parked(client)
@@ -209,6 +227,9 @@ def test_the_queue_lists_newest_first_filters_and_pages(client, fleet):
 
 
 def test_approve_checks_the_safeguards_again_and_closes_a_refused_request(client, fleet):
+    """Approval checks the safeguards again: a kill thrown while the request waited refuses it (403 RAPP_KILLED), closes it REFUSED with the code,
+    and it does not wait for a decision that cannot succeed.
+    """
     _hold(client)
     approval_id = _parked(client)
     client.put("/rapp-kill/es-client", json={"requestedBy": "alice", "reason": "oscillating"})        # stopped while it waited
@@ -222,6 +243,7 @@ def test_approve_checks_the_safeguards_again_and_closes_a_refused_request(client
 
 
 def test_a_request_the_checks_refuse_at_approval_is_closed_with_the_reason(client, fleet):
+    """A request that the access checks refuse when it is run is closed REFUSED with that code."""
     _hold(client)
     approval_id = _parked(client)
     with fleet["db"]() as db:                                                                          # the element's endpoint went away while it waited
@@ -236,6 +258,7 @@ def test_a_request_the_checks_refuse_at_approval_is_closed_with_the_reason(clien
 # ---- 11.3: the timeout
 
 def test_a_request_nobody_decided_expires_by_default_and_cannot_then_be_approved(client, fleet):
+    """By default a request nobody decides expires after an hour, decided by `system:timeout`, and cannot then be approved (409)."""
     policy = _hold(client)
     assert policy["timeoutSeconds"] == 3600 and policy["onTimeout"] == "EXPIRE"                        # the conservative default
     approval_id = _parked(client)
@@ -250,6 +273,7 @@ def test_a_request_nobody_decided_expires_by_default_and_cannot_then_be_approved
 
 
 def test_with_on_timeout_reject_the_platform_rejects_it(client, fleet):
+    """With `onTimeout: REJECT` a request that timed out is REJECTED by the platform, and the deadline is enforced when someone tries to decide it."""
     _hold(client, timeoutSeconds=120, onTimeout="REJECT")
     approval_id = _parked(client)
     _age(fleet, approval_id, 1)
@@ -259,6 +283,7 @@ def test_with_on_timeout_reject_the_platform_rejects_it(client, fleet):
 
 
 def test_a_timeout_holds_without_a_scheduler_the_list_lapses_what_is_due(client, fleet):
+    """Reading the queue lapses what is due, so a timeout holds even when no scheduler runs."""
     _hold(client)
     late, on_time = _parked(client), _parked(client, refs=ELEMENTS[2:3])
     _age(fleet, late, 10)
@@ -268,6 +293,7 @@ def test_a_timeout_holds_without_a_scheduler_the_list_lapses_what_is_due(client,
 
 
 def test_the_sweep_and_the_workers_task_lapse_what_is_due(client, fleet, monkeypatch):
+    """The expire-due sweep and the worker's `expire-approvals` task lapse each due request once."""
     _hold(client)
     due, waiting = _parked(client), _parked(client, refs=ELEMENTS[2:3])
     _age(fleet, due, 10)
@@ -280,6 +306,7 @@ def test_the_sweep_and_the_workers_task_lapse_what_is_due(client, fleet, monkeyp
 
 
 def test_the_policy_bounds_the_timeout(client, fleet):
+    """A policy timeout must be between a minute and a week, and there is no option that approves by itself."""
     assert client.put("/rapp-approval-policy/x", json={"requestedBy": "a", "timeoutSeconds": 59}).status_code == 422
     assert client.put("/rapp-approval-policy/x", json={"requestedBy": "a", "timeoutSeconds": 604_801}).status_code == 422
     assert client.put("/rapp-approval-policy/x", json={"requestedBy": "a", "onTimeout": "APPROVE"}).status_code == 422      # no option approves by itself
@@ -287,6 +314,7 @@ def test_the_policy_bounds_the_timeout(client, fleet):
 
 
 def test_a_policy_is_set_read_replaced_and_removed(client, fleet):
+    """A policy can be set, read, replaced whole (not merged) and removed; after removal the rApp writes at once."""
     assert client.get("/rapp-approval-policy/es-client").status_code == 404
     _hold(client, timeoutSeconds=600, onTimeout="REJECT")
     assert client.get("/rapp-approval-policy/es-client").json() | {"updatedAt": None} == {
@@ -298,6 +326,7 @@ def test_a_policy_is_set_read_replaced_and_removed(client, fleet):
 
 
 def test_an_rapp_cannot_set_or_remove_its_own_policy(client, fleet):
+    """An rApp cannot set or remove its own approval policy (403 RAPP_LIMIT_SELF_CHANGE)."""
     _hold(client)
     resp = client.put("/rapp-approval-policy/es-client", headers=ES, json={"requestedBy": "es-rapp"})
     assert resp.status_code == 403 and resp.json()["detail"]["title"] == "RAPP_LIMIT_SELF_CHANGE" and "approval policy" in resp.json()["detail"]["detail"]
@@ -305,6 +334,7 @@ def test_an_rapp_cannot_set_or_remove_its_own_policy(client, fleet):
 
 
 def test_a_request_parked_before_the_policy_was_removed_still_waits(client, fleet):
+    """Removing a policy leaves requests already parked waiting, and they can still be approved."""
     _hold(client)
     approval_id = _parked(client)
     client.delete("/rapp-approval-policy/es-client")
@@ -321,6 +351,7 @@ def _subscribe(client):
 
 
 def test_the_approvers_are_told_when_a_request_waits_and_when_it_lapses(client, fleet):
+    """Subscribers get one notice when a request is parked and one when it lapses, naming the request and elements but not carrying the changes."""
     sub = _subscribe(client)
     _hold(client)
     approval_id = _parked(client)
@@ -336,6 +367,7 @@ def test_the_approvers_are_told_when_a_request_waits_and_when_it_lapses(client, 
 
 
 def test_a_decision_made_by_a_human_sends_no_second_notice_and_nobody_subscribed_means_no_rows(client, fleet):
+    """A human decision sends no second notice, and with no subscriber nothing is queued."""
     _hold(client)
     _parked(client)
     assert _events(fleet) == []                                                                        # nobody subscribed: the request still waits for the GUI inbox
@@ -346,6 +378,7 @@ def test_a_decision_made_by_a_human_sends_no_second_notice_and_nobody_subscribed
 
 
 def test_a_notice_is_not_sent_for_a_request_that_was_not_kept(client, fleet):
+    """A write refused before it is parked sends no approval notice."""
     _subscribe(client)
     _hold(client)
     client.put("/rapp-kill/es-client", json={"requestedBy": "alice"})
@@ -354,6 +387,7 @@ def test_a_notice_is_not_sent_for_a_request_that_was_not_kept(client, fleet):
 
 
 def test_a_destination_the_guard_refuses_is_a_422_and_an_unknown_subscription_a_404(client, fleet):
+    """A callback the SSRF guard refuses is 422, an unknown subscription is 404, and subscriptions can be listed and removed."""
     assert client.post("/approval-subscriptions", json={"callbackUri": "http://127.0.0.1:9/x"}).status_code == 422
     assert client.delete("/approval-subscriptions/00000000-0000-0000-0000-000000000001").json()["detail"]["title"] == "APPROVAL_SUBSCRIPTION_NOT_FOUND"
     sub = _subscribe(client)
@@ -363,6 +397,7 @@ def test_a_destination_the_guard_refuses_is_a_422_and_an_unknown_subscription_a_
 
 
 def test_the_decision_records_of_an_approval_name_the_approver(client, fleet):
+    """Approving and rejecting each leave a decision record that names the decider."""
     _hold(client)
     approved, rejected = _parked(client), _parked(client, refs=ELEMENTS[2:3])
     _approve(client, approved)

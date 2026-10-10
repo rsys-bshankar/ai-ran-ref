@@ -12,6 +12,9 @@ from app import msac
 
 @pytest.fixture
 def applied(monkeypatch):
+    """Fixture: replaces the NETCONF edit with a recorder and returns the list of (element, function ref, operation) it was called with; every edit
+    reports success.
+    """
     calls = []
     monkeypatch.setattr("app.main.send_edit_config",
                         lambda uri, ref, changes, message_id, operation="merge", managed_function_ref=None: calls.append((ref, managed_function_ref, operation)) or True)
@@ -29,6 +32,7 @@ def _post(client, **kw):
 # ---------------------------------------------------------------- SA-RANOAM-2
 
 def test_access_scope_is_the_field_and_scope_a_deprecated_alias(client, db_session_factory, applied):
+    """`accessScope` is the field and `scope` a deprecated alias: either is accepted and the job shows both with the same value."""
     _make_me(db_session_factory)
     assert _post(client).status_code == 202
     legacy = client.post("/config-jobs", json={"requestedBy": "x", "scope": "cell", "changes": [_change()]})
@@ -38,6 +42,7 @@ def test_access_scope_is_the_field_and_scope_a_deprecated_alias(client, db_sessi
 
 
 def test_scope_and_access_scope_must_agree_and_one_is_required(client, db_session_factory, applied):
+    """A request with disagreeing `scope` and `accessScope`, or with neither, is 422."""
     _make_me(db_session_factory)
     assert client.post("/config-jobs", json={"requestedBy": "x", "scope": "a", "accessScope": "b", "changes": []}).status_code == 422
     assert client.post("/config-jobs", json={"requestedBy": "x", "changes": []}).status_code == 422
@@ -46,6 +51,7 @@ def test_scope_and_access_scope_must_agree_and_one_is_required(client, db_sessio
 # ---------------------------------------------------------------- SA-RANOAM-4
 
 def test_ldn_parsing():
+    """DN parsing splits `Class=id` RDNs, reads the class and id of the last RDN, passes a flat id through and refuses malformed DNs."""
     assert parse_ldn("SubNetwork=A,ManagedElement=ME-1,NRCellDU=101") == [("SubNetwork", "A"), ("ManagedElement", "ME-1"), ("NRCellDU", "101")]
     assert leaf_class("SubNetwork=A,NRCellDU=101") == "NRCellDU" and leaf_id("SubNetwork=A,NRCellDU=101") == "101"
     assert leaf_class("ME-1") is None and leaf_id("ME-1") == "ME-1" and check_ref("ME-1") == "ME-1"
@@ -55,6 +61,7 @@ def test_ldn_parsing():
 
 
 def test_a_malformed_dn_is_refused_and_a_dn_ref_is_accepted(client, db_session_factory, applied):
+    """A malformed DN function ref is 422 on a write, and a well-formed DN is accepted and sent to the adaptor as given."""
     _make_me(db_session_factory)
     bad = client.post("/config-jobs", json={"requestedBy": "x", "accessScope": "cell", "changes": [_change(managedFunctionRef="NRCellDU=,x")]})
     assert bad.status_code == 422
@@ -64,6 +71,7 @@ def test_a_malformed_dn_is_refused_and_a_dn_ref_is_accepted(client, db_session_f
 
 
 def test_alarms_carry_the_dn_class_and_match_an_rdn_suffix(client, db_session_factory):
+    """An alarm shows the class and id of its function DN, can be found by the last RDN alone, and a malformed function ref on ingest is 422."""
     _make_me(db_session_factory)
     dn = "SubNetwork=A,GNBDUFunction=1,NRCellDU=101"
     client.post("/alarms/ingest", params={"source_alarm_id": "a", "managed_element_ref": "ME-1", "severity": "major", "managed_function_ref": dn})
@@ -78,6 +86,9 @@ def test_alarms_carry_the_dn_class_and_match_an_rdn_suffix(client, db_session_fa
 # ---------------------------------------------------------------- SA-RANOAM-6-severity
 
 def test_severity_accepts_either_case_and_indeterminate_and_exposes_perceived_severity(client, db_session_factory):
+    """Alarm severity is accepted in either case including INDETERMINATE, stored lower-case, and every view also gives the upper-case
+    `perceivedSeverity`.
+    """
     _make_me(db_session_factory)
     for sev in ("INDETERMINATE", "Critical", "warning"):
         assert client.post("/alarms/ingest", params={"source_alarm_id": sev, "managed_element_ref": "ME-1", "severity": sev}).status_code == 200
@@ -88,6 +99,7 @@ def test_severity_accepts_either_case_and_indeterminate_and_exposes_perceived_se
 
 
 def test_an_unknown_severity_is_a_422_not_a_database_error(client, db_session_factory):
+    """A severity that is not a PerceivedSeverity is 422 on ingest and on the filter, not a database error."""
     _make_me(db_session_factory)
     r = client.post("/alarms/ingest", params={"source_alarm_id": "x", "managed_element_ref": "ME-1", "severity": "SEVERE"})
     assert r.status_code == 422 and "PerceivedSeverity" in r.json()["detail"]["detail"]
@@ -95,6 +107,7 @@ def test_an_unknown_severity_is_a_422_not_a_database_error(client, db_session_fa
 
 
 def test_cleared_alarm_reports_cleared(client, db_session_factory):
+    """A cleared alarm reports `perceivedSeverity` CLEARED."""
     _make_me(db_session_factory)
     alarm = client.post("/alarms/ingest", params={"source_alarm_id": "x", "managed_element_ref": "ME-1", "severity": "CRITICAL"}).json()
     assert client.patch(f"/alarms/{alarm['alarmId']}/clear").json()["perceivedSeverity"] == "CLEARED"
@@ -117,6 +130,7 @@ def _identity(client, name, roles, credential="s3cret"):
 
 
 def test_msac_resources_use_spec_names_and_never_return_the_credential(client):
+    """The MSAC resources use the TS 28.319 attribute names, and the credential is never returned."""
     rule = _rule(client, "/ManagedElement=ME-1/*", ["update", "read"])
     role = _role(client, "cell-operator", [rule])
     created = _identity(client, "smo-gui:alice", [role]).json()
@@ -127,6 +141,7 @@ def test_msac_resources_use_spec_names_and_never_return_the_credential(client):
 
 
 def test_credentials_are_hashed(client, db_session_factory):
+    """An identity's credential is stored only as a salted hash that verifies the right secret and not a wrong one."""
     from app.models import MsacIdentity
     _identity(client, "bob", [], credential="hunter2")
     row = db_session_factory().query(MsacIdentity).one()
@@ -135,6 +150,9 @@ def test_credentials_are_hashed(client, db_session_factory):
 
 
 def test_msac_refuses_dangling_refs_duplicates_and_unsupported_selectors(client):
+    """MSAC refuses a role or identity that lists an object that does not exist, a duplicate role name, a selector it cannot evaluate and an
+    unknown operation (422); an unknown role is 404.
+    """
     ghost = "00000000-0000-0000-0000-000000000000"
     assert client.post("/msac/roles", json={"roleName": "r", "accessRulesList": [ghost]}).status_code == 422
     assert _identity(client, "x", [ghost]).status_code == 422
@@ -147,6 +165,9 @@ def test_msac_refuses_dangling_refs_duplicates_and_unsupported_selectors(client)
 
 
 def test_an_identity_may_write_only_what_its_roles_allow(client, db_session_factory, applied):
+    """A registered identity may write only what its roles' rules allow: another class or another operation (delete when only update is allowed) is
+    403.
+    """
     _make_me(db_session_factory)
     allow = _rule(client, "/ManagedElement=ME-1/NRCellDU=*", ["update"])
     _identity(client, "smo-gui:alice", [_role(client, "cell-operator", [allow])])
@@ -159,6 +180,7 @@ def test_an_identity_may_write_only_what_its_roles_allow(client, db_session_fact
 
 
 def test_one_denied_sub_change_dispatches_nothing(client, db_session_factory, applied):
+    """One denied sub-change refuses the whole job: nothing is dispatched and no job is made."""
     _make_me(db_session_factory)
     allow = _rule(client, "/ManagedElement=ME-1/NRCellDU=101", ["update"])
     _identity(client, "alice", [_role(client, "one-cell", [allow])])
@@ -169,6 +191,7 @@ def test_one_denied_sub_change_dispatches_nothing(client, db_session_factory, ap
 
 
 def test_deny_beats_allow_and_no_matching_rule_is_a_refusal(client, db_session_factory, applied):
+    """A matching DENY beats an ALLOW, and an identity with no matching rule is refused."""
     _make_me(db_session_factory)
     allow = _rule(client, "/ManagedElement=ME-1/*", ["update"])
     deny = _rule(client, "/ManagedElement=ME-1/NRCellDU=101", ["update"], action="DENY", name="freeze-101")
@@ -179,6 +202,7 @@ def test_deny_beats_allow_and_no_matching_rule_is_a_refusal(client, db_session_f
 
 
 def test_msac_role_alone_selects_a_defined_role(client, db_session_factory, applied):
+    """A requester with no identity can name a defined role in `msacRole` to be evaluated against it."""
     _make_me(db_session_factory)
     allow = _rule(client, "/*", ["update", "create", "delete"])
     _role(client, "admin", [allow])
@@ -187,6 +211,9 @@ def test_msac_role_alone_selects_a_defined_role(client, db_session_factory, appl
 
 
 def test_a_requester_with_no_identity_or_defined_role_keeps_the_legacy_gate(client, db_session_factory, applied):
+    """A requester with neither an identity nor a defined role keeps the legacy gate: entire-RAN scope needs a named `msacRole`, whose existence is
+    not checked.
+    """
     _make_me(db_session_factory)
     entire = {"requestedBy": "svc", "accessScope": "entire-RAN", "changes": [_change()]}
     assert client.post("/config-jobs", json=entire).status_code == 403
@@ -194,6 +221,7 @@ def test_a_requester_with_no_identity_or_defined_role_keeps_the_legacy_gate(clie
 
 
 def test_dn_targets_match_dn_selectors(client, db_session_factory, applied):
+    """A DN-keyed element and function match a DN selector, and the target path is built from the DNs."""
     _make_me(db_session_factory)
     allow = _rule(client, "/SubNetwork=A/*/NRCellDU=*", ["update"])
     _identity(client, "alice", [_role(client, "r", [allow])])
@@ -204,6 +232,7 @@ def test_dn_targets_match_dn_selectors(client, db_session_factory, applied):
 
 
 def test_deleting_a_rule_or_role_unlists_it(client):
+    """Deleting a rule removes it from the roles that listed it and deleting a role removes it from identities; deletes are idempotent (204)."""
     rule = _rule(client, "/*", ["read"])
     role = _role(client, "r", [rule])
     identity = _identity(client, "alice", [role]).json()["id"]
@@ -216,6 +245,7 @@ def test_deleting_a_rule_or_role_unlists_it(client):
 
 
 def test_replacing_a_role_and_an_identity(client):
+    """A PUT replaces a role's name and rules and an identity's type and roles."""
     r1, r2 = _rule(client, "/*", ["read"]), _rule(client, "/*", ["update"], name="w")
     role = _role(client, "r", [r1])
     assert client.put(f"/msac/roles/{role}", json={"roleName": "r2", "accessRulesList": [r2]}).json()["attributes"]["accessRulesList"] == [r2]
@@ -236,6 +266,9 @@ class _Resp:
 
 @pytest.fixture
 def dme(monkeypatch):
+    """Fixture: simulates DME through the R1 client (one type and one open data job for `RAN.PMCounters.PRB_UTILIZATION`); returns the list of
+    posts made as (path, json).
+    """
     posted = []
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: _Resp(
         [{"dmeTypeId": "t-1", "typeName": "RAN.PMCounters.PRB_UTILIZATION"}] if path == "/dme/dme-types" else {"items": [{"dataJobId": "j-1"}]}))
@@ -252,6 +285,9 @@ def _subscribe_pm(client):
 
 
 def test_a_pm_file_is_stored_listed_downloaded_and_fed_to_dme(client, db_session_factory, dme):
+    """A PM file needs a PM subscription (422 without one), is then stored, listed in `/files`, downloadable, and its measurements are delivered to
+    DME.
+    """
     _make_me(db_session_factory)
     assert client.post("/pm-files", json=FILE).status_code == 422  # no PM subscription yet
     _subscribe_pm(client)
@@ -268,6 +304,9 @@ def test_a_pm_file_is_stored_listed_downloaded_and_fed_to_dme(client, db_session
 
 
 def test_file_ready_is_notified_to_matching_subscriptions(client, db_session_factory, dme, monkeypatch):
+    """A new PM file queues `notifyFileReady` for each matching file subscription (all types, or the file's type), with increasing sequence
+    numbers.
+    """
     _make_me(db_session_factory)
     _subscribe_pm(client)
     sent = []
@@ -289,11 +328,13 @@ def test_file_ready_is_notified_to_matching_subscriptions(client, db_session_fac
 
 
 def test_file_subscription_refuses_an_unsupported_filter(client):
+    """A file subscription with a `filter` (not supported) is 422."""
     r = client.post("/file-subscriptions", json={"consumerReference": "http://c", "filter": "//x"})
     assert r.status_code == 422
 
 
 def test_an_expired_or_unknown_file_is_404(client, db_session_factory, dme):
+    """Downloading an expired or unknown file is 404."""
     _make_me(db_session_factory)
     _subscribe_pm(client)
     out = client.post("/pm-files", json={**FILE, "fileExpirationTime": "2000-01-01T00:00:00Z"}).json()
@@ -302,6 +343,7 @@ def test_an_expired_or_unknown_file_is_404(client, db_session_factory, dme):
 
 
 def test_pm_files_need_the_file_service(client, db_session_factory, dme):
+    """A PM file for an element whose vendor does not offer the FILE service is 409 O1_SERVICE_NOT_SUPPORTED."""
     _make_me(db_session_factory)
     client.put("/vendor-capabilities/acme", json={"supportedServices": ["PROV", "PM"], "conformanceMode": "SPEC", "supportedVendorModes": ["O1_NETCONF"]})
     from app.models import ManagedEntity

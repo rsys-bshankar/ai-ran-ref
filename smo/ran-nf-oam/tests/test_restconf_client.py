@@ -50,6 +50,7 @@ def wire(monkeypatch):
 
 
 def test_resource_url_percent_encodes_each_key():
+    """Each key in the data-resource URL is percent-encoded (a DN's '=' and a '/' or ',' in a ref), and a trailing slash on the root is ignored."""
     assert resource_url(ROOT, "gnb-du-01") == f"{ROOT}/data/managed-element=gnb-du-01"
     assert resource_url(ROOT + "/", "gnb-du-01", "NRCellDU=101") == \
         f"{ROOT}/data/managed-element=gnb-du-01/managed-function=NRCellDU%3D101"
@@ -57,6 +58,7 @@ def test_resource_url_percent_encodes_each_key():
 
 
 def test_body_is_an_rfc7951_list_entry_keyed_by_ref():
+    """The body is a one-element list keyed `ref` for an element or `function-ref` for a function, with attribute values sent as strings."""
     assert build_body("ME-1", {"adminState": "LOCKED"}) == {"managed-element": [{"ref": "ME-1", "adminState": "LOCKED"}]}
     assert build_body("ME-1", {"tilt": 40}, "NRCellDU=1") == \
         {"managed-function": [{"function-ref": "NRCellDU=1", "tilt": "40"}]}
@@ -69,6 +71,7 @@ def test_body_is_an_rfc7951_list_entry_keyed_by_ref():
     ("delete", "DELETE", f"{ROOT}/data/managed-element=ME-1/managed-function=NRCellDU%3D1"),
 ])
 def test_each_operation_maps_to_its_rfc8040_method(wire, operation, method, url):
+    """merge, replace, create and delete go out as PATCH, PUT, POST (on the parent) and DELETE (no body), with the yang-data+json content type."""
     result = send_edit(ROOT, "ME-1", {"a": "1"} if operation != "delete" else {}, "m-1", operation, "NRCellDU=1")
     assert result
     [(sent_method, sent_url, body, headers)] = wire.calls
@@ -78,11 +81,13 @@ def test_each_operation_maps_to_its_rfc8040_method(wire, operation, method, url)
 
 
 def test_create_of_a_managed_element_posts_to_the_datastore(wire):
+    """Creating an element (no function ref) POSTs to the data root, since the parent of an element is the datastore."""
     assert send_edit(ROOT, "ME-1", {"a": "1"}, "m-1", "create")
     assert wire.calls[0][:3] == ("POST", f"{ROOT}/data", {"managed-element": [{"ref": "ME-1", "a": "1"}]})
 
 
 def test_remove_of_a_missing_object_succeeds_but_delete_fails(wire):
+    """`remove` treats a data-missing answer as success while `delete` fails with it, as RFC 6241 distinguishes the two."""
     wire.replies = [FakeResponse(404, _error("data-missing")), FakeResponse(404, _error("data-missing"))]
     assert send_edit(ROOT, "ME-1", {}, "m-1", "remove")
     result = send_edit(ROOT, "ME-1", {}, "m-1", "delete")
@@ -101,17 +106,21 @@ def test_remove_of_a_missing_object_succeeds_but_delete_fails(wire):
     (FakeResponse(409, _error("data-exists")), "RESTCONF_REQUEST_FAILED", False),
 ])
 def test_failures_say_whether_they_are_worth_retrying(wire, reply, reason, retryable):
+    """Timeouts, connection errors, 502/503/504 and a 5xx with no errors body are retryable; any answer that carries an RFC 8040 errors body is final, whatever its status code.
+    """
     wire.replies = [reply]
     result = send_edit(ROOT, "ME-1", {"a": "1"}, "m-1")
     assert not result and (result.reason, result.retryable) == (reason, retryable)
 
 
 def test_unknown_operation_is_refused_without_a_request(wire):
+    """An operation with no RESTCONF mapping fails with invalid-value and nothing is sent."""
     result = send_edit(ROOT, "ME-1", {"a": "1"}, "m-1", "frobnicate")
     assert not result and result.error_tag == "invalid-value" and wire.calls == []
 
 
 def test_get_returns_the_attributes_without_the_key(wire):
+    """A read returns the object's attributes without its key leaf, from a GET of the same resource URL."""
     wire.replies = [FakeResponse(200, {"managed-function": [{"function-ref": "NRCellDU=1", "administrativeState": "LOCKED"}]})]
     assert send_get(ROOT, "ME-1", "m-1", "NRCellDU=1") == {"administrativeState": "LOCKED"}
     assert wire.calls[0][:2] == ("GET", f"{ROOT}/data/managed-element=ME-1/managed-function=NRCellDU%3D1")
@@ -120,5 +129,6 @@ def test_get_returns_the_attributes_without_the_key(wire):
 @pytest.mark.parametrize("reply", [FakeResponse(404, _error("data-missing")), FakeResponse(200, {"other": []}),
                                    FakeResponse(200), httpx.ConnectError("down")])
 def test_get_that_fails_or_answers_another_shape_is_none(wire, reply):
+    """A failed read, an unexpected body or a connection error gives None, never a partial result."""
     wire.replies = [reply]
     assert send_get(ROOT, "ME-1", "m-1") is None

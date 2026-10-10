@@ -22,6 +22,8 @@ NETCONF_BASE_NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
 
 @dataclass(frozen=True)
 class Profile:
+    """Where a managed object lives in a real YANG model: the container and list names, the key leaf and its namespace; `rdn_class` and `containment` say how a list entry is named as a DN when the model is walked.
+    """
     namespace: str
     container: str
     list_name: str
@@ -65,6 +67,8 @@ def to_yang_name(attribute: str) -> str:
 
 
 def to_attribute_name(leaf: str) -> str:
+    """The SMO camelCase attribute name for a YANG kebab-case leaf (`administrative-state` gives `administrativeState`); the inverse of `to_yang_name`.
+    """
     head, *rest = leaf.split("-")
     return head + "".join(part.capitalize() for part in rest)
 
@@ -74,6 +78,8 @@ def _key(target_ref: str, managed_function_ref: str | None) -> str:
 
 
 def build_get_config_rpc(profile: Profile, message_id: str, target_ref: str, managed_function_ref: str | None = None) -> str:
+    """The `<get-config>` RPC (subtree filter on the running datastore) that reads the one list entry the reference names; `message_id` and the key are XML-escaped.
+    """
     key = escape(_key(target_ref, managed_function_ref))
     return (f'<rpc message-id="{escape(message_id)}" xmlns="{NETCONF_BASE_NS}"><get-config><source><running/></source>'
             f'<filter type="subtree"><{profile.container} xmlns="{profile.namespace}"><{profile.list_name}>'

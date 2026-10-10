@@ -38,6 +38,8 @@ def leaf_class(ref: str | None) -> str | None:
 
 
 def leaf_id(ref: str | None) -> str | None:
+    """The id of the ref's last RDN (`NRCellDU=101` gives `101`), the flat ref itself when it has no '=', or None for an empty ref. A ref with '=' that is not a valid DN raises ValueError (via `parse_ldn`).
+    """
     if not ref:
         return None
     return parse_ldn(ref)[-1][1] if "=" in ref else ref

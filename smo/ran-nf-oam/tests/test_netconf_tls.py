@@ -13,6 +13,7 @@ CAND = ("urn:ietf:params:netconf:base:1.0", "urn:ietf:params:netconf:base:1.1", 
 
 @pytest.fixture
 def pki(tmp_path):
+    """Fixture: a throwaway CA with a server certificate and a client certificate, as (CA, (server cert, key), (client cert, key))."""
     ca = Pki(tmp_path)
     server_cert, server_key = ca.issue("server", server=True)
     client_cert, client_key = ca.issue("client")
@@ -39,6 +40,8 @@ def lab(pki, monkeypatch):
 
 
 def test_the_uri(monkeypatch):
+    """A `tls://` URI parses to host and port (default 6513) with the model and datastore options; another scheme, a missing host, a user name, a bad port or an unknown model is refused.
+    """
     assert parse_tls_uri("tls://gnb-1.lab") == ("gnb-1.lab", 6513)
     assert parse_tls_uri("tls://10.0.0.1:6514?model=smo-lab&datastore=candidate") == ("10.0.0.1", 6514)
     for bad in ("ssh://h", "tls://", "tls://user@h", "tls://h:0", "tls://h?model=nope", "http://h"):
@@ -47,6 +50,7 @@ def test_the_uri(monkeypatch):
 
 
 def test_a_write_and_a_read_over_mutual_tls(lab):
+    """An edit-config and a get-config work over mutually authenticated TLS, with the message id on the wire."""
     server = lab(Behaviour())
     result = send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="t1", credential_ref="ru-1")
     assert result.applied and 'message-id="t1"' in server.behaviour.received[-1]
@@ -54,6 +58,7 @@ def test_a_write_and_a_read_over_mutual_tls(lab):
 
 
 def test_the_model_payload_and_the_candidate_datastore_work_over_tls_too(lab):
+    """A `?model=` payload and a `?datastore=candidate` transaction (lock, edit, commit, unlock) work over TLS as over SSH."""
     server = lab(Behaviour(caps=CAND))
     result = send_edit_config(server.uri + "?model=smo-lab&datastore=candidate", "ME-1", {"txPower": 30}, message_id="t3",
                               managed_function_ref="101", credential_ref="ru-1")
@@ -63,6 +68,7 @@ def test_the_model_payload_and_the_candidate_datastore_work_over_tls_too(lab):
 
 
 def test_a_client_certificate_from_another_ca_is_refused_by_the_server(lab, pki, tmp_path, monkeypatch):
+    """A client certificate signed by a CA the server does not trust is refused, and nothing reaches the NETCONF layer."""
     server = lab(Behaviour())
     rogue = Pki(tmp_path, name="rogue")
     cert, key = rogue.issue("client")
@@ -73,6 +79,7 @@ def test_a_client_certificate_from_another_ca_is_refused_by_the_server(lab, pki,
 
 
 def test_a_server_certificate_the_client_does_not_trust_is_refused(lab, tmp_path, monkeypatch):
+    """A server whose certificate does not chain to the client's CA file is refused as untrusted."""
     server = lab(Behaviour())
     other = Pki(tmp_path, name="other")
     monkeypatch.setenv("NETCONF_CRED_RU_1_CA_FILE", other.ca_file)                  # the client now trusts a different CA
@@ -81,6 +88,7 @@ def test_a_server_certificate_the_client_does_not_trust_is_refused(lab, tmp_path
 
 
 def test_a_server_certificate_for_another_host_is_refused(pki, tmp_path, monkeypatch):
+    """A server certificate that does not name the host connected to is refused (host name verification is always on)."""
     ca, _, (client_cert, client_key) = pki
     wrong_cert, wrong_key = Pki.issue(ca, "other-host", server=True)                # names 127.0.0.1 only: connect by name instead
     server = NetconfTlsTestServer(wrong_cert, wrong_key, ca.ca_file)
@@ -94,6 +102,7 @@ def test_a_server_certificate_for_another_host_is_refused(pki, tmp_path, monkeyp
 
 
 def test_an_expired_client_certificate_is_refused(lab, pki, monkeypatch):
+    """An expired client certificate is not accepted by the server."""
     ca = pki[0]
     server = lab(Behaviour())
     cert, key = ca.issue("old-client", expired=True)
@@ -103,6 +112,8 @@ def test_an_expired_client_certificate_is_refused(lab, pki, monkeypatch):
 
 
 def test_an_incomplete_or_unreadable_credential_is_refused_before_connecting(lab, monkeypatch):
+    """A missing credential variable, or a file that cannot be loaded, fails before any connection is made, naming the variable or the kind of error.
+    """
     server = lab(Behaviour())
     monkeypatch.delenv("NETCONF_CRED_RU_1_KEY_FILE")
     result = send_edit_config(server.uri, "ME-1", {"a": "1"}, message_id="t8", credential_ref="ru-1")
@@ -113,6 +124,8 @@ def test_an_incomplete_or_unreadable_credential_is_refused_before_connecting(lab
 
 
 def test_a_named_credential_has_no_fallback_to_the_shared_one(lab, monkeypatch, pki):
+    """An endpoint with no credential name uses the shared `NETCONF_TLS_*` files; one that names a credential must get that one and never falls back.
+    """
     server = lab(Behaviour())
     monkeypatch.setenv("NETCONF_TLS_CERT_FILE", pki[2][0])
     monkeypatch.setenv("NETCONF_TLS_KEY_FILE", pki[2][1])
@@ -123,6 +136,7 @@ def test_a_named_credential_has_no_fallback_to_the_shared_one(lab, monkeypatch, 
 
 
 def test_nothing_listening_is_unreachable_and_a_silent_server_times_out(lab, monkeypatch):
+    """A closed port is NETCONF_UNREACHABLE and a server that never answers is NETCONF_TIMEOUT."""
     import socket
     from app import netconf_ssh
     lab(Behaviour())

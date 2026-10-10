@@ -37,6 +37,7 @@ def _row(db_session_factory, sid="s1"):
 # ---- the routes
 
 def test_a_schedule_is_created_read_listed_and_deleted(client):
+    """A KPI schedule can be created (look-back defaults to the interval), read, listed and deleted; deleting twice is 404."""
     client.post("/kpi-definitions/standard")
     created = _schedule(client, lookbackSeconds=None).json()
     assert created["intervalSeconds"] == 600 and created["lookbackSeconds"] == 600 and created["enabled"] is True      # look-back defaults to the interval
@@ -48,6 +49,7 @@ def test_a_schedule_is_created_read_listed_and_deleted(client):
 
 
 def test_a_schedule_needs_a_defined_kpi_and_sane_numbers(client):
+    """A schedule for an undefined KPI is 404, and an interval or look-back below a minute, an unknown grouping or an unknown field is 422."""
     assert _schedule(client).status_code == 404                                            # no KPI defined yet
     client.post("/kpi-definitions/standard")
     assert _schedule(client, intervalSeconds=5).status_code == 422                         # below a minute
@@ -57,6 +59,7 @@ def test_a_schedule_needs_a_defined_kpi_and_sane_numbers(client):
 
 
 def test_putting_again_replaces_the_schedule_and_keeps_what_the_last_run_said(client, cells, dme, db_session_factory):
+    """A PUT of an existing schedule replaces its settings and keeps the outcome of its last run."""
     client.post("/kpi-definitions/standard")
     _schedule(client)
     _run(db_session_factory)
@@ -67,6 +70,7 @@ def test_putting_again_replaces_the_schedule_and_keeps_what_the_last_run_said(cl
 # ---- running them
 
 def test_a_due_schedule_publishes_its_kpi_and_says_what_it_did(client, cells, dme, db_session_factory):
+    """A due schedule registers the DME type and delivers its records, and records the outcome and the next run time."""
     client.post("/kpi-definitions/standard")
     _schedule(client)
     [ran] = _run(db_session_factory)
@@ -78,6 +82,7 @@ def test_a_due_schedule_publishes_its_kpi_and_says_what_it_did(client, cells, dm
 
 
 def test_a_schedule_runs_once_per_interval(client, cells, dme, db_session_factory):
+    """A schedule does not run again until its interval has passed."""
     client.post("/kpi-definitions/standard")
     _schedule(client)
     assert len(_run(db_session_factory)) == 1
@@ -86,6 +91,7 @@ def test_a_schedule_runs_once_per_interval(client, cells, dme, db_session_factor
 
 
 def test_the_window_is_the_lookback_before_now(client, cells, dme, db_session_factory):
+    """The KPI window is the look-back period ending now: a short one finds no data and delivers nothing, a long one reaches the PM data."""
     client.post("/kpi-definitions/standard")
     _schedule(client, lookbackSeconds=60)                                                  # the PM windows are 12 hours before NOW
     [ran] = _run(db_session_factory)
@@ -97,12 +103,14 @@ def test_the_window_is_the_lookback_before_now(client, cells, dme, db_session_fa
 
 
 def test_a_disabled_schedule_does_not_run(client, cells, dme, db_session_factory):
+    """A disabled schedule is skipped."""
     client.post("/kpi-definitions/standard")
     _schedule(client, enabled=False)
     assert _run(db_session_factory) == [] and dme["posts"] == []
 
 
 def test_a_failing_schedule_is_marked_and_does_not_stop_the_others(client, cells, dme, db_session_factory):
+    """A schedule that fails is marked ERROR with the reason and waits for its next interval, while the other schedules still run."""
     client.post("/kpi-definitions/standard")
     _schedule(client, "a-gone")
     _schedule(client, "b-ok", kpi="dl_ue_throughput")
@@ -117,6 +125,7 @@ def test_a_failing_schedule_is_marked_and_does_not_stop_the_others(client, cells
 
 
 def test_a_dme_outage_is_an_error_on_the_schedule_not_a_crash(client, cells, db_session_factory, monkeypatch):
+    """A failure to reach DME is recorded on the schedule, not raised out of the sweep."""
     client.post("/kpi-definitions/standard")
     _schedule(client)
 
@@ -131,6 +140,7 @@ def test_a_dme_outage_is_an_error_on_the_schedule_not_a_crash(client, cells, db_
 # ---- the refusal purge
 
 def _refusals(db_session_factory):
+    """Adds three safeguard refusals dated 1, 10 and 40 days ago."""
     with db_session_factory() as db:
         for days in (1, 10, 40):
             db.add(SafeguardRefusal(invoker_id="es", code="RAPP_KILLED", notified=False,
@@ -139,6 +149,9 @@ def _refusals(db_session_factory):
 
 
 def test_purge_deletes_only_what_is_older_and_needs_an_age(client, db_session_factory, monkeypatch):
+    """The refusal purge deletes only records older than the age given, needs an age (422 without one) and uses `SAFEGUARD_REFUSAL_RETENTION_DAYS`
+    as the default.
+    """
     _refusals(db_session_factory)
     monkeypatch.setattr(main, "SAFEGUARD_REFUSAL_RETENTION_DAYS", 0)
     assert client.post("/safeguard-refusals/purge").status_code == 422                     # no age, no purge
@@ -149,6 +162,7 @@ def test_purge_deletes_only_what_is_older_and_needs_an_age(client, db_session_fa
 
 
 def test_the_purge_task_keeps_everything_unless_a_retention_is_configured(db_session_factory, monkeypatch):
+    """The worker's refusal purge deletes nothing with retention 0 and deletes the old records once a retention is set."""
     _refusals(db_session_factory)
     monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
     monkeypatch.setattr(main, "SAFEGUARD_REFUSAL_RETENTION_DAYS", 0)
@@ -164,6 +178,7 @@ def test_the_purge_task_keeps_everything_unless_a_retention_is_configured(db_ses
 # ---- the wave advance, as the worker runs it
 
 def test_the_worker_advances_a_staged_job_whose_pause_has_elapsed(client, fleet, monkeypatch):
+    """The `advance-waves` task runs the staged job whose pause has elapsed and leaves the one still waiting."""
     monkeypatch.setattr(tasks, "SessionLocal", fleet["db"])
     due = _write(client, waveSize=2, wavePauseSeconds=3600)["jobId"]
     waiting = _write(client, waveSize=2, wavePauseSeconds=3600)["jobId"]
@@ -175,6 +190,7 @@ def test_the_worker_advances_a_staged_job_whose_pause_has_elapsed(client, fleet,
 # ---- the task list
 
 def test_the_task_list_is_what_the_docs_say():
+    """The registered worker tasks and their intervals are exactly those the module description lists."""
     assert {t.name: t.interval_seconds for t in tasks.TASKS} == {"advance-waves": 15, "publish-kpis": 30, "run-kpi-guards": 60,
                                                                        "expire-approvals": 60, "chain-decisions": 60,
                                                                        "purge-safeguard-refusals": 3600,
@@ -183,6 +199,7 @@ def test_the_task_list_is_what_the_docs_say():
 
 
 def test_the_worker_tick_runs_the_tasks_through_the_claim(db_session_factory, monkeypatch):
+    """A worker tick runs each task through the shared claim table, and an immediate second tick skips them all."""
     from smo_shared.single_runner import PeriodicRun
     from smo_shared.db import Base
     engine = db_session_factory.kw["bind"]
@@ -197,6 +214,7 @@ def test_the_worker_tick_runs_the_tasks_through_the_claim(db_session_factory, mo
 # ---- retention (PR-DB-3.3, 3.4)
 
 def _alarms_and_files(db_session_factory):
+    """Adds alarms (an old cleared, a recent cleared and an old raised one) and PM files (100 and 1 day old) for the retention tests."""
     from app.models import Alarm, PMFile
     now = datetime.datetime.now(datetime.UTC)
     day = datetime.timedelta(days=1)
@@ -216,6 +234,7 @@ def _left(db_session_factory):
 
 
 def test_the_retention_tasks_keep_everything_unless_configured(db_session_factory, monkeypatch):
+    """With no retention variable the alarm and PM file purges delete nothing."""
     _alarms_and_files(db_session_factory)
     monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
     tasks.purge_cleared_alarms()
@@ -224,6 +243,7 @@ def test_the_retention_tasks_keep_everything_unless_configured(db_session_factor
 
 
 def test_only_cleared_alarms_older_than_the_retention_go_and_a_raised_alarm_stays(db_session_factory, monkeypatch):
+    """The alarm purge deletes only cleared alarms older than the retention; a raised alarm is never deleted however old."""
     _alarms_and_files(db_session_factory)
     monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
     monkeypatch.setenv("SMO_RETENTION_ALARMS_DAYS", "30")
@@ -232,6 +252,7 @@ def test_only_cleared_alarms_older_than_the_retention_go_and_a_raised_alarm_stay
 
 
 def test_only_pm_files_older_than_the_retention_go(db_session_factory, monkeypatch):
+    """The PM file purge deletes only files ready longer ago than the retention."""
     _alarms_and_files(db_session_factory)
     monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
     monkeypatch.setenv("SMO_RETENTION_PM_FILES_DAYS", "30")
@@ -240,6 +261,7 @@ def test_only_pm_files_older_than_the_retention_go(db_session_factory, monkeypat
 
 
 def test_a_table_with_retention_off_reports_its_rows_and_one_with_retention_on_does_not(db_session_factory, monkeypatch):
+    """A purge task whose retention is off reports its table's row count in the `smo_retention_off_rows` gauge, and one with retention on does not."""
     from prometheus_client import REGISTRY
     _alarms_and_files(db_session_factory)
     monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
