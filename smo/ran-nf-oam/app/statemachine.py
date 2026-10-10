@@ -20,6 +20,8 @@ from smo_shared.statemachine import StateMachine
 # ---------------------------------------------------------------- WriteConfigJob
 
 class JobState(StrEnum):
+    """States of a WriteConfigJob. PENDING and PROCESSING lead to a terminal COMPLETED, PARTIAL_SUCCESS or FAILED; HALTED is the pause of a staged job between waves.
+    """
     PENDING = "PENDING"
     PROCESSING = "PROCESSING"
     HALTED = "HALTED"                   # MGT-5: a staged job waiting between waves (a pause, a failed gate, an operator's halt)
@@ -29,6 +31,7 @@ class JobState(StrEnum):
 
 
 class JobEvent(StrEnum):
+    """Events that move a WriteConfigJob: the pre-check result, the aggregate of the sub-change outcomes, and HALT/RESUME between waves."""
     PRECHECK_PASS = "PRECHECK_PASS"     # noqa: S105 — an event name, not a credential; schema validation + MSAC gate both pass
     PRECHECK_FAIL = "PRECHECK_FAIL"
     AGGREGATE_ALL_APPLIED = "AGGREGATE_ALL_APPLIED"
@@ -54,6 +57,8 @@ def aggregate_event(sub_change_statuses: list[str]) -> JobEvent:
 
 
 def build_write_config_job_fsm() -> StateMachine[JobState, JobEvent]:
+    """The WriteConfigJob transition table: PENDING goes to PROCESSING or FAILED on the pre-check; PROCESSING and HALTED end in COMPLETED, FAILED or PARTIAL_SUCCESS on the aggregate event, and move between each other on HALT and RESUME.
+    """
     fsm: StateMachine[JobState, JobEvent] = StateMachine()
     fsm.add(JobState.PENDING, JobEvent.PRECHECK_PASS, JobState.PROCESSING)
     fsm.add(JobState.PENDING, JobEvent.PRECHECK_FAIL, JobState.FAILED)
@@ -74,6 +79,7 @@ WRITE_CONFIG_JOB_FSM = build_write_config_job_fsm()
 # ---------------------------------------------------------------- SoftwareManagementJob
 
 class SwmState(StrEnum):
+    """Status of a SoftwareManagementJob. The phase (download, install, activate) is a separate field, `SwmPhase`."""
     PENDING = "PENDING"
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
@@ -81,12 +87,14 @@ class SwmState(StrEnum):
 
 
 class SwmPhase(StrEnum):
+    """The phase a software job is in, in order: DOWNLOAD, INSTALL, ACTIVATE (the next phase after each OK event is in `PHASE_ORDER`)."""
     DOWNLOAD = "DOWNLOAD"
     INSTALL = "INSTALL"
     ACTIVATE = "ACTIVATE"
 
 
 class SwmEvent(StrEnum):
+    """Events of a SoftwareManagementJob: START, the OK of each phase, and PHASE_FAILED."""
     START = "START"
     DOWNLOAD_OK = "DOWNLOAD_OK"
     INSTALL_OK = "INSTALL_OK"
@@ -116,6 +124,7 @@ PHASE_ORDER = {SwmEvent.DOWNLOAD_OK: SwmPhase.INSTALL, SwmEvent.INSTALL_OK: SwmP
 # ---------------------------------------------------------------- O1AdaptorEndpoint health
 
 class EndpointHealth(StrEnum):
+    """Health of an O1 adaptor endpoint, driven by its heartbeats: DISCOVERED, ACTIVE, DEGRADED, UNREACHABLE."""
     DISCOVERED = "DISCOVERED"
     ACTIVE = "ACTIVE"
     DEGRADED = "DEGRADED"
@@ -123,6 +132,7 @@ class EndpointHealth(StrEnum):
 
 
 class EndpointEvent(StrEnum):
+    """Events of the endpoint health lifecycle: a heartbeat, missed heartbeats, a deregistration, a re-registration."""
     HEARTBEAT = "HEARTBEAT"
     MISSED_HEARTBEATS = "MISSED_HEARTBEATS"
     DEREGISTERED = "DEREGISTERED"
@@ -130,9 +140,7 @@ class EndpointEvent(StrEnum):
 
 
 def build_endpoint_health_fsm() -> StateMachine[EndpointHealth, EndpointEvent]:
-    """RAN NF OAM LLD section 6 — the endpoint registry's own health
-    lifecycle, new in this LLD pass (there was no endpoint registry
-    concept in v1.3's single-endpoint-assumption design).
+    """The endpoint health lifecycle of RAN NF OAM LLD section 6: DISCOVERED goes ACTIVE on a heartbeat; ACTIVE goes DEGRADED on missed heartbeats and back on a heartbeat; DEGRADED goes UNREACHABLE on deregistration; UNREACHABLE goes back to DISCOVERED on re-registration.
     """
     fsm: StateMachine[EndpointHealth, EndpointEvent] = StateMachine()
     fsm.add(EndpointHealth.DISCOVERED, EndpointEvent.HEARTBEAT, EndpointHealth.ACTIVE)
@@ -148,6 +156,8 @@ ENDPOINT_HEALTH_FSM = build_endpoint_health_fsm()
 # ---------------------------------------------------------------- Onboarding of an element (MGT-14.5)
 
 class OnboardingState(StrEnum):
+    """States of an element's onboarding (MGT-14.5): from registered (DISCOVERED) to ONBOARDED or FAILED, through the template match and the apply.
+    """
     DISCOVERED = "DISCOVERED"               # registered, not yet matched against the templates
     NO_TEMPLATE = "NO_TEMPLATE"             # templates exist, none fits this element
     TEMPLATE_SELECTED = "TEMPLATE_SELECTED"
@@ -157,6 +167,7 @@ class OnboardingState(StrEnum):
 
 
 class OnboardingEvent(StrEnum):
+    """Events of the onboarding lifecycle: a template matched or none did, the apply started, and its outcome."""
     TEMPLATE_MATCHED = "TEMPLATE_MATCHED"
     NO_MATCH = "NO_MATCH"
     APPLY = "APPLY"
@@ -185,6 +196,8 @@ ONBOARDING_FSM = build_onboarding_fsm()
 # ---------------------------------------------------------------- Software campaign (MGT-15)
 
 class CampaignState(StrEnum):
+    """States of a software campaign (MGT-15): the run (PENDING, RUNNING, HALTED, COMPLETED, ABORTED) and the rollback (ROLLING_BACK, ROLLED_BACK, ROLLBACK_FAILED).
+    """
     PENDING = "PENDING"
     RUNNING = "RUNNING"                     # a wave is in progress
     HALTED = "HALTED"                       # between waves: a pause, a failed gate, an operator's halt
@@ -196,6 +209,7 @@ class CampaignState(StrEnum):
 
 
 class CampaignEvent(StrEnum):
+    """Events of a software campaign: start, halt, resume, finish, abort, and the three rollback events."""
     START = "START"
     HALT = "HALT"
     RESUME = "RESUME"
@@ -207,6 +221,8 @@ class CampaignEvent(StrEnum):
 
 
 def build_campaign_fsm() -> StateMachine[CampaignState, CampaignEvent]:
+    """The software campaign transition table: PENDING starts to RUNNING; RUNNING halts or finishes; HALTED resumes or aborts; a rollback may start from RUNNING, HALTED, COMPLETED, ABORTED or ROLLBACK_FAILED (so a failed rollback can be retried) and ends in ROLLED_BACK or ROLLBACK_FAILED.
+    """
     fsm: StateMachine[CampaignState, CampaignEvent] = StateMachine()
     S, E = CampaignState, CampaignEvent
     fsm.add(S.PENDING, E.START, S.RUNNING)

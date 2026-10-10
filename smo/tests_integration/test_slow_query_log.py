@@ -23,15 +23,23 @@ def _setting(milliseconds: str) -> str:
 
 
 def test_compose_starts_postgres_with_a_slow_statement_threshold_that_defaults_to_500_ms():
+    """Compose starts Postgres through its entrypoint with `log_min_duration_statement` taken from `POSTGRES_SLOW_QUERY_MS` (500 ms by default),
+    and `.env.example` documents the variable.
+    """
     command = _command()
     assert command[:2] == ["postgres", "-c"]               # the image's entrypoint still initialises the database
     assert "log_min_duration_statement=${POSTGRES_SLOW_QUERY_MS:-500}" in command
     assert re.search(r"^# POSTGRES_SLOW_QUERY_MS=", (SMO_ROOT / ".env.example").read_text(), re.M)
 
 
+# One row per value and what `SHOW` prints for it.
+# One row per value and what `SHOW` prints for it.
 @pytest.mark.skipif(not os.environ.get("SMO_TEST_POSTGRES_URL"), reason="SMO_TEST_POSTGRES_URL not set")
 @pytest.mark.parametrize("milliseconds,shown", [("500", "500ms"), ("0", "0"), ("-1", "-1")])
 def test_a_real_postgres_accepts_the_setting_with_each_documented_value(milliseconds, shown):
+    """A real Postgres accepts the setting with each documented value: a threshold, 0 (log every statement) and -1 (off). Needs
+    SMO_TEST_POSTGRES_URL.
+    """
     engine = create_engine(os.environ["SMO_TEST_POSTGRES_URL"], future=True,
                            connect_args={"options": f"-c {_setting(milliseconds)}"})
     with engine.connect() as connection:

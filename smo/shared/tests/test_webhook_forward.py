@@ -1,5 +1,8 @@
 """smo_shared/webhook.py: the base URL a workload registers (`normalise_base_url`) and the forwarded call the gateway makes to it
-(`forward_to_destination`), PR-GUI-8."""
+(`forward_to_destination`), PR-GUI-8.
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_webhook_forward.py -q
+"""
 
 import asyncio
 
@@ -10,6 +13,7 @@ from smo_shared import webhook
 from smo_shared.webhook import forward_to_destination, normalise_base_url
 
 
+# Table: (registered base, normalised base). Plain http and https bases, with or without a path prefix, are accepted without the trailing slash.
 @pytest.mark.parametrize("value,expected", [
     ("http://rapp:8000", "http://rapp:8000"),
     ("http://rapp:8000/", "http://rapp:8000"),
@@ -20,6 +24,8 @@ def test_a_plain_base_is_accepted_and_loses_its_trailing_slash(value, expected):
     assert normalise_base_url(value) == expected
 
 
+# Table: bases that must be refused: empty, surrounding or inner whitespace and control characters, other schemes, relative forms, blocked hosts,
+# credentials, query, fragment, traversal and empty path segments, encoded or backslash characters, bad ports and over-long values.
 @pytest.mark.parametrize("value", [
     None, "", " http://rapp", "http://rapp ", "http://ra pp", "http://rapp\n", "ftp://rapp", "file:///x", "//rapp", "rapp:8000",
     "http://127.0.0.1", "http://localhost", "http://169.254.169.254", "http://[::1]:80", "http://metadata.google.internal",
@@ -31,6 +37,9 @@ def test_an_unsafe_or_malformed_base_is_refused(value):
 
 
 class _Recorder:
+    """A stand-in for httpx.AsyncClient that records each request (method, url, arguments, client arguments) and returns a canned response or raises a
+    canned error.
+    """
     def __init__(self, response=None, error=None):
         self.calls, self.response, self.error = [], response, error
 
@@ -54,11 +63,14 @@ class _Recorder:
 
 
 def _call(**kw):
+    """Helper: runs forward_to_destination with default headers, query, body and timeout; `method` and `destination` come from the keyword arguments.
+    """
     defaults = dict(headers={"a": "b"}, params=[("q", "1")], content=b"{}", timeout=3.0)
     return asyncio.run(forward_to_destination(kw.pop("method", "POST"), kw.pop("destination"), **{**defaults, **kw}))
 
 
 def test_a_forwarded_call_carries_method_headers_query_and_body(monkeypatch):
+    """A forwarded call passes the method, URL, headers, query and body through unchanged and sets the client timeout."""
     recorder = _Recorder(httpx.Response(204))
     monkeypatch.setattr(webhook.httpx, "AsyncClient", recorder)
     answer = _call(destination="http://rapp:8000/instances/x")
@@ -68,6 +80,7 @@ def test_a_forwarded_call_carries_method_headers_query_and_body(monkeypatch):
     assert kw == {"headers": {"a": "b"}, "params": [("q", "1")], "content": b"{}"} and client_kwargs["timeout"] == 3.0
 
 
+# Table: destinations the SSRF guard refuses (loopback, metadata, file, None, empty); forward_to_destination must return None and make no call.
 @pytest.mark.parametrize("destination", ["http://127.0.0.1:8000/x", "http://169.254.169.254/x", "file:///etc/passwd", None, ""])
 def test_a_forbidden_destination_is_not_called(monkeypatch, destination):
     recorder = _Recorder(httpx.Response(200))
@@ -77,6 +90,7 @@ def test_a_forbidden_destination_is_not_called(monkeypatch, destination):
 
 
 def test_a_timeout_and_a_transport_error_propagate_as_such(monkeypatch):
+    """A timeout and a transport error are raised as httpx exceptions for the caller to map to fixed 504 and 502 answers."""
     monkeypatch.setattr(webhook.httpx, "AsyncClient", _Recorder(error=httpx.ReadTimeout("secret detail")))
     with pytest.raises(httpx.TimeoutException):
         _call(destination="http://rapp:8000/x")

@@ -158,6 +158,9 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
                         has_page: bool | None = Query(None, alias="hasPage", description="Only the rApps that declare an operator page (true) or do not (false)."),
                         pinned: bool | None = Query(None, description="Only the pinned (true) or the not pinned (false)."),
                         limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0), session=Depends(current_session)):
+        # Any signed-in role. Reads every rApp instance from rApp Management (up to `MAX_PAGES` pages of 500) and the package index, joins them, and filters, sorts and pages the
+        # result in this process; the pins are the caller's own. The answer also carries every owner and state present, so the page can fill its filter lists from the unfiltered
+        # set. 502 SMO_AUTH_FAILED, R1_UNREACHABLE or SMO_ERROR when the SMO cannot be asked. Writes nothing.
         try:
             instances = await read_all("/rapp-mgmt/instances")
             index = await packages(wanted={str(i.get("packageId")) for i in instances})
@@ -185,6 +188,9 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
 
     @app.get("/api/rapps/{instance}")
     async def rapp(instance: str, session=Depends(current_session)):
+        # One instance with the package's declared operator page. 404 NO_SUCH_RAPP for an id that is not a UUID or not an instance (the path value is parsed first, so it never
+        # reaches the upstream URL as typed). `declarationState` is `declared`, `none` or `unreadable`; `canChange` is true only when there is a readable declaration that is not
+        # read-only and the caller is operator or admin (the SPA uses it to show the actions; `operator_call` decides again on every call).
         instance_id = parse_instance(instance)
         if instance_id is None:
             return no_such_rapp()
@@ -206,6 +212,12 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
 
     @app.api_route("/api/rapps/{instance}/operator/{route:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     async def operator_call(instance: str, route: str, request: Request, session=Depends(current_session)):
+        # The proxy for a rApp's operator API; `operator_ui.decide` is the single gate. Order: instance id parsed (404), a body over `MAX_BODY_BYTES` refused (413) before it is
+        # parsed, JSON parsed (400 INVALID_BODY), the instance and its package declaration read from the SMO, then the decision. A refusal is answered with its own status
+        # (403 UNDECLARED_ROUTE / RAPP_READ_ONLY / FORBIDDEN, 422 for a bad query or input) and audited as DENIED. A change writes RAPP_ACTION twice, phase=requested before the
+        # call is sent and phase=done with the outcome after it, so a call that never returns is still visible in the log; reads are not audited. The call goes to the gateway's
+        # `/rapps/{instanceId}/operator/...` path with the BFF's own token; only `content-type` and `accept` are sent, and the upstream answer is returned minus hop-by-hop and
+        # cookie headers. 502 SMO_AUTH_FAILED or R1_UNREACHABLE when the SMO cannot be reached.
         instance_id = parse_instance(instance)
         if instance_id is None:
             return no_such_rapp()
@@ -286,6 +298,8 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
 
     @app.put("/api/me/pins/{instance}")
     async def pin(instance: str, session=Depends(current_session)):
+        # Pins an instance for the caller. 404 NO_SUCH_RAPP when the instance does not exist (checked at rApp Management, so a pin cannot name a made-up id); 409 PIN_LIMIT at
+        # `MAX_PINS`; pinning an already pinned instance is a success. The limit is enforced in the database, so two simultaneous pins cannot exceed it.
         instance_id = parse_instance(instance)
         if instance_id is None:
             return no_such_rapp()
@@ -301,6 +315,7 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
 
     @app.delete("/api/me/pins/{instance}", status_code=204)
     async def unpin(instance: str, session=Depends(current_session)):
+        # Idempotent: 204 whether or not the instance was pinned, and also for a value that is not a UUID (nothing is stored under one). Writes only the caller's own pin.
         instance_id = parse_instance(instance)
         if instance_id is not None:
             app.state.db.remove_pin(session.user.username, instance_id)

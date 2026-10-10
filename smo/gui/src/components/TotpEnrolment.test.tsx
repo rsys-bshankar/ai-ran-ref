@@ -1,4 +1,10 @@
 // @vitest-environment jsdom
+/**
+ * Component tests of the one-time code set-up (components/TotpEnrolment.tsx and its `RecoveryCodes`): the walk from the setup key to the recovery codes, a refused code, the required
+ * banner, an enrolled account, a server without a key, and an identity-provider user. The BFF's /me/totp routes are a stateful stub (`backend`); jsdom, no server.
+ * Run: `cd gui && npx vitest run src/components/TotpEnrolment.test.tsx`.
+ */
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -10,6 +16,9 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 interface Call { method: string; path: string; body: unknown }
 
 /** The BFF, as far as the enrolment page asks it. `state` is what GET /me/totp says; the routes change it the way the real ones do. */
+/**
+ * Stubs `fetch` with the /me/totp routes; `state` is what GET /me/totp reports and the begin and confirm routes change it as the real ones do (`failConfirm` makes confirm answer INVALID_CODE). Returns the calls and the ten recovery codes it hands out.
+ */
 function backend(state: { available?: boolean; enrolled?: boolean; pending?: boolean; recoveryCodesLeft?: number; reason?: string }, failConfirm = false) {
   const calls: Call[] = [];
   const codes = Array.from({ length: 10 }, (_, i) => `aaaa-bbbb-cccc-dd${String(i).padStart(2, "0")}`);
@@ -32,12 +41,14 @@ function backend(state: { available?: boolean; enrolled?: boolean; pending?: boo
   return { calls, codes };
 }
 
+/** Mounts `TotpEnrolment` in a query client without retries. */
 const render = (props: Parameters<typeof TotpEnrolment>[0] = {}) =>
   mount(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TotpEnrolment {...props} /></QueryClientProvider>);
 
 beforeEach(() => { document.body.innerHTML = ""; });
 
 describe("TotpEnrolment", () => {
+  // The enrolment shows the secret in groups for typing (no QR image), confirms only a six-digit code, shows the ten recovery codes once, and after the acknowledgement they cannot be read again.
   it("walks from the setup key to the recovery codes, which need an explicit acknowledgement", async () => {
     const { calls, codes } = backend({});
     const { container } = await render();
@@ -69,6 +80,7 @@ describe("TotpEnrolment", () => {
     expect(container.textContent).toMatch(/10 recovery codes left/);
   });
 
+  // A refused confirmation shows the server's reason and keeps the user on the setup-key step.
   it("says why a code was refused and stays on the step", async () => {
     backend({ pending: true }, true);
     const { container } = await render();
@@ -82,6 +94,7 @@ describe("TotpEnrolment", () => {
     expect(container.querySelector("input[aria-label='Setup key']")).not.toBeNull();
   });
 
+  // When enrolment is required the page explains why an administrator is here.
   it("tells an admin who must enrol why they are here", async () => {
     backend({});
     const { container } = await render({ required: true });
@@ -89,6 +102,7 @@ describe("TotpEnrolment", () => {
     expect(container.textContent).toMatch(/administrator account must have a one-time code/);
   });
 
+  // An enrolled account sees how many recovery codes are left and can make new ones with a current code.
   it("shows an enrolled account its recovery codes left and can make new ones", async () => {
     const { calls, codes } = backend({ enrolled: true, recoveryCodesLeft: 3 });
     const { container } = await render();
@@ -102,6 +116,7 @@ describe("TotpEnrolment", () => {
     for (const c of codes) expect(container.textContent).toContain(c);
   });
 
+  // When the server cannot do one-time codes (no GUI_TOTP_KEY) the page says so and offers no set-up button.
   it("says so when the server has no key", async () => {
     backend({ available: false });
     const { container } = await render();
@@ -110,6 +125,7 @@ describe("TotpEnrolment", () => {
     expect(byText(container, "button", "Set up a one-time code")).toBeNull();
   });
 
+  // A user who signs in through the identity provider is told the provider asks for the second factor and has nothing to set up here.
   it("has nothing to set up for a user of the identity provider", async () => {
     backend({ available: false, reason: "identity provider" });
     const { container } = await render();
@@ -119,6 +135,7 @@ describe("TotpEnrolment", () => {
 });
 
 describe("RecoveryCodes", () => {
+  // "Copy all" puts every recovery code on the clipboard, one per line, and "I have saved them" calls the done handler.
   it("copies all the codes, one per line", async () => {
     const writeText = vi.fn(async () => undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });

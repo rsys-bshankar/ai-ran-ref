@@ -1,6 +1,13 @@
-// OIDC sign-in (PR-SEC-6): what the sign-in page shows for the reason code the backend puts on /login?oidc_error=<code>.
-// The codes are the backend's (gui-bff/app/oidc.py, REASONS); the page never shows text from the identity provider.
+/**
+ * OIDC sign-in (PR-SEC-6): what the sign-in page shows for the reason code the backend puts on /login?oidc_error=<code>, and where the single-sign-on button points.
+ * The codes are the backend's (gui-bff/app/oidc.py, REASONS); the page never shows text from the identity provider, only its own wording for a code it knows.
+ * Used by `pages/Login.tsx`; covered by `oidc.test.ts`.
+ */
 
+/**
+ * The sign-in options the BFF reports before login (GET /api/auth/config): whether the password form is offered, the login mode (PR-SEC-7.6: "oidc" closes the
+ * password form to every account but a break-glass one, `breakGlass` says one can still be used) and the OIDC provider with the path that starts the sign-in.
+ */
 export interface AuthConfig {
   localLogin: boolean;
   // PR-SEC-7.6: "oidc" closes the password form to every account but a break-glass one (`breakGlass` says one can still be used)

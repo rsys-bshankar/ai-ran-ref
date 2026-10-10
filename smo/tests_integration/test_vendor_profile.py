@@ -28,6 +28,9 @@ REPORT = SMO / "mock-o1-adaptor" / "app" / "profiles" / PROFILE / "conformance-r
 
 @pytest.fixture
 def vendor(mesh, monkeypatch):
+    """Selects the example-du vendor profile for the mock O1 adaptor (the profile variable set, the individual overrides cleared, the OAM URL
+    pointing at the mesh) and returns (the adaptor, RAN NF OAM, the profile module).
+    """
     monkeypatch.setenv("MOCK_O1_PROFILE", PROFILE)
     for variable in ("MOCK_O1_VENDOR_NAME", "MOCK_O1_SUPPORTED_SERVICES", "MOCK_O1_VENDOR_MODES"):
         monkeypatch.delenv(variable, raising=False)
@@ -36,6 +39,7 @@ def vendor(mesh, monkeypatch):
 
 
 def onboard(vendor):
+    """Posts the profile's onboarding body to RAN NF OAM, asserts 201 and returns the answer."""
     stub, oam, profile = vendor
     answer = oam.post("/vendor-onboarding", json=profile.onboarding_body(PROFILE))
     assert answer.status_code == 201, answer.text
@@ -43,6 +47,9 @@ def onboard(vendor):
 
 
 def register(oam, ref, vendor_name="example-vendor", protocol="NETCONF"):
+    """Registers an O1 adaptor endpoint for a managed element as an O-DU of the given vendor and protocol and returns the response, leaving the
+    status to the caller.
+    """
     answer = oam.post("/o1-adaptor-endpoints", json={"managedElementRef": ref, "adaptorUri": "http://mock-o1-adaptor:8000/edit-config", "protocolSupport": [protocol],
                                                      "o1Protocol": protocol, "entityType": "O-DU", "vendorName": vendor_name})
     return answer
@@ -54,6 +61,9 @@ def write(oam, ref, function, changes):
 
 
 def test_the_profile_onboards_and_the_capability_entry_is_what_the_stub_declares(vendor):
+    """Onboarding the profile creates a capability entry equal to what the stub declares (vendor, services in the standard order, vendor modes,
+    conformance mode, schema reference), and onboarding it again reuses the schema instead of conflicting.
+    """
     stub, oam, _ = vendor
     onboarded = onboard(vendor)
     registered = oam.get("/vendor-capabilities/example-vendor").json()
@@ -68,6 +78,7 @@ def test_the_profile_onboards_and_the_capability_entry_is_what_the_stub_declares
 
 
 def test_discovery_from_a_registered_element_agrees_with_the_profile(vendor):
+    """Onboarding by discovery from a registered element learns the same vendor modes and services as the profile declares."""
     stub, oam, profile = vendor
     assert register(oam, "du-disc").status_code == 201
     body = {**profile.onboarding_body(PROFILE), "discoverFrom": "du-disc"}
@@ -79,6 +90,9 @@ def test_discovery_from_a_registered_element_agrees_with_the_profile(vendor):
 
 
 def test_the_deviations_of_the_profile_are_enforced_on_a_write(vendor):
+    """A write is checked against the vendor's deviations: a narrower range than the standard, an attribute and a class only this vendor has (with
+    their own ranges and values) are accepted or refused accordingly.
+    """
     stub, oam, _ = vendor
     onboard(vendor)
     assert register(oam, "du-1").status_code == 201
@@ -102,6 +116,7 @@ def test_the_deviations_of_the_profile_are_enforced_on_a_write(vendor):
 
 
 def test_a_transport_the_vendor_does_not_speak_is_refused_at_registration(vendor):
+    """Registering an endpoint on a transport the vendor does not speak is refused with 409 naming the vendor modes it does."""
     stub, oam, _ = vendor
     onboard(vendor)
     refused = register(oam, "du-rc", protocol="RESTCONF")
@@ -109,6 +124,7 @@ def test_a_transport_the_vendor_does_not_speak_is_refused_at_registration(vendor
 
 
 def test_a_service_the_vendor_does_not_offer_is_refused(vendor):
+    """An operation for a service the vendor does not offer (software management) is refused with 409."""
     stub, oam, _ = vendor
     onboard(vendor)
     assert register(oam, "du-sw").status_code == 201
@@ -116,12 +132,14 @@ def test_a_service_the_vendor_does_not_offer_is_refused(vendor):
 
 
 def kit_report(vendor) -> tuple[list, str]:
+    """Runs the O1 conformance kit against the stub in the profile (NETCONF) and returns (the results, the Markdown report)."""
     stub, oam, _ = vendor
     results = run(Context(stub, {"netconf"}, oam=oam))
     return results, to_markdown("mock-o1-adaptor in profile example-du, RAN NF OAM in the in-process mesh", {"netconf"}, results, "ran-nf-oam in the in-process mesh")
 
 
 def test_the_conformance_kit_passes_the_stub_in_the_profile(vendor):
+    """The kit passes the stub in the profile: no failure, and exactly the RESTCONF and software checks skipped because the vendor offers neither."""
     results, _ = kit_report(vendor)
     assert {r.id: r.detail for r in results if r.status == FAIL} == {}
     status = {r.id: r.status for r in results}
@@ -130,6 +148,7 @@ def test_the_conformance_kit_passes_the_stub_in_the_profile(vendor):
 
 
 def test_the_report_beside_the_profile_is_the_kits_report(vendor):
+    """The report committed beside the profile equals what the kit produces now; set `SMO_UPDATE_PROFILE_REPORT` to rewrite it and read the diff."""
     _, text = kit_report(vendor)
     if os.environ.get("SMO_UPDATE_PROFILE_REPORT"):
         REPORT.write_text(text, encoding="utf-8")

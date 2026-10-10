@@ -140,6 +140,8 @@ def read_query(sources: list[dict], params: list[tuple[str, str]]) -> list[tuple
 
 
 def _query_text(value: Any) -> str:
+    """The text of a declared query value: booleans become `true` / `false` (not Python's `True` / `False`), everything else its `str()`.
+    """
     if value is True:
         return "true"
     if value is False:

@@ -16,6 +16,9 @@ RELATIONS = {"201-202": "HEALTHY", "201-203": "TOO_LATE", "202-203": "TOO_EARLY"
 
 
 def _records(relations, hours, me="gnb", sim=False):
+    """Builds DME-style records of the sample handover windows for the given relations and scenarios; `sim` adds the `scenario` field the Digital
+    Twin carries.
+    """
     return [{"payload": {"managedElementRef": me, "cellId": r.split("-")[0], "relation": r, "values": v,
                          "timestamp": t.isoformat(), **({"scenario": s} if sim else {})}}
             for r, s in relations.items() for t, v in windows(r, START, hours, s)]
@@ -23,10 +26,14 @@ def _records(relations, hours, me="gnb", sim=False):
 
 @pytest.fixture(scope="module")
 def trained():
+    """A model trained once on 72 hours of five relations' history, shared by the tests of this file."""
     return TrainingLogic.train(_records(RELATIONS, 72))
 
 
 def test_rates_and_failure_classes():
+    """The problem rate and the dominant failure class come out right, including the too-early against ping-pong tie-break, no events, and zero
+    attempts.
+    """
     c = {ATTEMPTS: 200, TOO_LATE: 14, TOO_EARLY: 1, WRONG_CELL: 1, PING_PONG: 0}
     assert mro_rate(c) == 8.0 and dominant_cause(c) == "TOO_LATE"
     assert dominant_cause({ATTEMPTS: 100, TOO_EARLY: 4, PING_PONG: 3}) == "TOO_EARLY"
@@ -36,6 +43,7 @@ def test_rates_and_failure_classes():
 
 
 def test_training_and_recommendations(trained):
+    """Training fits well enough to trust, the thresholds give RAISE, LOWER, HOLD and HEALTHY, and an artifact round trip gives an equal model."""
     model, metrics = trained
     assert metrics["rmse"] < 1.0 and metrics["confidence"] > 0.6
     assert model.infer(8.0, 8.0, "TOO_LATE")["recommendation"] == "RAISE_CIO"
@@ -46,6 +54,9 @@ def test_training_and_recommendations(trained):
 
 
 def test_validation_and_emulation(trained):
+    """A trained model passes validation and emulation (every injected fault in the right direction, no false action), and a badly weighted one
+    fails validation.
+    """
     model, _ = trained
     passed, metrics = ValidationLogic.validate(model, _records(RELATIONS, 72))
     assert passed and metrics["score"] >= ValidationLogic.PASS_THRESHOLD
@@ -56,6 +67,7 @@ def test_validation_and_emulation(trained):
 
 
 def test_inference_per_relation(trained):
+    """Inference of a too-late relation names the cause, recommends raising the CIO and reports its attempts."""
     model, _ = trained
     series = by_relation(_records({"201-203": "TOO_LATE"}, 3))["201-203"]
     out = InferenceLogic.infer(model, "201-203", series)
@@ -63,5 +75,6 @@ def test_inference_per_relation(trained):
 
 
 def test_synthetic_counters_follow_the_daily_load():
+    """The sample counters have more attempts at the evening peak than at night, and at least 50 at night so the sample-size guard does not fire."""
     night, peak = relation_counters("r", START.replace(hour=2)), relation_counters("r", START.replace(hour=18))
     assert 50 <= night[ATTEMPTS] < peak[ATTEMPTS]

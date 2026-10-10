@@ -33,6 +33,7 @@ def _write(client):
 
 
 def test_the_managed_function_ref_is_dispatched(client, db_session_factory, adaptor):
+    """The managed function ref of a change reaches the adaptor, so a per-cell change addresses the cell."""
     _make_me(db_session_factory)
     job, sub = _write(client)
     assert job["status"] == "COMPLETED" and sub["attempts"] == 1 and sub["managedFunctionRef"] == "NRCellDU=101"
@@ -40,6 +41,7 @@ def test_the_managed_function_ref_is_dispatched(client, db_session_factory, adap
 
 
 def test_a_timeout_is_retried_with_backoff(client, db_session_factory, adaptor):
+    """A timeout or unreachable adaptor is retried with the 5 and 10 second back-off and the change then succeeds, with no alarm."""
     _make_me(db_session_factory)
     adaptor["outcomes"] = [EditResult(False, "NETCONF_TIMEOUT"), EditResult(False, "NETCONF_UNREACHABLE")]
     job, sub = _write(client)
@@ -49,6 +51,9 @@ def test_a_timeout_is_retried_with_backoff(client, db_session_factory, adaptor):
 
 
 def test_exhausted_retries_fail_the_change_and_raise_an_alarm(client, db_session_factory, adaptor):
+    """When the retries are used up the sub-change is REJECTED with the last reason, the job FAILED, and a major communications alarm names the
+    target.
+    """
     _make_me(db_session_factory)
     adaptor["outcomes"] = [EditResult(False, "NETCONF_TIMEOUT")] * 4
     job, sub = _write(client)
@@ -61,6 +66,7 @@ def test_exhausted_retries_fail_the_change_and_raise_an_alarm(client, db_session
 
 
 def test_an_rpc_error_is_not_retried(client, db_session_factory, adaptor):
+    """An rpc-error answer is definite: one attempt, no retry and no alarm."""
     _make_me(db_session_factory)
     adaptor["outcomes"] = [EditResult(False, "NETCONF_RPC_FAILED")]
     job, sub = _write(client)
@@ -69,6 +75,9 @@ def test_an_rpc_error_is_not_retried(client, db_session_factory, adaptor):
 
 
 def test_read_after_write(client, db_session_factory, monkeypatch):
+    """The config read returns the attributes the adaptor reports for the element or function, is 503 when the read fails, and an unknown element
+    is a 404.
+    """
     _make_me(db_session_factory)
     seen = []
     monkeypatch.setattr("app.main.send_get_config", lambda uri, ref, message_id, managed_function_ref=None:
@@ -103,6 +112,7 @@ def test_restconf_uses_the_same_retry_policy_and_alarm(client, db_session_factor
 
 
 def test_a_restconf_error_reply_is_not_retried(client, db_session_factory, monkeypatch):
+    """A RESTCONF errors answer is not retried: one attempt and the reason RESTCONF_REQUEST_FAILED."""
     from app.restconf_client import RestconfResult
 
     _make_me(db_session_factory, protocol="RESTCONF")
@@ -113,6 +123,7 @@ def test_a_restconf_error_reply_is_not_retried(client, db_session_factory, monke
 
 
 def test_read_after_write_over_restconf(client, db_session_factory, monkeypatch):
+    """For a RESTCONF element the read goes to the RESTCONF client and never to NETCONF."""
     _make_me(db_session_factory, protocol="RESTCONF")
     monkeypatch.setattr("app.main.send_get_config", lambda *a, **kw: pytest.fail("should not use NETCONF"))
     monkeypatch.setattr("app.main.restconf_client.send_get", lambda uri, ref, message_id, managed_function_ref=None:
@@ -211,18 +222,23 @@ def clock(monkeypatch):
 
 
 def test_the_default_worst_case_is_the_budget_plus_one_attempt_in_flight():
+    """The documented defaults hold: a 35 second retry budget, delays 0, 5, 10 and 20, and a 65 second worst case per sub-change."""
     import app.main as main
     assert main.DISPATCH_RETRY_BUDGET_SECONDS == 35.0 and main.NETCONF_RETRY_DELAYS == [0.0, 5.0, 10.0, 20.0]
     assert main.worst_case_dispatch_seconds() == 65.0
 
 
 def test_an_adaptor_that_fails_fast_gets_the_whole_retry_schedule(clock):
+    """An adaptor that refuses at once gets four attempts over the full 35 seconds of back-off."""
     applied, reason, attempts = clock.dispatch_failing(attempt_seconds=0)
     assert (applied, reason, attempts) == (False, "NETCONF_TIMEOUT", 4)
     assert clock.now == 35.0                                   # 5 + 10 + 20, the documented schedule, unchanged
 
 
 def test_an_adaptor_that_waits_out_the_exchange_timeout_is_cut_off_inside_the_worst_case(clock):
+    """An adaptor that waits out the 30 second timeout on each attempt gets two attempts, because the budget stops the retries, and the total stays
+    within the worst case.
+    """
     import app.main as main
     applied, reason, attempts = clock.dispatch_failing(attempt_seconds=30)
     assert (applied, attempts) == (False, 2)                   # not four attempts of 30 s: the budget stops it
@@ -231,12 +247,14 @@ def test_an_adaptor_that_waits_out_the_exchange_timeout_is_cut_off_inside_the_wo
 
 @pytest.mark.parametrize("attempt_seconds", [0, 1, 7, 15, 30])
 def test_no_attempt_time_takes_one_sub_change_past_the_worst_case(clock, attempt_seconds):
+    """Whatever time each attempt takes, one sub-change never exceeds the documented worst case."""
     import app.main as main
     clock.dispatch_failing(attempt_seconds)
     assert clock.now <= main.worst_case_dispatch_seconds()
 
 
 def test_a_smaller_budget_stops_the_retries_earlier(clock, monkeypatch):
+    """A smaller retry budget stops the retries earlier, and the worst case follows the budget."""
     monkeypatch.setattr("app.main.DISPATCH_RETRY_BUDGET_SECONDS", 12.0)
     applied, reason, attempts = clock.dispatch_failing(attempt_seconds=0)
     assert attempts == 2 and clock.now == 5.0                  # 0, then +5; the +10 would end at 15 s > 12 s
@@ -245,6 +263,7 @@ def test_a_smaller_budget_stops_the_retries_earlier(clock, monkeypatch):
 
 
 def test_the_first_attempt_is_always_made_whatever_the_budget(clock, monkeypatch):
+    """The first attempt is made even with a zero budget."""
     monkeypatch.setattr("app.main.DISPATCH_RETRY_BUDGET_SECONDS", 0.0)
     monkeypatch.setattr("app.main.NETCONF_RETRY_DELAYS", [7.0, 7.0])
     applied, reason, attempts = clock.dispatch_failing(attempt_seconds=0)

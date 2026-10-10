@@ -51,6 +51,7 @@ def dockerfile_command() -> str:
 
 
 def free_port() -> int:
+    """A TCP port on 127.0.0.1 that was free a moment ago."""
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
@@ -58,6 +59,9 @@ def free_port() -> int:
 
 @pytest.fixture
 def service(tmp_path):
+    """A factory fixture: `start(workers, grace_seconds)` runs the Dockerfile's own CMD (loopback, a free port) against a small app with a slow
+    route, waits until it answers and returns (process, base URL); every process is stopped after the test.
+    """
     (tmp_path / "app").mkdir()
     (tmp_path / "app" / "__init__.py").write_text("")
     (tmp_path / "app" / "main.py").write_text(APP)
@@ -88,6 +92,7 @@ def service(tmp_path):
 
 
 def request_in_background(url: str):
+    """Starts a GET in a thread and returns (thread, outcome) where the outcome dict receives `response` or `error` when it ends."""
     outcome = {}
 
     def run():
@@ -103,6 +108,9 @@ def request_in_background(url: str):
 
 @pytest.mark.parametrize("workers", [1, 2])
 def test_sigterm_lets_the_inflight_request_finish_refuses_new_ones_and_exits_cleanly(service, workers):
+    """On SIGTERM the request in flight completes with its real answer, new requests stop being served within 2 seconds, and the process exits
+    cleanly, with one worker and with several.
+    """
     process, base = service(workers=workers, grace_seconds=15)
     thread, outcome = request_in_background(f"{base}/slow?seconds=3")
     time.sleep(0.7)                                           # the request is now running on the server
@@ -131,6 +139,9 @@ def test_sigterm_lets_the_inflight_request_finish_refuses_new_ones_and_exits_cle
 
 
 def test_the_drain_is_bounded_by_the_graceful_shutdown_setting(service):
+    """A request longer than the graceful-shutdown setting is cut and the process exits long before it would have finished, so a stuck request
+    cannot hold a stopping service.
+    """
     process, base = service(workers=1, grace_seconds=1)
     thread, outcome = request_in_background(f"{base}/slow?seconds=12")
     time.sleep(0.7)
@@ -144,6 +155,9 @@ def test_the_drain_is_bounded_by_the_graceful_shutdown_setting(service):
 
 
 def test_the_dockerfile_command_reads_its_settings_from_the_environment_and_execs_uvicorn():
+    """The Dockerfile command takes workers and the drain time from the environment, runs uvicorn as PID 1 (only the mTLS option step comes before
+    it) and every compose `stop_grace_period` is longer than the drain, so docker's SIGKILL never lands first.
+    """
     command = dockerfile_command()
     # PR-SEC-2: the only thing ahead of `exec uvicorn` is the mTLS options (and an exit when they cannot be made); uvicorn must still be PID 1
     assert command.startswith("tls=$(python -m smo_shared.mtls uvicorn-args) || exit 1; exec uvicorn app.main:app") and command.count("exec ") == 1

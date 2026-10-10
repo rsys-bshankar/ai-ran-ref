@@ -1,5 +1,8 @@
 """One SME invoker per module, shared by its replicas (PR-ST-4: smo_shared/module_identity.py and
-`R1Client`'s onboarding). Store tests run on file SQLite and, with `SMO_TEST_POSTGRES_URL`, on real Postgres."""
+`R1Client`'s onboarding). Store tests run on file SQLite and, with `SMO_TEST_POSTGRES_URL`, on real Postgres.
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_module_identity.py -q
+"""
 
 import os
 import threading
@@ -20,6 +23,9 @@ SME = "http://sme:8000"
 
 @pytest.fixture(params=["sqlite", "postgres"])
 def engine(request, tmp_path):
+    """A database with only the module_identity table, on file SQLite and, when SMO_TEST_POSTGRES_URL is set, on Postgres too (skipped otherwise);
+    dropped afterwards.
+    """
     if request.param == "postgres":
         if not os.environ.get("SMO_TEST_POSTGRES_URL"):
             pytest.skip("SMO_TEST_POSTGRES_URL not set")
@@ -41,6 +47,7 @@ def store(engine):
 # ---------------------------------------------------------------- the store
 
 def test_the_first_insert_wins_and_a_second_is_refused(store):
+    """insert stores the identity only for the first caller of a module; the second gets False and the first identity stays."""
     assert store.load("aimgf") is None
     assert store.insert("aimgf", "inv-1", "s-1") is True
     assert store.insert("aimgf", "inv-2", "s-2") is False
@@ -49,6 +56,7 @@ def test_the_first_insert_wins_and_a_second_is_refused(store):
 
 
 def test_replace_is_a_compare_and_swap_on_the_stale_invoker(store):
+    """replace succeeds only while the stored invoker is still the stale one the caller saw, and does nothing for an unknown module."""
     store.insert("aimgf", "inv-1", "s-1")
     assert store.replace("aimgf", "inv-1", "inv-2", "s-2") is True
     assert store.replace("aimgf", "inv-1", "inv-3", "s-3") is False        # inv-1 is no longer what is stored
@@ -57,6 +65,7 @@ def test_replace_is_a_compare_and_swap_on_the_stale_invoker(store):
 
 
 def test_racing_inserts_and_racing_replaces_have_one_winner_each(store):
+    """Eight threads racing to insert, and then to replace, produce exactly one winner each, which is what stops replicas registering duplicates."""
     workers = 8
     barrier = threading.Barrier(workers)
     inserts, replaces, lock = [], [], threading.Lock()
@@ -126,6 +135,7 @@ class FakeSme:
 
 @pytest.fixture
 def sme(monkeypatch):
+    """A stand-in for R1's /bootstrap and SME's registry and token endpoint, patched into the R1 client, with MODULE=aimgf and no pinned invoker."""
     fake = FakeSme()
     monkeypatch.setattr(r1_client.httpx, "get", fake.get)
     monkeypatch.setattr(r1_client.httpx, "post", fake.post)
@@ -142,6 +152,7 @@ def replica(store):
 
 
 def test_replicas_and_restarts_of_one_module_share_a_single_invoker(sme, store):
+    """Several replicas and a restart of one module register a single invoker at SME and all use it."""
     first, second = replica(store), replica(store)
     assert first.token_for(R1) and second.token_for(R1)
     restarted = replica(store)
@@ -151,6 +162,7 @@ def test_replicas_and_restarts_of_one_module_share_a_single_invoker(sme, store):
 
 
 def test_each_module_has_its_own_invoker(sme, store, monkeypatch):
+    """Different modules do not share an identity: each registers its own."""
     assert replica(store).token_for(R1)
     monkeypatch.setenv("MODULE", "nfo")
     other = replica(store)
@@ -159,6 +171,7 @@ def test_each_module_has_its_own_invoker(sme, store, monkeypatch):
 
 
 def test_losing_the_race_to_store_discards_our_registration_and_adopts_the_winners(sme, store):
+    """A replica that loses the race to store its identity deletes its own registration at SME and uses the winner's."""
     class RacedStore(DbIdentityStore):
         def insert(self, module, invoker_id, secret):
             super().insert(module, "api-invoker-WINNER", "secret-WINNER")  # a replica stores its identity first
@@ -173,6 +186,7 @@ def test_losing_the_race_to_store_discards_our_registration_and_adopts_the_winne
 
 
 def test_an_invoker_sme_forgot_is_replaced_once_and_the_other_replicas_adopt_it(sme, store):
+    """When SME forgets the invoker, one replica registers a replacement and the others adopt it instead of registering again."""
     first, second = replica(store), replica(store)
     assert first.token_for(R1) and second.token_for(R1)
     sme.invokers.clear()                                     # SME lost its registry (or purged the invoker)
@@ -185,6 +199,7 @@ def test_an_invoker_sme_forgot_is_replaced_once_and_the_other_replicas_adopt_it(
 
 
 def test_two_replicas_that_both_see_the_stale_invoker_register_one_replacement(sme, store):
+    """A replica holding the old id sees the replacement already stored and adopts it without registering another."""
     first, second = replica(store), replica(store)
     assert first.token_for(R1) and second.token_for(R1)
     sme.invokers.clear()
@@ -198,6 +213,7 @@ def test_two_replicas_that_both_see_the_stale_invoker_register_one_replacement(s
 
 
 def test_a_broken_store_falls_back_to_a_per_process_identity(sme):
+    """If the shared store fails, each process registers its own invoker (the pre-sharing behaviour) rather than failing."""
     class Broken:
         def load(self, module):
             raise RuntimeError("database down")
@@ -210,6 +226,7 @@ def test_a_broken_store_falls_back_to_a_per_process_identity(sme):
 
 
 def test_without_a_module_name_or_with_the_store_off_each_process_registers_its_own(sme, monkeypatch):
+    """No MODULE, or SMO_MODULE_IDENTITY_STORE=off, means no shared store: each process registers its own invoker."""
     monkeypatch.delenv("MODULE")
     assert _ModuleIdentity().token_for(R1) and _ModuleIdentity().token_for(R1)
     assert sme.registrations == 2
@@ -220,6 +237,7 @@ def test_without_a_module_name_or_with_the_store_off_each_process_registers_its_
 
 
 def test_an_identity_from_the_environment_needs_no_store_and_no_registration(sme, store, monkeypatch):
+    """An invoker pinned by SMO_INVOKER_ID / SMO_INVOKER_SECRET is used as is: nothing is registered or stored."""
     sme.invokers["provisioned"] = "from-a-secret-store"
     monkeypatch.setenv("SMO_INVOKER_ID", "provisioned")
     monkeypatch.setenv("SMO_INVOKER_SECRET", "from-a-secret-store")

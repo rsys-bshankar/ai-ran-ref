@@ -4,6 +4,8 @@ Runs against a file SQLite database (real, separate connections) and, when
 `SMO_TEST_POSTGRES_URL` is set, against real Postgres as well. CI sets it in the
 `migration-postgres` job, so the two-session race is proven on the database the
 platform actually uses.
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_versioning.py -q
 """
 
 import os
@@ -44,6 +46,9 @@ def _urls(tmp_path):
 
 @pytest.fixture(params=["sqlite", "postgres"])
 def engine(request, tmp_path):
+    """A database with the versioned test table, on file SQLite and, when SMO_TEST_POSTGRES_URL is set, on Postgres too (skipped otherwise); dropped
+    afterwards.
+    """
     urls = _urls(tmp_path)
     if request.param not in urls:
         pytest.skip("SMO_TEST_POSTGRES_URL not set")
@@ -56,6 +61,7 @@ def engine(request, tmp_path):
 
 
 def _new_job(engine) -> uuid.UUID:
+    """Helper: inserts one VersionedJob and returns its id."""
     with Session(engine) as s:
         job = VersionedJob()
         s.add(job)
@@ -68,6 +74,7 @@ def _fire(job: VersionedJob, event: str) -> None:
 
 
 def test_a_new_row_starts_at_version_1_and_every_update_bumps_it(engine):
+    """A new row has row_version 1 and every committed update, whichever column it changes, adds one."""
     job_id = _new_job(engine)
     with Session(engine) as s:
         job = s.get(VersionedJob, job_id)
@@ -81,6 +88,9 @@ def test_a_new_row_starts_at_version_1_and_every_update_bumps_it(engine):
 
 
 def test_two_sessions_firing_the_same_transition_have_exactly_one_winner(engine):
+    """Two sessions that both loaded NEW and fire START: the first commit wins and the second raises StaleDataError, so the transition is not applied
+    twice.
+    """
     job_id = _new_job(engine)
     first, second = Session(engine), Session(engine)
     try:
@@ -119,6 +129,7 @@ def test_repeating_after_a_conflict_is_refused_as_an_illegal_transition(engine):
 
 
 def test_a_write_to_a_different_column_also_conflicts(engine):
+    """A concurrent write to any column of a loaded row conflicts, not only a state change."""
     job_id = _new_job(engine)
     first, second = Session(engine), Session(engine)
     try:
@@ -134,6 +145,7 @@ def test_a_write_to_a_different_column_also_conflicts(engine):
 
 
 def test_many_threads_racing_one_transition_produce_one_winner(engine):
+    """Eight threads racing one transition leave one winner and the rest stale; the row ends in RUNNING at version 2."""
     job_id = _new_job(engine)
     workers = 8
     barrier = threading.Barrier(workers)
@@ -166,11 +178,13 @@ def test_many_threads_racing_one_transition_produce_one_winner(engine):
 
 
 def test_a_stale_write_is_answered_with_409_problem_details():
+    """A StaleDataError from a route answers 409 CONCURRENT_MODIFICATION with a message telling the caller to repeat."""
     app = FastAPI()
     install_concurrency_handler(app)
 
     @app.post("/boom")
     def boom():
+        # Test route raising StaleDataError; not part of any published API.
         raise StaleDataError("UPDATE statement on table 'x' expected to update 1 row(s); 0 were matched.")
 
     resp = TestClient(app).post("/boom")

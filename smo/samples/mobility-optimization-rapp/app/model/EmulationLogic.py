@@ -19,6 +19,12 @@ PASS_RATE = 0.9
 
 
 def emulate(model: MobilityModel, records: list[dict]) -> tuple[bool, dict]:
+    """Replays the model over every window of every Digital Twin relation and returns (passed, metrics).
+
+    Windows with fewer than MIN_ATTEMPTS handover attempts are skipped. A faulty window is correct when the model acts in the direction of the
+    injected fault; a healthy window the model acts on is a false action. Passes when there is at least one faulty window, the accuracy is at
+    least PASS_RATE and there is no false action.
+    """
     faulty = correct = healthy = false_actions = 0
     reduction = 0.0
     for series in by_relation(records).values():

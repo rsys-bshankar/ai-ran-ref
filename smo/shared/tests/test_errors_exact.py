@@ -1,5 +1,8 @@
 """smo_shared.errors, exactly: what identifies each integrity problem (SQLSTATE on the error or on its diagnostics, or the driver's words), the wording of every answer,
-and the log line. Written for the mutants the wider mutation scope (PR-V-2c) found that no test noticed."""
+and the log line. Written for the mutants the wider mutation scope (PR-V-2c) found that no test noticed.
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_errors_exact.py -q
+"""
 
 import json
 import logging
@@ -24,17 +27,21 @@ def integrity(orig):
 
 
 def with_sqlstate(state, text="x"):
+    """Helper: an exception carrying a `sqlstate` attribute, as a psycopg error does."""
     error = Exception(text)
     error.sqlstate = state
     return error
 
 
 def with_diag(state, text="x"):
+    """Helper: an exception whose SQLSTATE is on its `diag` object, the other place psycopg puts it."""
     error = Exception(text)
     error.diag = SimpleNamespace(sqlstate=state)
     return error
 
 
+# Table: (driver error, expected problem). Rows cover the SQLSTATE on the error itself, on its `diag`, and the driver's words in any case for foreign
+# key, unique and check violations, plus a state and a message that name none of them.
 @pytest.mark.parametrize("orig,expected", [
     (with_sqlstate("23503"), FK), (with_sqlstate("23505"), UNIQUE), (with_sqlstate("23514"), CHECK),                       # the error's own SQLSTATE
     (with_diag("23503"), FK), (with_diag("23505"), UNIQUE), (with_diag("23514"), CHECK),                                    # or its diagnostics'
@@ -47,6 +54,7 @@ def test_each_integrity_error_is_the_problem_its_state_or_words_name(orig, expec
 
 
 def test_an_error_without_an_orig_is_judged_by_its_own_text():
+    """An error that wraps nothing is classified by its own message, like the driver's words."""
     class Bare(Exception):
         pass
 
@@ -55,6 +63,9 @@ def test_an_error_without_an_orig_is_judged_by_its_own_text():
 
 
 def test_the_state_wins_over_misleading_words_and_each_class_is_not_another():
+    """When a SQLSTATE is present it decides, whatever the message says; a state outside the three is an internal error; without a state the words
+    decide.
+    """
     assert _integrity_problem(integrity(with_sqlstate("23505", "check constraint foreign key"))) == UNIQUE
     assert _integrity_problem(integrity(with_sqlstate("23514", "unique constraint"))) == CHECK
     assert _integrity_problem(integrity(with_sqlstate("23502", "foreign key unique constraint check constraint"))) == OTHER     # a state that is none of the three
@@ -65,30 +76,38 @@ def test_the_state_wins_over_misleading_words_and_each_class_is_not_another():
 
 
 def app_with_handlers():
+    """Helper: a test client for an app with the integrity and out-of-range handlers installed and four routes that raise the errors they handle."""
     app = FastAPI()
     install_integrity_handlers(app)
     install_out_of_range_handler(app)
 
     @app.get("/integrity")
     def integrity_route():
+        # Test route raising a foreign-key error; not part of any published API.
         raise integrity(with_sqlstate("23503", "insert on table \"x\" violates foreign key\nDETAIL: Key (a)=(b) is not present"))
 
     @app.get("/other")
     def other():
+        # Test route raising an unexpected error that carries a secret-looking message, to prove it is not echoed; not part of any published API.
         raise RuntimeError("password=hunter2")
 
     @app.get("/overflow")
     def overflow():
+        # Test route raising OverflowError; not part of any published API.
         raise OverflowError("too big")
 
     @app.get("/data")
     def data():
+        # Test route raising a database DataError; not part of any published API.
         raise DataError("INSERT", {}, Exception("integer out of range"))
 
     return TestClient(app, raise_server_exceptions=False)
 
 
 def test_the_answers_are_complete_problem_documents():
+    """Integrity, unhandled and out-of-range errors each answer with the complete ProblemDetails document (type, title, status, detail, instance) in
+    the `detail` envelope.
+    """
     client = app_with_handlers()
     answer = client.get("/integrity")
     assert answer.status_code == 422 and answer.json() == {"detail": {"type": "about:blank", "title": "REFERENCED_RESOURCE_NOT_FOUND", "status": 422,
@@ -104,17 +123,20 @@ def test_the_answers_are_complete_problem_documents():
 
 
 def test_the_integrity_log_line_names_the_request_the_answer_and_the_first_line_of_the_database_s_words(caplog):
+    """The warning logged for an integrity error names the method and path, the answer given and only the first line of the database's message."""
     with caplog.at_level(logging.WARNING, logger="smo.errors"):
         app_with_handlers().get("/integrity")
     assert [r.getMessage() for r in caplog.records] == ['GET /integrity answered 422 REFERENCED_RESOURCE_NOT_FOUND: insert on table "x" violates foreign key']
 
 
 def test_the_database_s_words_in_the_log_are_cut_at_200_characters(caplog):
+    """A long database message is cut at 200 characters in the log line."""
     app = FastAPI()
     install_integrity_handlers(app)
 
     @app.get("/long")
     def long():
+        # Test route raising a unique-violation with a 500 character message; not part of any published API.
         raise integrity(with_sqlstate("23505", "u" * 500))
 
     with caplog.at_level(logging.WARNING, logger="smo.errors"):
@@ -123,6 +145,7 @@ def test_the_database_s_words_in_the_log_are_cut_at_200_characters(caplog):
 
 
 def test_problem_and_framework_error_carry_status_title_and_detail():
+    """problem() and framework_error() build an HTTPException whose body holds the status, the title (code) and the detail, which may be None."""
     caught = problem(418, "TEAPOT", "short and stout")
     assert (caught.status_code, caught.detail) == (418, ProblemDetails(title="TEAPOT", status=418, detail="short and stout").model_dump())
     assert problem(404, "GONE").detail["detail"] is None
@@ -132,18 +155,21 @@ def test_problem_and_framework_error_carry_status_title_and_detail():
 
 
 def test_an_illegal_transition_names_the_subject_the_event_and_the_state():
+    """An illegal state transition answers 409 LIFECYCLE_ILLEGAL_TRANSITION saying which subject, event and state."""
     caught = illegal_transition_error(SimpleNamespace(event="STOP", state="IDLE"), "job 7")
     assert (caught.status_code, caught.detail["title"]) == (409, "LIFECYCLE_ILLEGAL_TRANSITION")
     assert caught.detail["detail"] == "job 7: event STOP is not allowed in state IDLE"
 
 
 def test_the_integrity_warning_is_logged_by_the_errors_logger(caplog):
+    """The integrity warning comes from the `smo.errors` logger, which is the name operators filter on."""
     with caplog.at_level(logging.WARNING, logger="smo.errors"):
         app_with_handlers().get("/integrity")
     assert [r.name for r in caplog.records] == ["smo.errors"]
 
 
 def test_the_driver_s_words_are_the_wrapped_error_or_the_error_itself():
+    """_orig returns the wrapped driver error of a SQLAlchemy error, or the error itself when it wraps nothing."""
     inner = Exception("inner")
     assert _orig(integrity(inner)) is inner
     plain = Exception("plain")

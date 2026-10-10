@@ -38,6 +38,9 @@ def _client_major(tool: str) -> int:
 
 @pytest.fixture(scope="module")
 def admin():
+    """An autocommit engine on the server named by SMO_TEST_POSTGRES_URL; skips the module when pg_dump, pg_restore or psql is older than the
+    server.
+    """
     engine = create_engine(ADMIN_URL, future=True, isolation_level="AUTOCOMMIT")
     with engine.connect() as connection:
         server_major = int(connection.execute(text("SHOW server_version_num")).scalar()) // 10000
@@ -54,6 +57,7 @@ def _url_for(database: str) -> str:
 
 @pytest.fixture
 def source(admin):
+    """A fresh database migrated to head by `scripts/migrate.py`, dropped after the test together with any `smo_drill_*` database the drill left."""
     name = f"dr_src_{uuid.uuid4().hex[:8]}"
     with admin.connect() as connection:
         connection.execute(text(f'CREATE DATABASE "{name}"'))
@@ -69,6 +73,7 @@ def source(admin):
 
 @pytest.fixture
 def bucket(tmp_path):
+    """An empty directory the fake AWS CLI uses as the bucket root."""
     root = tmp_path / "buckets"
     root.mkdir()
     return root
@@ -84,6 +89,7 @@ def _run(script: Path, *args: str, env: dict, timeout: int = 240):
 
 
 def _sql(database: str, statement: str):
+    """Runs one statement on the named database in its own transaction and returns the rows, or None when it returns none."""
     engine = create_engine(_url_for(database), future=True)
     with engine.begin() as connection:
         result = connection.execute(text(statement))
@@ -93,6 +99,7 @@ def _sql(database: str, statement: str):
 
 
 def _gui_db(path: Path, users: int = 2) -> Path:
+    """Creates a small SQLite file standing in for the GUI backend's database, with a `gui_user` table of `users` rows."""
     db = sqlite3.connect(path)
     db.execute("CREATE TABLE gui_user (username TEXT PRIMARY KEY)")
     db.executemany("INSERT INTO gui_user VALUES (?)", [(f"user{i}",) for i in range(users)])
@@ -107,6 +114,9 @@ def _sets(bucket: Path) -> list[str]:
 
 @needs_postgres
 def test_a_backup_set_is_uploaded_with_a_manifest_and_latest_points_at_it(source, bucket, tmp_path):
+    """A backup uploads one set (dump and GUI database) with a manifest holding its name, time, schema revision, table count, server version and
+    the size and sha256 of each file, and `latest.json` is that manifest. Needs Postgres.
+    """
     gui = _gui_db(tmp_path / "gui-bff.db")
     made = _run(BACKUP, env=_env(bucket, source, SMO_BACKUP_GUI_DB=str(gui)))
     assert made.returncode == 0, made.stderr
@@ -122,6 +132,9 @@ def test_a_backup_set_is_uploaded_with_a_manifest_and_latest_points_at_it(source
 
 @needs_postgres
 def test_a_url_without_a_password_takes_it_from_the_password_file_as_the_compose_service_does(source, bucket, tmp_path):
+    """A database URL without a password takes it from `SMO_DATABASE_PASSWORD_FILE`, as the compose service supplies it, and a missing file is an
+    error naming the variable. Needs Postgres.
+    """
     password_file = tmp_path / "db_password"
     password_file.write_text(make_url(ADMIN_URL).password or "")
     url = re.sub(r"://([^:@/]+):[^@]*@", r"://\1@", _url_for(source))          # the same URL without its password
@@ -134,6 +147,7 @@ def test_a_url_without_a_password_takes_it_from_the_password_file_as_the_compose
 
 @needs_postgres
 def test_no_bucket_means_no_backup(source, bucket):
+    """Without `SMO_BACKUP_S3_BUCKET` the backup fails and names the variable instead of writing somewhere. Needs Postgres."""
     env = _env(bucket, source)
     del env["SMO_BACKUP_S3_BUCKET"]
     failed = _run(BACKUP, env=env)
@@ -142,6 +156,9 @@ def test_no_bucket_means_no_backup(source, bucket):
 
 @needs_postgres
 def test_a_failed_upload_leaves_latest_on_the_last_complete_set(source, bucket, tmp_path):
+    """When the upload of the dump is silently dropped, the post-upload check fails the run (exit 1) and `latest.json` still names the last
+    complete set. Needs Postgres.
+    """
     assert _run(BACKUP, env=_env(bucket, source)).returncode == 0
     latest = (bucket / "smo-dr" / "smo" / "latest.json").read_text()
     broken = tmp_path / "aws-that-drops-the-dump"
@@ -155,6 +172,9 @@ def test_a_failed_upload_leaves_latest_on_the_last_complete_set(source, bucket, 
 
 @needs_postgres
 def test_retention_deletes_old_sets_but_keeps_the_newest_few(source, bucket):
+    """Retention deletes sets older than the retention days but always keeps the newest `SMO_BACKUP_KEEP_MIN` and the set just made, and
+    `--no-prune` deletes nothing. Needs Postgres.
+    """
     base = bucket / "smo-dr" / "smo"
     for stamp in ("20200101T000000Z", "20200102T000000Z", "20200103T000000Z", "20200104T000000Z"):
         (base / stamp).mkdir(parents=True)
@@ -169,6 +189,7 @@ def test_retention_deletes_old_sets_but_keeps_the_newest_few(source, bucket):
 
 @needs_postgres
 def test_fetch_verifies_the_manifest_and_refuses_a_damaged_file(source, bucket, tmp_path):
+    """Fetch writes the dump with mode 0600 after checking it against the manifest, and refuses a set whose dump no longer matches. Needs Postgres."""
     assert _run(BACKUP, env=_env(bucket, source)).returncode == 0
     out = tmp_path / "fetched"
     ok = _run(FETCH, str(out), env=_env(bucket, source))
@@ -182,6 +203,10 @@ def test_fetch_verifies_the_manifest_and_refuses_a_damaged_file(source, bucket, 
 
 @needs_postgres
 def test_the_drill_restores_into_a_fresh_database_and_measures_the_loss_window(source, bucket, tmp_path):
+    """The drill restores the latest set into a scratch database, reports the four phases, the data-loss window against the high-water mark and the
+    recovery time, removes the scratch database, and fails when the recovery time exceeds the limit or the high-water mark is later than the
+    restored data. Needs Postgres.
+    """
     gui = _gui_db(tmp_path / "gui-bff.db")
     _sql(source, "INSERT INTO periodic_run (name, last_run_at) SELECT 'probe-' || g, now() FROM generate_series(1, 20) g")
     assert _run(BACKUP, env=_env(bucket, source, SMO_BACKUP_GUI_DB=str(gui))).returncode == 0
@@ -206,6 +231,7 @@ def test_the_drill_restores_into_a_fresh_database_and_measures_the_loss_window(s
 
 @needs_postgres
 def test_the_drill_fails_on_a_set_that_is_not_the_schema_it_says(source, bucket, tmp_path):
+    """The drill fails when the manifest's schema revision is not the schema of the restored database."""
     assert _run(BACKUP, env=_env(bucket, source)).returncode == 0
     manifest = next((bucket / "smo-dr" / "smo").glob("*/manifest.json"))
     data = json.loads(manifest.read_text())
@@ -219,6 +245,7 @@ def test_the_drill_fails_on_a_set_that_is_not_the_schema_it_says(source, bucket,
 # -- structure: what must exist for the pieces to hang together --------------------------------------------------------------------------------
 
 def test_the_scripts_are_executable_and_the_ci_job_runs_the_drill_with_moto_and_the_targets():
+    """The scripts are executable and the `disaster-recovery` CI job runs the drill against moto with the stated RTO and RPO targets."""
     for script in (BACKUP, FETCH, DRILL, FAKE_AWS):
         assert os.access(script, os.X_OK), script
     workflow = yaml.safe_load((SMO_ROOT.parent / ".github" / "workflows" / "smo-dr.yml").read_text())
@@ -229,6 +256,9 @@ def test_the_scripts_are_executable_and_the_ci_job_runs_the_drill_with_moto_and_
 
 
 def test_the_compose_backup_service_is_a_profile_and_runs_the_loop():
+    """The compose `db-backup` service is in the `backup` profile (off by default), runs the backup script in its loop mode and takes the bucket,
+    endpoint and GUI database settings.
+    """
     compose = yaml.safe_load((SMO_ROOT / "docker-compose.yml").read_text())
     service = compose["services"]["db-backup"]
     assert service["profiles"] == ["backup"]
@@ -239,6 +269,9 @@ def test_the_compose_backup_service_is_a_profile_and_runs_the_loop():
 
 
 def test_the_chart_can_schedule_cnpg_backups_only_when_asked():
+    """The chart's CloudNativePG scheduled backup is off by default and guarded in its template, and the CI example cluster compresses WAL,
+    archives to S3 and bounds the data-loss window with `archive_timeout`.
+    """
     values = yaml.safe_load((SMO_ROOT / "deploy" / "helm" / "smo" / "values.yaml").read_text())
     assert values["postgres"]["cnpgBackup"]["enabled"] is False
     template = (SMO_ROOT / "deploy" / "helm" / "smo" / "templates" / "cnpg-backup.yaml").read_text()
@@ -251,6 +284,7 @@ def test_the_chart_can_schedule_cnpg_backups_only_when_asked():
 
 
 def test_the_disaster_recovery_document_states_the_targets_and_is_linked():
+    """docs/DISASTER_RECOVERY.md states the RPO (15 minutes) and RTO (1 hour) targets and is linked from the documents that cite it."""
     doc = (SMO_ROOT / "docs" / "DISASTER_RECOVERY.md").read_text()
     assert "RPO" in doc and "15 minutes" in doc and "RTO" in doc and "1 hour" in doc
     for linker in ("README.md", "docs/RELEASES.md", "docs/CONTROL_MATRIX.md", "docs/DATA_RESIDENCY.md", "docs/PRIVACY.md"):

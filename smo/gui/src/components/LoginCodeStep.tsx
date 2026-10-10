@@ -1,3 +1,8 @@
+/**
+ * The second step of the sign-in form (PR-SEC-7.2): shown after the password was accepted for an account that has a one-time code. Used by `pages/Login.tsx`;
+ * the code rules (six digits or a recovery code) are in `lib/mfa.ts`.
+ */
+
 import { useState, type FormEvent } from "react";
 
 import { cleanCode, isPlausibleCode } from "../lib/mfa";

@@ -65,6 +65,11 @@ def files() -> tuple[str, str, str]:
 
 
 def _require_readable() -> tuple[str, str, str]:
+    """Returns the (certificate, key, CA) paths after checking each can be opened and is not empty; raises MtlsError naming the file otherwise.
+
+    Called by every function that needs the files, so a missing file fails closed with a readable message instead of surfacing later as an SSL
+    error.
+    """
     paths = files()
     for path in paths:
         try:
@@ -111,6 +116,8 @@ def client_context() -> ssl.SSLContext:
                 context.load_cert_chain(cert, private_key)
             except (ssl.SSLError, OSError) as exc:
                 raise MtlsError(f"SMO_MTLS is on but the certificate and key do not load: {exc}") from exc
+            # Only one context is ever kept: the key holds the files' modification times, so an older entry belongs to files that have since been
+            # replaced.
             _contexts.clear()                      # one live context: an older one belongs to files that have since changed
             _contexts[key] = context
         return context
@@ -181,6 +188,12 @@ def probe(path: str = "/ready", port: int = 8000, timeout: float = 4.0) -> int:
 
 
 def main(argv: list[str]) -> int:
+    """Command line of `python -m smo_shared.mtls`; returns the exit code.
+
+    `uvicorn-args` prints the uvicorn options (nothing when serving plain HTTP) and returns 1 with the reason on stderr when mTLS is on and a file
+    is unusable, which is how the image's start command refuses to start without TLS. `probe [PATH [PORT]]` returns the result of `probe`. Anything
+    else prints the usage text from the module docstring and returns 2.
+    """
     command = argv[0] if argv else ""
     if command == "uvicorn-args":
         try:

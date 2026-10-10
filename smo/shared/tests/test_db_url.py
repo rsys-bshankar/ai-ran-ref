@@ -1,4 +1,7 @@
-"""No default database URL (PR-DB-1): the process refuses to start without SMO_DATABASE_URL."""
+"""No default database URL (PR-DB-1): the process refuses to start without SMO_DATABASE_URL.
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_db_url.py -q
+"""
 
 import os
 import subprocess
@@ -13,10 +16,13 @@ SHARED = Path(__file__).resolve().parent.parent
 
 
 def test_the_configured_url_is_used_as_given():
+    """A configured SMO_DATABASE_URL is returned unchanged."""
     url = "postgresql+psycopg://u:p@db.example:5432/smo"
     assert resolve_database_url({"SMO_DATABASE_URL": url}, under_pytest=False) == url
 
 
+# Table: unset, empty and whitespace-only URLs. Each must raise MissingDatabaseUrl with a message that names the variable, says there is no default
+# and points to init_secrets.sh, and must not contain a known password.
 @pytest.mark.parametrize("environ", [{}, {"SMO_DATABASE_URL": ""}, {"SMO_DATABASE_URL": "   "}])
 def test_an_unset_or_blank_url_outside_tests_is_refused_with_a_message_that_says_what_to_do(environ):
     with pytest.raises(MissingDatabaseUrl) as error:
@@ -27,10 +33,14 @@ def test_an_unset_or_blank_url_outside_tests_is_refused_with_a_message_that_says
 
 
 def test_under_pytest_an_unset_url_is_an_in_memory_database_never_a_server():
+    """When running under pytest an unset URL means in-memory SQLite, never a default server address."""
     assert resolve_database_url({}, under_pytest=True) == TEST_DATABASE_URL == "sqlite://"
 
 
 def _import_db(environ_extra):
+    """Helper: imports smo_shared.db in a fresh interpreter with SMO_DATABASE_URL removed from the environment (then `environ_extra` applied), so the
+    process-start behaviour is tested for real.
+    """
     environ = {k: v for k, v in os.environ.items() if k != "SMO_DATABASE_URL"}
     environ.update(environ_extra)
     environ["PYTHONPATH"] = str(SHARED)
@@ -39,11 +49,15 @@ def _import_db(environ_extra):
 
 
 def test_a_real_process_without_the_variable_exits_non_zero_before_serving():
+    """A real process importing the database module without the URL exits non-zero with the MissingDatabaseUrl message, so a misconfigured service
+    never starts.
+    """
     result = _import_db({})
     assert result.returncode != 0
     assert "MissingDatabaseUrl" in result.stderr and "SMO_DATABASE_URL is not set" in result.stderr
 
 
 def test_a_real_process_with_the_variable_starts():
+    """With the variable set, the same import succeeds and uses that URL."""
     result = _import_db({"SMO_DATABASE_URL": "sqlite://"})
     assert result.returncode == 0 and result.stdout.strip() == "sqlite://"

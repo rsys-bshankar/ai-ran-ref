@@ -34,6 +34,8 @@ def _wire(monkeypatch):
 
 
 def test_a_stopped_instance_with_limits_is_described_in_one_read(client, monkeypatch):
+    """One read returns the instance's invoker id, whether it is stopped (and by whom), and its limits with the jobs used in the last hour, asking RAN NF OAM for the kill switch, the limits and the approval policy under the instance's client id.
+    """
     seen = _wire(monkeypatch)
     created = _create(client)
     seen["answers"].update({"rapp-kill": (200, KILL), "rapp-limits": (200, LIMIT)})
@@ -46,12 +48,15 @@ def test_a_stopped_instance_with_limits_is_described_in_one_read(client, monkeyp
 
 
 def test_an_instance_with_neither_is_not_stopped_and_has_no_limits(client, monkeypatch):
+    """When RAN NF OAM has no kill switch and no limit (404 for both) the instance is reported as not stopped with nothing set.
+    """
     _wire(monkeypatch)
     created = _create(client)
     view = client.get(f"/instances/{created['instanceId']}/safeguards").json()
     assert view["killed"] is False and view["kill"] is None and view["limits"] is None and view["invokerId"]
 
 
+# Each case is one of the three reads failing with a 500 or a connection error: the route answers 503, because a stop that cannot be read must not be shown as "not stopped".
 @pytest.mark.parametrize("which", ["rapp-kill", "rapp-limits", "rapp-approval-policy"])
 @pytest.mark.parametrize("outcome", [(500, {}), httpx.ConnectError("down")])
 def test_a_read_that_failed_is_an_error_never_a_not_stopped(client, monkeypatch, which, outcome):
@@ -63,6 +68,7 @@ def test_a_read_that_failed_is_an_error_never_a_not_stopped(client, monkeypatch,
 
 
 def test_a_terminated_instance_has_no_invoker_and_nothing_is_asked(client, monkeypatch):
+    """A terminated instance has no credential, so the answer is empty and RAN NF OAM is not asked at all."""
     seen = _wire(monkeypatch)
     created = _create(client)
     client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
@@ -73,11 +79,13 @@ def test_a_terminated_instance_has_no_invoker_and_nothing_is_asked(client, monke
 
 
 def test_an_unknown_instance_is_404(client, monkeypatch):
+    """An unknown instance id is 404."""
     _wire(monkeypatch)
     assert client.get(f"/instances/{uuid.uuid4()}/safeguards").status_code == 404
 
 
 def test_an_instance_held_for_approval_shows_its_policy(client, monkeypatch):
+    """An instance with an approval policy at RAN NF OAM shows it in the safeguards answer."""
     seen = _wire(monkeypatch)
     created = _create(client)
     seen["answers"]["rapp-approval-policy"] = (200, {"invokerId": "x", "timeoutSeconds": 600, "onTimeout": "REJECT", "setBy": "rapp-mgmt", "updatedAt": "2026-10-09T00:00:00Z"})

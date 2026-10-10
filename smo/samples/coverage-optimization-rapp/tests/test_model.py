@@ -20,11 +20,15 @@ def _records(measurements):
 
 @pytest.fixture(scope="module")
 def trained():
+    """A model trained once on 72 hours of explored history, shared by the tests of this file."""
     model, metrics = TrainingLogic.train(_records(P.history(P.NEIGHBOURS, T0, 72)))
     return model, metrics
 
 
 def test_counters_shares_and_overlaps():
+    """A cell's PM window carries the report total, problem shares and an overlap counter for each neighbour, and a neighbour's overshoot shows as
+    pollution and overlap.
+    """
     radio = P.propagation(P.NEIGHBOURS, {}, {"301": "OVERSHOOT"})
     c = P.cell_counters("302", T0.replace(hour=12), radio["302"], (60, 43))
     assert c[TOTAL] > 1000 and set(overlaps(c)) == {"301", "303", "304"}
@@ -33,6 +37,9 @@ def test_counters_shares_and_overlaps():
 
 
 def test_the_propagation_model_responds_to_tilt_and_power():
+    """Downtilting an overshooting cell lowers its overshoot and its neighbour's pollution, and raising power lowers weak coverage: the sample
+    radio model closes the loop.
+    """
     base = P.propagation(P.NEIGHBOURS, {}, {"301": "OVERSHOOT"})
     down = P.propagation(P.NEIGHBOURS, {"301": (70, 43)}, {"301": "OVERSHOOT"})
     assert down["301"]["shares"]["OVERSHOOT"] < base["301"]["shares"]["OVERSHOOT"]
@@ -42,6 +49,9 @@ def test_the_propagation_model_responds_to_tilt_and_power():
 
 
 def test_training_recovers_the_sensitivities(trained):
+    """Training recovers the signs and rough size of the sensitivities the propagation model was built with, and refuses history in which no
+    setting changed.
+    """
     model, metrics = trained
     s = model.sensitivities
     assert metrics["rmse"] < 0.5 and metrics["rowsWithChanges"] >= 8
@@ -53,12 +63,14 @@ def test_training_recovers_the_sensitivities(trained):
 
 
 def test_validation_and_artifact_round_trip(trained):
+    """The trained model passes validation on its own history and an artifact round trip gives back an equal model."""
     model, _ = trained
     passed, metrics = ValidationLogic.validate(model, _records(P.history(P.NEIGHBOURS, T0, 72)))
     assert passed and metrics["rmse"] <= ValidationLogic.MAX_RMSE
     assert CoverageModel.from_artifact(model.to_artifact()) == model
 
 
+# One row per injected fault: the check on the plan the optimiser must find.
 @pytest.mark.parametrize("faults,expected", [
     ({"301": "OVERSHOOT"}, lambda plan: plan.get("301") == "DOWNTILT"),
     ({"302": "WEAK_COVERAGE"}, lambda plan: plan == {"302": "POWER_UP"}),
@@ -67,6 +79,9 @@ def test_validation_and_artifact_round_trip(trained):
     ({}, lambda plan: plan == {}),
 ])
 def test_the_joint_optimiser_picks_the_corrective_moves(trained, faults, expected):
+    """For each fault the optimiser picks the corrective move (including curing pollution through the neighbours), plans at most two cells, only
+    for a real gain, and none on a healthy cluster.
+    """
     model, _ = trained
     state = P.propagation(P.NEIGHBOURS, {}, faults)
     out = model.optimise(state, {c: ALL for c in state})
@@ -77,6 +92,7 @@ def test_the_joint_optimiser_picks_the_corrective_moves(trained, faults, expecte
 
 
 def test_the_optimiser_respects_allowed_moves_and_worsening(trained):
+    """A cell the guards closed is not moved, no allowed moves means no plan, and no cell's excess is predicted to grow by more than the tolerance."""
     model, _ = trained
     state = P.propagation(P.NEIGHBOURS, {}, {"301": "OVERSHOOT"})
     out = model.optimise(state, {"302": ALL, "303": ALL})           # 301 may not move
@@ -87,6 +103,9 @@ def test_the_optimiser_respects_allowed_moves_and_worsening(trained):
 
 
 def test_emulation_and_inference(trained):
+    """Emulation passes on faulty and healthy twin clusters with at least 90 % correct moves and no false action, and inference plans the downtilt
+    for an overshooting cell.
+    """
     model, _ = trained
     sim = []
     for cl, spec in {"dt1": ("OVERSHOOT", "a"), "dt2": ("WEAK_COVERAGE", "b"), "dt3": ("PILOT_POLLUTION", "c"),

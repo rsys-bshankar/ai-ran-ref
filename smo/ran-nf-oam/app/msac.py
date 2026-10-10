@@ -50,11 +50,15 @@ CONFIG_OPERATION = {"merge": "update", "replace": "update", "create": "create", 
 
 
 def hash_credential(secret: str) -> str:
+    """A salted scrypt hash of an Identity credential, as `scrypt$<salt hex>$<digest hex>` (16 random salt bytes, n=2**14, r=8, p=1). The only form in which a credential is stored.
+    """
     salt = os.urandom(16)
     return f"scrypt${salt.hex()}${hashlib.scrypt(secret.encode(), salt=salt, n=2**14, r=8, p=1).hex()}"
 
 
 def check_credential(secret: str, stored: str | None) -> bool:
+    """Whether `secret` matches a hash made by `hash_credential`; False when nothing is stored. The digest is compared with `==`, not in constant time. Nothing in the service calls it yet: no route checks a presented credential (the tests do), so an Identity's `credential` is stored but never verified.
+    """
     if not stored:
         return False
     _, salt, digest = stored.split("$")
@@ -65,6 +69,8 @@ _SEGMENT = re.compile(r"^[A-Za-z_*][A-Za-z0-9_*]*=[^/\[\]@'\"]+$|^\*$")
 
 
 def _check_selector(selector: str) -> None:
+    """Refuses a `dataNodeSelector` that is not an absolute path of `Class=id` segments (with `*` wildcards): 422 SCHEMA_VALIDATION_FAILED. An expression this build cannot evaluate is rejected at creation rather than stored and never matched.
+    """
     segments = selector[1:].split("/") if selector.startswith("/") else None
     if segments and segments[-1] == "":
         segments = segments[:-1]  # a trailing slash
@@ -106,6 +112,8 @@ def _selects(selector: str, target: str) -> bool:
 
 
 def authorize(db: Session, roles: list[MsacRole], target: str, operation: str) -> bool:
+    """Whether the roles allow `operation` on the DN path `target`: the rules of the roles that select the target and list the operation are collected; any DENY refuses, otherwise at least one ALLOW is needed, and no matching rule means refused.
+    """
     matched = [r for r in _rules_of(db, roles) if operation in r.operations and _selects(r.data_node_selector, target)]
     if any(r.actions == "DENY" for r in matched):
         return False
@@ -156,6 +164,7 @@ def may_read(db: Session, request: Request, managed_element_ref: str) -> bool:
 
 # ---------------------------------------------------------------- resources
 
+# Request body of `POST /msac/access-rules`. `operations` and `componentCData` are stored sorted and de-duplicated.
 class AccessRuleAttributes(BaseModel):
     ruleName: str
     dataNodeSelector: str
@@ -164,11 +173,13 @@ class AccessRuleAttributes(BaseModel):
     componentCData: list[str] = []
 
 
+# Request and response attributes of a Role. `accessRulesList` holds AccessRule ids that must exist.
 class RoleAttributes(BaseModel):
     roleName: str
     accessRulesList: list[uuid.UUID] = []
 
 
+# Request attributes of an Identity. `credential` is write-only: it is hashed on the way in and never returned (`_identity_view` omits it).
 class IdentityAttributes(BaseModel):
     identityType: Literal["USERNAME", "EMAIL_ADDRESS", "PHONE_NUMBER", "IP_ADDRESS", "MACHINEUSER"]
     identityName: str
@@ -205,6 +216,7 @@ def _require_refs(db: Session, model, ids: list[uuid.UUID], name: str) -> None:
 
 @router.post("/access-rules", status_code=201)
 def create_access_rule(body: AccessRuleAttributes, db: Session = Depends(get_session)):
+    # The selector is checked first (422 when it is not supported); 201 with the stored rule.
     _check_selector(body.dataNodeSelector)
     row = MsacAccessRule(rule_name=body.ruleName, data_node_selector=body.dataNodeSelector, operations=sorted(set(body.operations)),
                          actions=body.actions, component_c_data=sorted(set(body.componentCData)))
@@ -215,17 +227,20 @@ def create_access_rule(body: AccessRuleAttributes, db: Session = Depends(get_ses
 
 @router.get("/access-rules")
 def list_access_rules(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Paged list, unfiltered.
     page = paginate(db, select(MsacAccessRule), limit, offset)
     return {**page, "items": [_rule_view(r) for r in page["items"]]}
 
 
 @router.get("/access-rules/{rule_id}")
 def get_access_rule(rule_id: uuid.UUID, db: Session = Depends(get_session)):
+    # 404 NRM_OBJECT_NOT_FOUND when the id is unknown.
     return _rule_view(_get(db, MsacAccessRule, rule_id, "AccessRule"))
 
 
 @router.delete("/access-rules/{rule_id}", status_code=204)
 def delete_access_rule(rule_id: uuid.UUID, db: Session = Depends(get_session)):
+    # 204 whether or not the rule existed. A rule that exists is also removed from every role that listed it, in the same commit.
     row = db.get(MsacAccessRule, rule_id)
     if row is not None:
         for role in db.scalars(select(MsacRole)).all():  # a deleted rule leaves every role that listed it
@@ -236,6 +251,7 @@ def delete_access_rule(rule_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @router.post("/roles", status_code=201)
 def create_role(body: RoleAttributes, db: Session = Depends(get_session)):
+    # 422 SCHEMA_VALIDATION_FAILED when a listed AccessRule does not exist or the role name is taken; 201 with the role.
     _require_refs(db, MsacAccessRule, body.accessRulesList, "AccessRule")
     if db.scalars(select(MsacRole).where(MsacRole.role_name == body.roleName)).first() is not None:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"role {body.roleName!r} already exists")
@@ -247,17 +263,20 @@ def create_role(body: RoleAttributes, db: Session = Depends(get_session)):
 
 @router.get("/roles")
 def list_roles(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Paged list, unfiltered.
     page = paginate(db, select(MsacRole), limit, offset)
     return {**page, "items": [_role_view(r) for r in page["items"]]}
 
 
 @router.get("/roles/{role_id}")
 def get_role(role_id: uuid.UUID, db: Session = Depends(get_session)):
+    # 404 NRM_OBJECT_NOT_FOUND when the id is unknown.
     return _role_view(_get(db, MsacRole, role_id, "Role"))
 
 
 @router.put("/roles/{role_id}")
 def replace_role(role_id: uuid.UUID, body: RoleAttributes, db: Session = Depends(get_session)):
+    # Replaces the name and the rule list. 404 for an unknown role, 422 for an unknown AccessRule. The new name is not checked against other roles here, so renaming onto a taken name reaches the database's unique constraint instead of the 422 that create gives.
     row = _get(db, MsacRole, role_id, "Role")
     _require_refs(db, MsacAccessRule, body.accessRulesList, "AccessRule")
     row.role_name, row.access_rules_list = body.roleName, [str(i) for i in body.accessRulesList]
@@ -267,6 +286,7 @@ def replace_role(role_id: uuid.UUID, body: RoleAttributes, db: Session = Depends
 
 @router.delete("/roles/{role_id}", status_code=204)
 def delete_role(role_id: uuid.UUID, db: Session = Depends(get_session)):
+    # 204 whether or not the role existed. A role that exists is also removed from every identity's role list, in the same commit.
     row = db.get(MsacRole, role_id)
     if row is not None:
         for identity in db.scalars(select(MsacIdentity)).all():
@@ -277,6 +297,7 @@ def delete_role(role_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @router.post("/identities", status_code=201)
 def create_identity(body: IdentityAttributes, db: Session = Depends(get_session)):
+    # 422 SCHEMA_VALIDATION_FAILED when a listed Role does not exist or the identity name is taken; the credential, when given, is stored only as a scrypt hash. 201 with the identity (no credential).
     _require_refs(db, MsacRole, body.roleList, "Role")
     if db.scalars(select(MsacIdentity).where(MsacIdentity.identity_name == body.identityName)).first() is not None:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"identity {body.identityName!r} already exists")
@@ -290,17 +311,20 @@ def create_identity(body: IdentityAttributes, db: Session = Depends(get_session)
 
 @router.get("/identities")
 def list_identities(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Paged list, unfiltered; no credential in any item.
     page = paginate(db, select(MsacIdentity), limit, offset)
     return {**page, "items": [_identity_view(i) for i in page["items"]]}
 
 
 @router.get("/identities/{identity_id}")
 def get_identity(identity_id: uuid.UUID, db: Session = Depends(get_session)):
+    # 404 NRM_OBJECT_NOT_FOUND when the id is unknown; no credential in the answer.
     return _identity_view(_get(db, MsacIdentity, identity_id, "Identity"))
 
 
 @router.put("/identities/{identity_id}")
 def replace_identity(identity_id: uuid.UUID, body: IdentityAttributes, db: Session = Depends(get_session)):
+    # Replaces type, name and role list; a credential in the body replaces the stored hash, an omitted one keeps it. 404 for an unknown identity, 422 for an unknown Role. As for roles, a renamed identity is not checked against the other names here, so a taken name reaches the unique constraint.
     row = _get(db, MsacIdentity, identity_id, "Identity")
     _require_refs(db, MsacRole, body.roleList, "Role")
     row.identity_type, row.identity_name, row.role_list = body.identityType, body.identityName, [str(i) for i in body.roleList]
@@ -312,6 +336,7 @@ def replace_identity(identity_id: uuid.UUID, body: IdentityAttributes, db: Sessi
 
 @router.delete("/identities/{identity_id}", status_code=204)
 def delete_identity(identity_id: uuid.UUID, db: Session = Depends(get_session)):
+    # 204 whether or not the identity existed.
     row = db.get(MsacIdentity, identity_id)
     if row is not None:
         db.delete(row)

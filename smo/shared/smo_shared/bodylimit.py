@@ -43,16 +43,26 @@ def settings_from_env(prefix: str, default_overrides: str = "", default_bytes: i
     return read
 
 
+# Raised from the counting `receive` wrapper when a streamed body passes the cap; caught in `BodySizeLimit.__call__`, never seen by the application.
 class _TooLarge(Exception):
     pass
 
 
 class BodySizeLimit:
+    """ASGI middleware that answers 413 PAYLOAD_TOO_LARGE for a request body over the cap (see the module description for how the cap is chosen).
+
+    A plain ASGI middleware: it wraps `receive` to count bytes and `send` to see whether a response has started. Only `http` scopes are limited
+    (websocket and lifespan pass through).
+    """
     def __init__(self, app, settings: Settings):
         self.app = app
         self.settings = settings
 
     def _limit_for(self, path: str) -> int:
+        """Returns the cap in bytes for `path`: the first override whose pattern matches (`fnmatch`, case-sensitive), else the default.
+
+        `settings()` is called here, per request, so a limit changed in the environment applies without a restart.
+        """
         default, overrides = self.settings()
         for pattern, size in overrides.items():
             if fnmatch.fnmatchcase(path, pattern):
@@ -63,6 +73,8 @@ class BodySizeLimit:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         limit = self._limit_for(scope["path"])
+        # Cheap early refusal: a declared Content-Length over the cap is answered before the application reads a byte. A missing or non-numeric header
+        # falls through to the byte count below.
         declared = dict(scope["headers"]).get(b"content-length")
         if declared is not None and declared.isdigit() and int(declared) > limit:
             return await self._refuse(send, limit)
@@ -70,6 +82,8 @@ class BodySizeLimit:
         received = 0
         started = False
 
+        # Chunked uploads have no Content-Length, so the bytes are counted as the application reads them; the read is cut off by raising _TooLarge at
+        # the cap.
         async def counting_receive():
             nonlocal received
             message = await receive()
@@ -88,11 +102,17 @@ class BodySizeLimit:
         try:
             await self.app(scope, counting_receive, tracking_send)
         except _TooLarge:
+            # Once the application has begun its response (http.response.start sent) a 413 can no longer be sent, so the request is left to end as it
+            # is.
             if not started:
                 await self._refuse(send, limit)
 
     @staticmethod
     async def _refuse(send, limit: int) -> None:
+        """Sends the 413 answer (a small JSON body with `title`, `status`, `detail`, and `Connection: close`) straight on `send`.
+
+        Built by hand because it runs in the middleware, ahead of the application's exception handlers.
+        """
         body = json.dumps({"title": "PAYLOAD_TOO_LARGE", "status": 413,
                            "detail": f"the request body is larger than the {limit} bytes this route accepts"}).encode()
         await send({"type": "http.response.start", "status": 413, "headers": [

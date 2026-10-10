@@ -12,6 +12,9 @@ SOURCES = [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name":
 
 
 def test_the_bootstrap_network_policy_is_off_by_default_and_the_template_is_gated_on_it():
+    """The bootstrap NetworkPolicy is off by default, its template is wholly inside the switch with its blocks balanced, and it selects the gateway
+    on the gateway's own port, since a policy cannot name a URL path.
+    """
     assert VALUES["bootstrapNetworkPolicy"] == {"enabled": False, "allowedSources": []}
     text = (TEMPLATES / "networkpolicy.yaml").read_text()
     body = text.split("*/}}", 1)[1].strip()                                           # after the leading comment
@@ -24,11 +27,15 @@ def test_the_bootstrap_network_policy_is_off_by_default_and_the_template_is_gate
 
 
 def test_the_template_says_a_network_policy_is_not_per_path_and_where_the_per_path_rule_is():
+    """The template's comment says a network policy cannot restrict URL paths and points to the per-path ingress rule and the gateway's bootstrap
+    key.
+    """
     text = (TEMPLATES / "networkpolicy.yaml").read_text()
     assert "never URL paths" in text and "bootstrapAllowedSourceRanges" in text and "R1_BOOTSTRAP_KEY" in text
 
 
 def test_the_per_path_ingress_rule_is_off_by_default_and_exact_when_on():
+    """The per-path ingress rule is off by default, and when on it is an exact `/bootstrap` path with a source whitelist."""
     assert VALUES["ingress"]["r1"]["bootstrapAllowedSourceRanges"] == [] and VALUES["ingress"]["enabled"] is False
     text = (TEMPLATES / "ingress.yaml").read_text()
     assert "{{- if and .host .bootstrapAllowedSourceRanges }}" in text
@@ -37,6 +44,9 @@ def test_the_per_path_ingress_rule_is_off_by_default_and_exact_when_on():
 
 
 def test_the_gateway_settings_this_change_adds_are_the_same_in_compose_and_the_chart():
+    """The shared-limiter store and the bootstrap key have the same defaults in compose and the chart, and every service that calls the gateway can
+    present the key.
+    """
     env = COMPOSE["services"]["r1-termination"]["environment"]
     assert env["R1_RATE_STORE"] == "${R1_RATE_STORE:-memory}" and VALUES["modules"]["r1-termination"]["env"]["R1_RATE_STORE"] == "memory"
     assert env["R1_BOOTSTRAP_KEY"] == "${R1_BOOTSTRAP_KEY:-}"                          # empty: off
@@ -48,6 +58,7 @@ def test_the_gateway_settings_this_change_adds_are_the_same_in_compose_and_the_c
 
 @helm
 def test_the_default_install_has_no_network_policy_and_no_bootstrap_ingress():
+    """A default install, even with the ingress on, has no NetworkPolicy and only the one gateway Ingress. Needs helm."""
     docs = _render("--set", "ingress.enabled=true", "--set", "ingress.r1.host=r1.example.com")
     assert not [d for d in docs if d["kind"] == "NetworkPolicy"]
     assert [d["metadata"]["name"] for d in docs if d["kind"] == "Ingress"] == ["r1"]
@@ -55,6 +66,7 @@ def test_the_default_install_has_no_network_policy_and_no_bootstrap_ingress():
 
 @helm
 def test_the_bootstrap_network_policy_limits_the_gateway_pods_ingress_to_the_release_and_the_listed_sources():
+    """With the policy on, the gateway pods accept TCP on 8000 only from the release's own pods and the listed sources. Needs helm."""
     policy = next(d for d in _render("--set", "bootstrapNetworkPolicy.enabled=true", "--set-json", f"bootstrapNetworkPolicy.allowedSources={json.dumps(SOURCES)}")
                   if d["kind"] == "NetworkPolicy")
     assert policy["spec"]["podSelector"]["matchLabels"]["app.kubernetes.io/name"] == "r1-termination"
@@ -67,12 +79,16 @@ def test_the_bootstrap_network_policy_limits_the_gateway_pods_ingress_to_the_rel
 
 @helm
 def test_the_bootstrap_network_policy_without_extra_sources_allows_only_the_release():
+    """With no extra sources the policy allows only the release's own pods. Needs helm."""
     policy = next(d for d in _render("--set", "bootstrapNetworkPolicy.enabled=true") if d["kind"] == "NetworkPolicy")
     assert len(policy["spec"]["ingress"][0]["from"]) == 1
 
 
 @helm
 def test_bootstrap_source_ranges_add_an_exact_path_ingress_with_the_whitelist():
+    """Source ranges add a second Ingress for the exact `/bootstrap` path with the whitelist annotation, the same class and TLS Secret, and leave
+    the rest of the host unrestricted. Needs helm.
+    """
     docs = _render("--set", "ingress.enabled=true", "--set", "ingress.r1.host=r1.example.com", "--set", "ingress.r1.tlsSecretName=r1-tls",
                    "--set", "ingress.className=nginx", "--set-json", 'ingress.r1.bootstrapAllowedSourceRanges=["10.0.0.0/8","192.168.1.0/24"]')
     ingresses = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Ingress"}
@@ -87,6 +103,7 @@ def test_bootstrap_source_ranges_add_an_exact_path_ingress_with_the_whitelist():
 
 @helm
 def test_the_shared_limiter_setting_reaches_the_gateway_pod():
+    """`modules.r1-termination.env.R1_RATE_STORE` reaches the gateway's container environment. Needs helm."""
     docs = _render("--set", "modules.r1-termination.env.R1_RATE_STORE=postgres")
     r1 = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "r1-termination")
     assert {"name": "R1_RATE_STORE", "value": "postgres"} in r1["spec"]["template"]["spec"]["containers"][0]["env"]

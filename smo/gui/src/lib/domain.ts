@@ -1,5 +1,12 @@
-// Pure domain helpers shared by pages: state machines as the modules define
-// them, alarm severity handling, and turning reports into chart series.
+/**
+ * Pure domain helpers shared by pages: the operator actions legal in each lifecycle state (AI/ML model, runtime, package), alarm severity handling, report series,
+ * formatting, and the form-to-request-body builders and their client-side checks (rApp limits, staged CM jobs, KPI definitions and schedules, approval policies, the
+ * decision query), plus the plain-words meanings of the status codes the safeguards, approval and decision pages show. No React, no network.
+ *
+ * The state machines are copies of the modules' own (aimgf/app/statemachine.py, onboarding/app/statemachine.py): when a module's machine changes, the matching function
+ * here changes with it, and `domain.test.ts` pins each state. The `...Payload` builders only save a round trip: the modules and the BFF validate again and are the authority,
+ * and the bounds written here are the ones they enforce. Covered by `domain.test.ts`.
+ */
 
 import type { Alarm, ConfigJob, KpiCounterSpec, KpiGuardResult, ModuleStatus, RollbackPreview } from "../api/types";
 
@@ -13,6 +20,10 @@ export const MODEL_PIPELINE = [
   "PENDING_APPROVAL", "APPROVED", "CERTIFIED", "PROMOTED",
 ] as const;
 
+/**
+ * One button of a model's lifecycle drawer. `train`, `validate` and `emulate` request a job (the job route fires the lifecycle event itself); `complete` finishes the in-flight job of
+ * a stage through its own /complete route; `advance` sends a lifecycle event to AIMgF, and `governance` marks the events for which AIMgF requires a `decidedBy`.
+ */
 export type ModelAction =
   | { kind: "train"; label: string }           // POST /training-jobs (fires CREATE_TRAINING itself)
   | { kind: "validate"; label: string }        // POST /validation-jobs (fires CREATE_VALIDATION itself)
@@ -86,6 +97,10 @@ export function modelActions(state: string, gate?: { trainingApproved: boolean; 
 
 export type StepStatus = "done" | "current" | "todo";
 
+/**
+ * The model pipeline for the stepper, each step done, current or todo for `state`. A model that left the pipeline (DEPRECATED, RETIRED, FAILED) shows every step done;
+ * `FsmStepper` adds the final state as an extra step.
+ */
 export function pipelineSteps(state: string): { state: string; status: StepStatus }[] {
   const idx = MODEL_PIPELINE.indexOf(state as (typeof MODEL_PIPELINE)[number]);
   if (state === "DEPRECATED" || state === "RETIRED" || state === "FAILED") {
@@ -133,6 +148,9 @@ export function packageActions(state: string): { action: "prime" | "deprime" | "
 export const SEVERITIES = ["critical", "major", "minor", "warning"] as const;
 export type Severity = (typeof SEVERITIES)[number] | "cleared";
 
+/**
+ * Counts alarms per open severity (critical, major, minor, warning), case-insensitively; any other severity (a cleared alarm) is not counted.
+ */
 export function countBySeverity(alarms: Pick<Alarm, "severity">[]): Record<(typeof SEVERITIES)[number], number> {
   const counts = { critical: 0, major: 0, minor: 0, warning: 0 };
   for (const a of alarms) {
@@ -142,6 +160,9 @@ export function countBySeverity(alarms: Pick<Alarm, "severity">[]): Record<(type
   return counts;
 }
 
+/**
+ * The sort rank of a severity (critical 0 ... warning 3); an unknown or cleared severity ranks after all of them.
+ */
 export function severityRank(severity: string): number {
   const i = (SEVERITIES as readonly string[]).indexOf(severity?.toLowerCase());
   return i === -1 ? SEVERITIES.length : i;
@@ -173,17 +194,26 @@ export function metricSeries(reports: Reported[], key: string): { t: string; v: 
 
 // ---------------------------------------------------------------- formatting
 
+/**
+ * An identifier shortened to its first eight characters plus an ellipsis when it is longer than thirteen; a missing one is a dash.
+ */
 export function shortId(id: string | null | undefined): string {
   if (!id) return "—";
   return id.length > 13 ? `${id.slice(0, 8)}…` : id;
 }
 
+/**
+ * An ISO timestamp in the browser's locale (short date, medium time); a missing one is a dash and an unparsable one is returned unchanged.
+ */
 export function formatTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(undefined, { dateStyle: "short", timeStyle: "medium" });
 }
 
+/**
+ * Reads a text field that must hold a JSON object: blank is an empty object, a JSON value that is not an object (an array, null, a scalar) or invalid JSON returns the problem to show.
+ */
 export function parseJsonObject(text: string): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
   if (!text.trim()) return { ok: true, value: {} };
   try {
@@ -228,6 +258,9 @@ export function describePlace(place: { region?: string | null; tenant?: string |
   return `${place.region || "—"} / ${place.tenant || "—"}`;
 }
 
+/**
+ * The shape `describeLimits` and `limitsForm` read: the three rApp limits (null means none on that axis) and, optionally, the config jobs used in the last hour.
+ */
 export interface LimitsLike {
   maxConfigJobsPerHour: number | null; maxElementsPerJob: number | null; maxChangePercent: number | null; configJobsLastHour?: number;
 }
@@ -390,6 +423,7 @@ export function kpiNameProblem(name: string): string | null {
   return null;
 }
 
+/** The text fields of the KPI schedule form, as typed (numbers are strings until `schedulePayload` reads them). */
 export interface ScheduleForm {
   kpi: string; intervalSeconds: string; lookbackSeconds: string; groupBy: string; managedElementRef: string; cellId: string; enabled: boolean;
 }
@@ -415,6 +449,9 @@ export function schedulePayload(f: ScheduleForm): { ok: true; body: Record<strin
 
 export type ModuleReadiness = "DOWN" | "NOT READY" | "READY" | "UNKNOWN";
 
+/**
+ * One row of the module status table: readiness (DOWN, NOT READY, READY or UNKNOWN) and the module's build, as display text.
+ */
 export interface ModuleRow {
   module: string; readiness: ModuleReadiness; version: string; buildSha: string; builtAt: string;
   /** true when this module runs a different commit than most modules (a rolling upgrade in progress, or a stale image) */

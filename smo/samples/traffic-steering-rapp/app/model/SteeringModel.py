@@ -43,6 +43,10 @@ CIO_STEP_DB, PRIO_STEP = 2, 1
 
 @dataclass
 class SteeringModel:
+    """The trained model: the forecast weights, the hour-of-day profile, the learned transfer per CIO dB and per priority step, the fit (RMSE,
+    sample count), the thresholds and the version. The methods forecast a cell's score, say how much one step moves, and plan the steering of a
+    cluster pairwise; the artifact is this dataclass as JSON.
+    """
     weights: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])  # [drift, trend gain, profile gain]
     profile: list[float] = field(default_factory=lambda: [0.0] * 24)
     transfer: dict = field(default_factory=lambda: {"CONNECTED": 0.0, "IDLE": 0.0})
@@ -55,6 +59,9 @@ class SteeringModel:
     version: str = "1.0.0"
 
     def forecast(self, score: float, score_hour_ago: float | None, hour: int) -> float:
+        """Next-hour congestion score (0 to 100): the current score plus the drift, the gain on the last hour's trend and the gain on the hour's
+        learned profile. Without a score from an hour ago the trend is 0.
+        """
         trend = score - (score_hour_ago if score_hour_ago is not None else score)
         w0, w1, w2 = self.weights
         return round(max(0.0, min(100.0, score + w0 + w1 * trend + w2 * self.profile[hour % 24])), 3)
@@ -119,6 +126,7 @@ class SteeringModel:
     # ------------------------------------------------------------ artifact
 
     def to_artifact(self) -> bytes:
+        """Serialises the model as a .zip holding one JSON member (`steering_model.json`), the form stored in MLMR."""
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr(ARTIFACT_MEMBER, json.dumps(asdict(self), indent=1, sort_keys=True))
@@ -126,6 +134,7 @@ class SteeringModel:
 
     @classmethod
     def from_artifact(cls, data: bytes) -> "SteeringModel":
+        """Reads a model back from the bytes `to_artifact` made; raises zipfile.BadZipFile or KeyError for anything else."""
         with zipfile.ZipFile(io.BytesIO(data)) as z:
             return cls.from_dict(json.loads(z.read(ARTIFACT_MEMBER)))
 

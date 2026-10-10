@@ -1,3 +1,9 @@
+/**
+ * The decision record pages (PR-AI-13.4): `Decisions` is the filtered, paged list of why each rApp change was made, and `DecisionDetail` (route /decisions/:decisionId) one record with its
+ * integrity check against the audit chain. Reads RAN NF OAM's /decision-records through the BFF; read-only, so every signed-in role (viewer and up) may open it. The config job and the approval
+ * request of a record open in their own drawers (`ConfigJobDrawer`, `ApprovalDrawer`). Covered by `Decisions.test.tsx`.
+ */
+
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 

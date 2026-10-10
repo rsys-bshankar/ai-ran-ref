@@ -1,3 +1,10 @@
+/**
+ * The rApps page (route /rapps): three tabs, the rApp directory (`RappDirectory.tsx`), the application packages (Onboarding) and the rApp instances (rApp Management), which together drive call flow 01 (onboard a package, deploy an instance
+ * from it through rApp Management and NFO, then run, upgrade, recover, terminate and delete it). Every signed-in role may read. Onboarding, priming, deploying, upgrading, recovering and editing an instance's configuration are operator calls; deleting
+ * a package, terminating or deleting an instance and the test-injection tools are admin calls (the BFF's permission table, applied through `Can` and `ActionButton`; the BFF checks again). `InstanceActions` and `VersionHistory` are also used by
+ * `RappDetail.tsx`. Nothing here implements the lifecycle: each button calls the module's own route and the page shows the resulting state.
+ */
+
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
@@ -13,6 +20,7 @@ import { formatTime, metricSeries, numericMetricKeys, packageActions, parseJsonO
 
 const TABS = ["directory", "packages", "instances"] as const;
 
+/** The page: header and the Directory, Packages and Instances tabs, kept in the URL hash. */
 export function Rapps() {
   const [tab, setTab] = useHashTab(TABS, "directory");
   return (
@@ -26,6 +34,9 @@ export function Rapps() {
 
 // ---------------------------------------------------------------- packages
 
+/**
+ * The packages tab: the onboard form (operator), the package list filterable by state with the buttons the package's state allows (`packageActions`) and Deploy for an AVAILABLE package, and the package drawer on a row click.
+ */
 function Packages() {
   const [state, setState] = useState("");
   const packages = useSmo<Package[]>("/onboarding/packages", { state });
@@ -69,6 +80,10 @@ function Packages() {
   );
 }
 
+/**
+ * The detail drawer of a package: identity, the ASD descriptor fields (shown as "not declared" when the package has none), what its CSAR declares for SME, its artifacts, priming (with the reason a deprime is blocked) and its usage registrations,
+ * which are the cascade-delete guard. The test-usage buttons simulate a consumer holding the package.
+ */
 function PackageDrawer({ pkg, onClose }: { pkg: Package; onClose: () => void }) {
   const base = `/onboarding/packages/${pkg.packageId}`;
   const artifacts = useSmo<PackageArtifact[]>(`${base}/artifacts`);
@@ -135,6 +150,9 @@ function PackageDrawer({ pkg, onClose }: { pkg: Package; onClose: () => void }) 
   );
 }
 
+/**
+ * The form that onboards a package from a CSAR URL (POST /onboarding/packages). Validation runs asynchronously in Onboarding, so success only means the request was accepted; the result shows as the package state (AVAILABLE or FAILED).
+ */
 function OnboardForm() {
   const [location, setLocation] = useState("");
   const [applicationType, setApplicationType] = useState("rApp");
@@ -157,6 +175,10 @@ function OnboardForm() {
   );
 }
 
+/**
+ * The dialog that deploys an instance from an AVAILABLE package (POST /rapp-mgmt/instances): JSON configuration, the autonomy mode (fixed for the instance's lifetime), a region scope that is sent only for AUTONOMOUS, and an optional operator API base URL.
+ * Deploy is disabled while either JSON field is invalid.
+ */
 function CreateInstance({ pkg, onClose }: { pkg: Package; onClose: () => void }) {
   const [config, setConfig] = useState("{}");
   const [autonomyMode, setAutonomyMode] = useState("SHADOW");
@@ -204,6 +226,9 @@ function CreateInstance({ pkg, onClose }: { pkg: Package; onClose: () => void })
 
 // ---------------------------------------------------------------- instances
 
+/**
+ * The instances tab: the instance list filterable by state with the lifecycle buttons, and the instance drawer on a row click.
+ */
 function Instances() {
   const [state, setState] = useState("");
   const instances = useSmo<InstanceSummary[]>("/rapp-mgmt/instances", { state });
@@ -235,6 +260,10 @@ function Instances() {
   );
 }
 
+/**
+ * The lifecycle buttons an instance's state allows: Mark bootstrapped (DEPLOYING, a simulation of the rApp finishing its R1 bootstrap), Upgrade (RUNNING, when `withUpgrade` is given), the two upgrade resolutions (UPGRADING), Recover (FAULTED),
+ * Terminate (RUNNING, FAULTED or DEPLOYING; asks first) and Delete (UNDEPLOYED; asks first). Each button is drawn only when the role may make that call.
+ */
 export function InstanceActions({ inst, withUpgrade }: { inst: InstanceSummary; withUpgrade?: () => void }) {
   const base = `/rapp-mgmt/instances/${inst.instanceId}`;
   return (
@@ -252,6 +281,9 @@ export function InstanceActions({ inst, withUpgrade }: { inst: InstanceSummary; 
   );
 }
 
+/**
+ * The detail drawer of an instance: state and actions, identifiers, SME services, autonomy mode, region scope, last teardown, the configuration editor, the version history, performance and faults, and (admin) the test-report injection.
+ */
 function InstanceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const base = `/rapp-mgmt/instances/${id}`;
   const inst = useSmo<Instance>(base);
@@ -295,9 +327,10 @@ function InstanceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
-// OI-1-sa-rollback: committed upgrades and rollbacks, newest first. Rollback
-// is an upgrade back to the newest version not already rolled back — resolve
-// it like any upgrade once the replacement bootstraps.
+/**
+ * The version history of an instance (OI-1-sa-rollback): committed upgrades and rollbacks, newest first. Rollback is an upgrade back to the newest version not already rolled back, so it is resolved like any upgrade once the replacement bootstraps.
+ * The Roll back button is offered only for a RUNNING instance that has a rollback target.
+ */
 export function VersionHistory({ id, state }: { id: string; state: string }) {
   const base = `/rapp-mgmt/instances/${id}`;
   const history = useSmo<InstanceVersions>(`${base}/versions`);
@@ -322,6 +355,9 @@ export function VersionHistory({ id, state }: { id: string; state: string }) {
   );
 }
 
+/**
+ * The instance's configuration as JSON, with an Edit button for roles that may PUT it; the editor saves only valid JSON objects and replaces the whole configuration.
+ */
 function ConfigEditor({ id, config }: { id: string; config: Record<string, unknown> }) {
   const [text, setText] = useState<string | null>(null);
   const action = useSmoAction();
@@ -349,6 +385,9 @@ function ConfigEditor({ id, config }: { id: string; config: Record<string, unkno
   );
 }
 
+/**
+ * The dialog that starts an upgrade to another AVAILABLE package: the instance goes UPGRADING while a replacement deploys, and the operator then resolves it as succeeded (commit) or failed (rollback).
+ */
 function UpgradeModal({ inst, onClose }: { inst: Instance; onClose: () => void }) {
   const packages = useSmo<Package[]>("/onboarding/packages", { state: "AVAILABLE" });
   const [target, setTarget] = useState("");
@@ -373,6 +412,9 @@ function UpgradeModal({ inst, onClose }: { inst: Instance; onClose: () => void }
   );
 }
 
+/**
+ * Admin tool that reports test performance metrics or a fault as the rApp itself would; a critical fault crashes the instance to FAULTED.
+ */
 function InjectReports({ id }: { id: string }) {
   const [metrics, setMetrics] = useState('{"throughputMbps": 120, "latencyMs": 8}');
   const [severity, setSeverity] = useState("minor");

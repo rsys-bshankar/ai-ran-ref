@@ -18,6 +18,8 @@ PARENT_ID = "00f067aa0ba902b7"
 INBOUND = f"00-{TRACE_ID}-{PARENT_ID}-01"
 
 
+# Table: values that are not a valid traceparent (absent, empty, garbage, version ff, all-zero ids, upper-case hex, extra fields in version 00, a
+# short trace id); each must parse to None.
 @pytest.mark.parametrize("value", [
     None, "", "garbage", f"ff-{TRACE_ID}-{PARENT_ID}-01", f"00-{'0' * 32}-{PARENT_ID}-01", f"00-{TRACE_ID}-{'0' * 16}-01",
     f"00-{TRACE_ID.upper()}-{PARENT_ID}-01", f"00-{TRACE_ID}-{PARENT_ID}-01-extra", f"00-{TRACE_ID[:-1]}-{PARENT_ID}-01",
@@ -27,6 +29,7 @@ def test_an_invalid_traceparent_is_ignored(value):
 
 
 def test_a_valid_traceparent_round_trips_and_a_future_version_may_carry_extra_fields():
+    """A valid traceparent parses, formats back to the same text and keeps tracestate, and a future version with extra fields is still accepted."""
     context = tracing.parse_traceparent(INBOUND, "vendor=x")
     assert context == tracing.TraceContext(TRACE_ID, PARENT_ID, "01", "vendor=x")
     assert tracing.format_traceparent(context) == INBOUND
@@ -34,6 +37,7 @@ def test_a_valid_traceparent_round_trips_and_a_future_version_may_carry_extra_fi
 
 
 def test_nothing_is_injected_outside_a_trace():
+    """Outside a trace there are no headers to inject and no trace id."""
     assert tracing.inject_headers() == {}
     assert tracing.get_trace_id() is None
 
@@ -48,6 +52,7 @@ class _Hop:
 
         @b.get("/echo")
         def echo():
+            # Test route in module B that records the trace id it sees; not part of any published API.
             self.seen["b_trace_id"] = tracing.get_trace_id()
             return {}
 
@@ -65,6 +70,7 @@ class _Hop:
 
         @a.get("/work")
         def work():
+            # Test route in module A that records its trace id and calls module B through R1Client; not part of any published API.
             self.seen["a_trace_id"] = tracing.get_trace_id()
             R1Client(base_url="http://r1", bearer_token="t").get("/b/echo")
             return {}
@@ -73,6 +79,7 @@ class _Hop:
 
 
 def test_traceparent_survives_a_module_hop_unchanged_when_spans_are_off(monkeypatch):
+    """With spans off, the inbound traceparent and tracestate reach the next module unchanged and both modules see the same trace id."""
     monkeypatch.delenv(tracing.ENDPOINT_ENV, raising=False)
     hop = _Hop(monkeypatch)
     assert hop.a_client.get("/work", headers={"traceparent": INBOUND, "tracestate": "vendor=x"}).status_code == 200
@@ -82,6 +89,7 @@ def test_traceparent_survives_a_module_hop_unchanged_when_spans_are_off(monkeypa
 
 
 def test_no_traceparent_in_means_none_out_when_spans_are_off(monkeypatch):
+    """A request that arrives without a traceparent starts no trace and sends none downstream."""
     monkeypatch.delenv(tracing.ENDPOINT_ENV, raising=False)
     hop = _Hop(monkeypatch)
     hop.a_client.get("/work")
@@ -90,6 +98,7 @@ def test_no_traceparent_in_means_none_out_when_spans_are_off(monkeypatch):
 
 
 def test_an_invalid_inbound_traceparent_is_not_forwarded(monkeypatch):
+    """A malformed inbound traceparent is dropped, not forwarded and not an error."""
     monkeypatch.delenv(tracing.ENDPOINT_ENV, raising=False)
     hop = _Hop(monkeypatch)
     assert hop.a_client.get("/work", headers={"traceparent": "nonsense"}).status_code == 200
@@ -97,6 +106,7 @@ def test_an_invalid_inbound_traceparent_is_not_forwarded(monkeypatch):
 
 
 def test_the_trace_id_is_in_the_json_log_line(monkeypatch):
+    """A log line written during a traced request carries its traceId."""
     import io
     import json
     import logging
@@ -111,6 +121,7 @@ def test_the_trace_id_is_in_the_json_log_line(monkeypatch):
 
     @app.get("/x")
     def x():
+        # Test route that logs a line inside the request; not part of any published API.
         logging.getLogger("t").info("inside")
         return {}
 
@@ -128,6 +139,7 @@ needs_sdk = pytest.mark.skipif(importlib.util.find_spec("opentelemetry.sdk") is 
 
 @pytest.fixture(scope="module")
 def exporter():
+    """An in-memory span exporter attached to the process's tracer provider (created if none exists), shared by the span tests."""
     from opentelemetry.sdk import trace as sdk
     from opentelemetry import trace
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -143,6 +155,7 @@ def exporter():
 
 @needs_sdk
 def test_spans_join_the_inbound_trace_and_the_downstream_parent_is_the_client_span(monkeypatch, exporter):
+    """With spans on, both modules' server spans and the client span are in the inbound trace, and each span is the parent of the next hop's span."""
     monkeypatch.setenv(tracing.ENDPOINT_ENV, "http://tempo:4318")
     exporter.clear()
     hop = _Hop(monkeypatch)
@@ -166,6 +179,7 @@ def test_spans_join_the_inbound_trace_and_the_downstream_parent_is_the_client_sp
 
 @needs_sdk
 def test_a_request_without_a_trace_starts_one_when_spans_are_on(monkeypatch, exporter):
+    """With spans on, a request that arrives with no traceparent starts a trace whose id is the one sent downstream."""
     monkeypatch.setenv(tracing.ENDPOINT_ENV, "http://tempo:4318")
     exporter.clear()
     hop = _Hop(monkeypatch)
@@ -177,6 +191,7 @@ def test_a_request_without_a_trace_starts_one_when_spans_are_on(monkeypatch, exp
 
 @needs_sdk
 def test_a_5xx_marks_the_server_span_as_an_error(monkeypatch, exporter):
+    """A 5xx answer sets the server span's status to ERROR."""
     monkeypatch.setenv(tracing.ENDPOINT_ENV, "http://tempo:4318")
     exporter.clear()
     app = FastAPI()
@@ -184,6 +199,7 @@ def test_a_5xx_marks_the_server_span_as_an_error(monkeypatch, exporter):
 
     @app.get("/boom")
     def boom():
+        # Test route answering 503; not part of any published API.
         from fastapi import HTTPException
         raise HTTPException(status_code=503)
 
@@ -194,11 +210,14 @@ def test_a_5xx_marks_the_server_span_as_an_error(monkeypatch, exporter):
 
 @needs_sdk
 def test_configure_tracing_is_a_no_op_without_an_endpoint(monkeypatch):
+    """Without SMO_OTEL_ENDPOINT configure_tracing does nothing and spans stay off."""
     monkeypatch.delenv(tracing.ENDPOINT_ENV, raising=False)
     assert tracing.configure_tracing() is False
     assert tracing.enabled() is False
 
 
+# Table: (SMO_OTEL_SAMPLE_RATIO, effective ratio). The ratio is clamped to 0..1 and a non-number or unset value means 1.0; the provider gets the
+# service name and the collector's /v1/traces URL.
 @needs_sdk
 @pytest.mark.parametrize("ratio, expected", [("0.25", 0.25), ("7", 1.0), ("-1", 0.0), ("not-a-number", 1.0), (None, 1.0)])
 def test_configure_tracing_installs_a_provider_with_the_service_name_and_a_clamped_ratio(monkeypatch, ratio, expected):
@@ -226,5 +245,6 @@ def test_configure_tracing_installs_a_provider_with_the_service_name_and_a_clamp
 
 @needs_sdk
 def test_configure_tracing_keeps_a_provider_that_is_already_installed(monkeypatch, exporter):
+    """configure_tracing keeps a tracer provider that is already installed (one per process) and reports spans on."""
     monkeypatch.setenv(tracing.ENDPOINT_ENV, "http://collector:4318")
     assert tracing.configure_tracing("svc-b") is True

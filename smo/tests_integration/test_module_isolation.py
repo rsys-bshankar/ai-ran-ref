@@ -32,8 +32,13 @@ _RESOLVE_ALL_FKS = (
 )
 
 
+# One case per module that has models.
+# One case per module that has models.
 @pytest.mark.parametrize("module", MODULES_WITH_MODELS)
 def test_every_orm_foreign_key_resolves_within_its_own_module(module):
+    """Run in a process holding only that module's models, every foreign key resolves to a table of the same module, since a reference to another
+    module's table fails on the first flush in a real deployment.
+    """
     env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(SMO_ROOT / module), str(SMO_ROOT / "shared")]),
            "SMO_DATABASE_URL": "sqlite://"}
     result = subprocess.run([sys.executable, "-c", _RESOLVE_ALL_FKS], cwd=SMO_ROOT / module, env=env,

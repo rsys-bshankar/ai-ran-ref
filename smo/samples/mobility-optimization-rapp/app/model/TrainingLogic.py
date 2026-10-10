@@ -6,6 +6,9 @@ from .series import by_relation, hourly_pairs
 
 
 def train(records: list[dict], version: str = "1.0.0") -> tuple[MobilityModel, dict]:
+    """Fits the next-hour change of the problem rate on the history and returns the model with its metrics; raises ValueError (the route answers
+    422 TRAINING_FAILED) when fewer than 3 hourly rows exist.
+    """
     rows = [row for series in by_relation(records).values() for row in hourly_pairs(series)]
     if len(rows) < 3:
         raise ValueError(f"not enough hourly handover history to train on ({len(rows)} rows)")

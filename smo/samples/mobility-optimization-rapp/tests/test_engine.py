@@ -23,14 +23,17 @@ def _rel(**kw):
     return RelationInput(**{**defaults, **kw})
 
 
+# One row per failure class: the recommendation and the CIO step (dB) it must lead to.
 @pytest.mark.parametrize("cause,rec,step", [("TOO_LATE", "RAISE_CIO", 2), ("TOO_EARLY", "LOWER_CIO", -2),
                                             ("PING_PONG", "LOWER_CIO", -2), ("WRONG_CELL", "LOWER_CIO", -1)])
 def test_the_failure_class_sets_the_step(cause, rec, step):
+    """The dominant failure class sets the direction and size of the CIO step, and the relation goes to OBSERVING."""
     d = decide(_rel(prediction={"futureRate": 8.0, "cause": cause, "recommendation": rec}))
     assert (d.decision, d.new_cio, d.next_state) == (rec, step, engine.OBSERVING)
 
 
 def test_bounds_hold_and_healthy():
+    """A step is clamped to baseline +- 6 dB and reports AT_BOUND when it cannot move, and a HOLD or HEALTHY prediction changes nothing."""
     assert decide(_rel(current_cio=6)).reason == "AT_BOUND:TOO_LATE"
     assert decide(_rel(current_cio=5)).new_cio == 6
     assert decide(_rel(current_cio=1, baseline_cio=-4)).new_cio == 2
@@ -38,6 +41,7 @@ def test_bounds_hold_and_healthy():
     assert decide(_rel(prediction={"futureRate": 1.0, "cause": None, "recommendation": "HEALTHY"})).reason == "HEALTHY"
 
 
+# One row per guard: the input that trips it and the guard that must be named in the reason.
 @pytest.mark.parametrize("kw,guard", [
     ({"ho_allowed": False}, "HO_NOT_ALLOWED"),
     ({"target_guard": {"cellClass": "EMERGENCY"}}, "PROTECTED_CELL"),
@@ -50,11 +54,15 @@ def test_bounds_hold_and_healthy():
     ({"mlb_observing": True}, "MLB_OBSERVING"),
 ])
 def test_guards_block_whatever_the_confidence(kw, guard):
+    """Every guard blocks a change however confident the prediction, and the reason names it."""
     d = decide(_rel(**kw))
     assert d.decision == engine.NO_CHANGE and guard in d.reason
 
 
 def test_kpi_verified_revert_and_confirmation():
+    """An observed change is left alone for the first hour, reverted to the previous CIO when the problem rate is worse by more than 0.5 points,
+    and confirmed otherwise.
+    """
     change = {"at": T0, "from": 0, "to": 2, "preRate": 8.5}
     observing = dict(state=engine.OBSERVING, last_change=change, current_cio=2)
     assert decide(_rel(series=_series(LATE, LATE, start=T0 - datetime.timedelta(hours=1)), **observing)).reason == "OBSERVING"

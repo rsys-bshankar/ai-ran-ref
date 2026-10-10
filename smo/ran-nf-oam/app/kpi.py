@@ -63,6 +63,7 @@ def normalise_counters(formula: str, counters: list[dict] | None) -> list[dict]:
 
 @dataclass
 class Sample:
+    """One measurement of one counter for one cell at one time, read from a stored PM file."""
     element: str
     cell: str
     counter: str
@@ -112,6 +113,8 @@ def load_samples(db: Session, counters: set[str], start: datetime.datetime, end:
 
 
 def _combine(aggregation: str, samples: list[Sample]) -> float | None:
+    """The aggregation (sum, avg, min, max, count, or last by timestamp) of one counter's samples in a group; None when the group has no sample of it.
+    """
     if not samples:
         return None
     values = [s.value for s in samples]
@@ -129,6 +132,8 @@ def _combine(aggregation: str, samples: list[Sample]) -> float | None:
 
 
 def _group_key(db: Session, group_by: str, sample: Sample, guards: dict) -> tuple:
+    """The key of the group a sample belongs to for `group_by`: (element, cell), (element,), () for all, or the cell's guard attribute (`sectorGroup`, `incidentZone`; 'unassigned' when the cell has none). `guards` caches each element's cell guards across the samples of one computation so the registry is read once per element.
+    """
     if group_by == "cell":
         return (sample.element, sample.cell)
     if group_by == "element":
@@ -143,6 +148,8 @@ def _group_key(db: Session, group_by: str, sample: Sample, guards: dict) -> tupl
 
 
 def _group_view(group_by: str, key: tuple) -> dict:
+    """The `group` object of a result item for a group key: the element and cell refs, the element ref, `{}` for all, or `{group_by: value}` for a guard attribute.
+    """
     if group_by == "cell":
         return {"managedElementRef": key[0], "cellId": key[1]}
     if group_by == "element":

@@ -102,11 +102,15 @@ def cfg():
 
 @pytest.fixture
 def app(cfg, db, smo):
+    """The BFF under test: the seeded users on an in-memory database and the real `R1Gateway` talking to `FakeSmo` through a mock transport.
+    """
     seed_users(db, cfg)
     return create_app(cfg, db=db, gateway=R1Gateway(R1, db, transport=httpx.MockTransport(smo.handler)))
 
 
 def login(app, username) -> TestClient:
+    """Signs `username` in with its test password and returns a client that carries the session cookies and the `X-CSRF-Token` header, so its unsafe calls pass the CSRF check.
+    """
     client = TestClient(app)
     resp = client.post("/api/login", json={"username": username, "password": PASSWORDS[username]})
     assert resp.status_code == 200, resp.text
@@ -115,6 +119,7 @@ def login(app, username) -> TestClient:
 
 
 def audit_rows(db, action=None):
+    """Every audit row, or only those with `action`, read straight from the database."""
     with db.session() as s:
         rows = s.query(AuditEntry).all()
     return [r for r in rows if action is None or r.action == action]
@@ -123,6 +128,8 @@ def audit_rows(db, action=None):
 # ---------------------------------------------------------------- login / session
 
 def test_login_sets_httponly_session_and_readable_csrf_cookie(app):
+    """The session cookie must be httpOnly, SameSite=strict and scoped to /api, while the CSRF cookie stays readable by the SPA (double-submit).
+    """
     resp = TestClient(app).post("/api/login", json={"username": "operator", "password": PASSWORDS["operator"]})
     assert resp.status_code == 200
     assert resp.json()["role"] == "operator"
@@ -134,6 +141,7 @@ def test_login_sets_httponly_session_and_readable_csrf_cookie(app):
 
 
 def test_cookies_are_secure_by_default(cfg, db, smo):
+    """With `cookie_secure` on (the default), every cookie the login sets carries the Secure flag."""
     cfg.cookie_secure = True
     seed_users(db, cfg)
     app = create_app(cfg, db=db, gateway=R1Gateway(R1, db, transport=httpx.MockTransport(smo.handler)))
@@ -142,12 +150,14 @@ def test_cookies_are_secure_by_default(cfg, db, smo):
 
 
 def test_wrong_password_is_rejected_and_audited(app, db):
+    """A wrong password is 401 and leaves one LOGIN_FAILED audit row naming the user."""
     resp = TestClient(app).post("/api/login", json={"username": "viewer", "password": "nope"})
     assert resp.status_code == 401
     assert [r.username for r in audit_rows(db, "LOGIN_FAILED")] == ["viewer"]
 
 
 def test_repeated_failures_lock_the_account(app):
+    """Five wrong passwords lock the account: the sixth attempt, even with the right password, is 429."""
     client = TestClient(app)
     for _ in range(5):
         assert client.post("/api/login", json={"username": "viewer", "password": "nope"}).status_code == 401
@@ -156,11 +166,14 @@ def test_repeated_failures_lock_the_account(app):
 
 
 def test_me_requires_a_session(app):
+    """`/api/me` is 401 without a session and answers the caller's role with one."""
     assert TestClient(app).get("/api/me").status_code == 401
     assert login(app, "viewer").get("/api/me").json()["role"] == "viewer"
 
 
 def test_a_tampered_session_token_is_rejected(app):
+    """A session token whose signature was altered is refused (the alteration is a whole character in the middle, so it can never leave the signature unchanged).
+    """
     client = login(app, "viewer")
     token = client.cookies.get(SESSION_COOKIE)
     header, payload, sig = token.split(".")
@@ -175,12 +188,15 @@ def test_a_tampered_session_token_is_rejected(app):
 
 
 def test_logout_clears_the_session(app):
+    """After logout the same client is no longer signed in."""
     client = login(app, "viewer")
     assert client.post("/api/logout").status_code == 200
     assert client.get("/api/me").status_code == 401
 
 
 def test_logout_ends_the_session_itself_so_a_copied_cookie_stops_working(app):
+    """Logout revokes the token id server side, so a copy of the cookie is refused with SESSION_REVOKED while a second session of the same user keeps working.
+    """
     client = login(app, "viewer")
     copied = client.cookies.get(SESSION_COOKIE, path="/api")
     other = login(app, "viewer")                                          # a second session of the same user
@@ -193,6 +209,7 @@ def test_logout_ends_the_session_itself_so_a_copied_cookie_stops_working(app):
 
 
 def test_a_bearer_token_is_revoked_by_logging_out_with_it(app):
+    """A token from `/api/token` stops working once it was used to log out."""
     token = TestClient(app).post("/api/token", data={"grant_type": "password", "username": "operator", "password": PASSWORDS["operator"]}).json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
     assert TestClient(app).get("/api/me", headers=headers).status_code == 200
@@ -201,6 +218,8 @@ def test_a_bearer_token_is_revoked_by_logging_out_with_it(app):
 
 
 def test_revocations_are_shared_through_the_database_and_expired_ones_are_forgotten(db):
+    """Recording the same revocation twice is harmless, and a revocation whose token has expired by itself is pruned the next time one is written.
+    """
     db.revoke_session("a", expires_at=2_000.0, now=1_000.0)
     db.revoke_session("a", expires_at=2_000.0, now=1_000.0)               # twice: no error
     assert db.session_revoked("a") and not db.session_revoked("b")
@@ -226,6 +245,8 @@ def test_seed_needs_no_password_in_git(db, tmp_path, caplog):
 
 
 def test_seeding_never_touches_an_existing_user_table(db, cfg):
+    """A second `seed_users` call, even with a changed admin password in the environment, leaves the existing users as they are.
+    """
     seed_users(db, cfg)
     cfg.admin_password = "changed-in-env"
     seed_users(db, cfg)
@@ -236,6 +257,7 @@ def test_seeding_never_touches_an_existing_user_table(db, cfg):
 # ---------------------------------------------------------------- RBAC through the proxy
 
 def test_viewer_can_read(app, smo):
+    """A viewer's GET through the proxy reaches R1 with its query string intact."""
     resp = login(app, "viewer").get("/api/smo/rapp-mgmt/instances", params={"state": "RUNNING"})
     assert resp.status_code == 200
     [req] = smo.proxied
@@ -243,6 +265,7 @@ def test_viewer_can_read(app, smo):
 
 
 def test_viewer_is_blocked_on_post_and_nothing_reaches_r1(app, smo, db):
+    """A viewer's POST is 403 naming the needed role, is audited as DENIED, and is never sent to R1."""
     resp = login(app, "viewer").post("/api/smo/aimgf/training-jobs", json={"modelId": "m", "producerId": "gui"})
     assert resp.status_code == 403
     assert resp.json()["detail"] == "requires role operator"
@@ -252,6 +275,7 @@ def test_viewer_is_blocked_on_post_and_nothing_reaches_r1(app, smo, db):
 
 
 def test_operator_can_train_and_ack(app, smo):
+    """An operator may start a training job and acknowledge an alarm, and the request body is forwarded unchanged."""
     client = login(app, "operator")
     assert client.post("/api/smo/aimgf/training-jobs", json={"modelId": "m", "producerId": "gui"}).status_code == 200
     assert client.patch("/api/smo/ran-nf-oam/alarms/a-1/ack", params={"new_state": "ACKNOWLEDGED"}).status_code == 200
@@ -260,6 +284,7 @@ def test_operator_can_train_and_ack(app, smo):
 
 
 def test_alarm_ack_user_is_the_gui_user_not_whatever_the_browser_sent(app, smo):
+    """The `ack_user_id` of an alarm acknowledgement is forced to the signed-in user, replacing a value the browser sent."""
     login(app, "operator").patch("/api/smo/ran-nf-oam/alarms/a-1/ack",
                                  params={"new_state": "ACKNOWLEDGED", "ack_user_id": "someone-else"})
     params = smo.proxied[0].url.params
@@ -268,6 +293,7 @@ def test_alarm_ack_user_is_the_gui_user_not_whatever_the_browser_sent(app, smo):
 
 
 def test_operator_cannot_terminate_but_admin_can(app, smo):
+    """Terminating an rApp instance is admin only: the operator's attempt is 403 and never forwarded."""
     assert login(app, "operator").post("/api/smo/rapp-mgmt/instances/i-1/terminate").status_code == 403
     assert smo.proxied == []
     assert login(app, "admin").post("/api/smo/rapp-mgmt/instances/i-1/terminate").status_code == 200
@@ -292,11 +318,14 @@ def test_model_deprecation_is_admin_only_even_with_a_duplicated_param(app, smo):
 
 
 def test_package_delete_is_admin_only(app):
+    """Deleting an onboarded package needs admin; an operator gets 403."""
     assert login(app, "operator").delete("/api/smo/onboarding/packages/p-1").status_code == 403
     assert login(app, "admin").delete("/api/smo/onboarding/packages/p-1").status_code == 200
 
 
 def test_routes_not_in_the_table_are_refused_even_for_admin(app, smo):
+    """A route no rule names (SME token endpoint, NFO instantiation, an unknown module) is 403 even for an admin and never reaches R1.
+    """
     admin = login(app, "admin")
     assert admin.post("/api/smo/sme/oauth2/token", json={}).status_code == 403
     assert admin.post("/api/smo/nfo/deployments", json={}).status_code == 403
@@ -305,6 +334,7 @@ def test_routes_not_in_the_table_are_refused_even_for_admin(app, smo):
 
 
 def test_remedial_action_admin_flag_is_derived_from_the_gui_role(app, smo):
+    """`requester_is_admin` on a remedial action is set from the signed-in role, whatever the browser claimed."""
     login(app, "operator").post("/api/smo/sa-smos/monitors/m-1/remedial-actions",
                                 params={"action_type": "SCALE", "requester_is_admin": "true"})
     login(app, "admin").post("/api/smo/sa-smos/monitors/m-1/remedial-actions", params={"action_type": "SCALE"})
@@ -312,6 +342,8 @@ def test_remedial_action_admin_flag_is_derived_from_the_gui_role(app, smo):
 
 
 def test_gui_created_intents_carry_the_gui_rmio_identity(app, smo):
+    """Intents created or changed through the GUI carry the fixed `smo-gui` RMIO identity, so a spoofed one in the body is replaced.
+    """
     client = login(app, "operator")
     client.post("/api/smo/intent-service/intents", json={"expectations": [], "rmioId": "spoofed-rapp"})
     client.patch("/api/smo/intent-service/intents/i-1/admin-state", json={"newState": "DEACTIVATED", "requesterId": "spoofed-rapp"})
@@ -320,6 +352,8 @@ def test_gui_created_intents_carry_the_gui_rmio_identity(app, smo):
 
 
 def test_cm_write_identity_and_msac_tier_come_from_the_gui_role(app, smo):
+    """A configuration job is attributed to `smo-gui:<user>` and carries the MSAC admin tier only for an admin, whatever the body said.
+    """
     body = {"scope": "entire-RAN", "changes": [], "requestedBy": "someone", "msacRole": "admin"}
     login(app, "operator").post("/api/smo/ran-nf-oam/config-jobs", json=body)
     login(app, "admin").post("/api/smo/ran-nf-oam/config-jobs", json=body)
@@ -328,6 +362,7 @@ def test_cm_write_identity_and_msac_tier_come_from_the_gui_role(app, smo):
 
 
 def test_assist_rejection_is_attributed_to_the_gui_user(app, smo):
+    """Who rejected an ASSIST dispatch is the signed-in user, and a viewer cannot reject."""
     login(app, "operator").post("/api/smo/intent-service/autonomy-dispatches/d-1/reject",
                                 json={"rejectedBy": "someone-else", "reason": "wrong cells"})
     assert json.loads(smo.proxied[0].content) == {"rejectedBy": "smo-gui:operator", "reason": "wrong cells"}
@@ -363,6 +398,7 @@ def test_a_rapps_own_api_is_no_longer_a_module_of_the_proxy(app, smo):
 
 
 def test_role_change_applies_on_the_next_request(app, db):
+    """The role is read from the user table on every request, so demoting an operator takes effect without a new sign-in."""
     operator = login(app, "operator")
     assert operator.post("/api/smo/so-smos/orders", json={"scope": "s", "steps": []}).status_code == 200
     login(app, "admin").patch("/api/admin/users/operator", json={"role": "viewer"})
@@ -372,6 +408,7 @@ def test_role_change_applies_on_the_next_request(app, db):
 # ---------------------------------------------------------------- CSRF / bearer
 
 def test_cookie_session_mutation_without_csrf_header_is_refused(app, smo):
+    """A cookie session's unsafe call is 403 when the CSRF header is missing or wrong, and nothing is forwarded."""
     client = login(app, "operator")
     del client.headers["X-CSRF-Token"]
     assert client.post("/api/smo/so-smos/orders", json={}).status_code == 403
@@ -381,6 +418,8 @@ def test_cookie_session_mutation_without_csrf_header_is_refused(app, smo):
 
 
 def test_oauth2_password_grant_bearer_token_needs_no_csrf(app, smo):
+    """A Bearer token from `/api/token` works on unsafe calls without a CSRF header, and a bad password is a 400 `invalid_grant`.
+    """
     client = TestClient(app)
     resp = client.post("/api/token", data={"grant_type": "password", "username": "operator", "password": PASSWORDS["operator"]})
     assert resp.status_code == 200 and resp.json()["token_type"] == "Bearer"
@@ -393,6 +432,8 @@ def test_oauth2_password_grant_bearer_token_needs_no_csrf(app, smo):
 # ---------------------------------------------------------------- proxy mechanics
 
 def test_proxy_forwards_the_bff_token_never_the_browser_credentials(app, smo):
+    """The upstream request carries the BFF's own SME token only: no cookie, CSRF header or custom header from the browser, and the invoker is registered once.
+    """
     client = login(app, "viewer")
     client.get("/api/smo/onboarding/packages", headers={"Authorization-Hint": "x", "X-Custom": "y"})
     req = smo.proxied[0]
@@ -402,6 +443,7 @@ def test_proxy_forwards_the_bff_token_never_the_browser_credentials(app, smo):
 
 
 def test_proxy_strips_hop_by_hop_and_upstream_set_cookie(app):
+    """Hop-by-hop headers and an upstream Set-Cookie are removed from the proxied answer while ordinary headers pass."""
     resp = login(app, "viewer").get("/api/smo/onboarding/packages")
     assert resp.headers["x-upstream"] == "yes"
     assert "keep-alive" not in resp.headers
@@ -410,6 +452,8 @@ def test_proxy_strips_hop_by_hop_and_upstream_set_cookie(app):
 
 
 def test_smo_auth_failure_detail_does_not_leak_exception_text(cfg, db):
+    """When no SME token can be had the answer is 502 SMO_AUTH_FAILED with a fixed message, never the exception text or an internal host name.
+    """
     def sme_down(request):
         raise httpx.ConnectError("refused: internal-host-10.0.0.7:8000")
 
@@ -421,12 +465,15 @@ def test_smo_auth_failure_detail_does_not_leak_exception_text(cfg, db):
 
 
 def test_proxy_passes_upstream_errors_through(app, smo):
+    """An upstream error status and body (here a 409) reach the browser unchanged."""
     smo.next_response = httpx.Response(409, json={"title": "MODEL_NOT_CERTIFIED"})
     resp = login(app, "operator").post("/api/smo/rapp-mgmt/instances", json={"packageId": "p"})
     assert resp.status_code == 409 and resp.json() == {"title": "MODEL_NOT_CERTIFIED"}
 
 
 def test_expired_smo_token_is_refreshed_once(app, smo):
+    """When R1 refuses the cached token with 401 the BFF fetches a new one once and retries, reusing the stored invoker identity.
+    """
     client = login(app, "viewer")
     client.get("/api/smo/onboarding/packages")
     smo.revoked.add("tok-1")
@@ -436,6 +483,7 @@ def test_expired_smo_token_is_refreshed_once(app, smo):
 
 
 def test_mutations_are_audited_with_status(app, db):
+    """A forwarded change writes one PROXY audit row with user, role, method, path and the upstream status."""
     login(app, "operator").post("/api/smo/aimgf/training-jobs", json={"modelId": "m", "producerId": "gui"})
     [row] = audit_rows(db, "PROXY")
     assert (row.username, row.role, row.method, row.path, row.status_code) == \
@@ -443,11 +491,13 @@ def test_mutations_are_audited_with_status(app, db):
 
 
 def test_reads_are_not_audited(app, db):
+    """A forwarded read writes no PROXY audit row."""
     login(app, "viewer").get("/api/smo/onboarding/packages")
     assert audit_rows(db, "PROXY") == []
 
 
 def test_audit_log_is_append_only(app, db):
+    """Changing an audit row through the ORM is refused at flush with PermissionError."""
     login(app, "viewer")
     with db.session() as s:
         row = s.query(AuditEntry).first()
@@ -457,6 +507,7 @@ def test_audit_log_is_append_only(app, db):
 
 
 def test_security_headers_on_every_bff_response(app):
+    """Every BFF response carries nosniff, a frame-denying CSP and X-Frame-Options DENY, errors included."""
     resp = TestClient(app).get("/api/me")
     assert resp.headers["x-content-type-options"] == "nosniff"
     assert "frame-ancestors 'none'" in resp.headers["content-security-policy"]
@@ -466,6 +517,8 @@ def test_security_headers_on_every_bff_response(app):
 # ---------------------------------------------------------------- health
 
 def test_modules_status_probes_every_module_via_r1(app, smo):
+    """The health grid lists R1 and the 15 SMO modules in order, marks an unreachable one unhealthy with `unreachable`, and reports a latency for each.
+    """
     smo.down_modules.add("nfo")
     body = login(app, "viewer").get("/api/modules/status").json()
     by_module = {m["module"]: m for m in body["modules"]}
@@ -476,6 +529,7 @@ def test_modules_status_probes_every_module_via_r1(app, smo):
 
 
 def test_modules_status_adds_readiness_and_the_build_each_module_runs(app, smo):
+    """Readiness and build fields come from /ready and /version, and are null when a module has no /version or did not answer."""
     smo.not_ready.add("dme")
     smo.without_version.add("sme")      # an older release during a rolling upgrade has no /version
     smo.down_modules.add("nfo")
@@ -489,6 +543,8 @@ def test_modules_status_adds_readiness_and_the_build_each_module_runs(app, smo):
 
 
 def test_modules_status_reports_smo_auth_failure_without_crashing(cfg, db):
+    """With no SME token the module entries say `auth: no SMO access token` instead of failing the request, and R1's own entry is still healthy.
+    """
     def sme_down(request):
         if request.url.path == "/health":
             return httpx.Response(200, json={"status": "healthy"})
@@ -507,11 +563,13 @@ def test_modules_status_reports_smo_auth_failure_without_crashing(cfg, db):
 # ---------------------------------------------------------------- admin
 
 def test_user_admin_is_admin_only(app):
+    """The user list and the audit log are 403 for an operator."""
     assert login(app, "operator").get("/api/admin/users").status_code == 403
     assert login(app, "operator").get("/api/admin/audit").status_code == 403
 
 
 def test_admin_creates_updates_and_deletes_a_user(app):
+    """The admin user life cycle: create (201), duplicate (409), bad name (400), short password (422), role change and delete."""
     admin = login(app, "admin")
     created = admin.post("/api/admin/users", json={"username": "noc1", "password": "long-enough", "role": "viewer"})
     assert created.status_code == 201 and created.json()["role"] == "viewer"
@@ -579,12 +637,14 @@ def test_erasing_a_gui_user_end_to_end_and_what_it_leaves_behind(app, db):
 
 
 def test_password_reset_and_deactivation_revoke_existing_sessions(app):
+    """An admin's password reset ends the user's existing sessions at once."""
     viewer = login(app, "viewer")
     login(app, "admin").patch("/api/admin/users/viewer", json={"password": "a-new-password"})
     assert viewer.get("/api/me").status_code == 401
 
 
 def test_the_last_active_admin_cannot_be_removed_or_demoted(app):
+    """The only active admin can be neither demoted nor deleted (409), but a second admin can be deleted."""
     admin = login(app, "admin")
     assert admin.patch("/api/admin/users/admin", json={"role": "operator"}).status_code == 409
     assert admin.delete("/api/admin/users/admin").status_code == 409
@@ -593,6 +653,8 @@ def test_the_last_active_admin_cannot_be_removed_or_demoted(app):
 
 
 def test_change_own_password_keeps_the_current_session(app):
+    """Changing one's own password ends other sessions but hands the caller a fresh CSRF token so the current one continues, and the new password signs in.
+    """
     client = login(app, "operator")
     resp = client.post("/api/me/password", json={"currentPassword": PASSWORDS["operator"], "newPassword": "brand-new-pass"})
     assert resp.status_code == 200
@@ -602,6 +664,7 @@ def test_change_own_password_keeps_the_current_session(app):
 
 
 def test_audit_endpoint_lists_newest_first_and_filters(app):
+    """The audit endpoint returns newest rows first and filters by action."""
     admin = login(app, "admin")
     admin.post("/api/admin/users", json={"username": "noc1", "password": "long-enough", "role": "viewer"})
     entries = admin.get("/api/admin/audit").json()["items"]
@@ -610,6 +673,7 @@ def test_audit_endpoint_lists_newest_first_and_filters(app):
 
 
 def test_permissions_endpoint_exposes_the_rbac_table(app):
+    """`/api/permissions` returns the caller's role and the rule table the SPA evaluates."""
     body = login(app, "viewer").get("/api/permissions").json()
     assert body["role"] == "viewer"
     assert {"method": "POST", "pattern": "^/rapp-mgmt/instances/[^/]+/terminate$", "role": "admin", "queryMatch": {}} in body["rules"]
@@ -633,6 +697,7 @@ def test_rotating_the_signing_key_ends_every_session_and_a_new_login_works(cfg, 
 
 
 def test_audit_endpoint_total_false_has_no_total_and_a_has_more_flag(app):
+    """With `total=false` the audit page has no `total` and a correct `hasMore`."""
     admin = login(app, "admin")
     admin.post("/api/admin/users", json={"username": "noc2", "password": "long-enough", "role": "viewer"})
     assert admin.get("/api/admin/audit", params={"limit": 1}).json()["total"] >= 2
@@ -642,6 +707,7 @@ def test_audit_endpoint_total_false_has_no_total_and_a_has_more_flag(app):
 
 
 def test_a_list_read_through_the_proxy_decides_the_same_with_total_false():
+    """The `total=false` query parameter does not change the RBAC decision for a list read."""
     from app.rbac import Role, decide
     for role in (Role.VIEWER, Role.OPERATOR, Role.ADMIN):
         assert decide("GET", "/aimgf/models", {"limit": ["5"], "total": ["false"]}, role).allowed

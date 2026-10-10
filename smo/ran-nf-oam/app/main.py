@@ -144,6 +144,8 @@ def worst_case_dispatch_seconds() -> float:
 # o1_protocol -> (edit, read, reason for an unexplained failure). Resolved
 # at call time so tests can patch either client function.
 def _o1_client(protocol: str, transport: str = "http-mock"):
+    """The (edit, read, default rejection reason) functions for an O1 protocol and transport, or None for a protocol this module does not dispatch (the caller then rejects with PROTOCOL_NOT_SUPPORTED). NETCONF over ssh or tls goes to `netconf_ssh`, NETCONF over the HTTP mock to `netconf_client`, RESTCONF to `restconf_client`. The functions are looked up at call time so tests can patch the client modules.
+    """
     if protocol == "NETCONF" and transport in ("ssh", "tls"):          # one pair of functions: the URI scheme picks SSH or TLS (PR-SB-2.4)
         return netconf_ssh.send_edit_config, netconf_ssh.send_get_config, "NETCONF_RPC_FAILED"
     if protocol == "NETCONF":
@@ -240,6 +242,8 @@ def _dispatch_group_with_retries(adaptor_uri: str, changes: list[dict], message_
 
 
 def _raise_dispatch_alarm(db: Session, job_id: uuid.UUID, change: dict, reason: str, attempts: int) -> None:
+    """Adds a major COMMUNICATIONS_ALARM on the element for a sub-change that failed after more than one attempt (not committed here; the job's commit keeps it). The source id contains the job id and target, so each failed change has its own alarm.
+    """
     target = change.get("managedFunctionRef") or change["managedElementRef"]
     db.add(Alarm(source_alarm_id=f"o1-config:{job_id}:{target}", managed_element_ref=change["managedElementRef"],
                  managed_function_ref=change.get("managedFunctionRef"), severity="major",
@@ -336,6 +340,8 @@ class DecisionContext(BaseModel):
     actionId: str | None = Field(default=None, max_length=100)
 
 
+# Request body of `POST /config-jobs`, also the shape a rollback, a revert and an onboarding apply build internally. `accessScope` is required (`scope` is its deprecated alias; both may be sent only if equal).
+# Each change is a dict with a string `managedElementRef` and optional `managedFunctionRef`, `attributeChanges` and `operation`; a ref containing '=' must be a well-formed DN (checked by the validators). The wave and KPI-guard fields are described where they are used (`_advance`, `run_due_kpi_guards`).
 class WriteConfigRequest(BaseModel):
     requestedBy: str
     decision: DecisionContext | None = None
@@ -370,6 +376,8 @@ class WriteConfigRequest(BaseModel):
 
     @model_validator(mode="after")
     def _scope_and_refs(self):
+        """Model validator: `accessScope` or its alias `scope` must be present and agree, `accessScope` is filled from the alias, and every element and function ref that contains '=' must parse as a DN (ValueError, which FastAPI answers as 422).
+        """
         if self.accessScope is None and self.scope is None:
             raise ValueError("accessScope is required (scope is its deprecated alias)")
         if self.accessScope is not None and self.scope is not None and self.accessScope != self.scope:
@@ -381,6 +389,7 @@ class WriteConfigRequest(BaseModel):
         return self
 
 
+# Request body of `POST /o1-adaptor-endpoints`. The validators check that `transport` and the shape of `adaptorUri` agree (ssh:// needs transport ssh, tls:// needs tls, both carry NETCONF only) and that `region` and `tenant` are valid scope values. `credentialRef` is checked in the route instead, so that a validation error of the body never echoes a pasted secret.
 class RegisterO1AdaptorEndpointRequest(BaseModel):
     managedElementRef: str
     adaptorUri: str
@@ -415,6 +424,8 @@ class RegisterO1AdaptorEndpointRequest(BaseModel):
 
     @model_validator(mode="after")
     def _transport_matches(self):
+        """Model validator: transport ssh or tls needs o1Protocol NETCONF and an adaptorUri of that scheme that parses; transport http-mock refuses an ssh:// or tls:// URI. Failures are ValueError (422).
+        """
         if self.transport == "ssh":
             if self.o1Protocol != "NETCONF":
                 raise ValueError("transport ssh carries NETCONF only")
@@ -500,6 +511,7 @@ def register_o1_adaptor_endpoint(body: RegisterO1AdaptorEndpointRequest, db: Ses
             **({"onboarding": {"status": onboarding.status, "templateName": onboarding.template_name, "softwareCheck": onboarding.software_check}} if onboarding else {})}
 
 
+# Request body of the host-key pin: the key type and base64 public key as in a known_hosts line, and who pins it (`pinnedBy` is stored as sent; it is not taken from the caller's token).
 class PinHostKeyRequest(BaseModel):
     keyType: str
     publicKey: str
@@ -548,6 +560,7 @@ def pin_host_key(endpoint_id: uuid.UUID, body: PinHostKeyRequest, request: Reque
 
 @app.get("/o1-adaptor-endpoints/{endpoint_id}/host-keys")
 def list_host_keys(endpoint_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    # The fingerprints (not the keys) of the host keys pinned for an ssh endpoint, ordered by key type; no paging. 404 O1_ENDPOINT_NOT_FOUND for an unknown endpoint or one outside the caller's scope, 422 when the endpoint is not an ssh one.
     endpoint = _ssh_endpoint(db, endpoint_id, request)
     rows = db.scalars(select(O1AdaptorHostKey).where(O1AdaptorHostKey.endpoint_id == endpoint.endpoint_id)
                       .order_by(O1AdaptorHostKey.key_type)).all()
@@ -556,6 +569,7 @@ def list_host_keys(endpoint_id: uuid.UUID, request: Request, db: Session = Depen
 
 @app.delete("/o1-adaptor-endpoints/{endpoint_id}/host-keys/{key_type}", status_code=204)
 def unpin_host_key(endpoint_id: uuid.UUID, key_type: str, request: Request, db: Session = Depends(get_session)):
+    # 204. 404 O1_HOST_KEY_NOT_FOUND when no key of that type is pinned; endpoint errors as for the list. Without a pinned key (and without NETCONF_SSH_KNOWN_HOSTS) connections to the endpoint are refused.
     endpoint = _ssh_endpoint(db, endpoint_id, request)
     row = db.scalars(select(O1AdaptorHostKey).where(O1AdaptorHostKey.endpoint_id == endpoint.endpoint_id,
                                                     O1AdaptorHostKey.key_type == key_type)).first()
@@ -1026,6 +1040,8 @@ def _dispatch_wave(db: Session, job: WriteConfigJob, rows: list[WriteConfigSubCh
 # MGT-5.3: the health gate hook. Each gate looks at the wave that just ran and returns why it fails, or None. A gate that reads KPIs
 # (MGT-11) is another function in this list.
 def _gate_rejections(db: Session, job: WriteConfigJob, rows: list[WriteConfigSubChange], started: datetime.datetime) -> str | None:
+    """Health gate of a staged CM job: fails when any sub-change of the wave that just ran was REJECTED. Returns the reason (count and the first rejection), or None.
+    """
     rejected = [r for r in rows if r.status == "REJECTED"]
     if rejected:
         first = rejected[0]
@@ -1035,6 +1051,8 @@ def _gate_rejections(db: Session, job: WriteConfigJob, rows: list[WriteConfigSub
 
 
 def _gate_alarms(db: Session, job: WriteConfigJob, rows: list[WriteConfigSubChange], started: datetime.datetime) -> str | None:
+    """Health gate: fails when more critical or major alarms than the job's `gateMaxNewAlarms` were raised on the wave's elements since the wave started. Returns the reason, or None.
+    """
     elements = {r.managed_element_ref for r in rows}
     raised = db.scalar(select(func.count()).select_from(Alarm).where(
         Alarm.managed_element_ref.in_(elements), Alarm.raised_at >= started, Alarm.severity.in_(("critical", "major")))) or 0
@@ -1207,6 +1225,7 @@ def purge_configuration_history(older_than_days: int | None = None, db: Session 
     return {"deleted": deleted, "olderThan": cutoff.isoformat()}
 
 
+# Request body of `POST /config-jobs/{id}/rollback`. `accessScope` defaults to the scope of the job being undone; `force` goes ahead although values changed since the job wrote them.
 class RollbackRequest(BaseModel):
     requestedBy: str
     accessScope: str | None = None            # default: the scope of the job being undone
@@ -1325,6 +1344,7 @@ def rollback_configuration_job(job_id: uuid.UUID, body: RollbackRequest, request
     return {**result, "rollbackOf": str(job_id), "forced": bool(changed)}
 
 
+# Request body of `POST /config-jobs/{id}/kpi-check`; the worker builds the same request from a job's `kpiGuard` (`run_due_kpi_guards`).
 class KpiCheckRequest(BaseModel):
     requestedBy: str
     kpi: str
@@ -1354,6 +1374,8 @@ def check_configuration_job_kpi(job_id: uuid.UUID, body: KpiCheckRequest, db: Se
 
 
 def _kpi_check(db: Session, job: WriteConfigJob, body: KpiCheckRequest) -> dict:
+    """The body of the KPI check (AI-10.5): for each element the job applied changes to, compares the KPI over the baseline window before the job's schema-validation time with the window after it. An element is REGRESSED when it got worse by more than `maxRegressionPercent` in the chosen direction, and INSUFFICIENT_DATA when either window has fewer than `minSamples` or the baseline is zero or undefined; the job verdict is REGRESSED if any element is, else INSUFFICIENT_DATA if any is (or there are no elements), else OK. With `revert` and regressed elements it rolls back only those elements through `_execute_write` (409 CONFIG_CHANGED_SINCE unless `force`, 422 ROLLBACK_NOT_POSSIBLE when no undo can be built). Writes only when it reverts; raises HTTPException from the helpers.
+    """
     job_id = job.job_id
     definition = _kpi_or_404(db, body.kpi)
     anchor = as_utc(job.schema_validated_at) if job.schema_validated_at else datetime.datetime.now(datetime.UTC)
@@ -1437,12 +1459,15 @@ def run_due_kpi_guards(db: Session, now: datetime.datetime | None = None) -> lis
     return ran
 
 
+# Request body of the continue, halt and abort routes of a staged CM job: who asks, and for `continue` whether to go on although the pause between waves has not elapsed.
 class WaveActionRequest(BaseModel):
     requestedBy: str
     force: bool = False                       # continue: go on although the pause has not elapsed
 
 
 def _halted_job(db: Session, job_id: uuid.UUID, event: JobEvent) -> WriteConfigJob:
+    """The job with this id if it is HALTED: 404 CONFIG_JOB_NOT_FOUND for an unknown id, 409 (illegal transition for `event`) for a job in any other state.
+    """
     job = db.get(WriteConfigJob, job_id)
     if job is None:
         raise framework_error(FrameworkError.CONFIG_JOB_NOT_FOUND, detail=f"no configuration job {job_id}")
@@ -1452,6 +1477,8 @@ def _halted_job(db: Session, job_id: uuid.UUID, event: JobEvent) -> WriteConfigJ
 
 
 def _resume(db: Session, job: WriteConfigJob) -> dict:
+    """Moves a HALTED job back to PROCESSING, clears the halt, and runs the waves from the next one until the job ends or halts again; commits and returns the job summary.
+    """
     job.status = WRITE_CONFIG_JOB_FSM.fire(JobState.HALTED, JobEvent.RESUME)
     job.halted_reason = job.halted_detail = job.next_wave_at = None
     db.flush()
@@ -1516,12 +1543,14 @@ def advance_due(db: Session) -> list[dict]:
 # ---------------------------------------------------------------- KPIs (PR-MGT-11)
 
 
+# One entry of a KPI definition's counter table: the PM counter, the formula variable it feeds (default: the counter name with non-identifier characters replaced by '_') and how its samples are combined.
 class KpiCounter(BaseModel):
     counter: str
     variable: str | None = None
     aggregation: Literal["sum", "avg", "min", "max", "last", "count"] = "sum"
 
 
+# Request body of `PUT /kpi-definitions/{name}`. Without `counters` each variable of the formula is a counter of the same name, summed.
 class KpiDefinitionRequest(BaseModel):
     formula: str
     counters: list[KpiCounter] | None = None
@@ -1580,17 +1609,20 @@ def define_kpi(name: str, body: KpiDefinitionRequest, db: Session = Depends(get_
 
 @app.get("/kpi-definitions")
 def list_kpi_definitions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Paged list ordered by name.
     page = paginate(db, select(KpiDefinition).order_by(KpiDefinition.name), limit, offset)
     return {**page, "items": [_kpi_view(r) for r in page["items"]]}
 
 
 @app.get("/kpi-definitions/{name}")
 def read_kpi_definition(name: str, db: Session = Depends(get_session)):
+    # 404 KPI_NOT_FOUND for an unknown name.
     return _kpi_view(_kpi_or_404(db, name))
 
 
 @app.delete("/kpi-definitions/{name}", status_code=204)
 def delete_kpi_definition(name: str, db: Session = Depends(get_session)):
+    # 204; 404 KPI_NOT_FOUND for an unknown name. Schedules and job guards that name the KPI are not touched; a schedule then records an ERROR at its next run.
     db.delete(_kpi_or_404(db, name))
     db.commit()
     return Response(status_code=204)
@@ -1654,12 +1686,14 @@ def read_rapp_limit(invoker_id_: str, db: Session = Depends(get_session)):
 
 @app.delete("/rapp-limits/{invoker_id_}", status_code=204)
 def delete_rapp_limit(invoker_id_: str, request: Request, db: Session = Depends(get_session)):
+    # 204. 403 RAPP_LIMIT_SELF_CHANGE when the caller is the rApp the limit is for; 404 RAPP_LIMIT_NOT_FOUND when none is set.
     _not_own_limit(request, invoker_id_)
     db.delete(_limit_or_404(db, invoker_id_))
     db.commit()
     return Response(status_code=204)
 
 
+# Request body of `PUT /rapp-kill/{invoker_id}`: who stops the rApp and an optional reason.
 class RAppKillRequest(BaseModel):
     requestedBy: str = Field(min_length=1)
     reason: str | None = Field(default=None, max_length=500)
@@ -1686,12 +1720,14 @@ def kill_rapp(invoker_id_: str, body: RAppKillRequest, db: Session = Depends(get
 
 @app.get("/rapp-kill")
 def list_killed_rapps(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Paged list, most recently stopped first.
     page = paginate(db, select(RAppKill).order_by(RAppKill.killed_at.desc(), RAppKill.invoker_id), limit, offset)
     return {**page, "items": [_kill_view(r) for r in page["items"]]}
 
 
 @app.get("/rapp-kill/{invoker_id_}")
 def read_rapp_kill(invoker_id_: str, db: Session = Depends(get_session)):
+    # 404 RAPP_KILL_NOT_FOUND when the rApp is not stopped.
     row = db.get(RAppKill, invoker_id_)
     if row is None:
         raise framework_error(FrameworkError.RAPP_KILL_NOT_FOUND, detail=f"{invoker_id_} is not stopped")
@@ -1710,6 +1746,7 @@ def lift_rapp_kill(invoker_id_: str, db: Session = Depends(get_session)):
     return Response(status_code=204)
 
 
+# Request body of `POST /safeguard-subscriptions`: the callback and the refusal codes to be told of (empty means all five).
 class SafeguardSubscriptionRequest(BaseModel):
     callbackUri: str = Field(min_length=1, max_length=2000)
     refusals: list[Literal["RAPP_KILLED", "RAPP_RATE_LIMITED", "RAPP_BLAST_RADIUS_EXCEEDED", "RAPP_MAGNITUDE_EXCEEDED", "SCOPE_DENIED"]] = []
@@ -1733,12 +1770,14 @@ def subscribe_to_safeguard_refusals(body: SafeguardSubscriptionRequest, db: Sess
 
 @app.get("/safeguard-subscriptions")
 def list_safeguard_subscriptions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Paged list, oldest first.
     page = paginate(db, select(SafeguardSubscription).order_by(SafeguardSubscription.created_at), limit, offset)
     return {**page, "items": [_subscription_view(s) for s in page["items"]]}
 
 
 @app.delete("/safeguard-subscriptions/{subscription_id}", status_code=204)
 def unsubscribe_from_safeguard_refusals(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    # 204; 404 SAFEGUARD_SUBSCRIPTION_NOT_FOUND for an unknown id. Notices already queued in the outbox are not recalled.
     sub = db.get(SafeguardSubscription, subscription_id)
     if sub is None:
         raise framework_error(FrameworkError.SAFEGUARD_SUBSCRIPTION_NOT_FOUND, detail=f"no subscription {subscription_id}")
@@ -1838,6 +1877,7 @@ def set_approval_policy(invoker_id_: str, body: ApprovalPolicyRequest, request: 
 
 @app.get("/rapp-approval-policy/{invoker_id_}")
 def read_approval_policy(invoker_id_: str, db: Session = Depends(get_session)):
+    # 404 APPROVAL_POLICY_NOT_FOUND when the rApp has none (its jobs are not held).
     return _policy_view(_policy_or_404(db, invoker_id_))
 
 
@@ -1850,6 +1890,7 @@ def delete_approval_policy(invoker_id_: str, request: Request, db: Session = Dep
     return Response(status_code=204)
 
 
+# Request body of `POST /approval-subscriptions`: the callback that is told of every approval request and lapse.
 class ApprovalSubscriptionRequest(BaseModel):
     callbackUri: str = Field(min_length=1, max_length=2000)
 
@@ -1872,12 +1913,14 @@ def subscribe_to_approvals(body: ApprovalSubscriptionRequest, db: Session = Depe
 
 @app.get("/approval-subscriptions")
 def list_approval_subscriptions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Paged list, oldest first.
     page = paginate(db, select(ApprovalSubscription).order_by(ApprovalSubscription.created_at), limit, offset)
     return {**page, "items": [_approval_subscription_view(s) for s in page["items"]]}
 
 
 @app.delete("/approval-subscriptions/{subscription_id}", status_code=204)
 def unsubscribe_from_approvals(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    # 204; 404 APPROVAL_SUBSCRIPTION_NOT_FOUND for an unknown id. Notices already queued in the outbox are not recalled.
     sub = db.get(ApprovalSubscription, subscription_id)
     if sub is None:
         raise framework_error(FrameworkError.APPROVAL_SUBSCRIPTION_NOT_FOUND, detail=f"no subscription {subscription_id}")
@@ -1915,6 +1958,8 @@ def _park_for_approval(db: Session, body: WriteConfigRequest, invoker: str, poli
 
 
 def _approval_view(row: RAppActionApproval, detail: bool = False) -> dict:
+    """The JSON view of an approval request. With `detail` it also carries the changes and access scope that were asked for (the list leaves them out). `approvals` is the votes so far (`_approvals_given`).
+    """
     view = {"approvalId": str(row.approval_id), "invokerId": row.invoker_id, "requestedBy": row.requested_by, "status": row.status,
             "managedElements": row.managed_elements, "changeCount": row.change_count, "createdAt": as_utc(row.created_at).isoformat(),
             "expiresAt": as_utc(row.expires_at).isoformat(), "onTimeout": row.on_timeout, "decidedBy": row.decided_by,
@@ -1946,6 +1991,8 @@ def _vote(body: "ApprovalDecisionRequest", now: datetime.datetime) -> dict:
 
 
 def _approval_or_404(db: Session, approval_id: uuid.UUID, lock: bool = False) -> RAppActionApproval:
+    """The approval request by id, reloaded from the database (not from a cached identity), or 404 APPROVAL_NOT_FOUND. With `lock` the row is selected FOR UPDATE, which the decision routes use so two deciders (or a decider and the timeout sweep) cannot act on it at once.
+    """
     stmt = select(RAppActionApproval).where(RAppActionApproval.approval_id == approval_id).execution_options(populate_existing=True)
     row = db.scalars(stmt.with_for_update() if lock else stmt).one_or_none()
     if row is None:
@@ -2027,6 +2074,7 @@ def read_approval(approval_id: uuid.UUID, request: Request, db: Session = Depend
     return _approval_view(row, detail=True)
 
 
+# Request body of the approve and reject routes: who decides (as the decider names themselves) and an optional reason. A decider equal to the requester is refused.
 class ApprovalDecisionRequest(BaseModel):
     decidedBy: str = Field(min_length=1, max_length=200)
     reason: str | None = Field(default=None, max_length=1000)
@@ -2199,6 +2247,7 @@ def _integrity(db: Session, rec: RAppDecisionRecord) -> dict:
 
 
 def _decision_view(rec: RAppDecisionRecord, integrity: dict | None = None) -> dict:
+    """The JSON view of a decision record; `integrity` (from `_integrity`) is included only for a read of one record."""
     view: dict[str, Any] = {"decisionId": str(rec.decision_id), "occurredAt": _stamp(rec.occurred_at), "invokerId": rec.invoker_id, "requestedBy": rec.requested_by,
             "disposition": rec.disposition, "jobId": str(rec.job_id) if rec.job_id else None, "approvalId": str(rec.approval_id) if rec.approval_id else None,
             "actionId": rec.action_id, "inputsRef": rec.inputs_ref, "modelVersion": rec.model_version, "rationale": rec.rationale,
@@ -2258,6 +2307,8 @@ def compute_kpi(name: str, from_time: datetime.datetime, request: Request, to_ti
 
 
 def _kpi_window(from_time: datetime.datetime, to_time: datetime.datetime | None) -> tuple[datetime.datetime, datetime.datetime]:
+    """The [from, to) window of a KPI request as timezone-aware datetimes (naive input is taken as UTC, a missing `to` is now); 422 SCHEMA_VALIDATION_FAILED when the window is empty or reversed.
+    """
     start = from_time if from_time.tzinfo else from_time.replace(tzinfo=datetime.UTC)
     end = (to_time if to_time is None or to_time.tzinfo else to_time.replace(tzinfo=datetime.UTC)) or datetime.datetime.now(datetime.UTC)
     if end <= start:
@@ -2310,6 +2361,7 @@ def _publish_kpi_to_dme(definition: KpiDefinition, result: dict) -> tuple[int, i
 # ---------------------------------------------------------------- KPI schedules (PR-MSG-4)
 
 
+# Request body of `PUT /kpi-schedules/{id}`: which KPI to publish to DME, how often (60 s to a day), over what look-back (default: the interval, so consecutive windows meet), grouped and narrowed as `GET /kpis/{name}`.
 class KpiScheduleRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kpi: str
@@ -2322,6 +2374,7 @@ class KpiScheduleRequest(BaseModel):
 
 
 def _schedule_view(row: KpiSchedule) -> dict:
+    """The JSON view of a KPI schedule, with the next run time (last run plus interval) only for an enabled schedule that has run."""
     last = as_utc(row.last_run_at) if row.last_run_at else None
     return {"scheduleId": row.schedule_id, "kpi": row.kpi, "intervalSeconds": row.interval_seconds, "lookbackSeconds": row.lookback_seconds,
             "groupBy": row.group_by, "managedElementRef": row.managed_element_ref, "cellId": row.cell_id, "enabled": row.enabled,
@@ -2371,6 +2424,7 @@ def list_kpi_schedules(request: Request, db: Session = Depends(get_session)):
 
 @app.get("/kpi-schedules/{schedule_id}")
 def get_kpi_schedule(schedule_id: str, request: Request, db: Session = Depends(get_session)):
+    # 404 KPI_SCHEDULE_NOT_FOUND for an unknown id and for one outside the caller's scope.
     row = db.get(KpiSchedule, schedule_id)
     if row is None or not _schedule_visible(db, request, row):                  # PR-SEC-10.9: one outside the caller's scope is a 404, as if it were not there
         raise framework_error(FrameworkError.KPI_SCHEDULE_NOT_FOUND, detail=f"no KPI schedule {schedule_id!r}")
@@ -2379,6 +2433,7 @@ def get_kpi_schedule(schedule_id: str, request: Request, db: Session = Depends(g
 
 @app.delete("/kpi-schedules/{schedule_id}", status_code=204)
 def delete_kpi_schedule(schedule_id: str, request: Request, db: Session = Depends(get_session)):
+    # 204; 404 KPI_SCHEDULE_NOT_FOUND for an unknown id and for one outside the caller's scope (it is not deleted).
     row = db.get(KpiSchedule, schedule_id)
     if row is None or not _schedule_visible(db, request, row):
         raise framework_error(FrameworkError.KPI_SCHEDULE_NOT_FOUND, detail=f"no KPI schedule {schedule_id!r}")
@@ -2419,6 +2474,7 @@ def run_due_kpi_schedules(db: Session, now: datetime.datetime | None = None) -> 
 
 @app.get("/config-jobs/{job_id}")
 def query_write_config_job_status(job_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    # 404 CONFIG_JOB_NOT_FOUND for an unknown job, for another rApp's job when the caller is a scoped rApp (PR-SEC-10.11), and for a job that touched an element outside the caller's scope: all three answer the same. Sub-changes are listed in request order.
     job = db.get(WriteConfigJob, job_id)
     # PR-SEC-10: a job that touched an element outside the caller's scope is not shown to it: 404, as if it did not exist. PR-SEC-10.11: nor is another rApp's job
     if job is None or not _job_owned(db, request, job) or scoping.denied_refs(db, scoping.request_scope(request), _job_elements(db, job_id)):
@@ -2585,6 +2641,7 @@ def subscribe_pm(managed_element_ref: str, counter_type: str, delivery_method: s
     return {"subscriptionId": str(sub.subscription_id), "southboundEngine": engine, "granularityPeriod": sub.granularity_period}
 
 
+# One PM sample: a cell, a time and either one `value` or several counters in `values` (at least one is required); `relation` names the neighbour relation the counters are measured on.
 class PmMeasurement(BaseModel):
     cellId: str
     timestamp: datetime.datetime
@@ -2603,6 +2660,7 @@ class PmMeasurement(BaseModel):
         return self
 
 
+# Request body of `POST /pm-reports`: measurements of one counter type for one element, delivered to DME.
 class PmReportRequest(BaseModel):
     managedElementRef: str
     counterType: str
@@ -2669,6 +2727,7 @@ def _fan_out_to_dme(managed_element_ref: str, counter_type: str, measurements: l
 FileDataType = Literal["Performance", "Trace", "Analytics", "Proprietary"]
 
 
+# Request body of `POST /pm-files`: a finished performance file (its measurements, format, data type, and optional expiry) as the element's adaptor reports it.
 class PmFileRequest(BaseModel):
     managedElementRef: str
     counterType: str
@@ -2690,6 +2749,7 @@ class FileSubscriptionRequest(BaseModel):
 
 
 def _file_info(f: PMFile) -> dict:
+    """The TS 28.532 FileInfo of a stored PM file; its `fileLocation` is the download route of this service."""
     return {"fileLocation": f"/ran-nf-oam/pm-files/{f.file_id}/file", "fileSize": f.file_size,
             "fileReadyTime": as_utc(f.file_ready_time).isoformat(),
             "fileExpirationTime": as_utc(f.file_expiration_time).isoformat() if f.file_expiration_time else None,
@@ -2699,6 +2759,7 @@ def _file_info(f: PMFile) -> dict:
 
 @app.post("/pm-files", status_code=201)
 def report_pm_file(body: PmFileRequest, db: Session = Depends(get_session)):
+    # Order: the FILE service check, then a PM subscription for the counter on the element must exist (422 otherwise). The file, the new sequence numbers of the matching file subscriptions and one outbox row per subscriber (`notifyFileReady`) are committed together; only after that are the measurements fanned out to DME, so a DME failure does not undo the stored file. Unlike the reads, this write is not filtered by the caller's scope.
     require_service(db, body.managedElementRef, "FILE")
     subscribed = db.scalars(select(PMSubscription).where(PMSubscription.managed_element_ref == body.managedElementRef,
                                                          PMSubscription.counter_type == body.counterType)).first()
@@ -2748,6 +2809,7 @@ def read_file_info(fileDataType: FileDataType, request: Request, beginTime: date
 
 @app.get("/pm-files/{file_id}/file")
 def download_pm_file(file_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    # 404 NRM_OBJECT_NOT_FOUND for an unknown file, for one of an element outside the caller's scope, and for one past its expiry time; 403 MSAC_ACCESS_DENIED when the MSAC switch is on and a managed caller may not read the element. Returns the stored JSON as is.
     f = db.get(PMFile, file_id)
     if f is None or not scoping.element_permitted(db, scoping.request_scope(request), f.managed_element_ref):      # PR-SEC-10.6: outside the scope is a 404
         raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such file {file_id}")
@@ -2799,11 +2861,13 @@ def receive_dme_job(body: dict):
 
 @app.delete("/dme-jobs/{data_job_id}", status_code=204)
 def stop_dme_job(data_job_id: str):
+    # Does nothing and answers 204: this module keeps no per-job state for DME's data jobs.
     pass
 
 
 @app.post("/software-management-jobs", status_code=202)
 def software_update(managed_element_ref: str, request: Request, ru_instance_id: str | None = None, db: Session = Depends(get_session)):
+    # 202 with the new job, started at once (IN_PROGRESS, phase DOWNLOAD). With the MSAC switch on a managed caller needs `exec` on the element; 409 O1_SERVICE_NOT_SUPPORTED when the element's services lack SWM. The element's registration is not checked here and the caller's scope is not asked.
     _require_msac(db, request, "exec", managed_element_ref)                                    # MGT-2.4: a software job runs a procedure on the element
     require_service(db, managed_element_ref, "SWM")  # Wave 9 (W9-01)
     job = lifecycle.start_software_job(db, managed_element_ref, ru_instance_id)
@@ -2813,6 +2877,7 @@ def software_update(managed_element_ref: str, request: Request, ru_instance_id: 
 
 @app.post("/software-management-jobs/{job_id}/advance")
 def advance_software_job(job_id: uuid.UUID, succeeded: bool, db: Session = Depends(get_session)):
+    # Reports the outcome of the job's current phase: `succeeded=false` fails the job; true completes the phase (DOWNLOAD moves to INSTALL, INSTALL to ACTIVATE, ACTIVATE completes the job). 404 SOFTWARE_JOB_NOT_FOUND; 409 when the job has already ended (a late report after a campaign timed it out). After the commit, a job that belongs to a campaign lets the campaign go on, in its own transaction. The caller's scope is not asked.
     job = db.get(SoftwareManagementJob, job_id)
     if job is None:
         raise framework_error(FrameworkError.SOFTWARE_JOB_NOT_FOUND, detail=f"unknown jobId {job_id}")
@@ -2868,6 +2933,7 @@ def discover_endpoints(db: Session = Depends(get_session)):
 
 @app.post("/o1-adaptor-endpoints/{endpoint_id}/heartbeat")
 def endpoint_heartbeat(endpoint_id: uuid.UUID, db: Session = Depends(get_session)):
+    # 404 O1_ENDPOINT_NOT_FOUND for an unknown endpoint. Records the time; DISCOVERED or DEGRADED becomes ACTIVE. The first heartbeat (from DISCOVERED) applies an `autoApply` onboarding template; a failure of that never fails the heartbeat. The caller's scope is not asked.
     ep = db.get(O1AdaptorEndpoint, endpoint_id)
     if ep is None:
         raise framework_error(FrameworkError.O1_ENDPOINT_NOT_FOUND, detail=f"unknown endpointId {endpoint_id}")
@@ -2892,6 +2958,7 @@ def _ves_listener_auth(request: Request) -> None:
     ves.authenticate(request.headers.get("authorization"))
 
 
+# Per-event result in the VES answer: the event's position, its domain, what became of it, and the fixed codes that say why.
 class VesResult(BaseModel):
     index: int
     domain: str
@@ -2899,6 +2966,7 @@ class VesResult(BaseModel):
     codes: list[str]
 
 
+# Response body of the VES listener: events received, how many were applied (or partly applied), and one result per event.
 class VesAnswer(BaseModel):
     events: int
     applied: int
@@ -2953,6 +3021,8 @@ def _ves_pm(db: Session, action: ves.PmReport) -> tuple[bool, str]:
 
 
 def _ves_apply(db: Session, action: ves.Action) -> tuple[bool, str]:
+    """Applies one VES action through the shared helpers and returns (succeeded, fixed code). A refusal by a helper (HTTPException) is rolled back and returned as (False, its error title); nothing is raised, so one refused event never stops the others in a post.
+    """
     try:
         if isinstance(action, ves.AlarmAction):
             return _ves_alarm(db, action)
@@ -2992,6 +3062,8 @@ def receive_ves_events(body: ves.VesEnvelope, db: Session = Depends(get_session)
 
 
 def _alarm_view(a: Alarm) -> dict:
+    """The JSON view of an alarm: the stored lower-case `severity`, the upper-case `perceivedSeverity`, and the class and id of its managed function split from its DN.
+    """
     return {"alarmId": str(a.alarm_id), "sourceAlarmId": a.source_alarm_id, "managedElementRef": a.managed_element_ref,
             "managedFunctionRef": a.managed_function_ref,
             "managedFunctionClass": leaf_class(a.managed_function_ref), "managedFunctionId": leaf_id(a.managed_function_ref),
@@ -3013,6 +3085,7 @@ def _alarm_view(a: Alarm) -> dict:
 @app.get("/pm-subscriptions")
 def list_pm_subscriptions(request: Request, managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                            db: Session = Depends(get_session)):
+    # Paged list, optionally of one element. A caller with a scope claim and a managed caller (MSAC switch on) see only the subscriptions of the elements they may touch and read.
     stmt = scoping.scoped_to_elements(select(PMSubscription), scoping.request_scope(request), PMSubscription.managed_element_ref)      # PR-SEC-10.6
     stmt = msac.readable(stmt, db, request, PMSubscription.managed_element_ref)                                                         # MGT-2.6
     if managed_element_ref:
@@ -3080,6 +3153,7 @@ def subscribe_fm(managed_element_ref: str, delivery_method: str, request: Reques
 @app.get("/fm-subscriptions")
 def list_fm_subscriptions(request: Request, managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                            db: Session = Depends(get_session)):
+    # Paged list, optionally of one element, filtered by scope and by MSAC read rules as the PM list is.
     stmt = scoping.scoped_to_elements(select(FMSubscription), scoping.request_scope(request), FMSubscription.managed_element_ref)      # PR-SEC-10.6
     stmt = msac.readable(stmt, db, request, FMSubscription.managed_element_ref)                                                         # MGT-2.6
     if managed_element_ref:
@@ -3126,6 +3200,7 @@ def list_o1_adaptor_endpoints(request: Request, health_status: str | None = None
 @app.get("/config-jobs")
 def list_write_config_jobs(request: Request, status: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                             db: Session = Depends(get_session)):
+    # Paged list of job summaries, optionally by status. A scoped caller sees only jobs all of whose elements are inside its scope (an unregistered element counts as outside); a managed caller does not see jobs that wrote to an element it may not read; a scoped rApp sees only its own jobs, including the rollbacks of them (PR-SEC-10.11).
     stmt = select(WriteConfigJob)
     scope = scoping.request_scope(request)
     if scope is not None:
@@ -3151,6 +3226,7 @@ def list_write_config_jobs(request: Request, status: str | None = None, limit: i
 @app.get("/software-management-jobs")
 def list_software_management_jobs(request: Request, managed_element_ref: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                                    db: Session = Depends(get_session)):
+    # Paged list, optionally of one element, filtered by scope and MSAC read rules; campaign and rollback links are included for jobs that have them.
     stmt = scoping.scoped_to_elements(select(SoftwareManagementJob), scoping.request_scope(request), SoftwareManagementJob.managed_element_ref)     # PR-SEC-10.6
     stmt = msac.readable(stmt, db, request, SoftwareManagementJob.managed_element_ref)                                                              # MGT-2.6
     if managed_element_ref:

@@ -177,6 +177,8 @@ class TemplateChange(BaseModel):
         return check_ref(value)
 
 
+# Request body of `PUT /onboarding-templates/{name}`: the element type (and optionally vendor) the template is for, the CM changes to apply (1 to 200), and the software baseline with its two switches.
+# `requireBaseline` without a `softwareBaseline` is refused by the model validator.
 class OnboardingTemplateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     entityType: str = Field(min_length=1, max_length=100)
@@ -229,6 +231,7 @@ def put_onboarding_template(name: str, body: OnboardingTemplateRequest, db: Sess
 
 @router.get("/onboarding-templates")
 def list_onboarding_templates(entity_type: str | None = None, limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Paged list, optionally only the templates of one `entity_type`. Reads only.
     stmt = select(OnboardingTemplate)
     if entity_type:
         stmt = stmt.where(OnboardingTemplate.entity_type == entity_type)
@@ -238,6 +241,7 @@ def list_onboarding_templates(entity_type: str | None = None, limit: int = PageL
 
 @router.get("/onboarding-templates/{name}")
 def get_onboarding_template(name: str, db: Session = Depends(get_session)):
+    # 404 ONBOARDING_TEMPLATE_NOT_FOUND for an unknown name, and also for a name that is not shaped like a template name.
     return _template_view(_template_or_404(db, name))
 
 
@@ -311,6 +315,8 @@ def _onboarding_view(row: ElementOnboarding) -> dict:
 
 
 def _onboarding_or_404(db: Session, ref: str, request: Request | None = None) -> ElementOnboarding:
+    """The onboarding row of an element, or 404 ELEMENT_ONBOARDING_NOT_FOUND. When `request` is given the caller's scope is checked first (403 SCOPE_DENIED), so an out-of-scope element is refused before its row is looked up.
+    """
     if request is not None:
         scoping.require_elements(db, scoping.request_scope(request), [ref])          # PR-SEC-10: 403 for an element outside the caller's scope
     row = db.get(ElementOnboarding, ref)
@@ -320,6 +326,8 @@ def _onboarding_or_404(db: Session, ref: str, request: Request | None = None) ->
 
 
 def _fail(db: Session, row: ElementOnboarding, detail: str) -> None:
+    """Ends an apply as FAILED. Rolls back the caller's open transaction first, so nothing the failed attempt left uncommitted is kept, and reloads the row, then moves it with APPLY_FAILED, keeps the reason, raises a major alarm (once while it stands), queues the `ONBOARDING_FAILED` notices and commits, all in the one transaction that records the failure.
+    """
     db.rollback()
     db.refresh(row)
     row.status = ONBOARDING_FSM.fire(OnboardingState(row.status), OnboardingEvent.APPLY_FAILED)
@@ -412,12 +420,14 @@ def on_first_heartbeat(db: Session, managed_element_ref: str) -> None:
         log.exception("onboarding of %s: the automatic apply failed", managed_element_ref)
 
 
+# Request body of `POST /element-onboarding/{ref}/select`: an optional template to use instead of the best match, and the software version the element runs.
 class SelectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     template: str | None = Field(default=None, description="a template to use instead of the best match")
     softwareVersion: str | None = Field(default=None, min_length=1, max_length=100)
 
 
+# Request body of `POST /element-onboarding/{ref}/apply`: who applies the template, and optionally the software version the element runs (for the baseline check).
 class ApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     requestedBy: str = Field(min_length=1, max_length=200)
@@ -428,6 +438,7 @@ class ApplyRequest(BaseModel):
 def list_element_onboarding(request: Request, status: Literal["DISCOVERED", "NO_TEMPLATE", "TEMPLATE_SELECTED", "APPLYING", "ONBOARDED", "FAILED"] | None = None,
                             software_check: Literal["NOT_CHECKED", "MATCH", "MISMATCH"] | None = None, limit: int = PageLimit, offset: int = PageOffset,
                             db: Session = Depends(get_session)):
+    # Paged list of the onboarding rows of the elements inside the caller's scope (a list is filtered, not refused), optionally by `status` and `software_check`.
     stmt = scoping.scoped_to_elements(select(ElementOnboarding), scoping.request_scope(request), ElementOnboarding.managed_element_ref)
     if status:
         stmt = stmt.where(ElementOnboarding.status == status)
@@ -439,6 +450,7 @@ def list_element_onboarding(request: Request, status: Literal["DISCOVERED", "NO_
 
 @router.get("/element-onboarding/{managed_element_ref}")
 def get_element_onboarding(managed_element_ref: str, request: Request, db: Session = Depends(get_session)):
+    # 403 SCOPE_DENIED outside the caller's scope; 404 ELEMENT_ONBOARDING_NOT_FOUND when the element was never matched (select a template first).
     return _onboarding_view(_onboarding_or_404(db, managed_element_ref, request))
 
 
@@ -484,6 +496,7 @@ class CampaignSelector(BaseModel):
         return self
 
 
+# Request body of `POST /software-campaigns`. Exactly one of `managedElementRefs` and `selector` is given (the model validator refuses both or neither) and a repeated reference is dropped, keeping the first. `waveSize` omitted puts every element in one wave.
 class CampaignRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     requestedBy: str = Field(min_length=1, max_length=200)
@@ -501,6 +514,7 @@ class CampaignRequest(BaseModel):
 
     @model_validator(mode="after")
     def _elements_or_selector(self):
+        """Model validator: exactly one of the two ways to name elements, and a named list de-duplicated in order."""
         if (self.managedElementRefs is None) == (self.selector is None):
             raise ValueError("name the elements (managedElementRefs) or select them (selector), one of the two")
         if self.managedElementRefs is not None:
@@ -508,6 +522,7 @@ class CampaignRequest(BaseModel):
         return self
 
 
+# Request body of the halt, continue, abort and rollback routes of a campaign: who asks, and for `continue` whether to go on although the pause between waves has not elapsed.
 class CampaignAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
     requestedBy: str = Field(min_length=1, max_length=200)
@@ -534,6 +549,8 @@ def _wave_elements(c: SoftwareCampaign, wave: int) -> list[str]:
 
 
 def _jobs(db: Session, c: SoftwareCampaign, wave: int | None = None, reverts: bool = False) -> list[SoftwareManagementJob]:
+    """The software jobs of a campaign, by wave then element: its own jobs, or with `reverts` the revert jobs (those with `rollback_of`); one wave when `wave` is given.
+    """
     stmt = select(SoftwareManagementJob).where(SoftwareManagementJob.campaign_id == c.campaign_id)
     stmt = stmt.where(SoftwareManagementJob.rollback_of.is_not(None) if reverts else SoftwareManagementJob.rollback_of.is_(None))
     if wave is not None:
@@ -546,6 +563,8 @@ def _in_flight(job: SoftwareManagementJob) -> bool:
 
 
 def _start_wave(db: Session, c: SoftwareCampaign, wave: int) -> None:
+    """Makes `wave` the current wave and starts one software job per element of it (flushed, not committed: the caller's transaction commits the wave with the state change that led to it). The wave clock for `jobTimeoutSeconds` restarts, and any pause is cleared.
+    """
     c.current_wave, c.wave_started_at, c.next_wave_at = wave, _now(), None
     for ref in _wave_elements(c, wave):
         start_software_job(db, ref, campaign_id=c.campaign_id, campaign_wave=wave, software_version=c.software_version)
@@ -562,6 +581,8 @@ def _gate_failed_jobs(db: Session, c: SoftwareCampaign, jobs: list[SoftwareManag
 
 
 def _gate_new_alarms(db: Session, c: SoftwareCampaign, jobs: list[SoftwareManagementJob], started: datetime.datetime) -> str | None:
+    """Health gate: fails when more critical or major alarms than `gateMaxNewAlarms` were raised, since the wave started, on the elements of the wave. Returns the reason, or None.
+    """
     elements = {j.managed_element_ref for j in jobs}
     raised = db.scalar(select(func.count()).select_from(Alarm).where(
         Alarm.managed_element_ref.in_(elements), Alarm.raised_at >= started, Alarm.severity.in_(("critical", "major")))) or 0
@@ -580,6 +601,8 @@ def _finish(c: SoftwareCampaign) -> None:
 
 
 def _halt(db: Session, c: SoftwareCampaign, reason: str, detail: str | None, next_at: datetime.datetime | None = None, by: str | None = None) -> None:
+    """Moves a RUNNING campaign to HALTED with a reason, logs it and queues the `CAMPAIGN_HALTED` notice, except for `WAVE_PAUSE`, the routine pause between waves. `next_at` is when a pause ends. The caller commits.
+    """
     c.status = CAMPAIGN_FSM.fire(CampaignState(c.status), CampaignEvent.HALT)
     c.halted_reason, c.halted_detail, c.next_wave_at = reason, detail, next_at
     _log(c, "HALTED", f"{reason}{': ' + detail if detail else ''}", by=by)
@@ -723,6 +746,8 @@ def expire_jobs(db: Session, c: SoftwareCampaign) -> int:
 
 
 def _resume(db: Session, c: SoftwareCampaign, by: str | None) -> None:
+    """Moves a HALTED campaign to RUNNING and goes on. After a failed gate or a pause the current wave's gate has been answered (passed, or overridden by the operator), so the next wave starts, or the campaign finishes when it was the last; then `progress` runs whatever the jobs now allow. `by` is who continued it (the sweep passes 'sweep'). The caller commits.
+    """
     reason = c.halted_reason
     c.status = CAMPAIGN_FSM.fire(CampaignState.HALTED, CampaignEvent.RESUME)
     c.halted_reason, c.halted_detail, c.next_wave_at = None, None, None
@@ -837,6 +862,7 @@ def create_software_campaign(body: CampaignRequest, request: Request, db: Sessio
 @router.get("/software-campaigns")
 def list_software_campaigns(request: Request, status: Literal["PENDING", "RUNNING", "HALTED", "COMPLETED", "ABORTED", "ROLLING_BACK", "ROLLED_BACK", "ROLLBACK_FAILED"] | None = None,
                             limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Paged list (summary with name, version and creation time), optionally by `status`. A caller with a scope claim sees only the campaigns all of whose elements (jobs) are inside it.
     stmt = select(SoftwareCampaign)
     scope = scoping.request_scope(request)
     if scope is not None:
@@ -851,6 +877,7 @@ def list_software_campaigns(request: Request, status: Literal["PENDING", "RUNNIN
 
 @router.get("/software-campaigns/{campaign_id}")
 def get_software_campaign(campaign_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    # The campaign with its elements, settings and event log. 404 SOFTWARE_CAMPAIGN_NOT_FOUND for an unknown campaign and for one with an element outside the caller's scope.
     return _view(_campaign_or_404(db, campaign_id, request))
 
 

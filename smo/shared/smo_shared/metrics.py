@@ -161,6 +161,11 @@ def outcome_of(status: int) -> str:
 
 
 def record_outbound(client: str, target: str, method: str, outcome: str, seconds: float | None = None) -> None:
+    """Counts one outbound call (`smo_outbound_calls_total`) and, when `seconds` is given, observes its duration.
+
+    `client` is `r1` or `webhook`; `target` must be a bounded value (a module name or `callback`, never a host); `outcome` is `2xx`..`5xx`,
+    `timeout`, `error` or `blocked`. The method is upper-cased so `get` and `GET` are one series.
+    """
     OUTBOUND_CALLS.labels(client, target, method.upper(), outcome).inc()
     if seconds is not None:
         OUTBOUND_DURATION.labels(client, target).observe(seconds)
@@ -182,6 +187,9 @@ def _module_name() -> str:
 
 
 def record_refusal(status: int, module: str | None = None) -> None:
+    """Counts a 4xx answer in `smo_refusals_total` under its refusal class; any other status is ignored. `module` defaults to this process's `MODULE`
+    (`unknown` when unset or not module-shaped).
+    """
     reason = refusal_reason(status)
     if reason is not None:
         REFUSALS.labels(module or _module_name(), reason).inc()
@@ -194,17 +202,25 @@ _worker_lock = threading.Lock()
 
 
 def record_worker_task(module: str, task: str, outcome: str) -> None:
+    """Counts one run of a worker's periodic task (`ok` or `failed`) and, for `ok`, remembers the time as the task's last success (exported by
+    `_WorkerSuccessCollector`).
+    """
     WORKER_RUNS.labels(module, task, outcome).inc()
+    # Only a successful run moves the last-success timestamp, so an alert on its age fires for a task that keeps failing.
     if outcome == "ok":
         with _worker_lock:
             _worker_last_success[(module, task)] = time.time()
 
 
 class _WorkerSuccessCollector:
+    """Prometheus collector for `smo_worker_task_last_success_timestamp_seconds`: one sample per (module, task) that has succeeded in this process,
+    read from `_worker_last_success` at scrape time.
+    """
     def describe(self):
         return []
 
     def collect(self):
+        """Yields the gauge family built from a snapshot of `_worker_last_success` (taken under the lock; empty before any success)."""
         family = GaugeMetricFamily("smo_worker_task_last_success_timestamp_seconds", "Unix time of a worker task's last successful run.",
                                    labels=["module", "task"])
         with _worker_lock:
@@ -230,10 +246,14 @@ def record_retention_off_rows(table: str, rows: float | None) -> None:
 
 
 class _RetentionOffCollector:
+    """Prometheus collector for `smo_retention_off_rows`: one sample per table recorded with `record_retention_off_rows`, so a table whose retention is
+    switched off stays visible.
+    """
     def describe(self):
         return []
 
     def collect(self):
+        """Yields the gauge family built from a sorted snapshot of `_retention_off_rows` (taken under the lock)."""
         family = GaugeMetricFamily("smo_retention_off_rows", "Estimated rows of a table whose retention is off (0 keeps everything).", labels=["table"])
         with _worker_lock:
             items = sorted(_retention_off_rows.items())
@@ -253,6 +273,10 @@ class _MtlsCertCollector:
         return []
 
     def collect(self):
+        """Yields `smo_mtls_cert_not_after_timestamp_seconds{file="cert"|"ca"}` read from the certificate files now; yields nothing when mTLS is off.
+
+        A file that cannot be read is logged at WARNING and skipped, so the scrape itself never fails.
+        """
         from . import mtls
         if not mtls.enabled():
             return
@@ -293,6 +317,9 @@ class QueryGauge:
         return getattr(sys.modules.get("smo_shared.db"), "SessionLocal", None)
 
     def _read(self) -> list | None:
+        """Runs the row function in a fresh session and returns the (labels, float) pairs; None when this process has no database or the query fails
+        (any exception, logged at DEBUG).
+        """
         factory = self._factory()
         if factory is None:
             return None
@@ -304,6 +331,11 @@ class QueryGauge:
             return None
 
     def collect(self):
+        """Yields the gauge family from the cached rows, re-reading them when older than `ttl`; yields nothing when the rows are unavailable.
+
+        The lock is held across the read, so concurrent scrapes share one query. A failed read clears the cache, so the next scrape tries again at
+        once.
+        """
         with self._lock:
             now = time.monotonic()
             if self._cached is None or now - self._cached[0] >= self._ttl:
@@ -340,6 +372,9 @@ def count_by(session, column, known: Iterable = ()) -> Rows:
 
 
 def _outbox_rows(session) -> Rows:
+    """Rows for `smo_outbox_rows`: this module's `notification_outbox` row counts for PENDING, SENT and DEAD (zero when there are none), labelled
+    (module, status).
+    """
     from sqlalchemy import func, select
 
     from .outbox import DEAD, PENDING, SENT, NotificationOutbox
@@ -350,6 +385,8 @@ def _outbox_rows(session) -> Rows:
 
 
 def _outbox_age_rows(session) -> Rows:
+    """Row for `smo_outbox_oldest_pending_age_seconds`: seconds since this module's oldest PENDING outbox row was created, 0.0 when none is pending.
+    """
     from sqlalchemy import func, select
 
     from .outbox import PENDING, NotificationOutbox
@@ -362,6 +399,9 @@ def _outbox_age_rows(session) -> Rows:
 
 
 def register_outbox_metrics() -> None:
+    """Registers the two outbox gauges (`smo_outbox_rows`, `smo_outbox_oldest_pending_age_seconds`); safe to call again, `register_query_gauge`
+    registers a name once.
+    """
     register_query_gauge("smo_outbox_rows", "This module's notification outbox rows, by status.", ["module", "status"], _outbox_rows)
     register_query_gauge("smo_outbox_oldest_pending_age_seconds", "Age of this module's oldest PENDING outbox row (0 when none).",
                          ["module"], _outbox_age_rows)
@@ -374,6 +414,9 @@ class PoolCollector:
         self._engine_getter = engine_getter
 
     def collect(self):
+        """Yields the pool gauges (`smo_db_pool_connections{state}` and `smo_db_pool_capacity`) from the engine's connection pool; yields nothing when
+        there is no engine or the pool is not a queue pool (SQLite in tests).
+        """
         pool = getattr(self._engine_getter(), "pool", None)
         if pool is None or not all(hasattr(pool, attr) for attr in ("checkedout", "checkedin", "overflow", "size")):
             return                                                  # SQLite's test pools are not a QueuePool: no series
@@ -441,4 +484,6 @@ def install_metrics(app: FastAPI) -> None:
 
     @app.get(METRICS_PATH, include_in_schema=False)
     def metrics():
+        # Prometheus scrape endpoint: not in the OpenAPI document (include_in_schema=False). It serves the process-wide default registry, so it also
+        # carries the series of the other shared-library modules.
         return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)

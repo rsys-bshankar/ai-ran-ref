@@ -1,3 +1,9 @@
+/**
+ * Small SVG charts for the dashboards: `Sparkline` (one metric over time with an optional floor line), `FsmStepper` (the AI/ML model lifecycle steps) and `CountBar`
+ * (a stacked bar of counts). Pure drawing from props, no fetching; each draws an accessible name (`role="img"` with `aria-label`). The page-declared charts of the rApp
+ * operator page are in `OperatorUi.tsx` (`SeriesChart`).
+ */
+
 import { pipelineSteps } from "../lib/domain";
 
 /** A single metric over time. `floor` draws the guard-KPI floor line

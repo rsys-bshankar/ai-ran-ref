@@ -46,6 +46,9 @@ NO_CHANGE, REVERT = "NO_CHANGE", "REVERT"
 
 @dataclass
 class CellInput:
+    """One cell's inputs to a pass: its PM total, live tilt and power, the baselines the bounds are measured from, its neighbours, and the facts
+    the guards read (class and incident zone, critical alarm, sleep state, last wake, relations the Mobility rApp is observing).
+    """
     cell: str
     total: float
     tilt: int
@@ -63,6 +66,11 @@ class CellInput:
 
 
 def evaluate_guards(c: CellInput, now: datetime.datetime) -> dict:
+    """Runs every guard on one cell and returns {"passed": bool, "blocks": [{guard, level, detail?}]}.
+
+    Each guard that fires adds one block, so the audit trail lists every reason a cell did not move, not only the first. `now` is the time of
+    the newest PM window, not the wall clock, so a replay of old data gives the same answer. No I/O.
+    """
     blocks: list[dict] = []
     if c.guard.get("cellClass") == "EMERGENCY" or c.guard.get("incidentZone"):
         blocks.append({"guard": "PROTECTED_CELL", "level": "HARD",
@@ -85,6 +93,7 @@ def evaluate_guards(c: CellInput, now: datetime.datetime) -> dict:
 
 
 def apply(move: str, tilt: int, power: int) -> tuple[int, int]:
+    """Returns the (tilt, power) a cell would have after `move`: tilt in 0.1 degree units (1 degree per step), power in dB (1 dB per step)."""
     d_tilt, d_power = MOVES[move]
     return tilt + d_tilt * TILT_STEP, power + d_power * POWER_STEP
 
@@ -112,6 +121,9 @@ def kpi_check(observing: dict, state: dict, now: datetime.datetime) -> dict | No
 
 @dataclass
 class CellDecision:
+    """The engine's verdict for one cell: the move (or NO_CHANGE), the reason code the audit trail shows, the settings before and after
+    (`to_setting` is None when nothing changes), the guard evaluation, and the moves the guards and bounds left open.
+    """
     cell: str
     decision: str
     reason: str

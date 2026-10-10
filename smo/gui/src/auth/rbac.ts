@@ -1,13 +1,19 @@
-// Role gating in the SPA evaluates the BFF's own permission table
-// (GET /api/permissions), with the same first-match-wins rule as
-// gui-bff/app/rbac.py — one table, not two to keep in sync. This only decides
-// what to *show*; the BFF re-checks every call.
+/**
+ * Role gating in the SPA: evaluates the BFF's own permission table (GET /api/permissions) with the same first-match-wins rule as
+ * gui-bff/app/rbac.py, so there is one table and not two to keep in sync.
+ * This only decides what to show (buttons, menu entries); the BFF re-checks every call, so a wrong answer here can hide a control but never grant access.
+ * Used by `AuthContext.tsx` (`can`), `components/ui.tsx` (`Can`) and `main.tsx` (`roleAtLeast`).
+ */
 
+/** The three GUI roles, from least to most privileged; the BFF holds the user-to-role assignment. */
 export type Role = "viewer" | "operator" | "admin";
 
 export const ROLES: Role[] = ["viewer", "operator", "admin"];
 const RANK: Record<Role, number> = { viewer: 0, operator: 1, admin: 2 };
 
+/**
+ * One row of the BFF's permission table: the HTTP method, a regular expression for the path, the minimum role, and optional query parameters that must be present with those values (for example the advance event of a model).
+ */
 export interface PermissionRule {
   method: string;
   pattern: string;
@@ -16,6 +22,7 @@ export interface PermissionRule {
 }
 
 const compiled = new Map<string, RegExp>();
+/** Compiles a rule's path pattern once and caches it by pattern text; the table is evaluated on every render. */
 function regex(pattern: string): RegExp {
   let re = compiled.get(pattern);
   if (!re) {
@@ -49,6 +56,10 @@ export function roleAtLeast(role: Role, minimum: Role): boolean {
   return RANK[role] >= RANK[minimum];
 }
 
+/**
+ * Returns true when `role` may make the call: the role is known, a rule matches, and the role is at least the rule's minimum.
+ * No role, or a route the table does not list, is a denial.
+ */
 export function can(rules: PermissionRule[], role: Role | undefined, method: string, path: string, query: QueryValues = {}): boolean {
   if (!role) return false;
   const needed = requiredRole(rules, method, path, query);

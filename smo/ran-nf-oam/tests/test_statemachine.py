@@ -23,12 +23,14 @@ from app.statemachine import (
 # ------------------------------------------------------------ WriteConfigJob
 
 def test_write_config_job_all_applied_completes():
+    """Every sub-change applied aggregates to COMPLETED."""
     event = aggregate_event(["APPLIED", "APPLIED", "APPLIED"])
     assert event == JobEvent.AGGREGATE_ALL_APPLIED
     assert WRITE_CONFIG_JOB_FSM.fire(JobState.PROCESSING, event) == JobState.COMPLETED
 
 
 def test_write_config_job_all_rejected_fails():
+    """Every sub-change rejected aggregates to FAILED."""
     event = aggregate_event(["REJECTED", "REJECTED"])
     assert event == JobEvent.AGGREGATE_ALL_REJECTED
     assert WRITE_CONFIG_JOB_FSM.fire(JobState.PROCESSING, event) == JobState.FAILED
@@ -45,6 +47,7 @@ def test_write_config_job_mixed_is_partial_success():
 
 
 def test_write_config_job_precheck_failure_never_reaches_processing():
+    """A failed pre-check ends the job FAILED, and a FAILED job takes no further event."""
     new_state = WRITE_CONFIG_JOB_FSM.fire(JobState.PENDING, JobEvent.PRECHECK_FAIL)
     assert new_state == JobState.FAILED
     with pytest.raises(IllegalTransition):
@@ -54,6 +57,7 @@ def test_write_config_job_precheck_failure_never_reaches_processing():
 # ------------------------------------------------------------ SoftwareManagementJob
 
 def test_software_management_full_sequence():
+    """A software job goes through download, install and activate to COMPLETED."""
     s = SOFTWARE_MANAGEMENT_FSM.fire(SwmState.PENDING, SwmEvent.START)
     assert s == SwmState.IN_PROGRESS
     s = SOFTWARE_MANAGEMENT_FSM.fire(s, SwmEvent.DOWNLOAD_OK)
@@ -63,6 +67,7 @@ def test_software_management_full_sequence():
 
 
 def test_software_management_phase_failure():
+    """A failure in any phase ends a software job FAILED."""
     s = SOFTWARE_MANAGEMENT_FSM.fire(SwmState.PENDING, SwmEvent.START)
     s = SOFTWARE_MANAGEMENT_FSM.fire(s, SwmEvent.PHASE_FAILED)
     assert s == SwmState.FAILED
@@ -71,11 +76,13 @@ def test_software_management_phase_failure():
 # ------------------------------------------------------------ O1AdaptorEndpoint health
 
 def test_endpoint_discovered_to_active_on_first_heartbeat():
+    """The first heartbeat moves a DISCOVERED endpoint to ACTIVE."""
     s = ENDPOINT_HEALTH_FSM.fire(EndpointHealth.DISCOVERED, EndpointEvent.HEARTBEAT)
     assert s == EndpointHealth.ACTIVE
 
 
 def test_endpoint_degrades_then_recovers():
+    """Missed heartbeats degrade an ACTIVE endpoint, and a heartbeat brings it back to ACTIVE."""
     s = ENDPOINT_HEALTH_FSM.fire(EndpointHealth.ACTIVE, EndpointEvent.MISSED_HEARTBEATS)
     assert s == EndpointHealth.DEGRADED
     s = ENDPOINT_HEALTH_FSM.fire(s, EndpointEvent.HEARTBEAT)

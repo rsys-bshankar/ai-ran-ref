@@ -24,6 +24,7 @@ UP, DOWN = {"POWER_UP", "UPTILT"}, {"POWER_DOWN", "DOWNTILT"}
 
 
 def _correct(scenario: str, fault: str, plan: dict[str, str], neighbours: list[str]) -> bool:
+    """True when the plan is what the scenario calls for (see the module description); on a HEALTHY scenario the plan must be empty."""
     if scenario == "WEAK_COVERAGE":
         return plan.get(fault) in UP
     if scenario == "OVERSHOOT":
@@ -34,6 +35,11 @@ def _correct(scenario: str, fault: str, plan: dict[str, str], neighbours: list[s
 
 
 def emulate(model: CoverageModel, records: list[dict]) -> tuple[bool, dict]:
+    """Replays the optimiser over every window of every Digital Twin cluster and returns (passed, metrics).
+
+    Windows with a cell below MIN_REPORTS are skipped. Every move is allowed for every cell, so the check scores the model, not the guards.
+    Passes when there is at least one faulty window, the accuracy is at least PASS_RATE and no healthy window got a move.
+    """
     clusters: dict[str, list[dict]] = defaultdict(list)
     for r in records:
         p = r.get("payload", r)

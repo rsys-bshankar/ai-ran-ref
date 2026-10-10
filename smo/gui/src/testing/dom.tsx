@@ -1,5 +1,8 @@
-// A small way to render a component in jsdom for a Vitest test, without a testing library: mount it, type into inputs, click, wait for the DOM to settle.
-// A test file that uses it starts with `// @vitest-environment jsdom`.
+/**
+ * A small way to render a component in jsdom for a Vitest test, without a testing library: mount it, type into inputs, click, wait for the DOM to settle.
+ * A test file that uses it starts with `// @vitest-environment jsdom`. Every helper runs inside React's `act`, so state updates are applied before the call returns;
+ * `settle` additionally lets pending promises and zero-delay timers (fetch mocks, react-query) finish. Test code only; not part of the production bundle.
+ */
 
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -10,6 +13,9 @@ export interface Mounted { container: HTMLElement; unmount: () => void }
 
 const mounted: { root: Root; container: HTMLElement }[] = [];
 
+/**
+ * Renders `element` into a new container attached to the document and waits for the first render. The container is remembered so `cleanup` removes it.
+ */
 export async function mount(element: ReactElement): Promise<Mounted> {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -19,6 +25,7 @@ export async function mount(element: ReactElement): Promise<Mounted> {
   return { container, unmount: () => { act(() => root.unmount()); container.remove(); } };
 }
 
+/** Unmounts and removes everything `mount` made; call it in `afterEach`. */
 export function cleanup(): void {
   for (const { root, container } of mounted.splice(0)) {
     act(() => root.unmount());
@@ -31,11 +38,17 @@ export async function settle(times = 4): Promise<void> {
   for (let i = 0; i < times; i++) await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 }
 
+/**
+ * Returns the first element matching `selector` whose trimmed text equals `text` (or matches the regular expression), or null.
+ */
 export function byText<T extends HTMLElement = HTMLElement>(root: ParentNode, selector: string, text: string | RegExp): T | null {
   const nodes = Array.from(root.querySelectorAll<T>(selector));
   return nodes.find((n) => (typeof text === "string" ? n.textContent?.trim() === text : text.test(n.textContent ?? ""))) ?? null;
 }
 
+/**
+ * Sets an input's value and fires an `input` event. It goes through the native value setter, because React ignores a plain assignment to `value` on a controlled input.
+ */
 export async function type(input: HTMLInputElement, value: string): Promise<void> {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
   await act(async () => {

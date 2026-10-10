@@ -29,6 +29,9 @@ def _replica(url, rate, burst, clock):
 
 @needs_postgres
 def test_the_statement_is_a_token_bucket_on_postgres(database):
+    """On Postgres the one-statement bucket allows the burst, refuses without taking tokens, refills with time up to the burst, keeps a separate
+    bucket per caller and records whether the last call was allowed.
+    """
     clock = Clock()
     limiter, engine = _replica(database[0], rate=2.0, burst=4.0, clock=clock)
     assert [limiter.take("a") for _ in range(4)] == [None] * 4
@@ -46,6 +49,9 @@ def test_the_statement_is_a_token_bucket_on_postgres(database):
 
 @needs_postgres
 def test_replicas_with_their_own_connections_share_one_budget_under_concurrency(database):
+    """Three replicas with their own connections, under concurrent threads, share one budget (120 attempts against a burst of 40) and lose no
+    update on the caller's row.
+    """
     clock = Clock()
     replicas = [_replica(database[0], rate=0.000001, burst=40.0, clock=clock) for _ in range(3)]
     allowed, lock = [], threading.Lock()
@@ -64,6 +70,7 @@ def test_replicas_with_their_own_connections_share_one_budget_under_concurrency(
 
 @needs_postgres
 def test_purge_removes_the_buckets_that_are_full_again_and_not_the_others(database):
+    """`purge` removes the buckets that have refilled to full and keeps the others."""
     clock = Clock()
     limiter, engine = _replica(database[0], rate=1.0, burst=2.0, clock=clock)
     limiter.take("idle")

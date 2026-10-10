@@ -1,3 +1,10 @@
+/**
+ * The Safeguards page (route /safeguards, AI-10.x and AI-11.4): what holds an rApp in check at RAN NF OAM. Tabs: the instances with their stop switch, limits and approval policy; the refusals the platform recorded; and the watchers that are told about
+ * refusals. Every signed-in role may read. Stopping an instance is an operator call; resuming it, setting or removing the limits, holding its changes for approval and managing watchers are admin calls, all drawn through `Can` and `ActionButton`
+ * from the BFF's permission table (the BFF checks again). The safeguards of an instance are read through rApp Management (`/instances/<id>/safeguards`), which names the invoker id RAN NF OAM keys the limits and the stop by.
+ * Covered by `Safeguards.test.tsx`.
+ */
+
 import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
@@ -7,6 +14,7 @@ import { REFUSAL_CODES, REFUSAL_MEANING, approvalPolicyForm, approvalPolicyPaylo
 
 const TABS = ["rapps", "refusals", "watchers"] as const;
 
+/** The page: header and the three tabs, kept in the URL hash. */
 export function Safeguards() {
   const [tab, setTab] = useHashTab(TABS, "rapps");
   return (
@@ -24,6 +32,9 @@ export function Safeguards() {
 
 // ---------------------------------------------------------------- rApp limits and the stop switch
 
+/**
+ * The first tab: a table with one row per rApp instance (up to 200) and the list of everything that is stopped at RAN NF OAM.
+ */
 function RappLimits() {
   const instances = useSmo<InstanceSummary[]>("/rapp-mgmt/instances", { limit: 200 });
   return (
@@ -49,6 +60,10 @@ function RappLimits() {
   );
 }
 
+/**
+ * One instance: its stop status, limits and approval policy as read from its safeguards, and the buttons to stop or resume it, set limits, hold changes for approval, stop holding and remove limits. A terminated instance has no invoker credential, so nothing is offered for it.
+ * The dialogs open from here and are drawn inside the row.
+ */
 function InstanceRow({ instance }: { instance: InstanceSummary }) {
   const sg = useSmo<InstanceSafeguards>(`/rapp-mgmt/instances/${instance.instanceId}/safeguards`);
   const [dialog, setDialog] = useState<"stop" | "limits" | "approval" | null>(null);
@@ -96,6 +111,9 @@ function InstanceRow({ instance }: { instance: InstanceSummary }) {
   );
 }
 
+/**
+ * The dialog that stops an instance (PUT /instances/<id>/kill) with an optional reason that is shown to everyone and carried in the refusal events.
+ */
 function StopDialog({ instanceId, onClose }: { instanceId: string; onClose: () => void }) {
   const [reason, setReason] = useState("");
   const action = useSmoAction();
@@ -116,6 +134,9 @@ function StopDialog({ instanceId, onClose }: { instanceId: string; onClose: () =
   );
 }
 
+/**
+ * The dialog that sets an rApp's limits. Saving replaces the whole set at RAN NF OAM, so a blank field removes that limit; the values are checked by `limitsPayload` before sending.
+ */
 function LimitsDialog({ invokerId, current, onClose }: { invokerId: string; current: InstanceSafeguards["limits"]; onClose: () => void }) {
   const [form, setForm] = useState(limitsForm(current));
   const [problem, setProblem] = useState<string | null>(null);
@@ -143,6 +164,9 @@ function LimitsDialog({ invokerId, current, onClose }: { invokerId: string; curr
   );
 }
 
+/**
+ * The dialog that holds an rApp's config jobs for approval (AI-11.4): how long a request may wait, whether a lapsed request expires or is rejected (none approves by itself) and whether one or two different people must approve.
+ */
 function ApprovalPolicyDialog({ invokerId, current, onClose }: { invokerId: string; current: ApprovalPolicy | null; onClose: () => void }) {
   const [form, setForm] = useState(approvalPolicyForm(current));
   const [problem, setProblem] = useState<string | null>(null);
@@ -178,6 +202,7 @@ function ApprovalPolicyDialog({ invokerId, current, onClose }: { invokerId: stri
   );
 }
 
+/** Everything stopped at RAN NF OAM by invoker id, including rApps that are not instances of this platform. */
 function Stopped() {
   const stopped = useSmo<RappKill[]>("/ran-nf-oam/rapp-kill", { limit: 200 });
   return (
@@ -195,6 +220,9 @@ function Stopped() {
 
 // ---------------------------------------------------------------- refusals
 
+/**
+ * The refusals RAN NF OAM recorded (newest first, up to 100), filterable by reason and invoker. Repeats are all recorded but announced to watchers once a minute, which the text on the card says.
+ */
 function Refusals() {
   const [code, setCode] = useState<RefusalCode | "">("");
   const [invoker, setInvoker] = useState("");
@@ -222,6 +250,7 @@ function Refusals() {
 
 // ---------------------------------------------------------------- watchers (subscriptions)
 
+/** The webhooks that are told about refusals, with Add (admin) and Remove. */
 function Watchers() {
   const subs = useSmo<SafeguardSubscription[]>("/ran-nf-oam/safeguard-subscriptions", { limit: 200 });
   const [adding, setAdding] = useState(false);
@@ -241,6 +270,9 @@ function Watchers() {
   );
 }
 
+/**
+ * The dialog that adds a watcher: a callback URL (refused by the backend when it points at a private or internal address) and the refusal reasons to be told about, none ticked meaning all.
+ */
 function AddWatcher({ onClose }: { onClose: () => void }) {
   const [uri, setUri] = useState("");
   const [codes, setCodes] = useState<RefusalCode[]>([]);

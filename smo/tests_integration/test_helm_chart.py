@@ -31,10 +31,12 @@ def _compose_services():
 
 
 def test_every_compose_service_is_a_chart_module_and_the_other_way_round():
+    """The chart's modules are exactly the services in docker-compose.yml."""
     assert set(_compose_services()) == set(VALUES["modules"])
 
 
 def test_a_module_runs_the_image_the_release_publishes_for_it():
+    """Each chart module's image is the one `scripts/release_images.py` publishes for the same build context and module argument."""
     import importlib.util
     spec = importlib.util.spec_from_file_location("release_images", SMO_ROOT / "scripts" / "release_images.py")
     release_images = importlib.util.module_from_spec(spec)
@@ -47,6 +49,9 @@ def test_a_module_runs_the_image_the_release_publishes_for_it():
 
 
 def test_database_and_enrollment_follow_the_compose_secrets():
+    """A chart module has database access exactly when its compose service has a database password secret (its own role's or the owner's), and has
+    the enrollment secret exactly when compose gives it that secret.
+    """
     for name, service in _compose_services().items():
         secrets = set(service.get("secrets") or [])
         module = _modules()[name]
@@ -56,6 +61,7 @@ def test_database_and_enrollment_follow_the_compose_secrets():
 
 
 def test_an_rapp_never_has_the_enrollment_secret_and_says_it_is_an_rapp():
+    """A module that declares itself an rApp never holds the enrollment secret, and the chart and compose agree on which modules are rApps."""
     for name, module in _modules().items():
         if module["env"].get("SMO_IDENTITY_KIND") == "rapp":
             assert module["enrollment"] is False, f"{name} is an rApp and must not hold the enrollment secret"
@@ -64,12 +70,14 @@ def test_an_rapp_never_has_the_enrollment_secret_and_says_it_is_an_rapp():
 
 
 def test_the_workers_run_what_compose_runs():
+    """A chart module is a worker exactly when its compose command is the shared worker."""
     for name, service in _compose_services().items():
         command = service.get("command")
         assert (_modules()[name]["kind"] == "worker") == (command == ["python", "-m", "smo_shared.worker"]), name
 
 
 def test_each_module_env_the_chart_sets_is_the_one_compose_sets():
+    """Every environment value the chart sets for a module equals compose's, except the ones compose takes from an operator setting."""
     for name, service in _compose_services().items():
         compose_env = {k: str(v) for k, v in (service.get("environment") or {}).items() if k in _modules()[name]["env"]}
         for key, value in compose_env.items():
@@ -86,6 +94,7 @@ def _render(*args: str) -> list[dict]:
 
 @helm
 def test_lint_is_clean():
+    """`helm lint` is clean with default values. Needs helm."""
     result = subprocess.run(["helm", "lint", str(CHART), "--kube-version", "1.30.0"], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
 
@@ -104,6 +113,9 @@ def _secret_sources(pod: dict) -> list[dict]:
 
 @helm
 def test_the_default_install_renders_a_deployment_per_module_and_no_rapp_mounts_the_enrollment_secret():
+    """A default render has one Deployment per module, and each pod mounts the enrollment secret and the database password (its own role's when it
+    has one) exactly as its module settings say. Needs helm.
+    """
     docs = _render()
     deployments = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Deployment"}
     assert set(deployments) == set(VALUES["modules"])
@@ -124,6 +136,9 @@ def test_the_default_install_renders_a_deployment_per_module_and_no_rapp_mounts_
 @helm
 def test_no_pod_gets_a_service_account_token():
     # the token mounts under /var/run/secrets, which is inside the /run/secrets mount of a read-only root filesystem: the pod would not start
+    """No pod automounts a service account token, which would mount under /var/run/secrets inside the /run/secrets mount of a read-only root
+    filesystem and keep the pod from starting. Needs helm.
+    """
     for d in _render():
         if d["kind"] in ("Deployment", "StatefulSet", "Job"):
             assert d["spec"]["template"]["spec"]["automountServiceAccountToken"] is False, d["metadata"]["name"]
@@ -131,6 +146,7 @@ def test_no_pod_gets_a_service_account_token():
 
 @helm
 def test_every_module_with_a_database_waits_for_the_schema():
+    """A Deployment has the `wait-for-schema` init container exactly when its module has a database. Needs helm."""
     for d in _render():
         if d["kind"] != "Deployment":
             continue
@@ -141,6 +157,7 @@ def test_every_module_with_a_database_waits_for_the_schema():
 
 @helm
 def test_install_runs_the_migration_as_a_job_and_upgrade_as_a_pre_upgrade_hook():
+    """The migration is one plain Job on install and a `pre-upgrade` hook Job on upgrade. Needs helm."""
     install = [d for d in _render() if d["kind"] == "Job"]
     assert [j["metadata"]["name"] for j in install] == ["migrate"] and "annotations" not in install[0]["metadata"]
     result = subprocess.run(["helm", "template", "smo", str(CHART), "-n", "smo", "--kube-version", "1.30.0", "--is-upgrade"], capture_output=True, text=True)
@@ -151,6 +168,7 @@ def test_install_runs_the_migration_as_a_job_and_upgrade_as_a_pre_upgrade_hook()
 
 @helm
 def test_the_pull_policy_of_the_smo_images_does_not_reach_the_database_image():
+    """`image.pullPolicy` applies to the SMO images and not to the database image, which stays IfNotPresent. Needs helm."""
     docs = _render("--set", "image.pullPolicy=Never")
     postgres = next(d for d in docs if d["kind"] == "StatefulSet")
     assert postgres["spec"]["template"]["spec"]["containers"][0]["imagePullPolicy"] == "IfNotPresent"
@@ -160,6 +178,9 @@ def test_the_pull_policy_of_the_smo_images_does_not_reach_the_database_image():
 
 @helm
 def test_an_external_database_drops_the_bundled_one_and_needs_a_host():
+    """With an external database the chart renders no Postgres StatefulSet, every module's URL points at the external host as its own role with the
+    given SSL mode, and omitting the host fails to render. Needs helm.
+    """
     docs = _render("--set", "postgres.enabled=false", "--set", "postgres.external.host=db.example.com", "--set", "postgres.external.sslmode=require")
     assert not [d for d in docs if d["kind"] == "StatefulSet"]
     urls = {e["value"] for d in docs if d["kind"] == "Deployment" for e in d["spec"]["template"]["spec"]["containers"][0].get("env") or [] if e["name"] == "SMO_DATABASE_URL"}
@@ -172,6 +193,9 @@ def test_an_external_database_drops_the_bundled_one_and_needs_a_host():
 
 @helm
 def test_cnpg_backup_is_a_scheduled_backup_of_a_named_cluster_and_only_when_asked_for():
+    """A CloudNativePG ScheduledBackup is rendered only when asked for, names the cluster, and rendering fails without a cluster name or together
+    with the bundled database. Needs helm.
+    """
     external = ["--set", "postgres.enabled=false", "--set", "postgres.external.host=smo-pg-rw"]
     assert not [d for d in _render(*external) if d["kind"] == "ScheduledBackup"]
     docs = _render(*external, "--set", "postgres.cnpgBackup.enabled=true", "--set", "postgres.cnpgBackup.cluster=smo-pg")
@@ -192,6 +216,9 @@ def _database_urls(*args: str) -> set[str]:
 
 @helm
 def test_an_external_database_takes_target_session_attrs_and_a_list_of_hosts():
+    """An external database accepts `targetSessionAttrs` and a comma-separated host list, which goes in the URL's query (a comma in the host part
+    would not parse) in a form SQLAlchemy's dialect accepts. Needs helm.
+    """
     one = _database_urls("--set", "postgres.external.host=db", "--set", "postgres.external.targetSessionAttrs=read-write")
     assert "postgresql+psycopg://smo_onboarding@db:5432/smo?sslmode=prefer&target_session_attrs=read-write" in one
     # a list of hosts goes in the query, which SQLAlchemy hands to the driver unchanged (a comma in the host part would not parse)
@@ -209,6 +236,7 @@ def test_an_external_database_takes_target_session_attrs_and_a_list_of_hosts():
 
 @helm
 def test_an_existing_secret_means_the_chart_makes_none():
+    """With `secrets.existingSecret` the chart makes no `smo-secrets` and the pods read the named one. Needs helm."""
     docs = _render("--set", "secrets.existingSecret=mine")
     assert not [d for d in docs if d["kind"] == "Secret" and d["metadata"]["name"] == "smo-secrets"]
     names = {src["secretName"] for d in docs if d["kind"] in ("Deployment", "StatefulSet", "Job")
@@ -218,6 +246,9 @@ def test_an_existing_secret_means_the_chart_makes_none():
 
 @helm
 def test_the_role_passwords_are_a_hook_secret_of_their_own_that_the_migrate_job_and_the_module_mount():
+    """The per-module role passwords are a hook Secret created before the migration Job, with one long key per role, that the migrate Job (which
+    runs the migration and then the roles script) and the modules mount. Needs helm.
+    """
     docs = _render()
     roles = {m["databaseRole"] for m in _modules().values() if m.get("databaseRole")}
     assert roles >= {"onboarding", "mlmr"}
@@ -245,6 +276,7 @@ def test_the_role_passwords_are_a_hook_secret_of_their_own_that_the_migrate_job_
 
 @helm
 def test_with_roles_off_every_module_connects_as_the_owner_and_no_role_secret_is_made():
+    """With `databaseRoles.enabled=false` no role Secret is made and every module connects as the owner with the owner's password file. Needs helm."""
     docs = _render("--set", "databaseRoles.enabled=false")
     assert not [d for d in docs if d["kind"] == "Secret" and d["metadata"]["name"] == "smo-role-secrets"]
     for d in docs:
@@ -257,6 +289,7 @@ def test_with_roles_off_every_module_connects_as_the_owner_and_no_role_secret_is
 
 @helm
 def test_roles_with_an_existing_secret_are_read_from_it_and_not_made():
+    """With `databaseRoles.existingSecret` the chart makes no role Secret and the pods mount the named one. Needs helm."""
     docs = _render("--set", "databaseRoles.existingSecret=theirs")
     assert not [d for d in docs if d["kind"] == "Secret" and d["metadata"]["name"] == "smo-role-secrets"]
     names = {src["secretName"] for d in docs if d["kind"] in ("Deployment", "Job") for src in _secret_sources(d["spec"].get("template", {}).get("spec", {}))}
@@ -265,6 +298,9 @@ def test_roles_with_an_existing_secret_are_read_from_it_and_not_made():
 
 @helm
 def test_the_optional_templates_render_when_switched_on():
+    """The PodDisruptionBudget, HorizontalPodAutoscaler and Ingress render when switched on, the gateway gets its public base URL, and the modules
+    whose single pod holds a volume get no budget. Needs helm.
+    """
     docs = _render("--set", "podDisruptionBudget.enabled=true", "--set", "autoscaling.enabled=true",
                    "--set", "ingress.enabled=true", "--set", "ingress.gui.host=gui.example.com", "--set", "ingress.r1.host=r1.example.com",
                    "--set", "ingress.r1.tlsSecretName=r1-tls", "--set", "ingress.r1.publicBaseUrl=https://r1.example.com")
@@ -324,6 +360,7 @@ def test_the_database_pod_keeps_the_labels_release_0_4_0_gave_it_so_the_upgrade_
 
 @helm
 def test_credential_delivery_is_off_by_default_and_gives_no_pod_a_service_account():
+    """By default the chart creates no ServiceAccount, Role or RoleBinding and rApp Management has no credential-delivery setting. Needs helm."""
     docs = _render()
     assert not [d for d in docs if d["kind"] in ("ServiceAccount", "Role", "RoleBinding")]
     rapp_mgmt = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "rapp-mgmt")
@@ -333,6 +370,9 @@ def test_credential_delivery_is_off_by_default_and_gives_no_pod_a_service_accoun
 
 @helm
 def test_credential_delivery_gives_only_rapp_mgmt_a_token_and_a_role_that_cannot_read_secrets():
+    """With Kubernetes credential delivery only rApp Management gets a service account, its token is projected into one directory outside the
+    secrets mount and never automounted, and the Role it is bound to cannot read Secrets. Needs helm.
+    """
     docs = _render("--set", "rappCredentials.delivery=kubernetes")
     pods = {d["metadata"]["name"]: d["spec"]["template"]["spec"] for d in docs if d["kind"] == "Deployment"}
     assert [n for n, p in pods.items() if p.get("serviceAccountName")] == ["rapp-mgmt"]
@@ -358,6 +398,7 @@ def _deployment(docs: list[dict], name: str) -> dict:
 
 @helm
 def test_traces_and_logs_are_off_by_default():
+    """By default the chart renders no Tempo, Loki, Grafana or Fluent Bit and no module has a tracing endpoint. Needs helm."""
     docs = _render()
     assert not [d for d in docs if d["metadata"]["name"] in ("tempo", "loki", "grafana", "fluent-bit")]
     for d in docs:
@@ -367,6 +408,9 @@ def test_traces_and_logs_are_off_by_default():
 
 @helm
 def test_tempo_loki_grafana_and_fluent_bit_render_when_switched_on_and_the_modules_send_spans_to_tempo():
+    """With the observability components switched on they render with their Services, the modules send spans to the bundled Tempo at the configured
+    sample ratio (the static GUI containers do not), and the Fluent Bit config reads the SMO pod logs. Needs helm.
+    """
     docs = _render("--set", "observability.tempo.enabled=true", "--set", "observability.loki.enabled=true",
                    "--set", "observability.grafana.enabled=true", "--set", "observability.fluentBit.enabled=true",
                    "--set", "tracing.sampleRatio=0.25")
@@ -386,11 +430,15 @@ def test_tempo_loki_grafana_and_fluent_bit_render_when_switched_on_and_the_modul
 
 @helm
 def test_an_explicit_tracing_endpoint_wins_over_the_bundled_tempo():
+    """An explicit `tracing.endpoint` is used by the modules even when the bundled Tempo is on. Needs helm."""
     docs = _render("--set", "tracing.endpoint=http://collector.obs:4318", "--set", "observability.tempo.enabled=true")
     assert _env_of(_deployment(docs, "dme"))["SMO_OTEL_ENDPOINT"] == "http://collector.obs:4318"
 
 
 def test_the_observability_configuration_files_parse_and_compose_mounts_them():
+    """The Tempo, Loki and Grafana data source files parse, link the two data sources to each other, and are the files compose mounts, with every
+    observability service still behind a profile.
+    """
     files = CHART / "files" / "observability"
     for name in ("tempo.yaml", "loki.yaml", "grafana-datasources.yaml"):
         assert isinstance(yaml.safe_load((files / name).read_text()), dict), name
@@ -406,6 +454,9 @@ def test_the_observability_configuration_files_parse_and_compose_mounts_them():
 # ---------------------------------------------------------------- PR-SEC-5: the key of the GUI session token, and the gateway's introspection cache
 
 def test_the_chart_has_a_key_secret_reference_for_the_gui_and_documents_it():
+    """The chart has a `gui.jwtKeySecretRef` (off by default) that its template turns into the key file variable and a mount, and the chart README
+    documents it.
+    """
     assert VALUES["gui"]["jwtKeySecretRef"] == {}                                    # off by default
     template = (CHART / "templates" / "modules.yaml").read_text()
     assert "name: GUI_JWT_PRIVATE_KEY_FILE" in template and 'default "private-key.pem"' in template
@@ -414,6 +465,7 @@ def test_the_chart_has_a_key_secret_reference_for_the_gui_and_documents_it():
 
 
 def test_the_gateways_introspection_cache_is_off_in_the_chart_and_in_compose_by_default():
+    """The gateway's introspection cache is off (0 seconds) by default in both the chart and compose, with the same maximum entry count."""
     chart_env = _modules()["r1-termination"]["env"]
     compose_env = COMPOSE["services"]["r1-termination"]["environment"]
     assert chart_env["R1_INTROSPECTION_CACHE_SECONDS"] == "0" and compose_env["R1_INTROSPECTION_CACHE_SECONDS"] == "${R1_INTROSPECTION_CACHE_SECONDS:-0}"
@@ -421,6 +473,7 @@ def test_the_gateways_introspection_cache_is_off_in_the_chart_and_in_compose_by_
 
 
 def test_compose_passes_the_gui_signing_settings_with_the_old_behaviour_as_the_default():
+    """Compose passes the GUI signing algorithm and key file settings, defaulting to the earlier behaviour (HS256, no key files)."""
     env = COMPOSE["services"]["gui-bff"]["environment"]
     assert env["GUI_JWT_ALGORITHM"] == "${GUI_JWT_ALGORITHM:-HS256}"
     assert env["GUI_JWT_PRIVATE_KEY_FILE"] == "${GUI_JWT_PRIVATE_KEY_FILE:-}" and env["GUI_JWT_PREVIOUS_KEY_FILES"] == "${GUI_JWT_PREVIOUS_KEY_FILES:-}"
@@ -428,6 +481,9 @@ def test_compose_passes_the_gui_signing_settings_with_the_old_behaviour_as_the_d
 
 @helm
 def test_the_gui_key_secret_is_mounted_and_named_only_when_set():
+    """The GUI backend mounts and names the signing key Secret only when `gui.jwtKeySecretRef.name` is set, and then sets the key file path and the
+    given algorithm. Needs helm.
+    """
     off = _deployment(_render(), "gui-bff")["spec"]["template"]["spec"]
     assert "GUI_JWT_PRIVATE_KEY_FILE" not in {e["name"] for e in off["containers"][0]["env"]}
     assert "gui-jwt" not in {v["name"] for v in off["volumes"]}

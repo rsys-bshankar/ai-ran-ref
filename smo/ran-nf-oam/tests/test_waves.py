@@ -71,6 +71,7 @@ def _alarm(fleet, ref, severity="major", hours=1):
 
 
 def test_a_job_without_wave_settings_is_one_wave(client, fleet):
+    """A job with no wave settings is one wave and behaves as a job always did."""
     job = _write(client)
     view = _job(client, job["jobId"])
     assert view["status"] == "COMPLETED" and view["waveCount"] == 1 and view["currentWave"] == 1 and view["waveSize"] is None
@@ -78,6 +79,7 @@ def test_a_job_without_wave_settings_is_one_wave(client, fleet):
 
 
 def test_the_elements_are_split_into_waves_in_request_order_and_run_wave_by_wave(client, fleet):
+    """Elements are cut into waves of `waveSize` in request order, and each wave is dispatched in turn."""
     job = _write(client, waveSize=2)
     assert job["status"] == "COMPLETED" and job["waveCount"] == 2
     view = _job(client, job["jobId"])
@@ -86,6 +88,7 @@ def test_the_elements_are_split_into_waves_in_request_order_and_run_wave_by_wave
 
 
 def test_every_change_of_one_element_stays_in_its_wave(client, fleet):
+    """All changes to one element go in the wave of its first appearance, even when other elements come between them."""
     changes = [{"managedElementRef": "ME-1", "attributeChanges": {"txPower": 20}}, {"managedElementRef": "ME-2", "attributeChanges": {"txPower": 20}},
                {"managedElementRef": "ME-1", "attributeChanges": {"txPower": 21}}]
     resp = client.post("/config-jobs", json={"requestedBy": "operator", "scope": "cell", "changes": changes, "waveSize": 1})
@@ -94,6 +97,7 @@ def test_every_change_of_one_element_stays_in_its_wave(client, fleet):
 
 
 def test_a_dry_run_shows_the_waves(client, fleet):
+    """A dry run lists the waves it would run and sends nothing."""
     resp = client.post("/config-jobs", json={"requestedBy": "operator", "scope": "cell", "dryRun": True, "waveSize": 3,
                                               "changes": [{"managedElementRef": r, "attributeChanges": {"txPower": 20}} for r in ELEMENTS]})
     assert resp.status_code == 200 and resp.json()["waves"] == [["ME-1", "ME-2", "ME-3"], ["ME-4"]] and fleet["edits"] == []
@@ -101,12 +105,14 @@ def test_a_dry_run_shows_the_waves(client, fleet):
 
 @pytest.mark.parametrize("extra", [{"waveSize": 0}, {"wavePauseSeconds": -1}, {"gateMaxNewAlarms": -1}, {"onGateFailure": "explode"}])
 def test_wave_settings_are_validated(client, fleet, extra):
+    """A wave size of zero, a negative pause or gate limit, or an unknown gate-failure action is 422."""
     resp = client.post("/config-jobs", json={"requestedBy": "operator", "scope": "cell", "changes": [
         {"managedElementRef": "ME-1", "attributeChanges": {"txPower": 20}}], **extra})
     assert resp.status_code == 422
 
 
 def test_a_rejected_sub_change_fails_the_gate_and_halts_before_the_next_wave(client, fleet):
+    """A rejected sub-change fails the gate: the job halts with GATE_FAILED after wave 1, wave 2 is never sent and its sub-changes stay PENDING."""
     fleet["fail"].add("ME-2")
     job = _write(client, waveSize=2)
     assert job["status"] == "HALTED" and job["haltedReason"] == "GATE_FAILED" and job["wave"] == 1
@@ -117,6 +123,7 @@ def test_a_rejected_sub_change_fails_the_gate_and_halts_before_the_next_wave(cli
 
 
 def test_continue_runs_the_next_wave_and_the_job_ends_with_what_it_did(client, fleet):
+    """Continuing a halted job runs the remaining wave, and the job ends PARTIAL_SUCCESS because of the earlier rejection."""
     fleet["fail"].add("ME-2")
     job = _write(client, waveSize=2)
     fleet["fail"].clear()
@@ -126,6 +133,7 @@ def test_continue_runs_the_next_wave_and_the_job_ends_with_what_it_did(client, f
 
 
 def test_new_critical_or_major_alarms_on_the_wave_fail_the_gate_unless_within_the_limit(client, fleet):
+    """New critical or major alarms on the wave's elements fail the gate beyond `gateMaxNewAlarms`; a minor alarm does not."""
     _alarm(fleet, "ME-2", "minor")
     assert _write(client, waveSize=2)["status"] == "COMPLETED"                                 # a minor alarm is not a gate failure
     _alarm(fleet, "ME-2")
@@ -135,12 +143,16 @@ def test_new_critical_or_major_alarms_on_the_wave_fail_the_gate_unless_within_th
 
 
 def test_an_alarm_on_an_element_outside_the_wave_or_from_before_it_is_not_counted(client, fleet):
+    """The gate counts only alarms raised since the wave started on that wave's own elements."""
     _alarm(fleet, "ME-1", hours=-1)                                                           # there before the wave started
     _alarm(fleet, "ME-3")                                                                     # new, but ME-3 is in wave 2
     assert _write(client, waveSize=2)["status"] == "COMPLETED"
 
 
 def test_abort_ends_a_halted_job_with_the_waves_that_have_not_run_rejected(client, fleet):
+    """Aborting a halted job rejects the waves that did not run as WAVE_NOT_RUN, ends it from what it did, and an ended job cannot be continued
+    (409).
+    """
     fleet["fail"].add("ME-2")
     job = _write(client, waveSize=2)
     resp = _act(client, job["jobId"], "abort")
@@ -152,6 +164,7 @@ def test_abort_ends_a_halted_job_with_the_waves_that_have_not_run_rejected(clien
 
 
 def test_the_pause_holds_the_job_until_it_has_elapsed(client, fleet):
+    """A job with a wave pause halts as WAVE_PAUSE with a next-wave time; continuing early is 409 WAVE_PAUSE_NOT_ELAPSED unless forced."""
     job = _write(client, waveSize=2, wavePauseSeconds=3600)
     assert job["status"] == "HALTED" and job["haltedReason"] == "WAVE_PAUSE" and fleet["edits"] == ["ME-1", "ME-2"]
     assert _job(client, job["jobId"])["nextWaveAt"] is not None
@@ -162,6 +175,7 @@ def test_the_pause_holds_the_job_until_it_has_elapsed(client, fleet):
 
 
 def _make_due(fleet, job_id):
+    """Sets a job's next-wave time to a second ago so the sweep treats its pause as elapsed."""
     db = fleet["db"]()
     row = db.get(WriteConfigJob, uuid.UUID(job_id))
     row.next_wave_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=1)
@@ -170,6 +184,7 @@ def _make_due(fleet, job_id):
 
 
 def test_advance_due_runs_the_jobs_whose_pause_has_elapsed_and_only_those(client, fleet):
+    """The advance-due sweep runs only the jobs whose pause has elapsed."""
     due = _write(client, waveSize=2, wavePauseSeconds=3600)["jobId"]
     waiting = _write(client, waveSize=2, wavePauseSeconds=3600)["jobId"]
     gated = None
@@ -180,6 +195,7 @@ def test_advance_due_runs_the_jobs_whose_pause_has_elapsed_and_only_those(client
 
 
 def test_an_operator_halt_stops_a_pause_from_going_on_by_itself(client, fleet):
+    """An operator halt turns a pause into OPERATOR_HALT so the sweep leaves it, while an explicit continue still goes on."""
     job = _write(client, waveSize=2, wavePauseSeconds=3600)["jobId"]
     assert _act(client, job, "halt").json()["haltedReason"] == "OPERATOR_HALT"
     _make_due(fleet, job)
@@ -188,6 +204,7 @@ def test_an_operator_halt_stops_a_pause_from_going_on_by_itself(client, fleet):
 
 
 def test_halt_continue_and_abort_need_a_halted_job(client, fleet):
+    """Halt, continue and abort are 409 for a job that is not halted and 404 for an unknown job."""
     done = _write(client)["jobId"]
     for action in ("continue", "halt", "abort"):
         assert _act(client, done, action).status_code == 409
@@ -195,6 +212,9 @@ def test_halt_continue_and_abort_need_a_halted_job(client, fleet):
 
 
 def test_a_failed_gate_with_revert_undoes_the_applied_waves_through_a_rollback_job(client, fleet):
+    """With `onGateFailure: revert` a failed gate undoes the applied waves through a rollback job: the job ends FAILED, its applied sub-changes are
+    REVERTED and the later wave is never sent.
+    """
     fleet["fail"].add("ME-2")
     job = _write(client, waveSize=2, onGateFailure="revert")
     assert job["status"] == "FAILED" and fleet["values"]["ME-1"] == "10"                       # ME-1 was written (20) and put back (10)
@@ -209,6 +229,7 @@ def test_a_failed_gate_with_revert_undoes_the_applied_waves_through_a_rollback_j
 
 
 def test_a_revert_that_would_overwrite_someone_elses_change_is_refused_and_the_job_halts(client, fleet, monkeypatch):
+    """If a value changed behind the job's back, the automatic revert is refused (REVERT_REFUSED) and the job halts, leaving that value alone."""
     fleet["fail"].add("ME-2")
     import app.main as main
     real = main.send_edit_config

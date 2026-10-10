@@ -71,6 +71,9 @@ def _ttl() -> float:
 
 
 def clear_cache() -> None:
+    """Empties the per-invoker answer cache, so the next `is_killed` reads the database. Used by tests; a running gateway relies on the cache's own
+    expiry.
+    """
     with _lock:
         _cache.clear()
 
@@ -87,10 +90,14 @@ def is_killed(invoker_id: str, now=time.monotonic) -> bool:
         with db.SessionLocal() as session:
             killed = session.execute(select(RAPP_KILL.c.invoker_id).where(RAPP_KILL.c.invoker_id == invoker_id)).first() is not None
     except Exception as exc:
+        # Database unreadable: fall back to the last answer for up to STALE_SECONDS rather than guess; with none, the caller refuses the change (see
+        # the module description).
         if cached is not None and moment - cached[0] < STALE_SECONDS:
             return cached[1]
         raise KillSwitchUnavailable(str(exc)) from exc
     with _lock:
+        # Bound on memory: the cache is keyed by invoker id, so it is cleared whole when it reaches MAX_CACHED entries instead of growing without
+        # limit.
         if len(_cache) >= MAX_CACHED:
             _cache.clear()
         _cache[invoker_id] = (moment, killed)

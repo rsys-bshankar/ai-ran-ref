@@ -14,6 +14,8 @@ from app.rbac import RANK, RULES, Role, decide
 
 
 def _split_top(src: str, sep: str) -> list[str]:
+    """Splits a regular expression `src` on `sep` where that character is outside every group and not escaped; used to expand alternatives.
+    """
     parts, depth, current, i = [], 0, "", 0
     while i < len(src):
         c = src[i]
@@ -83,12 +85,15 @@ def _cases():
 
 
 def test_the_pattern_expander_makes_paths_the_patterns_match():
+    """Every path the expander builds from a rule really matches that rule's pattern, so the generated cases below test real requests.
+    """
     for rule in RULES:
         source = rule.pattern.pattern.removeprefix("^").removesuffix("$")
         for path in expand(source):
             assert rule.pattern.match(path), f"{path!r} does not match {rule.pattern.pattern}"
 
 
+# Each case is a request built from one rule of the table (an id becomes `x1`, each alternative is a request of its own), combined with each of the three roles. The rule must be the one that decides, so an unreachable (shadowed) rule fails here, and the allow or refuse must follow the rule's minimum role.
 @pytest.mark.parametrize("index, path", list(_cases()))
 @pytest.mark.parametrize("role", list(Role))
 def test_the_rule_decides_its_own_request_for_every_role(index, path, role):
@@ -100,6 +105,7 @@ def test_the_rule_decides_its_own_request_for_every_role(index, path, role):
     assert decision.allowed is (RANK[role] >= RANK[rule.role])
 
 
+# One case per rule with a query condition: without the condition in the query, that rule must not be the one that decides.
 @pytest.mark.parametrize("index", [i for i, r in enumerate(RULES) if r.query_match])
 def test_a_rule_with_a_query_condition_does_not_decide_without_it(index):
     rule = RULES[index]
@@ -109,6 +115,8 @@ def test_a_rule_with_a_query_condition_does_not_decide_without_it(index):
 
 
 def test_every_role_is_refused_what_no_rule_names():
+    """Requests that no rule names get no rule and no permission for any role, including near misses such as an extra path word after a listed route.
+    """
     for role in Role:
         for method, path in [("POST", "/sme/oauth2/token"), ("DELETE", "/dme/types/x1"), ("GET", "/not-a-module/x1"), ("PATCH", "/ran-nf-oam/alarms/x1/ack-everything")]:
             decision = decide(method, path, {}, role)

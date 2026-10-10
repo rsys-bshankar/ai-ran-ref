@@ -70,6 +70,9 @@ class OidcError(Exception):
 
 @dataclass(frozen=True)
 class OidcConfig:
+    """The validated, immutable OIDC settings of one provider. Built only by `from_settings`, which refuses a half-configured combination, so a client that
+    exists always has an issuer, client id, redirect URI, a scope list with `openid`, and a way to give a role (a group map, a default role, or both).
+    """
     issuer: str
     client_id: str
     client_credential: str
@@ -166,6 +169,9 @@ def claim_at(claims: dict, path: str) -> object:
 
 
 def groups_from(claims: dict, path: str) -> list[str]:
+    """The groups named by the claim at `path` as a list of strings: a list claim keeps its string items, a string claim is split on spaces and commas, anything else
+    (a missing claim, a number, an object) gives an empty list, which means no group and so, by `role_for`, the default role or a refusal.
+    """
     value = claim_at(claims, path)
     if isinstance(value, str):
         return [g for g in re.split(r"[\s,]+", value) if g]
@@ -175,7 +181,13 @@ def groups_from(claims: dict, path: str) -> list[str]:
 
 
 class OidcClient:
+    """The relying-party client for the one configured provider. It owns the provider documents it fetched (discovery, signing keys), cached in memory with a lock,
+    and the checks of the ID token; it holds no per-user state and writes nothing to the database. `transport` replaces the HTTP transport (tests use it to stand in for the
+    provider) and `clock` the time source. Every failure is raised as `OidcError` with a code from `REASONS`.
+    """
     def __init__(self, cfg: OidcConfig, transport: httpx.BaseTransport | None = None, clock=time.time):
+        """Stores the configuration and the injected transport and clock, and starts with empty caches (no network call is made here: the first discovery happens on first use).
+        """
         self.cfg = cfg
         self._transport = transport
         self._clock = clock
@@ -189,6 +201,9 @@ class OidcClient:
     # ------------------------------------------------------------ the provider's documents
 
     def _get_json(self, url: str) -> dict:
+        """GETs `url` with the configured timeout and returns the JSON object. Any transport error, a non-JSON body, a status other than 200 or a body that is not an
+        object is raised as `OidcError("idp_unavailable")` carrying only the exception class or the status, never the response text.
+        """
         try:
             with httpx.Client(timeout=self.cfg.timeout, transport=self._transport) as client:
                 resp = client.get(url, headers={"Accept": "application/json"})
@@ -200,6 +215,11 @@ class OidcClient:
         return body
 
     def discovery(self) -> dict:
+        """The provider's discovery document, from the cache while it is younger than `DISCOVERY_TTL_SECONDS`, else fetched and validated: the `issuer` in it must equal the
+        configured one (OIDC Discovery 4.3, so a document served for another issuer is refused), and the authorization, token and JWKS endpoints must be acceptable URLs (https,
+        or http for loopback or with `GUI_OIDC_ALLOW_HTTP`). An unusable `end_session_endpoint` is dropped rather than refused. When a refresh fails the last good copy is returned
+        instead; with none, the OidcError is raised. The network call is made outside the lock, so concurrent callers may both fetch (harmless: the copies are equally valid).
+        """
         now = self._clock()
         with self._lock:
             if self._discovery is not None and now - self._discovery_at < DISCOVERY_TTL_SECONDS:
@@ -225,6 +245,9 @@ class OidcClient:
         return doc
 
     def _load_keys(self, now: float) -> None:
+        """Fetches the provider's JWKS and replaces the cached key table, keeping only RSA and EC signature keys that have a string `kid`.
+        Raises OidcError when the fetch fails or the document has no `keys` list; the caller decides whether the old table may keep serving.
+        """
         body = self._get_json(self.discovery()["jwks_uri"])
         keys = body.get("keys")
         if not isinstance(keys, list):
@@ -235,6 +258,10 @@ class OidcClient:
             self._keys_at = now
 
     def _signing_key(self, kid: str | None) -> PyJWK:
+        """The key for the ID token's `kid`, as a PyJWK. The JWKS is fetched when the cache is empty or older than `JWKS_TTL_SECONDS`, and refetched when the `kid` is unknown
+        (the provider may have rotated), but at most once per `JWKS_REFETCH_MIN_SECONDS`, so a token with a forged `kid` cannot make the BFF hammer the provider. If a refetch fails and
+        there is an older table it is used. Raises OidcError("token_invalid") for an unknown or unusable key; the attempt time is recorded under the lock before the network call.
+        """
         now = self._clock()
         with self._lock:
             fresh = bool(self._keys) and now - self._keys_at < JWKS_TTL_SECONDS
@@ -263,6 +290,9 @@ class OidcClient:
     # ------------------------------------------------------------ the flow
 
     def authorization_url(self, state: str, nonce: str, verifier: str) -> str:
+        """The provider URL that starts the sign-in: the code flow with this client's id, redirect URI and scopes, the caller's `state` and `nonce`, and the S256
+        PKCE challenge derived from `verifier` (the verifier itself is not sent). May fetch the discovery document, so it can raise OidcError("idp_unavailable" or "idp_error").
+        """
         query = urlencode({"response_type": "code", "client_id": self.cfg.client_id, "redirect_uri": self.cfg.redirect_uri,
                            "scope": self.cfg.scopes, "state": state, "nonce": nonce,
                            "code_challenge": pkce_challenge(verifier), "code_challenge_method": "S256"})
@@ -270,6 +300,11 @@ class OidcClient:
         return f"{endpoint}{'&' if '?' in endpoint else '?'}{query}"
 
     def exchange_code(self, code: str, verifier: str) -> dict:
+        """Exchanges the authorization `code` (with the PKCE `verifier`) at the provider's token endpoint and returns the token response, which is guaranteed to hold a
+        non-empty `id_token`. The client authenticates with HTTP Basic (RFC 6749 2.3.1) when it has a credential, with a form post instead when the provider lists only
+        `client_secret_post`, and as a public client (id only, PKCE as the proof) when it has no credential. Raises OidcError("idp_unavailable") for a transport failure and
+        ("token_exchange_failed") for a refusal or a response with no ID token. The code, verifier and credential are never logged.
+        """
         doc = self.discovery()
         form = {"grant_type": "authorization_code", "code": code, "redirect_uri": self.cfg.redirect_uri, "code_verifier": verifier}
         auth = None

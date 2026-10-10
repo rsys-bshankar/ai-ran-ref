@@ -21,6 +21,7 @@ CAND_CAPS = ("urn:ietf:params:netconf:base:1.0", "urn:ietf:params:netconf:base:1
 
 @pytest.fixture
 def db_session_factory():
+    """Fixture: a SQLite session factory with the tables the registration, write and tree routes touch."""
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
@@ -31,6 +32,7 @@ def db_session_factory():
 
 @pytest.fixture
 def client(db_session_factory):
+    """Fixture: a TestClient of the app with `get_session` overridden to a session from `db_session_factory`; the override is removed afterwards."""
     def override():
         session = db_session_factory()
         try:
@@ -45,6 +47,9 @@ def client(db_session_factory):
 
 @pytest.fixture
 def lab(tmp_path, monkeypatch):
+    """Fixture: an in-process NETCONF-over-SSH server whose host key is in a known-hosts file and whose password is the shared one; closed
+    afterwards.
+    """
     server = NetconfTestServer()
     known = tmp_path / "known_hosts"
     known.write_text(server.known_hosts_line())
@@ -60,6 +65,7 @@ def _register(client, uri, **extra):
 
 
 def test_default_transport_is_http_mock(client, db_session_factory):
+    """An endpoint registered without a transport is `http-mock`, in the table and in the list."""
     assert _register(client, "http://adaptor:8000/edit-config").status_code == 201
     db = db_session_factory()
     assert db.query(O1AdaptorEndpoint).one().transport == "http-mock"
@@ -75,10 +81,14 @@ def test_default_transport_is_http_mock(client, db_session_factory):
     ("ssh://admin@adaptor", {"transport": "telnet"}),
 ])
 def test_registration_refuses_a_mismatched_transport(client, uri, extra):
+    """Registration refuses a URI whose scheme does not match the transport, an ssh URI without a user or without transport ssh, ssh with RESTCONF,
+    and an unknown transport.
+    """
     assert _register(client, uri, **extra).status_code in (400, 422)
 
 
 def test_config_job_and_read_go_over_ssh(client, db_session_factory, lab):
+    """A config job, its before-image read and the config read all go over SSH to the registered endpoint, and the job and history show the result."""
     assert _register(client, lab.uri, transport="ssh").status_code == 201
     resp = client.post("/config-jobs", json={"requestedBy": "operator", "scope": "cell",
                                               "changes": [{"managedElementRef": "ME-1", "attributeChanges": {"adminState": "UNLOCKED"}}]})
@@ -149,6 +159,7 @@ def test_registration_refuses_a_literal_secret_or_an_unknown_name_without_echoin
 
 
 def test_a_credential_ref_needs_the_ssh_transport(client):
+    """A credential reference on an endpoint that is neither ssh nor tls is refused."""
     resp = _register(client, "http://adaptor:8000/x", credentialRef="gnb-1")
     assert resp.status_code in (400, 422) and "ssh or tls only" in resp.text
 
@@ -191,6 +202,7 @@ def test_a_pinned_key_is_what_trusts_the_server_and_a_changed_key_is_refused(cli
 
 
 def test_unpinning_removes_the_trust(client, lab, monkeypatch):
+    """With no known-hosts file, a pinned host key lets writes through and unpinning it makes them rejected; unpinning again is 404."""
     monkeypatch.delenv("NETCONF_SSH_KNOWN_HOSTS")
     endpoint_id = _register(client, lab.uri, transport="ssh").json()["endpointId"]
     _pin(client, endpoint_id, lab.host_key)
@@ -201,6 +213,9 @@ def test_unpinning_removes_the_trust(client, lab, monkeypatch):
 
 
 def test_pinning_refuses_junk_a_non_ssh_endpoint_and_an_unknown_endpoint(client, lab):
+    """Pinning refuses an unreadable key, a key of the wrong type, an endpoint that is not ssh (4xx) and an unknown endpoint (404), and stores
+    nothing.
+    """
     ssh_id = _register(client, lab.uri, transport="ssh").json()["endpointId"]
     for body in ({"keyType": "ssh-rsa", "publicKey": "not base64!", "pinnedBy": "a"},
                  {"keyType": "ssh-rsa", "publicKey": "AAAA", "pinnedBy": "a"},
@@ -221,10 +236,12 @@ def test_the_known_hosts_file_still_works_and_a_pinned_key_adds_to_it(client, la
 
 
 def test_registration_refuses_an_unknown_model(client, lab):
+    """An ssh URI naming an unknown model is refused at registration."""
     assert _register(client, lab.uri + "?model=nope", transport="ssh").status_code in (400, 422)
 
 
 def test_a_rejecting_server_gives_a_rejected_sub_change(client, lab):
+    """A server that answers rpc-error gives a REJECTED sub-change with NETCONF_RPC_FAILED after one attempt."""
     lab.behaviour.edit_reply = "<rpc-error><error-tag>invalid-value</error-tag></rpc-error>"
     _register(client, lab.uri, transport="ssh")
     resp = client.post("/config-jobs", json={"requestedBy": "operator", "scope": "cell",
@@ -234,6 +251,7 @@ def test_a_rejecting_server_gives_a_rejected_sub_change(client, lab):
 
 
 def test_an_unreachable_ssh_server_is_retried_then_rejected(client, lab, monkeypatch):
+    """An ssh server that cannot be reached is retried and then REJECTED with NETCONF_UNREACHABLE after several attempts."""
     import socket
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
@@ -251,6 +269,9 @@ def test_an_unreachable_ssh_server_is_retried_then_rejected(client, lab, monkeyp
 
 @pytest.fixture
 def tls_lab(tmp_path, monkeypatch):
+    """Fixture: an in-process NETCONF-over-TLS server with a throwaway CA, and the credential variables of `ru-1` pointing at a client certificate
+    it accepts; closed afterwards.
+    """
     from netconf_tls_server import NetconfTlsTestServer, Pki
     ca = Pki(tmp_path)
     server_cert, server_key = ca.issue("server", server=True)
@@ -264,6 +285,7 @@ def tls_lab(tmp_path, monkeypatch):
 
 
 def test_a_tls_endpoint_is_registered_written_and_read_through_the_routes(client, tls_lab, db_session_factory):
+    """A tls endpoint with a credential reference can be registered, written to and read through the routes; host-key routes do not apply to it."""
     resp = _register(client, tls_lab.uri, transport="tls", credentialRef="ru-1")
     assert resp.status_code == 201
     assert client.get("/o1-adaptor-endpoints").json()["items"][0]["transport"] == "tls"
@@ -275,6 +297,7 @@ def test_a_tls_endpoint_is_registered_written_and_read_through_the_routes(client
 
 
 def test_a_tls_endpoint_whose_certificate_is_refused_is_a_rejected_write(client, tls_lab, monkeypatch, tmp_path):
+    """A client certificate the TLS server does not accept gives a REJECTED sub-change with a detail saying the session was refused."""
     from netconf_tls_server import Pki
     _register(client, tls_lab.uri, transport="tls", credentialRef="ru-1")
     cert, key = Pki(tmp_path, name="rogue").issue("client")
@@ -292,6 +315,9 @@ def test_a_tls_endpoint_whose_certificate_is_refused_is_a_rejected_write(client,
     ("tls://adaptor?model=nope", {"transport": "tls"}),
 ])
 def test_registration_refuses_a_mismatched_tls_endpoint(client, uri, extra):
+    """Registration refuses a tls transport with an ssh URI, a tls URI without transport tls, a user name in the URI, RESTCONF over tls and an
+    unknown model.
+    """
     assert _register(client, uri, **extra).status_code in (400, 422)
 
 
@@ -308,6 +334,9 @@ def _ids(client, dn):
 
 
 def test_a_walk_fills_the_tree_from_the_server_and_follows_it(client, lab):
+    """A refresh walks the server's model into the containment tree (added, removed, unchanged counts), re-walking adds nothing, and objects the
+    server lost are removed.
+    """
     lab.behaviour.data = _lab_cells("101", "102")
     assert _register(client, lab.uri + "?model=smo-lab", transport="ssh").status_code == 201
     first = client.post("/managed-entities/ME-1/managed-objects/refresh").json()
@@ -326,6 +355,7 @@ def test_a_walk_fills_the_tree_from_the_server_and_follows_it(client, lab):
 
 
 def test_a_walk_needs_a_model_endpoint_and_reports_a_failed_read(client, lab, monkeypatch):
+    """A refresh is 404 for an unknown element, 409 PROTOCOL_NOT_SUPPORTED for an endpoint with no model, and 503 when the walk fails."""
     assert client.post("/managed-entities/NOPE/managed-objects/refresh").status_code == 404
     _register(client, lab.uri, transport="ssh")                                                              # no ?model=
     resp = client.post("/managed-entities/ME-1/managed-objects/refresh")
@@ -346,6 +376,9 @@ def _job(client, function):
 
 
 def test_the_flag_rejects_a_target_that_is_not_in_the_tree_and_is_off_by_default(client, lab, monkeypatch):
+    """With `RAN_NF_OAM_ENFORCE_MO_TREE` off nothing checks the tree; on, a sub-change whose target DN is not in the tree is rejected with
+    MANAGED_OBJECT_NOT_FOUND before any attempt, until the object has been walked.
+    """
     lab.behaviour.data = _lab_cells("101")
     _register(client, lab.uri + "?model=smo-lab", transport="ssh")
     unknown = "GNBDUFunction=1,NRCellDU=999"
@@ -364,6 +397,9 @@ def test_the_flag_rejects_a_target_that_is_not_in_the_tree_and_is_off_by_default
 
 
 def test_the_topology_export_has_the_nodes_and_the_parent_links(client, lab):
+    """The topology export lists the tree's nodes as one generic entity type with their attributes, and a child-of relationship for each parent
+    link; it is empty when there are no nodes.
+    """
     assert client.get("/topology").json() == {"entities": [], "relationships": []}
     lab.behaviour.data = _lab_cells("101")
     _register(client, lab.uri + "?model=smo-lab", transport="ssh")
@@ -392,6 +428,7 @@ def _steps_of(lab):
 
 
 def _two_changes(client, second=None):
+    """Posts a job with two sub-changes to ME-1 (adminState, and `second` or txPower) and returns the job view."""
     changes = [{"managedElementRef": "ME-1", "attributeChanges": {"adminState": "UNLOCKED"}},
                {"managedElementRef": "ME-1", "attributeChanges": second or {"txPower": 30}}]
     resp = client.post("/config-jobs", json={"requestedBy": "operator", "scope": "cell", "changes": changes})
@@ -400,6 +437,7 @@ def _two_changes(client, second=None):
 
 
 def test_two_sub_changes_of_one_element_are_one_transaction(client, lab, monkeypatch):
+    """Two sub-changes of one element on a candidate-datastore endpoint are one transaction: one lock, both edits, one commit, one unlock."""
     monkeypatch.setattr("app.main.CM_SNAPSHOTS", False)                       # the before-image reads would be steps of their own
     lab.behaviour.caps = list(CAND_CAPS)
     assert _register(client, lab.uri + "?datastore=candidate", transport="ssh").status_code == 201
@@ -423,6 +461,7 @@ def test_a_refused_second_sub_change_leaves_the_first_uncommitted(client, lab, m
 
 
 def test_the_history_records_each_sub_change_of_a_transaction(client, lab):
+    """Each sub-change of a transaction still gets its own history record."""
     lab.behaviour.caps = list(CAND_CAPS)
     assert _register(client, lab.uri + "?datastore=candidate", transport="ssh").status_code == 201
     _two_changes(client)
@@ -432,6 +471,7 @@ def test_the_history_records_each_sub_change_of_a_transaction(client, lab):
 
 
 def test_a_lone_sub_change_and_a_non_candidate_endpoint_are_dispatched_as_before(client, lab, monkeypatch):
+    """An endpoint not registered with `?datastore=candidate` gets one edit-config per sub-change, as before."""
     monkeypatch.setattr("app.main.CM_SNAPSHOTS", False)
     assert _register(client, lab.uri, transport="ssh").status_code == 201                  # no ?datastore=candidate: one edit-config each
     job = _two_changes(client)

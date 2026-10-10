@@ -32,6 +32,7 @@ EXEMPT_FROM_MTLS = {"mock-o1-adaptor", "gui", "migrate", "postgres", "pgbouncer"
 
 @pytest.fixture(scope="module")
 def pki(tmp_path_factory):
+    """A certificate directory made once for the module by `mtls_certs.init` with a 30 day lifetime: a CA and one certificate per service."""
     root = tmp_path_factory.mktemp("mtls")
     assert certs.init(root, 30).startswith("created")
     return root
@@ -78,6 +79,9 @@ def _handshake(server_dir: Path, client_dir: Path, present: bool = True, trust: 
 # ---------------------------------------------------------------------------------------------------------------------------- the script
 
 def test_every_service_gets_a_certificate_signed_by_the_ca_with_its_name_and_both_usages(pki):
+    """Each service's certificate is directly issued by the CA, is not itself a CA, is named after the service, can be used as a client, and as a
+    server only when the service serves.
+    """
     from cryptography import x509
     from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
     ca = x509.load_pem_x509_certificate((pki / "ca" / "ca.crt").read_bytes())
@@ -95,6 +99,9 @@ def test_every_service_gets_a_certificate_signed_by_the_ca_with_its_name_and_bot
 
 
 def test_the_ca_key_stays_private_and_the_service_files_are_readable_by_a_container(pki):
+    """The CA key and the directories above it are private (0600 and 0700), the service files are readable (0644) so a container running as another
+    user can read them, and a service directory never holds the CA key.
+    """
     assert stat.S_IMODE((pki / "ca" / "ca.key").stat().st_mode) == 0o600
     assert stat.S_IMODE(pki.stat().st_mode) == 0o700 and stat.S_IMODE((pki / "ca").stat().st_mode) == 0o700
     for name in ("tls.crt", "tls.key", "ca.crt"):
@@ -103,6 +110,7 @@ def test_the_ca_key_stays_private_and_the_service_files_are_readable_by_a_contai
 
 
 def test_a_rerun_keeps_what_is_there_and_force_replaces_it(tmp_path):
+    """Running `init` again keeps the existing certificates and only `force` replaces them."""
     assert certs.init(tmp_path, 30).startswith("created")
     before = (tmp_path / "sme" / "tls.crt").read_bytes()
     assert certs.init(tmp_path, 30).startswith("kept") and (tmp_path / "sme" / "tls.crt").read_bytes() == before
@@ -110,6 +118,9 @@ def test_a_rerun_keeps_what_is_there_and_force_replaces_it(tmp_path):
 
 
 def test_services_talk_to_each_other_and_a_client_certificate_works_but_a_missing_one_or_another_ca_does_not(pki, tmp_path):
+    """A real TLS handshake succeeds between two services and with a client certificate, and fails with no client certificate, with a certificate
+    from another PKI, and when the server's certificate is not from the CA the client trusts.
+    """
     assert _handshake(pki / "sme", pki / "dme")
     certs.new_client(pki, "operator", 30)
     assert _handshake(pki / "sme", pki / "clients" / "operator")
@@ -121,6 +132,7 @@ def test_services_talk_to_each_other_and_a_client_certificate_works_but_a_missin
 
 
 def test_extra_names_end_up_on_every_server_certificate(tmp_path, monkeypatch):
+    """The names and addresses in `SMO_MTLS_NAMES` are added to every server certificate as DNS and IP subject alternative names."""
     from cryptography import x509
     monkeypatch.setenv("SMO_MTLS_NAMES", "smo.example.test, 10.0.0.5")
     certs.init(tmp_path, 30)
@@ -130,6 +142,9 @@ def test_extra_names_end_up_on_every_server_certificate(tmp_path, monkeypatch):
 
 
 def test_renewing_the_leaves_keeps_the_ca_and_every_service_still_agrees(tmp_path):
+    """Renewing replaces the service certificates and keeps the CA, so the services still agree and a service that has not restarted still talks to
+    one that has; the expiry check flags a certificate at 100 days but not at 30.
+    """
     certs.init(tmp_path, 30)
     old_ca, old_leaf = (tmp_path / "ca" / "ca.crt").read_bytes(), (tmp_path / "sme" / "tls.crt").read_bytes()
     assert certs.renew(tmp_path, 90).startswith("renewed")
@@ -144,6 +159,10 @@ def test_renewing_the_leaves_keeps_the_ca_and_every_service_still_agrees(tmp_pat
 
 
 def test_the_ca_rotates_in_three_phases_and_no_phase_breaks_a_pair_of_services_on_different_phases(tmp_path):
+    """A CA rotation runs in three phases (trust: the bundle holds the old and the new CA; issue: new certificates from the new CA; retire: the old
+    CA is dropped), a pair of services one phase apart can still handshake in both directions so a rolling restart never breaks traffic, the
+    finished rotation refuses what only the old CA vouches for, and repeating a phase is reported, not applied.
+    """
     certs.init(tmp_path, 30)
 
     def snapshot(label: str, *services: str) -> Path:
@@ -175,6 +194,9 @@ def test_the_ca_rotates_in_three_phases_and_no_phase_breaks_a_pair_of_services_o
 
 
 def test_status_exits_non_zero_for_an_expiring_certificate(tmp_path):
+    """`mtls_certs.py status` exits 1 and names the services when a certificate is within the warning window, and exits 0 with a shorter
+    `--warn-days`.
+    """
     certs.init(tmp_path, 10)
     result = subprocess.run([sys.executable, str(SMO_ROOT / "scripts" / "mtls_certs.py"), "status", "--dir", str(tmp_path)], capture_output=True, text=True)
     assert result.returncode == 1 and "EXPIRING" in result.stdout and "sme" in result.stdout
@@ -183,6 +205,7 @@ def test_status_exits_non_zero_for_an_expiring_certificate(tmp_path):
 
 
 def test_the_command_line_refuses_to_work_without_a_ca(tmp_path):
+    """The command line exits 2 and points at `init` when asked to renew in a directory that has no CA."""
     result = subprocess.run([sys.executable, str(SMO_ROOT / "scripts" / "mtls_certs.py"), "renew", "--dir", str(tmp_path / "none")], capture_output=True, text=True)
     assert result.returncode == 2 and "init" in result.stderr
 
@@ -198,6 +221,9 @@ def _override_services() -> dict:
 
 
 def test_the_override_covers_every_service_the_script_makes_a_certificate_for_and_nothing_else():
+    """The compose mTLS override lists exactly the services the script makes certificates for plus the two workers and the GUI backend, and every
+    built service without it is named as exempt on purpose.
+    """
     override = set(_override_services())
     assert override == (set(certs.SERVERS) | {"ran-nf-oam-worker", "mdaf-worker", "gui-bff"})
     compose = _compose_services()
@@ -207,6 +233,9 @@ def test_the_override_covers_every_service_the_script_makes_a_certificate_for_an
 
 
 def test_a_server_mounts_its_own_directory_read_only_and_is_probed_over_tls():
+    """Each participant turns mTLS on and mounts its own certificate directory read-only; servers are health-checked over TLS, clients have no
+    check, and the GUI backend does not serve TLS.
+    """
     for name, spec in _override_services().items():
         assert spec["environment"]["SMO_MTLS"] == "on"
         assert spec["volumes"] == [f"./certs/mtls/{name}:/run/mtls:ro"], name
@@ -219,11 +248,15 @@ def test_a_server_mounts_its_own_directory_read_only_and_is_probed_over_tls():
 
 
 def test_the_default_compose_file_has_no_mtls_in_it():
+    """The default compose file has no mTLS settings at all, so mTLS is switched on only by adding the override file."""
     assert "SMO_MTLS" not in COMPOSE.read_text() and "mtls" not in COMPOSE.read_text().lower().replace("docker-compose.mtls.yml", "")
 
 
 @pytest.mark.skipif(shutil.which("docker") is None, reason="docker is not installed")
 def test_compose_accepts_the_two_files_together():
+    """`docker compose config` accepts the default file and the override together and the merged result turns mTLS on for the services and not for
+    the mock adaptor. Skipped without docker or without the generated secrets.
+    """
     env = {**os.environ, "COMPOSE_FILE": f"{COMPOSE}:{OVERRIDE}"}
     result = subprocess.run(["docker", "compose", "config", "--format", "json"], cwd=SMO_ROOT, capture_output=True, text=True, env=env)
     if "secrets" in result.stderr and "no such file" in result.stderr.lower():
@@ -243,6 +276,9 @@ def _cmd() -> str:
 
 
 def test_the_image_starts_plain_without_mtls_and_with_the_options_with_it(tmp_path):
+    """The image's command, with `exec uvicorn` replaced by `echo`, adds no TLS option without `SMO_MTLS` and the client-certificate-required
+    options with it.
+    """
     command = _cmd().replace("exec uvicorn", "echo uvicorn")
     env = {**os.environ, "PYTHONPATH": str(SMO_ROOT / "shared"), "UVICORN_WORKERS": "1", "UVICORN_GRACEFUL_SHUTDOWN_SECONDS": "5"}
     env.pop("SMO_MTLS", None)
@@ -270,6 +306,9 @@ def _values() -> dict:
 
 
 def test_the_chart_is_off_by_default_and_names_how_each_module_takes_part():
+    """The chart has mTLS and cert-manager off by default and assigns each module a mode: off (the mock adaptor and the GUI), client (the GUI
+    backend) or server (the services and the two workers).
+    """
     values = _values()
     assert values["mtls"]["enabled"] is False and values["mtls"]["certManager"]["enabled"] is False
     modes = {name: {**values["moduleDefaults"], **spec}["mtls"] for name, spec in values["modules"].items()}
@@ -279,6 +318,7 @@ def test_the_chart_is_off_by_default_and_names_how_each_module_takes_part():
 
 
 def test_the_chart_and_the_compose_override_agree_on_who_takes_part():
+    """The modules that take part in mTLS in the chart are exactly those in the compose override."""
     values = _values()
     in_chart = {name for name, spec in values["modules"].items() if {**values["moduleDefaults"], **spec}["mtls"] != "off"}
     assert in_chart == set(_override_services())
@@ -296,6 +336,7 @@ def _container(deployment: dict) -> dict:
 
 @helm
 def test_rendered_by_default_there_is_no_mtls_anywhere():
+    """Rendered with default values the chart has no certificate, no mTLS variable or volume, and plain HTTP readiness probes. Needs helm."""
     docs = _render()
     assert not [d for d in docs if d["kind"] == "Certificate"]
     for deployment in (d for d in docs if d["kind"] == "Deployment"):
@@ -308,6 +349,9 @@ def test_rendered_by_default_there_is_no_mtls_anywhere():
 
 @helm
 def test_with_mtls_each_participant_mounts_its_secret_serves_what_its_mode_says_and_is_probed_by_exec():
+    """With mTLS on, each participant mounts its own `<module>-mtls` Secret read-only at /run/mtls with mTLS on, the GUI backend does not serve
+    TLS, and the mock adaptor and GUI are left out. Needs helm.
+    """
     docs = _render("--set", "mtls.enabled=true")
     deployments = {d["metadata"]["name"]: d for d in docs if d["kind"] == "Deployment"}
     for name, deployment in deployments.items():
@@ -332,6 +376,9 @@ def test_with_mtls_each_participant_mounts_its_secret_serves_what_its_mode_says_
 
 @helm
 def test_cert_manager_mode_makes_a_ca_chain_and_one_certificate_per_participant():
+    """With cert-manager mode the chart makes a self-signed issuer, a CA certificate and an issuer from it, then one certificate per participant
+    with the usages, names and renewal window the chart promises. Needs helm.
+    """
     docs = _render("--set", "mtls.enabled=true", "--set", "mtls.certManager.enabled=true")
     kinds = [(d["kind"], d["metadata"]["name"]) for d in docs if d["apiVersion"].split("/")[0] == "cert-manager.io"]
     assert ("Issuer", "smo-mtls-selfsigned") in kinds and ("Certificate", "smo-mtls-ca") in kinds and ("Issuer", "smo-mtls-ca") in kinds
@@ -347,6 +394,7 @@ def test_cert_manager_mode_makes_a_ca_chain_and_one_certificate_per_participant(
 
 @helm
 def test_cert_manager_mode_can_use_an_issuer_of_your_own_and_needs_its_name():
+    """With `createCA=false` the chart makes no issuer and uses the named one, and fails to render when no issuer name is given. Needs helm."""
     docs = _render("--set", "mtls.enabled=true", "--set", "mtls.certManager.enabled=true", "--set", "mtls.certManager.createCA=false",
                    "--set", "mtls.certManager.issuerRef.name=corp-ca", "--set", "mtls.certManager.issuerRef.kind=ClusterIssuer")
     assert not [d for d in docs if d["kind"] == "Issuer"]
@@ -358,6 +406,7 @@ def test_cert_manager_mode_can_use_an_issuer_of_your_own_and_needs_its_name():
 
 @helm
 def test_without_cert_manager_the_chart_makes_no_certificates_and_the_secrets_are_the_operators():
+    """Without cert-manager the chart makes no Certificate, Issuer or `-mtls` Secret: those Secrets are the operator's to create. Needs helm."""
     docs = _render("--set", "mtls.enabled=true")
     assert not [d for d in docs if d["kind"] in ("Certificate", "Issuer")]
     assert not [d for d in docs if d["kind"] == "Secret" and d["metadata"]["name"].endswith("-mtls")]
@@ -365,6 +414,9 @@ def test_without_cert_manager_the_chart_makes_no_certificates_and_the_secrets_ar
 
 @helm
 def test_the_gateway_ingress_speaks_https_to_the_gateway_only_when_given_a_client_secret():
+    """The gateway's Ingress speaks HTTPS to the gateway, with the client Secret, only when `mtls.ingressClientSecret` is set; the GUI's Ingress
+    never does. Needs helm.
+    """
     base = ["--set", "ingress.enabled=true", "--set", "ingress.r1.host=r1.example.test", "--set", "ingress.gui.host=gui.example.test", "--set", "mtls.enabled=true"]
     plain = {d["metadata"]["name"]: d for d in _render(*base) if d["kind"] == "Ingress"}
     assert "nginx.ingress.kubernetes.io/backend-protocol" not in plain["r1"]["metadata"].get("annotations", {})
@@ -376,6 +428,7 @@ def test_the_gateway_ingress_speaks_https_to_the_gateway_only_when_given_a_clien
 
 @helm
 def test_lint_is_clean_with_mtls_on():
+    """`helm lint` is clean with mTLS and cert-manager on. Needs helm."""
     result = subprocess.run(["helm", "lint", str(CHART), "--kube-version", "1.30.0", "--set", "mtls.enabled=true", "--set", "mtls.certManager.enabled=true"],
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr

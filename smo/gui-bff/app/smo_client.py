@@ -62,8 +62,15 @@ class SmoAuthError(RuntimeError):
 
 
 class R1Gateway:
+    """The BFF's HTTP client for the SMO: it holds the BFF's own OAuth2 access token (obtained from SME with a CAPIF invoker identity stored in the shared database) and sends
+    every call to R1 Termination with it. One instance per process; the token cache and the lock that serialises refreshes are per process, while the invoker identity is shared by
+    every instance through the database. Failures to obtain a token are raised as `SmoAuthError`; transport failures are left as httpx errors for the caller to turn into 502s.
+    """
     def __init__(self, r1_url: str, db: Database, sme_url: str | None = None, timeout: float = 30.0,
                  transport: httpx.AsyncBaseTransport | None = None):
+        """Builds the gateway for `r1_url` (the SME token endpoint is taken from `sme_url` when given, else discovered from R1's /bootstrap on first use) with its httpx client.
+        With `SMO_MTLS` on the client presents the backend's certificate and trusts the configured CA, and fails here if those files cannot be loaded. `transport` is for tests.
+        """
         self.r1_url = r1_url.rstrip("/")
         self._sme_url_override = sme_url
         self._db = db
@@ -79,6 +86,9 @@ class R1Gateway:
     # ------------------------------------------------------------ token
 
     async def _discover_token_endpoint(self) -> str:
+        """The SME token endpoint URL: the `sme_url` override plus /oauth2/token when set, else the first `tokenEndPoint` that R1's /bootstrap advertises. Cached for the
+        life of the process once found. Raises SmoAuthError when R1 answers anything but 200 or advertises no token endpoint.
+        """
         if self._token_endpoint:
             return self._token_endpoint
         if self._sme_url_override:
@@ -132,6 +142,11 @@ class R1Gateway:
         })
 
     async def token(self, force_refresh: bool = False) -> str:
+        """The BFF's access token for R1, from the cache while it is valid (expiry less a 30 s margin) unless `force_refresh`. Otherwise: discover the endpoint, take the stored invoker
+        identity (registering at SME when there is none), and request a client-credentials token; a 400 means SME no longer knows the invoker, so it is registered again once and the
+        request repeated. Holds the lock throughout, so concurrent callers wait for one refresh instead of each doing their own. Raises SmoAuthError when SME is unreachable or does
+        not answer 200.
+        """
         async with self._lock:
             if not force_refresh and self._token and time.time() < self._token_expires_at:
                 return self._token

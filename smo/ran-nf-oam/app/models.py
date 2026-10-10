@@ -1,3 +1,10 @@
+"""The SQLAlchemy tables of RAN NF OAM: the O1 endpoint and managed-entity registries, alarms and PM files, CM write jobs and their snapshots, the MSAC access-control tables, software jobs and campaigns, onboarding, KPI definitions and the rApp safeguard, approval and decision-record tables.
+
+Used by `main.py`, `lifecycle.py`, `msac.py`, `vendors.py`, `scoping.py` and the worker tasks; nothing here has behaviour beyond column defaults. The unit tests build their SQLite schema from these classes, while Postgres gets its schema from the Alembic revisions in `migrations/versions/`, so a column added here needs a revision there
+(`scripts/check_migration_matches_models.py` compares the two, and `migrations/table_owners.json` names the owner of each table; no foreign key may cross a module boundary).
+A table with `Versioned` has a `row_version` column: a concurrent update of the same row fails with 409 `CONCURRENT_MODIFICATION` instead of overwriting it.
+"""
+
 import datetime
 import uuid
 
@@ -9,6 +16,8 @@ from smo_shared.versioning import Versioned
 
 
 class O1AdaptorEndpoint(Base):
+    """One registered O1 adaptor, at most one per managed element: where its CM is reached (`adaptor_uri` and `transport`), the name of the credential used to reach it (never the secret), the MnS services it declares (NULL: its vendor's) and its heartbeat-driven health.
+    """
     __tablename__ = "o1_adaptor_endpoint"
 
     endpoint_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -60,6 +69,8 @@ class ManagedObject(Base):
 
 
 class ManagedEntity(Base):
+    """A managed element (or function) known to the SMO, keyed by `managed_element_ref`: its vendor and O1 protocol, its adaptor endpoint, the per-cell guard attributes rApps read, and the region and tenant that scope claims are checked against (NULL: visible to unscoped callers only).
+    """
     __tablename__ = "managed_entity"
 
     managed_element_ref: Mapped[str] = mapped_column(String, primary_key=True)
@@ -78,6 +89,8 @@ class ManagedEntity(Base):
 
 
 class Alarm(Base):
+    """A fault record on a managed element (TS 28.532 / 28.111 AlarmRecord fields). `severity` is stored lower-case, and clearing an alarm sets it to `cleared` and fills `cleared_at` and `clear_user_id`, rather than using a separate state column; `source_alarm_id` is the adaptor's own id of the alarm.
+    """
     __tablename__ = "alarm"
 
     alarm_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -129,6 +142,7 @@ class MsacIdentity(Base):
 
 
 class MsacRole(Base):
+    """A TS 28.319 Role: a unique name and the ids of its AccessRules. Evaluation is in `msac.authorize`."""
     __tablename__ = "msac_role"
 
     role_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -137,6 +151,8 @@ class MsacRole(Base):
 
 
 class MsacAccessRule(Base):
+    """A TS 28.319 AccessRule: a `data_node_selector` (an absolute DN path with `*` wildcards), the operations it covers, and whether it ALLOWs or DENYs them (DENY wins).
+    """
     __tablename__ = "msac_access_rule"
 
     rule_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -365,6 +381,8 @@ class FileSubscription(Base):
 
 
 class CMSchemaCache(Base):
+    """A loaded CM schema, keyed by (schema_name, revision): its location and type and the class descriptor that CM writes are checked against (`vendors.schema_problems`). The schemas bundled in `app/cm_schemas/` are not rows here.
+    """
     __tablename__ = "cm_schema_cache"
 
     schema_name: Mapped[str] = mapped_column(String, primary_key=True)
@@ -398,6 +416,8 @@ class VendorCapability(Base):
 
 
 class WriteConfigJob(Versioned, Base):
+    """A CM write job (`POST /config-jobs`): who asked, its state (`JobState`), the staged-rollout settings and progress (waves, pause, gate), the rollback link, the KPI guard declared with it, and the rApp invoker id that rate limits and job ownership use. Its changes are the `write_config_sub_change` rows.
+    """
     __tablename__ = "write_config_job"
 
     job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -435,6 +455,8 @@ class WriteConfigJob(Versioned, Base):
 
 
 class WriteConfigSubChange(Base):
+    """One attribute change of a job on one element or function: the edit-config `operation`, its outcome (`status`, `rejection_reason` as a stable code and `rejection_detail` as the adaptor's text), the dispatch attempts made, and its position and wave in the job.
+    """
     __tablename__ = "write_config_sub_change"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -461,6 +483,8 @@ class WriteConfigSubChange(Base):
 
 
 class PMSubscription(Base):
+    """A PM subscription: the registration of this service as a DME producer of one counter type for an element, with the delivery method and optional granularity period.
+    """
     __tablename__ = "pm_subscription"
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -480,6 +504,7 @@ class PMSubscription(Base):
 
 
 class FMSubscription(Base):
+    """An FM subscription: the registration of this service as a DME producer of the element's fault records."""
     __tablename__ = "fm_subscription"
 
     # HISTORY.md OI-6.7: unlike PM (subscribe_pm registers RAN NF
@@ -496,6 +521,8 @@ class FMSubscription(Base):
 
 
 class SoftwareManagementJob(Versioned, Base):
+    """A software job on one element (`SwmState`, with the `phase` of download, install, activate kept as a separate column). A job made by a software campaign carries the campaign, its wave and, for an undo, the job it reverses.
+    """
     __tablename__ = "software_management_job"
 
     job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

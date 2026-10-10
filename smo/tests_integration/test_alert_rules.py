@@ -92,6 +92,7 @@ def _selectors(expr: str):
 
 
 def _balanced(text: str) -> bool:
+    """True when every bracket of the PromQL text (strings and comments removed first) is closed in the right order."""
     stack = []
     pairs = {")": "(", "]": "[", "}": "{"}
     for char in _strip(text):
@@ -106,6 +107,7 @@ def _balanced(text: str) -> bool:
 # --- structure ---------------------------------------------------------------------------------------------------------------------
 
 def test_the_file_is_a_prometheus_rule_file_with_named_groups_of_rules():
+    """The file has only a top-level `groups` list, group names are unique, every group has rules and only the keys Prometheus accepts."""
     assert set(RULES) == {"groups"} and RULES["groups"]
     names = [group["name"] for group in RULES["groups"]]
     assert len(names) == len(set(names)) and all(group["rules"] for group in RULES["groups"])
@@ -115,6 +117,9 @@ def test_the_file_is_a_prometheus_rule_file_with_named_groups_of_rules():
 
 
 def test_every_rule_is_a_record_or_an_alert_with_a_valid_name_and_expression():
+    """Every rule is exactly one of record or alert, has a valid unique name, a non-empty expression with balanced brackets, only known keys, valid
+    durations and valid label and annotation keys: the structural checks of `promtool check rules` that can go wrong here.
+    """
     names = []
     for rule in _rules():
         assert ("record" in rule) != ("alert" in rule), rule
@@ -132,12 +137,16 @@ def test_every_rule_is_a_record_or_an_alert_with_a_valid_name_and_expression():
 
 
 def test_a_recording_rule_is_named_level_metric_operations_and_is_not_labelled_as_an_alert():
+    """A recording rule is named `smo:<level>:<metric>:<operations>` and carries no alert-only fields."""
     for rule in _recordings():
         assert rule["record"].startswith("smo:") and rule["record"].count(":") >= 2, rule["record"]
         assert "annotations" not in rule and "for" not in rule
 
 
 def test_every_alert_has_a_known_severity_a_summary_a_description_and_a_runbook_url():
+    """Every alert has a known severity, a summary, a description and a runbook URL, and the template braces in the texts are paired and use only
+    `$labels.x` or `$value`.
+    """
     for rule in _alerts():
         assert rule["labels"]["severity"] in SEVERITIES, rule["alert"]
         for key in ("summary", "description", "runbook_url"):
@@ -150,6 +159,9 @@ def test_every_alert_has_a_known_severity_a_summary_a_description_and_a_runbook_
 
 
 def test_an_slo_burn_alert_is_a_pair_of_a_fast_and_a_slow_window_and_the_labels_agree():
+    """Each SLO has exactly two alerts (critical and warning) and each expression combines a long and a short window with one `and`, so a burn-rate
+    alert neither flaps nor reacts late.
+    """
     by_slo: dict[str, list[str]] = {}
     for rule in _alerts():
         if "slo" in rule["labels"]:
@@ -164,6 +176,9 @@ def test_an_slo_burn_alert_is_a_pair_of_a_fast_and_a_slow_window_and_the_labels_
 # --- the metrics -------------------------------------------------------------------------------------------------------------------
 
 def test_the_metric_scan_finds_the_series_the_rules_rely_on():
+    """The scan of the code for exported metrics finds the series the rules use, with their labels; if it found nothing the next test would pass
+    vacuously.
+    """
     exported = _exported_metrics()
     for name in ("smo_http_requests_total", "smo_http_request_duration_seconds_bucket", "smo_outbox_rows", "smo_rapp_instances", "smo_refusals_total",
                  "smo_worker_task_runs_total", "smo_audit_writes_total", "smo_db_pool_capacity", "smo_outbound_calls_total", "smo_retention_off_rows"):
@@ -173,6 +188,9 @@ def test_the_metric_scan_finds_the_series_the_rules_rely_on():
 
 
 def test_every_metric_and_label_a_rule_uses_is_exported_by_the_code_or_recorded_by_the_file():
+    """Every series and label a rule selects is exported by the code or recorded by this file (the operator metrics and `up` excepted), so a
+    renamed metric breaks here instead of silencing an alert.
+    """
     exported = _exported_metrics()
     recorded = {rule["record"] for rule in _recordings()}
     for rule in _rules():
@@ -191,6 +209,9 @@ def test_every_metric_and_label_a_rule_uses_is_exported_by_the_code_or_recorded_
 
 
 def test_the_operator_metrics_the_backup_alerts_use_are_the_ones_the_ci_job_checks_on_a_real_instance():
+    """The CloudNativePG metrics the alerts use are exactly the ones the `cnpg-wal-archive` CI job proves exist on a real instance, since the code
+    does not export them.
+    """
     used = {name for rule in _rules() for name, _ in _selectors(rule["expr"]) if name.startswith("cnpg_")}
     assert used == OPERATOR_METRICS
     job = (SMO_ROOT.parent / ".github" / "workflows" / "smo-dr.yml").read_text()
@@ -199,12 +220,14 @@ def test_the_operator_metrics_the_backup_alerts_use_are_the_ones_the_ci_job_chec
 
 
 def test_every_recording_rule_is_used_by_an_alert_or_another_rule():
+    """A recording rule that nothing uses is a leftover, so each one is referenced by an alert or another rule."""
     text = " ".join(rule["expr"] for rule in _rules())
     for rule in _recordings():
         assert rule["record"] in text or rule["record"].rsplit(":", 1)[0] in text, f"{rule['record']} is never used"
 
 
 def test_every_module_job_in_the_down_alert_is_a_module_of_the_chart_and_every_service_module_is_listed():
+    """The jobs named in the SmoModuleDown alert are exactly the chart's service modules, so a module added to the chart is covered by the alert."""
     values = yaml.safe_load((CHART / "values.yaml").read_text())
     defaults = values["moduleDefaults"]
     services = {name for name, spec in values["modules"].items() if {**defaults, **spec}["kind"] == "service"}
@@ -216,6 +239,7 @@ def test_every_module_job_in_the_down_alert_is_a_module_of_the_chart_and_every_s
 # --- runbooks ----------------------------------------------------------------------------------------------------------------------
 
 def test_every_alert_links_to_a_runbook_page_that_exists_and_is_named_after_it():
+    """Every alert's runbook URL is the runbook prefix plus `<alert name>.md` and that page exists."""
     for rule in _alerts():
         url = rule["annotations"]["runbook_url"]
         assert url == f"{RUNBOOK_URL_PREFIX}{rule['alert']}.md", url
@@ -223,6 +247,9 @@ def test_every_alert_links_to_a_runbook_page_that_exists_and_is_named_after_it()
 
 
 def test_every_runbook_has_the_five_sections_and_belongs_to_an_alert():
+    """Every runbook page belongs to an alert, starts with its name, has the five sections in order, none empty, and a command in the Diagnosis
+    section.
+    """
     alerts = {rule["alert"] for rule in _alerts()}
     pages = {path.stem: path for path in RUNBOOKS.glob("*.md") if path.name != "README.md"}
     assert set(pages) == alerts, f"runbooks without an alert, or alerts without a runbook: {set(pages) ^ alerts}"
@@ -238,6 +265,7 @@ def test_every_runbook_has_the_five_sections_and_belongs_to_an_alert():
 
 
 def test_the_runbook_index_lists_every_page_and_its_links_resolve():
+    """The runbook index links every page and none of its relative links is broken."""
     index = (RUNBOOKS / "README.md").read_text()
     for rule in _alerts():
         assert f"({rule['alert']}.md)" in index, rule["alert"]
@@ -249,6 +277,7 @@ def test_the_runbook_index_lists_every_page_and_its_links_resolve():
 # --- the SLO document --------------------------------------------------------------------------------------------------------------
 
 def test_the_slo_document_names_every_slo_alert_and_says_for_which_deployment_the_targets_hold():
+    """docs/SLOS.md names every SLO and SLO alert, states the targets' status and scope (the one-pod lab profile), and has its target table."""
     text = SLOS.read_text()
     for slo in {rule["labels"]["slo"] for rule in _alerts() if "slo" in rule["labels"]}:
         assert f"`{slo}`" in text, slo
@@ -264,6 +293,7 @@ def test_the_slo_document_names_every_slo_alert_and_says_for_which_deployment_th
 # --- the chart ---------------------------------------------------------------------------------------------------------------------
 
 def test_the_chart_embeds_the_rules_file_behind_a_value_that_is_off_by_default():
+    """The chart ships the rules file as a PrometheusRule behind `prometheusRule.enabled`,."""
     values = yaml.safe_load((CHART / "values.yaml").read_text())
     assert values["prometheusRule"]["enabled"] is False
     template = (CHART / "templates" / "prometheusrule.yaml").read_text()
@@ -273,6 +303,9 @@ def test_the_chart_embeds_the_rules_file_behind_a_value_that_is_off_by_default()
 
 @pytest.mark.skipif(shutil.which("helm") is None, reason="helm is not installed")
 def test_rendered_prometheusrule_carries_the_same_groups_and_is_absent_by_default():
+    """Rendered with `helm template`, the PrometheusRule is absent by default and, when enabled, carries exactly the groups of the rules file.
+    Skipped without helm.
+    """
     base = ["helm", "template", "smo", str(CHART), "--kube-version", "1.30.0"]
     off = subprocess.run(base, capture_output=True, text=True, check=True).stdout
     assert "PrometheusRule" not in off
@@ -283,5 +316,6 @@ def test_rendered_prometheusrule_carries_the_same_groups_and_is_absent_by_defaul
 
 @pytest.mark.skipif(shutil.which("promtool") is None, reason="promtool is not installed")
 def test_promtool_accepts_the_file():
+    """`promtool check rules` accepts the file. Skipped without promtool."""
     result = subprocess.run(["promtool", "check", "rules", str(RULES_FILE)], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr

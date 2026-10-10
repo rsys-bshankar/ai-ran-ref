@@ -33,6 +33,8 @@ class FakeR1Response:
 
 @pytest.fixture
 def db_session_factory():
+    """A session factory on one shared in-memory SQLite database holding the rApp Management tables and the idempotency table, with stand-in `application_package` and `package_usage_registration` tables (they belong to Onboarding). The routes and the tests see the same data.
+    """
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     # application_package and package_usage_registration live in the onboarding
     # module, out of scope for this test package — stand in minimal tables so
@@ -67,6 +69,8 @@ def fake_r1_delete(monkeypatch):
 
 @pytest.fixture
 def client(db_session_factory):
+    """A `TestClient` of the rApp Management app whose database session comes from `db_session_factory`; the override is removed after the test.
+    """
     def override_get_session():
         session = db_session_factory()
         try:
@@ -159,6 +163,7 @@ def test_create_instance_defaults_autonomy_mode_to_shadow(client, monkeypatch):
 
 
 def test_create_instance_stores_autonomous_mode_and_region_scope(client, monkeypatch):
+    """An autonomy mode and region scope given at create are stored and shown in the detail and the list."""
     fake_get, fake_post = _route_r1_get_post()
     monkeypatch.setattr("app.main.R1Client.get", fake_get)
     monkeypatch.setattr("app.main.R1Client.post", fake_post)
@@ -176,6 +181,7 @@ def test_create_instance_stores_autonomous_mode_and_region_scope(client, monkeyp
     assert [i["autonomyMode"] for i in listed] == ["AUTONOMOUS"]
 
 
+# Each row is a package state and the answer to create: AVAILABLE and PRIMED give 202, every other state gives 409.
 @pytest.mark.parametrize("state,status", [("AVAILABLE", 202), ("PRIMED", 202), ("ONBOARDING", 409),
                                           ("DEPRECATED", 409), ("FAILED", 409)])
 def test_create_instance_accepts_available_and_primed_packages_only(client, monkeypatch, state, status):
@@ -186,6 +192,7 @@ def test_create_instance_accepts_available_and_primed_packages_only(client, monk
 
 
 def test_create_instance_rejects_an_invalid_autonomy_mode(client):
+    """An autonomy mode that is not AUTONOMOUS, ASSIST or SHADOW is 422."""
     resp = client.post("/instances", json={"packageId": str(uuid.uuid4()), "autonomyMode": "NOT_A_REAL_MODE"})
     assert resp.status_code == 422
 
@@ -514,6 +521,7 @@ def test_delete_instance_requires_undeployed_state(client, monkeypatch):
 
 
 def test_delete_instance_removes_the_row_once_undeployed(client, db_session_factory, monkeypatch):
+    """Deleting an UNDEPLOYED instance answers 204 and removes the row."""
     fake_get, fake_post = _route_r1_get_post()
     monkeypatch.setattr("app.main.R1Client.get", fake_get)
     monkeypatch.setattr("app.main.R1Client.post", fake_post)
@@ -556,6 +564,7 @@ def test_delete_instance_cascades_fault_and_performance_reports(client, db_sessi
 
 
 def test_delete_unknown_instance_is_404(client):
+    """Deleting an unknown instance is 404."""
     resp = client.delete(f"/instances/{uuid.uuid4()}")
     assert resp.status_code == 404
 
@@ -584,6 +593,7 @@ def test_get_instance_returns_real_workload_ref_and_configuration(client, monkey
 
 
 def test_get_unknown_instance_is_404(client):
+    """Reading an unknown instance is 404."""
     resp = client.get(f"/instances/{uuid.uuid4()}")
     assert resp.status_code == 404
 
@@ -596,6 +606,7 @@ def test_health_check_answers_the_gui_bff_liveness_probe(client):
 
 
 def _make_instance(db_session_factory, state=InstanceState.RUNNING) -> uuid.UUID:
+    """Inserts an instance row directly in `state` (RUNNING by default) with no workload or credential, and returns its id."""
     instance_id = uuid.uuid4()
     with db_session_factory() as session:
         session.add(RAppInstance(instance_id=instance_id, package_id=uuid.uuid4(), state=state))
@@ -619,6 +630,7 @@ def test_list_performance_reports_returns_newest_first(client, db_session_factor
 
 
 def test_list_fault_reports_returns_recorded_faults(client, db_session_factory):
+    """A fault recorded with its severity and description is listed."""
     instance_id = _make_instance(db_session_factory)
     client.post(f"/instances/{instance_id}/fault", params={"severity": "minor", "description": "slow"})
 
@@ -628,6 +640,7 @@ def test_list_fault_reports_returns_recorded_faults(client, db_session_factory):
 
 
 def test_list_reports_404_on_an_unknown_instance(client):
+    """Both report lists are 404 for an unknown instance."""
     assert client.get(f"/instances/{uuid.uuid4()}/performance").status_code == 404
     assert client.get(f"/instances/{uuid.uuid4()}/faults").status_code == 404
 
@@ -652,6 +665,8 @@ def test_create_instance_records_workload_ref_from_nfos_202(client, db_session_f
 # ---------------------------------------------------------------- OI-2-terminate-workload
 
 def _running_instance(client, monkeypatch, **create_body):
+    """Creates an instance with R1 stubbed (`create_body` adds request fields), completes its bootstrap so it is RUNNING, and returns the create answer.
+    """
     fake_get, fake_post = _route_r1_get_post()
     monkeypatch.setattr("app.main.R1Client.get", fake_get)
     monkeypatch.setattr("app.main.R1Client.post", fake_post)
@@ -678,6 +693,7 @@ def test_terminate_calls_nfo_terminate_for_the_workload_and_records_it(client, m
 
 
 def test_terminate_records_an_nfo_failure_but_still_undeploys(client, monkeypatch):
+    """If NFO refuses the terminate, the instance still reaches UNDEPLOYED and the failure is recorded in `lastTeardown`."""
     created = _running_instance(client, monkeypatch)
     monkeypatch.setattr("app.main.R1Client.delete", lambda self, path, params=None, **kw: FakeR1Response(503 if path.startswith("/nfo/") else 204, {}))
 
@@ -706,6 +722,7 @@ def test_terminate_from_faulted_or_deploying_retires_the_instance(client, db_ses
     assert client.delete(f"/instances/{instance_id}").status_code == 204
 
 
+# Each row is a route, a state it is illegal in, and the event the route fires; the answer is 409 LIFECYCLE_ILLEGAL_TRANSITION naming both the state and the event.
 @pytest.mark.parametrize("route,state,event", [
     ("terminate", InstanceState.UNDEPLOYED, "TERMINATE"),
     ("terminate", InstanceState.UPGRADING, "TERMINATE"),
@@ -722,6 +739,7 @@ def test_illegal_transitions_are_409_naming_state_and_event(client, db_session_f
 
 
 def test_critical_fault_on_a_non_running_instance_is_409(client, db_session_factory):
+    """A critical fault on an instance that is not RUNNING is refused with 409 and is not recorded."""
     instance_id = _make_instance(db_session_factory, state=InstanceState.FAULTED)
     resp = client.post(f"/instances/{instance_id}/fault", params={"severity": "critical"})
     assert resp.status_code == 409
@@ -730,6 +748,7 @@ def test_critical_fault_on_a_non_running_instance_is_409(client, db_session_fact
 
 
 def test_upgrade_of_a_non_running_instance_is_409(client, db_session_factory, monkeypatch):
+    """Upgrading an instance that is not RUNNING (here FAULTED) is 409 naming the START_UPGRADE event."""
     fake_get, fake_post = _route_r1_get_post()
     monkeypatch.setattr("app.main.R1Client.get", fake_get)
     monkeypatch.setattr("app.main.R1Client.post", fake_post)
@@ -739,6 +758,7 @@ def test_upgrade_of_a_non_running_instance_is_409(client, db_session_factory, mo
     assert "event START_UPGRADE" in resp.json()["detail"]["detail"]
 
 
+# Each row is a lifecycle or configuration route called with an id that does not exist; every one answers 404 RAPP_INSTANCE_NOT_FOUND.
 @pytest.mark.parametrize("method,path,kwargs", [
     ("post", "/instances/{id}/bootstrap-complete", {}),
     ("post", "/instances/{id}/recover", {}),
@@ -758,6 +778,7 @@ def test_unknown_instance_is_404_on_every_lifecycle_route(client, method, path, 
 
 
 def test_resolve_with_no_pending_upgrade_is_404(client, db_session_factory):
+    """Resolving an instance that has no pending upgrade is 404."""
     instance_id = _make_instance(db_session_factory)
     resp = client.post(f"/instances/{instance_id}/upgrade/resolve", params={"succeeded": True})
     assert resp.status_code == 404
@@ -765,6 +786,7 @@ def test_resolve_with_no_pending_upgrade_is_404(client, db_session_factory):
 
 
 def test_create_instance_from_an_unknown_package_is_404(client, monkeypatch):
+    """Creating from a package Onboarding does not know is 404 PACKAGE_NOT_FOUND."""
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeR1Response(404, {}))
     resp = client.post("/instances", json={"packageId": str(uuid.uuid4())})
     assert resp.status_code == 404
@@ -774,6 +796,8 @@ def test_create_instance_from_an_unknown_package_is_404(client, monkeypatch):
 # ---------------------------------------------------------------- OI-2-upgrade-completeness / OI-1-upgrade-identity
 
 def test_upgrade_route_provisions_a_complete_replacement(client, monkeypatch):
+    """The upgrade route creates a replacement through the same path as create (package check, new identity, NFO deployment, usage registration), in DEPLOYING with the old instance's configuration, autonomy mode and region scope, and puts the old one in UPGRADING.
+    """
     calls = []
     fake_get, fake_post = _route_r1_get_post()
 
@@ -801,6 +825,8 @@ def test_upgrade_route_provisions_a_complete_replacement(client, monkeypatch):
 
 
 def test_upgrade_route_refuses_a_package_that_is_not_deployable(client, monkeypatch):
+    """Upgrading to a package that is not AVAILABLE or PRIMED is 409 MODEL_NOT_CERTIFIED, the old instance stays RUNNING and no replacement row is left behind.
+    """
     created = _running_instance(client, monkeypatch)
     monkeypatch.setattr("app.main.R1Client.get", _route_r1_get_post(onboarding_status="DEPRECATED")[0])
 
@@ -851,6 +877,8 @@ def test_upgrade_commit_via_route_releases_the_old_instance(client, monkeypatch,
 
 
 def test_upgrade_rollback_via_route_tears_the_replacement_down(client, monkeypatch, fake_r1_delete):
+    """Resolving an upgrade as failed returns the old instance to RUNNING, terminates the replacement's NFO workload and deletes the replacement row.
+    """
     created = _running_instance(client, monkeypatch)
     upgrade = client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())}).json()
     new_workload = client.get(f"/instances/{upgrade['newInstanceId']}").json()["workloadRef"]
@@ -864,6 +892,7 @@ def test_upgrade_rollback_via_route_tears_the_replacement_down(client, monkeypat
 
 
 def test_terminating_a_pending_upgrade_replacement_is_409(client, monkeypatch):
+    """The replacement row of an upgrade in flight cannot be terminated (409): the upgrade must be resolved instead."""
     created = _running_instance(client, monkeypatch)
     upgrade = client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())}).json()
     resp = client.post(f"/instances/{upgrade['newInstanceId']}/terminate")
@@ -891,6 +920,8 @@ def test_overdue_upgrade_rolls_back_when_the_instance_is_read(client, db_session
 
 
 def test_overdue_upgrade_rolls_back_when_the_list_is_read(client, db_session_factory, monkeypatch):
+    """Listing instances after an upgrade's deadline rolls the unresolved upgrade back, so only the old instance remains, RUNNING.
+    """
     created = _running_instance(client, monkeypatch)
     client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())})
     _expire_upgrade(db_session_factory, created["instanceId"])
@@ -900,6 +931,7 @@ def test_overdue_upgrade_rolls_back_when_the_list_is_read(client, db_session_fac
 
 
 def test_resolving_an_overdue_upgrade_as_succeeded_is_409_timed_out(client, db_session_factory, monkeypatch):
+    """Resolving as succeeded after the deadline is 409 RAPP_UPGRADE_TIMED_OUT, and the rollback it triggered is committed."""
     created = _running_instance(client, monkeypatch)
     client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())})
     _expire_upgrade(db_session_factory, created["instanceId"])
@@ -931,6 +963,8 @@ def test_losing_the_lazy_upgrade_sweep_to_another_replica_is_not_an_error_on_a_r
 
 
 def test_losing_the_lazy_sweep_while_resolving_an_overdue_upgrade_is_still_409_timed_out(client, db_session_factory, monkeypatch):
+    """If another replica rolls the overdue upgrade back at the same moment, resolving as succeeded still answers 409 RAPP_UPGRADE_TIMED_OUT.
+    """
     created = _running_instance(client, monkeypatch)
     client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())})
     _expire_upgrade(db_session_factory, created["instanceId"])
@@ -952,6 +986,8 @@ def _commit_upgrade(client, instance_id, new_package):
 
 
 def _commit_rollback(client, instance_id):
+    """Starts a rollback of `instance_id`, bootstraps the replacement and resolves the upgrade as succeeded; returns the rollback answer.
+    """
     started = client.post(f"/instances/{instance_id}/rollback")
     assert started.status_code == 200, started.json()
     body = started.json()
@@ -961,6 +997,8 @@ def _commit_rollback(client, instance_id):
 
 
 def test_upgrade_commit_records_a_version_with_what_the_old_instance_ran(client, monkeypatch):
+    """Committing an upgrade records a version holding the retired instance's package and configuration, and the history names it as the rollback target.
+    """
     v1 = str(uuid.uuid4())
     fake_get, fake_post = _route_r1_get_post()
     monkeypatch.setattr("app.main.R1Client.get", fake_get)
@@ -980,6 +1018,8 @@ def test_upgrade_commit_records_a_version_with_what_the_old_instance_ran(client,
 
 
 def test_rollback_restores_the_previous_package_and_configuration(client, monkeypatch):
+    """A rollback re-provisions the previous version's package, configuration, autonomy mode and region scope, not the configuration the current version was retuned to.
+    """
     created = _running_instance(client, monkeypatch, config={"threshold": 1}, autonomyMode="AUTONOMOUS",
                                 regionScope={"nodeIds": ["ne-1"]})
     v1 = client.get(f"/instances/{created['instanceId']}").json()["packageId"]
@@ -1009,6 +1049,8 @@ def test_rollback_resolves_a_superseded_instance_id_to_the_current_one(client, m
 
 
 def test_repeated_rollbacks_walk_back_instead_of_flip_flopping(client, monkeypatch):
+    """Each rollback goes one version further back, an upgrade that was rolled back is skipped, and when none is left the answer is 409 ROLLBACK_HISTORY_UNAVAILABLE.
+    """
     created = _running_instance(client, monkeypatch)
     v1 = client.get(f"/instances/{created['instanceId']}").json()["packageId"]
     v2, v3 = str(uuid.uuid4()), str(uuid.uuid4())
@@ -1029,6 +1071,7 @@ def test_repeated_rollbacks_walk_back_instead_of_flip_flopping(client, monkeypat
 
 
 def test_an_upgrade_after_a_rollback_can_itself_be_rolled_back(client, monkeypatch):
+    """An upgrade made after a rollback is a version like any other and rolls back to the package before it."""
     created = _running_instance(client, monkeypatch)
     v1 = client.get(f"/instances/{created['instanceId']}").json()["packageId"]
     v2_id = _commit_upgrade(client, created["instanceId"], str(uuid.uuid4()))
@@ -1040,6 +1083,7 @@ def test_an_upgrade_after_a_rollback_can_itself_be_rolled_back(client, monkeypat
 
 
 def test_rollback_with_no_history_is_409(client, monkeypatch):
+    """An instance that was never upgraded cannot be rolled back (409 ROLLBACK_HISTORY_UNAVAILABLE) and stays RUNNING."""
     created = _running_instance(client, monkeypatch)
     resp = client.post(f"/instances/{created['instanceId']}/rollback")
     assert resp.status_code == 409 and resp.json()["detail"]["title"] == "ROLLBACK_HISTORY_UNAVAILABLE"
@@ -1047,11 +1091,14 @@ def test_rollback_with_no_history_is_409(client, monkeypatch):
 
 
 def test_rollback_of_an_unknown_instance_is_404(client):
+    """Rolling back an unknown instance is 404."""
     resp = client.post(f"/instances/{uuid.uuid4()}/rollback")
     assert resp.status_code == 404 and resp.json()["detail"]["title"] == "RAPP_INSTANCE_NOT_FOUND"
 
 
 def test_failed_rollback_leaves_the_current_version_running_and_rollable(client, monkeypatch, fake_r1_delete):
+    """When a rollback's replacement fails, the current version stays RUNNING, the replacement is gone and the version it could roll back to is still available.
+    """
     created = _running_instance(client, monkeypatch)
     v2 = str(uuid.uuid4())
     v2_id = _commit_upgrade(client, created["instanceId"], v2)
@@ -1067,6 +1114,7 @@ def test_failed_rollback_leaves_the_current_version_running_and_rollable(client,
 
 
 def test_rollback_of_an_instance_that_is_not_running_is_409(client, monkeypatch):
+    """Only a RUNNING instance can be rolled back; a FAULTED one is 409 LIFECYCLE_ILLEGAL_TRANSITION."""
     created = _running_instance(client, monkeypatch)
     v2_id = _commit_upgrade(client, created["instanceId"], str(uuid.uuid4()))
     client.post(f"/instances/{v2_id}/fault", params={"severity": "critical"})
@@ -1077,6 +1125,8 @@ def test_rollback_of_an_instance_that_is_not_running_is_409(client, monkeypatch)
 
 
 def test_rollback_to_a_package_no_longer_deployable_is_refused(client, monkeypatch):
+    """If the earlier package is no longer deployable the rollback is 409 MODEL_NOT_CERTIFIED and the current instance stays RUNNING.
+    """
     created = _running_instance(client, monkeypatch)
     v2_id = _commit_upgrade(client, created["instanceId"], str(uuid.uuid4()))
     monkeypatch.setattr("app.main.R1Client.get", _route_r1_get_post(onboarding_status="DELETING")[0])

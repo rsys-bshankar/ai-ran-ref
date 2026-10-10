@@ -26,6 +26,8 @@ from .models import Alarm, PMFile, RAppActionApproval, RAppDecisionRecord, Safeg
 
 
 def advance_waves() -> None:
+    """Task `advance-waves`: runs the due-wave sweep of CM jobs (`main.advance_due`) and then of software campaigns (`lifecycle.advance_due`) in one session.
+    """
     from . import lifecycle, main
     with SessionLocal() as db:
         main.advance_due(db)
@@ -33,30 +35,38 @@ def advance_waves() -> None:
 
 
 def publish_kpis() -> None:
+    """Task `publish-kpis`: publishes the KPI schedules whose interval has passed (`main.run_due_kpi_schedules`)."""
     from . import main
     with SessionLocal() as db:
         main.run_due_kpi_schedules(db)
 
 
 def run_kpi_guards() -> None:
+    """Task `run-kpi-guards`: evaluates the KPI guards of finished CM jobs whose observation window has passed (`main.run_due_kpi_guards`)."""
     from . import main
     with SessionLocal() as db:
         main.run_due_kpi_guards(db)
 
 
 def expire_approvals() -> None:
+    """Task `expire-approvals`: lapses the rApp action approvals nobody decided in time (`main.lapse_due_approvals`); each is committed on its own and a row another replica holds is skipped.
+    """
     from . import main
     with SessionLocal() as db:
         main.lapse_due_approvals(db)
 
 
 def chain_decisions() -> None:
+    """Task `chain-decisions`: writes the decision records that are not yet in the audit chain (`main.chain_decisions`): the catch-up for a record whose chaining right after its commit did not happen.
+    """
     from . import main
     with SessionLocal() as db:
         main.chain_decisions(db)
 
 
 def purge_safeguard_refusals() -> None:
+    """Task `purge-safeguard-refusals`: deletes refusal records older than `SAFEGUARD_REFUSAL_RETENTION_DAYS` when that is above 0, and reports the table's size when retention is off.
+    """
     from . import main
     with SessionLocal() as db:
         if main.SAFEGUARD_REFUSAL_RETENTION_DAYS > 0:
@@ -65,6 +75,8 @@ def purge_safeguard_refusals() -> None:
 
 
 def purge_cleared_alarms() -> None:
+    """Task `purge-cleared-alarms`: deletes alarms cleared longer ago than `SMO_RETENTION_ALARMS_DAYS` (0 keeps all); an alarm that was never cleared stays. Reports the table's size when retention is off.
+    """
     days = retention_days("SMO_RETENTION_ALARMS_DAYS")
     with SessionLocal() as db:
         if days > 0:
@@ -73,6 +85,8 @@ def purge_cleared_alarms() -> None:
 
 
 def purge_pm_files() -> None:
+    """Task `purge-pm-files`: deletes PM files that became ready longer ago than `SMO_RETENTION_PM_FILES_DAYS` (0 keeps all). Reports the table's size when retention is off.
+    """
     days = retention_days("SMO_RETENTION_PM_FILES_DAYS")
     with SessionLocal() as db:
         if days > 0:

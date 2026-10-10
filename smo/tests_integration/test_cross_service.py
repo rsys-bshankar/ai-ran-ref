@@ -419,6 +419,9 @@ def test_runtime_profile_flows_from_rapp_manifest_to_nfo_descriptor(mesh, loaded
 
 
 def _seed_managed_element(loaded_apps, db_connection, ref):
+    """Inserts a managed element and the mock O1 adaptor endpoint it points at straight into RAN NF OAM's tables, inside the test's connection (a
+    savepoint), so a test can start from a registered element without the registration routes.
+    """
     from sqlalchemy.orm import Session
 
     ManagedEntity = loaded_apps["ran-nf-oam"].ManagedEntity

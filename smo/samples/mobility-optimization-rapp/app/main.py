@@ -71,6 +71,7 @@ DEFAULT_DMRO_BOUNDS = {"dmroControl": True, "maximumDeviationHoTriggerLow": -6, 
 
 
 class RappError(Exception):
+    """An error this rApp raises on purpose; `_rapp_error` answers it as `{detail: {title, status, detail}}` with `status` as the HTTP status."""
     def __init__(self, status: int, title: str, detail: str):
         self.status, self.title, self.detail = status, title, detail
 
@@ -98,6 +99,9 @@ def _instance(db: Session, instance_id: uuid.UUID) -> MobilityInstance:
 
 
 def _relations(db: Session, inst: MobilityInstance) -> dict[str, MobilityRelation]:
+    """Returns the instance's relation rows by relation id, adding (not committing) a row for any configured relation that has none yet; the caller
+    commits.
+    """
     rows = {r.relation_id: r for r in db.scalars(select(MobilityRelation).where(MobilityRelation.instance_id == inst.instance_id))}
     for rel in inst.relations:
         if rel["relation"] not in rows:
@@ -159,6 +163,10 @@ def _decision(inst, execution_id: str, reason: str) -> dict:
 
 
 def _execute_direct(inst: MobilityInstance, changes: dict[str, int], execution_id: str, reason: str) -> dict:
+    """Sends CIO writes straight to DME `/actions` with a fresh actionId and returns {path, actionId, status, ...}.
+
+    A platform error is returned as status REJECTED with the error body, not raised, so the caller's verification read decides what happened.
+    """
     action_id = str(uuid.uuid4())
     try:
         result = sdk.platform.execute_action(
@@ -203,6 +211,9 @@ def _intent_actions(intent_id: str) -> dict[str, dict]:
 
 
 def _expectation(inst: MobilityInstance, relation: str, value: int, execution_id: str) -> dict:
+    """Builds the one TS 28.312 DELIVER expectation for a relation's new CIO (six equal entries); its id (`cio-<relation>-<first 8 of the execution
+    id>`) is how the Intent's fulfilment report is matched back to the relation.
+    """
     return {"expectationId": f"cio-{relation}-{execution_id[:8]}", "expectationVerb": "DELIVER",
             "expectationObject": {"objectType": "RAN_SUBNETWORK", "objectInstance": inst.managed_element_ref,
                                   "objectContexts": [{"contextAttribute": "Cell", "contextCondition": "IS_ALL_OF",
@@ -212,6 +223,12 @@ def _expectation(inst: MobilityInstance, relation: str, value: int, execution_id
 
 
 def _settle(row: MobilityRelation, d: MobilityDecision, now: datetime.datetime | None, ok: bool, rollback: dict | None) -> None:
+    """Records the end state of one relation's change on its row and audit row.
+
+    When `ok`, the relation goes to OBSERVING with its new CIO and the change (time, from, to, the rate before) is kept for the KPI check.
+    Otherwise it returns to STEADY on its old CIO and the outcome names the rollback trigger and whether the rollback was verified. `now` is
+    None when the caller has no observation time, then the decision's own is used.
+    """
     if ok:
         row.state, row.current_cio = engine.OBSERVING, d.to_cio
         changed_at = cast(datetime.datetime, now or d.observed_at)      # a decision to change has an observation
@@ -228,6 +245,12 @@ def _settle(row: MobilityRelation, d: MobilityDecision, now: datetime.datetime |
 
 
 def _follow_dispatch(inst, rows, decisions: dict[str, MobilityDecision], dispatch: dict, execution_id: str) -> None:
+    """Settles the relations of one AutonomyDispatch according to where it is.
+
+    SHADOWED, REJECTED and AWAITING_SCOPE only record the outcome (ASSIST remembers the pending dispatch on the row); a dispatched change is
+    matched to the Intent's action report, verified by an O1 read-back, and rolled back through DME when the action did not complete or the
+    read-back differs.
+    """
     intent = {"dispatchId": dispatch["dispatchId"], "autonomyMode": dispatch["autonomyMode"], "status": dispatch["status"],
               "intentId": dispatch.get("intentId"), "rejectedBy": dispatch.get("rejectedBy")}
     rels = list(decisions)
@@ -259,6 +282,11 @@ def _follow_dispatch(inst, rows, decisions: dict[str, MobilityDecision], dispatc
 
 
 def _reconcile(db: Session, inst: MobilityInstance) -> list[dict]:
+    """Settles ASSIST dispatches the operator has since resolved or rejected.
+
+    Groups the relations by pending dispatch, skips those still AWAITING_SCOPE, follows the others, commits, and returns one summary per settled
+    dispatch with each relation's outcome.
+    """
     rows = _relations(db, inst)
     pending: dict[uuid.UUID, list[str]] = {}
     for rel, row in rows.items():
@@ -321,15 +349,18 @@ def start_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.get("/instances")
 def list_instances(db: Session = Depends(get_session)):
+    # Lists every started instance, oldest first.
     return {"items": [_instance_view(i) for i in db.scalars(select(MobilityInstance).order_by(MobilityInstance.created_at))]}
 
 
 @app.get("/instances/{instance_id}")
 def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Returns one instance; 404 INSTANCE_NOT_STARTED when `start` was never called for it.
     return _instance_view(_instance(db, instance_id))
 
 
 def _instance_view(i: MobilityInstance) -> dict:
+    """The JSON shape of an instance on every route that returns one."""
     return {"instanceId": str(i.instance_id), "packageId": str(i.package_id) if i.package_id else None,
             "managedElementRef": i.managed_element_ref, "relations": i.relations, "baselineCio": i.baseline_cio,
             "dmroBounds": i.dmro_bounds, "autonomyMode": i.autonomy_mode, "rmihId": i.rmih_id,
@@ -382,6 +413,8 @@ def train(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.post("/instances/{instance_id}/lifecycle/validate")
 def validate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # VALIDATION on MLVF: scores the stored model on the held-out part of the TRAINING dataset and records the job. Needs a trained model
+    # (`inst.model_params`); 404 INSTANCE_NOT_STARTED for an unknown instance.
     inst = _instance(db, instance_id)
     job = sdk.lifecycle.start_validation(inst.model_id, RAPP_ID, package_id=inst.package_id,
                                          training_job_id=(inst.lifecycle_jobs or {}).get("training"),
@@ -553,12 +586,15 @@ def evaluate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.post("/instances/{instance_id}/reconcile")
 def reconcile(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Settles pending ASSIST dispatches now (the same step `evaluate` runs first); returns {settled: [...]}, empty when there is nothing to
+    # settle.
     return {"settled": _reconcile(db, _instance(db, instance_id))}
 
 
 # ---------------------------------------------------------------- audit + dashboard
 
 def _decision_view(d: MobilityDecision) -> dict:
+    """The JSON shape of one audit row, as the decisions list, the evaluate answer and the dashboard return it."""
     return {"decisionId": str(d.decision_id), "executionId": d.execution_id, "relation": d.relation_id,
             "observedAt": d.observed_at.isoformat() if d.observed_at else None, "rate": d.rate, "attempts": d.attempts,
             "prediction": d.prediction, "safety": d.safety, "decision": d.decision, "reason": d.reason,
@@ -570,6 +606,7 @@ def _decision_view(d: MobilityDecision) -> dict:
 @app.get("/instances/{instance_id}/decisions")
 def list_decisions(instance_id: uuid.UUID, relation: str | None = None, execution_id: str | None = None,
                    limit: int = 100, db: Session = Depends(get_session)):
+    # Audit rows of an instance, newest first; filtered by relation and execution_id when given; `limit` is capped at 500.
     stmt = select(MobilityDecision).where(MobilityDecision.instance_id == instance_id)
     if relation:
         stmt = stmt.where(MobilityDecision.relation_id == relation)
@@ -588,6 +625,8 @@ def _relation_view(inst: MobilityInstance, r: MobilityRelation) -> dict:
 
 @app.get("/instances/{instance_id}/relations")
 def list_relations(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # The instance's relations with their state, CIO and last change; creates the missing rows and commits, so a freshly started instance lists
+    # all its relations.
     inst = _instance(db, instance_id)
     rows = _relations(db, inst)
     db.commit()
@@ -619,11 +658,13 @@ def dashboard(instance_id: uuid.UUID, points: int = 48, db: Session = Depends(ge
 
 @app.post("/sim-producer/register", status_code=201)
 def register_sim_producer():
+    # Registers the HO_PERFORMANCE_SIM data type at DME with this rApp as the Digital Twin producer (201).
     return register_sim_type(sdk)
 
 
 @app.post("/sim-producer/publish")
 def publish_sim_data(body: SimPublishRequest):
+    # Generates the requested relations' windows with their injected scenario and delivers them to every data job of the sim type.
     return publish_sim(sdk, body)
 
 

@@ -8,6 +8,9 @@ from .series import by_cell, hourly_pairs, hourly_profile
 
 
 def train(records: list[dict], version: str = "1.0.0") -> tuple[EnergyModel, dict]:
+    """Fits the hour-of-day profile and then the regression of the next-hour change on the history and returns the model with its metrics; raises
+    ValueError (the route answers 422 TRAINING_FAILED) when fewer than 3 hourly rows exist.
+    """
     cells = by_cell(records)
     rows = [row for series in cells.values() for row in hourly_pairs(series)]
     if len(rows) < 3:

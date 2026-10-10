@@ -38,6 +38,9 @@ print(json.dumps(result))
 
 @pytest.fixture(scope="module")
 def declared() -> dict[str, list[str]]:
+    """The tables each module's models declare, found by loading every module's models in a subprocess and comparing what each added to the shared
+    metadata; {module: sorted table names}.
+    """
     env = {**os.environ, "SMO_DATABASE_URL": os.environ.get("SMO_DATABASE_URL", "sqlite://"), "SMO_ENROLLMENT_SECRET": "x"}
     done = subprocess.run([sys.executable, "-c", _PROBE, json.dumps(MODULES)], cwd=SMO_ROOT, env=env, capture_output=True, text=True, timeout=300)
     assert done.returncode == 0, done.stderr[-2000:]
@@ -45,17 +48,20 @@ def declared() -> dict[str, list[str]]:
 
 
 def test_every_module_owns_exactly_the_tables_the_map_says(declared):
+    """Each module's models declare exactly the tables the owner map lists for it."""
     for owner, tables in declared.items():
         assert tables == sorted(OWNERS[owner]), f"{owner}: the models declare {sorted(tables)}, the map says {sorted(OWNERS[owner])}"
 
 
 def test_no_table_has_two_owners():
+    """No table is listed under more than one owner in the map."""
     listed = [t for owner, tables in OWNERS.items() if owner != "_comment" for t in tables]
     duplicates = sorted({t for t in listed if listed.count(t) > 1})
     assert not duplicates, f"listed under more than one owner: {duplicates}"
 
 
 def test_the_map_covers_every_table_the_models_declare(declared):
+    """Every table a module's models declare has an owner in the map."""
     mapped = {t for owner, tables in OWNERS.items() if owner != "_comment" for t in tables}
     orphans = sorted({t for tables in declared.values() for t in tables} - mapped)
     assert not orphans, f"tables with no owner in migrations/table_owners.json: {orphans}"

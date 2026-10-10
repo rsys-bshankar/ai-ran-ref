@@ -1,3 +1,9 @@
+/**
+ * The entry point of the single-page app: creates the query client, mounts the providers (react-query, toasts, the session, the router) and declares every route. `/login` is the only route outside `RequireAuth`; all the others render inside `Layout`
+ * and need a signed-in user, and `/admin` additionally needs the admin role. An unknown path goes to the dashboard. The Onboarding and Campaigns pages are not routes: they are tabs of the Infrastructure page, and the rApp directory is a tab of the rApps page.
+ * The route guards decide what to show; the BFF checks every call again.
+ */
+
 import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -30,7 +36,7 @@ import "./styles.css";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // A 4xx won't fix itself on retry; transient 5xx/network errors might.
+      // A 4xx won't fix itself on retry; transient 5xx/network errors might (at most two retries).
       retry: (count, err) => !(err instanceof ApiError && err.status < 500) && count < 2,
       refetchOnWindowFocus: true,
       staleTime: 2_000,
@@ -38,6 +44,10 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * Route guard. Waits for the session to load, sends a signed-out visitor to /login (remembering where they were going), sends a local admin who must still enrol a one-time code to /security (PR-SEC-7.8; the backend refuses every other route until then),
+ * and, when `minRole` is given, sends a user below that role to the dashboard. Otherwise it draws its children.
+ */
 function RequireAuth({ children, minRole }: { children: ReactNode; minRole?: Role }) {
   const { me, loading } = useAuth();
   const location = useLocation();

@@ -30,6 +30,7 @@ def _roles():
 
 
 def _walk(node):
+    """Yields a parsed YAML node and every dict and list nested in it, depth first."""
     yield node
     if isinstance(node, dict):
         for v in node.values():
@@ -40,6 +41,9 @@ def _walk(node):
 
 
 def test_every_document_is_an_external_secret_pointing_at_the_store_that_is_defined():
+    """Every example document is an ExternalSecret in the chart's namespace that points at the example's ClusterSecretStore, owns its target Secret
+    and names a remote key and property for each entry.
+    """
     assert STORE["kind"] == "ClusterSecretStore"
     store = STORE["metadata"]["name"]
     assert EXTERNAL
@@ -53,6 +57,7 @@ def test_every_document_is_an_external_secret_pointing_at_the_store_that_is_defi
 
 
 def test_the_example_values_only_set_keys_the_chart_has():
+    """Every key the example's values file sets exists in the chart's values.yaml, so a renamed chart key fails here."""
     def check(example, chart, path=""):
         for k, v in example.items():
             assert k in chart, f"{path}{k} is not in the chart's values.yaml"
@@ -62,6 +67,9 @@ def test_the_example_values_only_set_keys_the_chart_has():
 
 
 def test_the_owner_secret_has_the_name_and_keys_the_chart_mounts():
+    """The example's owner Secret has the name and the two keys (database password and enrollment secret) that the chart's templates mount,
+    matching the chart's own generated Secret.
+    """
     name = VALUES["secrets"]["existingSecret"]
     assert 'default "smo-secrets"' in TEMPLATES["_helpers.tpl"] and name == "smo-secrets"
     mounted = set(re.findall(r"key: ([a-z-]+), path: (?:db_password|enrollment_secret)\b", TEMPLATES["modules.yaml"]))
@@ -72,6 +80,7 @@ def test_the_owner_secret_has_the_name_and_keys_the_chart_mounts():
 
 
 def test_the_role_secret_has_one_key_per_database_role_and_no_other():
+    """The role Secret has one `db-password-<role>` key per database role and no other, and the chart builds its key names the same way."""
     name = VALUES["databaseRoles"]["existingSecret"]
     assert 'default "smo-role-secrets"' in TEMPLATES["_helpers.tpl"] and name == "smo-role-secrets"
     assert 'printf "db-password-%s"' in TEMPLATES["modules.yaml"]
@@ -80,6 +89,9 @@ def test_the_role_secret_has_one_key_per_database_role_and_no_other():
 
 
 def test_the_gui_secret_references_name_a_secret_and_key_the_example_creates_and_the_chart_reads():
+    """The OIDC client secret and TOTP key references name a Secret and key the example creates, and the chart reads the same variable with the
+    same default key.
+    """
     for ref, var, default in (("oidcClientSecretRef", "GUI_OIDC_CLIENT_SECRET", "client-secret"), ("totpKeySecretRef", "GUI_TOTP_KEY", "totp-key")):
         value = VALUES["gui"][ref]
         assert value["key"] in _targets()[value["name"]]
@@ -89,6 +101,7 @@ def test_the_gui_secret_references_name_a_secret_and_key_the_example_creates_and
 
 
 def test_the_mtls_secret_is_named_and_keyed_as_the_chart_reads_it():
+    """The per-module mTLS Secrets use the chart's suffix, belong to a chart module and carry exactly `tls.crt`, `tls.key` and `ca.crt`."""
     suffix = CHART_VALUES["mtls"]["secretSuffix"]
     assert "tls.crt, tls.key, ca.crt" in (CHART / "values.yaml").read_text()
     found = [d for d in EXTERNAL if d["spec"]["target"]["name"].endswith(suffix)]
@@ -100,6 +113,9 @@ def test_the_mtls_secret_is_named_and_keyed_as_the_chart_reads_it():
 
 
 def test_every_secret_the_example_creates_is_read_by_the_chart_through_the_values_or_the_mtls_name():
+    """Every Secret the example creates is read by the chart, through a values reference or the mTLS name, so the example creates nothing nobody
+    uses.
+    """
     referenced = {VALUES["secrets"]["existingSecret"], VALUES["databaseRoles"]["existingSecret"],
                   VALUES["gui"]["oidcClientSecretRef"]["name"], VALUES["gui"]["totpKeySecretRef"]["name"]}
     suffix = CHART_VALUES["mtls"]["secretSuffix"]
@@ -108,6 +124,9 @@ def test_every_secret_the_example_creates_is_read_by_the_chart_through_the_value
 
 
 def test_no_secret_value_is_in_the_example():
+    """The example holds no secret value: no Secret document, no credential field, no PEM block and nothing that looks like an inline password,
+    secret or token.
+    """
     for path in EXAMPLE.glob("*.yaml"):
         text = path.read_text()
         for doc in yaml.safe_load_all(text):
@@ -120,5 +139,6 @@ def test_no_secret_value_is_in_the_example():
 
 
 def test_the_readme_says_plainly_that_it_has_not_been_applied_to_a_cluster():
+    """The example's README keeps saying it has not been applied to a cluster."""
     text = (EXAMPLE / "README.md").read_text()
     assert "NOT been applied to a cluster" in text

@@ -22,6 +22,9 @@ release_notes = _load("release_notes")
 
 
 def test_every_compose_build_is_published_once_and_names_are_unique():
+    """Every compose build is published exactly once under a unique image name, and `migrate` is not published separately because it reuses the
+    gateway's build.
+    """
     listed = release_images.images()
     names = [i["name"] for i in listed]
     assert len(names) == len(set(names)), "two builds would push the same image name"
@@ -30,6 +33,9 @@ def test_every_compose_build_is_published_once_and_names_are_unique():
 
 
 def test_the_release_workflow_takes_its_image_list_from_compose_and_pushes_nothing_unsigned():
+    """The release workflow takes its image matrix from the script that reads compose, runs on `smo-v*` tags, signs with cosign, attests
+    provenance, and uses the docker-container driver that attestations need.
+    """
     text = (REPO_ROOT / ".github" / "workflows" / "release-images.yml").read_text()
     assert "release_images.py matrix" in text
     assert re.search(r"^\s+tags: \[\"smo-v\*\"\]", text, re.M)
@@ -38,6 +44,9 @@ def test_the_release_workflow_takes_its_image_list_from_compose_and_pushes_nothi
 
 
 def test_previous_tag_skips_release_candidates_of_later_versions_and_unrelated_tags():
+    """The previous tag is the highest release before this one by version order (a release candidate of the same version counts as before it),
+    ignoring later versions and tags that are not releases.
+    """
     tags = ["smo-v0.1.0", "smo-v0.2.0-rc.1", "smo-v0.2.0", "smo-v0.10.0", "other", "smo-v0.9.1"]
     assert release_notes.previous_tag(tags, "smo-v0.1.0") is None
     assert release_notes.previous_tag(tags, "smo-v0.2.0") == "smo-v0.2.0-rc.1"
@@ -45,11 +54,13 @@ def test_previous_tag_skips_release_candidates_of_later_versions_and_unrelated_t
 
 
 def test_a_tag_that_is_not_a_release_is_refused():
+    """A tag without the `smo-v` prefix is refused with ValueError."""
     with pytest.raises(ValueError):
         release_notes.version_of("v1.0.0")
 
 
 def test_notes_carry_the_changelog_section_and_the_merged_titles():
+    """The release notes carry the version's CHANGELOG section (not the Unreleased one), the merged pull request titles and the image name pattern."""
     changelog = "## [Unreleased]\n\n## [0.1.0] - 2026-10-03\n\nFirst.\n\n### Added\n- thing\n\n[Unreleased]: x\n"
     section = release_notes.changelog_section(changelog, "0.1.0")
     assert section.startswith("First.") and "- thing" in section and "Unreleased" not in section
@@ -58,6 +69,7 @@ def test_notes_carry_the_changelog_section_and_the_merged_titles():
 
 
 def test_the_supported_versions_in_security_md_are_released_versions():
+    """Every minor version listed as supported in SECURITY.md has at least one release in the CHANGELOG."""
     security = (REPO_ROOT / "SECURITY.md").read_text()
     changelog = (SMO_ROOT / "CHANGELOG.md").read_text()
     released = set(re.findall(r"^## \[(\d+\.\d+\.\d+(?:-rc\.\d+)?)\]", changelog, re.M))

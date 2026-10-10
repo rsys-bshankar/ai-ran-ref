@@ -1,3 +1,11 @@
+/**
+ * The shared building blocks every page is made of: page header, card, tabs (and `useHashTab`), status and severity badges, id chip, key/value list,
+ * JSON and error boxes, `DataTable`, the `Drawer` and `Modal` overlays, form `Field`, and the role-gated `ActionButton` and `Can`.
+ * Pure presentation plus two hooks into the session (`useAuth`) and the lifecycle-call hook (`useSmoAction`); it fetches nothing itself.
+ * Accessibility is handled here once: dialogs are named by their heading and close on Escape, scrollable regions are focusable, tabs carry the tab roles.
+ * `TONES` maps lifecycle state words to a badge colour; an unknown state renders in the muted tone, so adding a state needs no code but a colour needs an entry.
+ */
+
 import { useEffect, useId, useState, type ReactNode } from "react";
 
 import type { Query } from "../api/client";
@@ -7,6 +15,9 @@ import { shortId } from "../lib/domain";
 
 // ---------------------------------------------------------------- layout bits
 
+/**
+ * The page's title (the one h1), an optional subtitle line and an optional row of page-level actions (buttons) at the right.
+ */
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
   return (
     <header className="page-header">
@@ -19,6 +30,7 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
   );
 }
 
+/** A titled panel. The head row (h2 title and actions) is drawn only when one of them is given. */
 export function Card({ title, actions, children, className = "" }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <section className={`card ${className}`}>
@@ -33,6 +45,9 @@ export function Card({ title, actions, children, className = "" }: { title?: Rea
   );
 }
 
+/**
+ * A row of tab buttons (`role="tablist"`/`"tab"`, with `aria-selected`) for the given tabs; the caller renders the selected tab's content and keeps the selected id (see `useHashTab`).
+ */
 export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: ReactNode }[]; value: T; onChange: (t: T) => void }) {
   return (
     <div className="tabs" role="tablist">
@@ -91,6 +106,9 @@ const TONES: Record<string, string> = {
   ABORTED: "muted", ROLLING_BACK: "warn", ROLLED_BACK: "info", ROLLBACK_FAILED: "bad",
 };
 
+/**
+ * A coloured badge for a lifecycle state word (colour from `TONES`, the match is case-insensitive); an unknown state is muted, an empty one is a dash.
+ */
 export function StateBadge({ state }: { state: string | null | undefined }) {
   if (!state) return <span className="muted">—</span>;
   return <span className={`badge tone-${TONES[state.toUpperCase()] ?? "muted"}`}>{state}</span>;
@@ -100,6 +118,9 @@ export function SeverityChip({ severity }: { severity: string }) {
   return <span className={`sev sev-${severity.toLowerCase()}`}>{severity}</span>;
 }
 
+/**
+ * An identifier shortened for reading (`shortId`); the full value is in the tooltip and a click copies it to the clipboard. The click does not bubble, so a row's own click handler does not fire.
+ */
 export function Id({ value }: { value: string | null | undefined }) {
   if (!value) return <span className="muted">—</span>;
   return (
@@ -109,6 +130,7 @@ export function Id({ value }: { value: string | null | undefined }) {
   );
 }
 
+/** A definition list of label and value pairs; an empty (null or undefined) value shows as a dash. */
 export function KeyValue({ items }: { items: [ReactNode, ReactNode][] }) {
   return (
     <dl className="kv">
@@ -123,6 +145,9 @@ export function Json({ value }: { value: unknown }) {
   return <pre className="json" tabIndex={0}>{JSON.stringify(value, null, 2)}</pre>;
 }
 
+/**
+ * The message of an error in a red box (an `ApiError` carries the readable "title: detail" line); nothing when there is no error.
+ */
 export function ErrorBox({ error }: { error: unknown }) {
   if (!error) return null;
   return <div className="error-box">{error instanceof Error ? error.message : String(error)}</div>;
@@ -132,6 +157,10 @@ export function ErrorBox({ error }: { error: unknown }) {
 
 export interface Column<T> { header: ReactNode; render: (row: T) => ReactNode; className?: string }
 
+/**
+ * A table of `rows` with the given columns. An `error` replaces the table with an error box; `loading` with no rows yet shows "Loading…", an empty list shows `empty`.
+ * A row is clickable when `onRowClick` is given, and `selectedKey` marks the open row. The wrapper is focusable so a wide table can be scrolled with the keyboard.
+ */
 export function DataTable<T>({ rows, columns, rowKey, loading, error, empty = "Nothing here yet.", onRowClick, selectedKey }: {
   rows: T[] | undefined; columns: Column<T>[]; rowKey: (r: T) => string; loading?: boolean; error?: unknown;
   empty?: ReactNode; onRowClick?: (r: T) => void; selectedKey?: string | null;
@@ -160,6 +189,9 @@ export function DataTable<T>({ rows, columns, rowKey, loading, error, empty = "N
 
 // ---------------------------------------------------------------- overlays
 
+/**
+ * A side panel over the page (a modal dialog named by its heading). Escape, the close button and a click on the dark backdrop call `onClose`; a click inside does not.
+ */
 export function Drawer({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
   useEscape(onClose);
   const titleId = useId();                                    // the dialog is named by its heading (axe: aria-dialog-name)
@@ -173,6 +205,9 @@ export function Drawer({ title, onClose, children }: { title: ReactNode; onClose
   );
 }
 
+/**
+ * The same as `Drawer`, but a dialog centred on the page: a modal dialog named by its heading that closes on Escape, the close button or a click outside it.
+ */
 export function Modal({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
   useEscape(onClose);
   const titleId = useId();
@@ -186,6 +221,9 @@ export function Modal({ title, onClose, children }: { title: ReactNode; onClose:
   );
 }
 
+/**
+ * Calls `onClose` when Escape is pressed, for as long as the calling dialog is mounted. The listener is on the window, so it works wherever the focus is.
+ */
 function useEscape(onClose: () => void) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -196,6 +234,9 @@ function useEscape(onClose: () => void) {
 
 // ---------------------------------------------------------------- forms
 
+/**
+ * A form control with its label (the label element wraps the control, so a click on the text focuses it) and an optional hint line below.
+ */
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <label className="field">

@@ -27,6 +27,8 @@ class FakeHealthResponse:
 
 @pytest.fixture
 def client():
+    """A `TestClient` of the DME app on one in-memory SQLite database that holds the DME tables and the outbox table. The engine is kept as `app.state.test_engine` so tests can read what the routes wrote (outbox rows included); the dependency override is removed afterwards.
+    """
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine, tables=[DMEProducer.__table__, DMEType.__table__, DMEProducerType.__table__, DMEDeliverySchema.__table__,
                                               DataJob.__table__, DataOffer.__table__, DMETypeSubscription.__table__, DataRecord.__table__,
@@ -70,12 +72,14 @@ def register_type_body(name="PMCounters", version="1.0.0", **extra):
 
 
 def test_register_dme_type_returns_registration_id(client):
+    """Registering a producer and type answers 201 with the type's registration id."""
     resp = client.post("/production-capabilities", json=register_type_body())
     assert resp.status_code == 201
     assert "registrationId" in resp.json()
 
 
 def test_different_version_is_not_a_conflict(client):
+    """A second version of the same type name registers as a new type, not a conflict."""
     client.post("/production-capabilities", json=register_type_body(version="1.0.0"))
     resp = client.post("/production-capabilities", json=register_type_body(version="2.0.0"))
     assert resp.status_code == 201
@@ -112,6 +116,7 @@ def test_type_status_disabled_when_producer_health_callback_is_unreachable(clien
 
 
 def test_type_status_disabled_on_a_non_2xx_health_response(client, monkeypatch):
+    """A producer whose health callback answers 503 makes the type DISABLED."""
     monkeypatch.setattr("app.main.httpx.get", lambda url, timeout=None: FakeHealthResponse(503))
     client.post("/production-capabilities", json=register_type_body())
     resp = client.get("/dme-types")
@@ -119,6 +124,7 @@ def test_type_status_disabled_on_a_non_2xx_health_response(client, monkeypatch):
 
 
 def test_type_status_enabled_when_producer_health_callback_responds(client, monkeypatch):
+    """The type is ENABLED when a producer's registered health callback answers, and that registered URL is the one called."""
     calls = []
 
     def fake_get(url, timeout=None):
@@ -154,6 +160,7 @@ def test_type_status_stays_disabled_even_with_an_active_job_if_producer_is_unrea
 
 
 def test_data_job_rejects_unknown_delivery_method(client):
+    """A delivery method that is not a known wire value is refused with 409 DELIVERY_METHOD_NOT_OFFERED."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     resp = client.post("/data-jobs", json={
         "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
@@ -194,6 +201,7 @@ def test_data_job_rejects_a_definition_violating_the_registered_schema(client):
 
 
 def test_data_job_rejects_a_definition_missing_a_required_field(client):
+    """A production definition missing a field the type's schema requires is 422 SCHEMA_VALIDATION_FAILED."""
     reg = client.post("/production-capabilities", json=register_type_body(
         dataProductionSchema={"type": "object", "properties": {"cellId": {"type": "string"}}, "required": ["cellId"]},
     )).json()
@@ -208,6 +216,7 @@ def test_data_job_rejects_a_definition_missing_a_required_field(client):
 
 
 def test_data_job_accepts_a_definition_matching_the_registered_schema(client):
+    """A production definition that satisfies the type's schema creates the job (202)."""
     reg = client.post("/production-capabilities", json=register_type_body(
         dataProductionSchema={"type": "object", "properties": {"cellId": {"type": "string"}}, "required": ["cellId"]},
     )).json()
@@ -234,6 +243,7 @@ def test_data_job_unaffected_by_schema_check_for_an_unknown_dme_type(client):
 
 
 def test_update_data_job_rejects_a_definition_violating_the_registered_schema(client):
+    """Updating a job checks the new definition against the type's schema too (422)."""
     reg = client.post("/production-capabilities", json=register_type_body(
         dataProductionSchema={"type": "object", "properties": {"cellId": {"type": "string"}}, "required": ["cellId"]},
     )).json()
@@ -286,6 +296,7 @@ def test_data_job_rejects_a_method_the_offer_never_committed_to(client):
 
 
 def test_data_job_accepts_the_offers_committed_method(client):
+    """A job asking for the method an offer committed to is accepted."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     client.post("/offers", json={
         "dmeTypeId": reg["registrationId"], "dataDeliveryMode": "CONTINUOUS",
@@ -340,6 +351,7 @@ def test_deregister_producer_leaves_its_types_registered_but_disabled(client):
 
 
 def test_deregister_unknown_producer_is_idempotent(client):
+    """Deregistering a producer that was never registered is 204, not an error."""
     resp = client.delete("/production-capabilities", params={"producer_id": "never-registered"})
     assert resp.status_code == 204
 
@@ -396,6 +408,7 @@ def test_a_second_producer_can_register_an_already_known_type(client):
 
 
 def test_list_producers_returns_every_registered_producer(client):
+    """The producer list holds every registered producer."""
     client.post("/production-capabilities", json=register_type_body(producerId="ran-nf-oam"))
     client.post("/production-capabilities", json=register_type_body(name="Other", producerId="ran-analytics"))
     ids = {p["producerId"] for p in client.get("/production-capabilities").json()}
@@ -403,6 +416,7 @@ def test_list_producers_returns_every_registered_producer(client):
 
 
 def test_get_producer_returns_its_supported_type_ids(client):
+    """One producer's detail holds its callback addresses and the ids of the types it supports."""
     reg = client.post("/production-capabilities", json=register_type_body(producerId="ran-nf-oam")).json()
     p = client.get("/production-capabilities/ran-nf-oam").json()
     assert p == {
@@ -412,10 +426,12 @@ def test_get_producer_returns_its_supported_type_ids(client):
 
 
 def test_get_unknown_producer_is_404(client):
+    """An unknown producer is 404."""
     assert client.get("/production-capabilities/never-registered").status_code == 404
 
 
 def test_delete_dme_type_rejects_a_type_with_an_active_producer(client):
+    """A type that a producer still supports cannot be deleted (409 DME_TYPE_HAS_ACTIVE_PRODUCERS)."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     resp = client.delete(f"/dme-types/{reg['registrationId']}")
     assert resp.status_code == 409
@@ -423,6 +439,8 @@ def test_delete_dme_type_rejects_a_type_with_an_active_producer(client):
 
 
 def test_delete_dme_type_succeeds_once_its_last_producer_is_gone_and_notifies_subscribers(client, monkeypatch):
+    """Once the last producer has left, the type can be deleted, and the subscribers are told it was DEREGISTERED with its schema.
+    """
     notified = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: notified.append(json) or FakeHealthResponse(200))
 
@@ -438,6 +456,7 @@ def test_delete_dme_type_succeeds_once_its_last_producer_is_gone_and_notifies_su
 
 
 def test_delete_dme_type_also_removes_dependent_data_jobs_and_offers(client):
+    """Deleting a type also deletes the data jobs (and offers) that depend on it."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     job = client.post("/data-jobs", json={
         "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
@@ -451,6 +470,7 @@ def test_delete_dme_type_also_removes_dependent_data_jobs_and_offers(client):
 
 
 def test_delete_unknown_dme_type_is_404(client):
+    """Deleting an unknown type is 404 DME_TYPE_NOT_FOUND."""
     resp = client.delete("/dme-types/00000000-0000-0000-0000-000000000000")
     assert resp.status_code == 404
     assert resp.json()["detail"]["title"] == "DME_TYPE_NOT_FOUND"
@@ -495,6 +515,7 @@ def test_get_data_job_by_id_returns_its_fields(client):
 
 
 def test_get_unknown_data_job_is_404(client):
+    """An unknown data job is 404."""
     resp = client.get("/data-jobs/11111111-1111-1111-1111-111111111111")
     assert resp.status_code == 404
 
@@ -515,6 +536,7 @@ def test_query_data_job_status_returns_status(client):
 
 
 def test_query_unknown_data_job_status_is_404(client):
+    """The status of an unknown data job is 404."""
     resp = client.get("/data-jobs/11111111-1111-1111-1111-111111111111/status")
     assert resp.status_code == 404
 
@@ -560,6 +582,7 @@ def test_update_data_job_rejects_changing_its_target(client):
 
 
 def test_update_data_job_revalidates_delivery_method_against_the_offer(client):
+    """Changing a job's delivery method to one no offer committed to is refused on update (409), as on create."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     client.post("/offers", json={
         "dmeTypeId": reg["registrationId"], "dataDeliveryMode": "CONTINUOUS",
@@ -580,6 +603,7 @@ def test_update_data_job_revalidates_delivery_method_against_the_offer(client):
 
 
 def test_update_unknown_data_job_is_404(client):
+    """Updating an unknown data job is 404."""
     resp = client.put("/data-jobs/11111111-1111-1111-1111-111111111111", json={
         "dataDeliveryMode": "CONTINUOUS", "dmeTypeId": "22222222-2222-2222-2222-222222222222",
         "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
@@ -629,6 +653,7 @@ def test_get_data_offer_by_id_returns_its_fields(client):
 
 
 def test_get_unknown_data_offer_is_404(client):
+    """An unknown data offer is 404."""
     resp = client.get("/offers/11111111-1111-1111-1111-111111111111")
     assert resp.status_code == 404
 
@@ -652,6 +677,7 @@ def test_discover_filters_by_data_category(client):
 
 
 def test_discover_without_data_category_returns_every_type(client):
+    """Without a `data_category` the type discovery lists every type."""
     client.post("/production-capabilities", json=register_type_body(name="CoverageIssue"))
     client.post("/production-capabilities", json={
         "namespace": "AIML", "name": "ModelHealth", "version": "1.0.0", "typeName": "AIML.ModelHealth",
@@ -728,6 +754,7 @@ def test_terminate_data_job_stops_the_job_at_the_producer(client, monkeypatch):
 
 
 def test_terminate_unknown_data_job_pushes_nothing(client, monkeypatch):
+    """Terminating a job that does not exist is 204 and no producer is told."""
     calls = []
     monkeypatch.setattr("app.main.httpx.delete", lambda url, timeout=None: calls.append(url))
 
@@ -737,6 +764,8 @@ def test_terminate_unknown_data_job_pushes_nothing(client, monkeypatch):
 
 
 def test_terminate_data_job_succeeds_even_if_the_producer_stop_fails(client, monkeypatch):
+    """Terminating a job answers 204 even when the producer's stop call cannot be delivered; the producers are told through the outbox, not in the request.
+    """
     import httpx as httpx_module
 
     def raise_error(url, timeout=None):
@@ -819,6 +848,7 @@ def test_query_producer_status_enabled_when_healthy(client, monkeypatch):
 
 
 def test_query_producer_status_disabled_when_unreachable(client, monkeypatch):
+    """A producer whose health callback cannot be reached is reported DISABLED (200, not an error)."""
     import httpx as httpx_module
 
     def raise_error(url, timeout=None):
@@ -833,11 +863,13 @@ def test_query_producer_status_disabled_when_unreachable(client, monkeypatch):
 
 
 def test_query_producer_status_for_unknown_producer_is_404(client):
+    """The status of a producer that was never registered is 404."""
     resp = client.get("/production-capabilities/never-registered/status")
     assert resp.status_code == 404
 
 
 def test_query_producer_status_after_deregistration_is_404(client):
+    """After deregistration the producer's status is 404."""
     client.post("/production-capabilities", json=register_type_body(producerId="ran-nf-oam"))
     client.delete("/production-capabilities", params={"producer_id": "ran-nf-oam"})
 
@@ -858,11 +890,13 @@ def test_subscribe_and_unsubscribe_type_changes(client):
 
 
 def test_unsubscribe_unknown_type_subscription_is_idempotent(client):
+    """Unsubscribing an unknown subscription is 204."""
     resp = client.delete("/type-subscriptions/11111111-1111-1111-1111-111111111111")
     assert resp.status_code == 204
 
 
 def test_get_type_subscription_by_id_returns_its_fields(client):
+    """A subscription is returned with its destination and owner."""
     created = client.post("/type-subscriptions", json={"notificationDestination": "http://consumer/type-changes", "owner": "sa-smos"}).json()
 
     resp = client.get(f"/type-subscriptions/{created['subscriptionId']}")
@@ -871,11 +905,13 @@ def test_get_type_subscription_by_id_returns_its_fields(client):
 
 
 def test_get_unknown_type_subscription_is_404(client):
+    """An unknown subscription is 404."""
     resp = client.get("/type-subscriptions/11111111-1111-1111-1111-111111111111")
     assert resp.status_code == 404
 
 
 def test_list_type_subscriptions_filters_by_owner(client):
+    """The subscription list can be limited to one owner."""
     client.post("/type-subscriptions", json={"notificationDestination": "http://sa-smos/type-changes", "owner": "sa-smos"})
     client.post("/type-subscriptions", json={"notificationDestination": "http://nfo/type-changes", "owner": "nfo"})
 
@@ -923,6 +959,7 @@ def test_deleting_a_types_last_producer_notifies_subscribers_per_type(client, mo
 
 
 def test_register_dme_type_does_not_notify_when_no_subscribers(client, monkeypatch):
+    """With no subscribers, registering a type sends no notification."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
 
@@ -932,6 +969,8 @@ def test_register_dme_type_does_not_notify_when_no_subscribers(client, monkeypat
 
 
 def test_register_dme_type_succeeds_even_if_a_subscriber_is_unreachable(client, monkeypatch):
+    """Registration answers 201 even when a subscriber's address cannot be reached, because the notification is only queued in the same transaction.
+    """
     import httpx as httpx_module
 
     def raise_error(url, json=None, timeout=None):
@@ -954,6 +993,7 @@ def test_health_check_answers_the_gui_bff_liveness_probe(client):
 # ---------------------------------------------------------------- list reads (GUI pass 2)
 
 def test_list_data_jobs_filters_by_type_and_consumer(client):
+    """The job list can be limited by type and by consumer."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     other = client.post("/production-capabilities", json=register_type_body(name="Other")).json()
     job = client.post("/data-jobs", json={"dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
@@ -968,6 +1008,7 @@ def test_list_data_jobs_filters_by_type_and_consumer(client):
 
 
 def test_list_data_offers_filters_by_type(client):
+    """The offer list can be limited by type."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     offer = client.post("/offers", json={"dmeTypeId": reg["registrationId"], "dataDeliveryMode": "CONTINUOUS",
                                           "dataDeliveryMethods": ["PUSH_HTTP"],
@@ -980,12 +1021,14 @@ def test_list_data_offers_filters_by_type(client):
 # ---------------------------------------------------------------- Wave 3: source provenance + lifecycle eligibility
 
 def test_register_dme_type_rejects_unknown_source_domain(client):
+    """A source domain other than LIVE_RAN or DIGITAL_TWIN is 422 SCHEMA_VALIDATION_FAILED."""
     resp = client.post("/production-capabilities", json=register_type_body(sourceDomain="SOMEWHERE_ELSE"))
     assert resp.status_code == 422
     assert resp.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED"
 
 
 def test_register_dme_type_round_trips_source_provenance(client):
+    """The source domain and source context given at registration are shown in the type view."""
     reg = client.post("/production-capabilities", json=register_type_body(
         sourceDomain="DIGITAL_TWIN", sourceContext={"vendor": "acme", "instance": "dt-1"},
     )).json()
@@ -996,6 +1039,7 @@ def test_register_dme_type_round_trips_source_provenance(client):
 
 
 def test_data_job_rejects_unknown_lifecycle_stage(client):
+    """A lifecycle stage that is not a known stage is 422 SCHEMA_VALIDATION_FAILED."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     resp = client.post("/data-jobs", json={
         "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
@@ -1006,6 +1050,7 @@ def test_data_job_rejects_unknown_lifecycle_stage(client):
 
 
 def test_data_job_rejects_digital_twin_source_for_inference(client):
+    """A job for INFERENCE on a Digital Twin type is 422 DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE."""
     reg = client.post("/production-capabilities", json=register_type_body(sourceDomain="DIGITAL_TWIN")).json()
     resp = client.post("/data-jobs", json={
         "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
@@ -1016,6 +1061,7 @@ def test_data_job_rejects_digital_twin_source_for_inference(client):
 
 
 def test_data_job_accepts_digital_twin_source_for_training_and_emulation(client):
+    """A Digital Twin type may feed TRAINING and EMULATION jobs."""
     reg = client.post("/production-capabilities", json=register_type_body(sourceDomain="DIGITAL_TWIN")).json()
     for stage in ("TRAINING", "EMULATION"):
         resp = client.post("/data-jobs", json={
@@ -1026,6 +1072,7 @@ def test_data_job_accepts_digital_twin_source_for_training_and_emulation(client)
 
 
 def test_data_job_accepts_live_ran_source_for_inference(client):
+    """A live-RAN type may feed INFERENCE jobs."""
     reg = client.post("/production-capabilities", json=register_type_body(sourceDomain="LIVE_RAN")).json()
     resp = client.post("/data-jobs", json={
         "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
@@ -1035,6 +1082,7 @@ def test_data_job_accepts_live_ran_source_for_inference(client):
 
 
 def test_data_job_unaffected_by_eligibility_check_for_a_type_with_no_declared_source_domain(client):
+    """A type that declared no source domain is not subject to the Digital Twin rule, even for INFERENCE."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     resp = client.post("/data-jobs", json={
         "dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
@@ -1044,6 +1092,7 @@ def test_data_job_unaffected_by_eligibility_check_for_a_type_with_no_declared_so
 
 
 def test_update_data_job_also_enforces_digital_twin_inference_eligibility(client):
+    """Updating a job to INFERENCE on a Digital Twin type is refused, so the rule cannot be bypassed after creation."""
     reg = client.post("/production-capabilities", json=register_type_body(sourceDomain="DIGITAL_TWIN")).json()
     job = client.post("/data-jobs", json={"dataDeliveryMode": "ONE_TIME", "dmeTypeId": reg["registrationId"],
                                            "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1",
@@ -1059,6 +1108,7 @@ def test_update_data_job_also_enforces_digital_twin_inference_eligibility(client
 # ---------------------------------------------------------------- Wave 3: real data-plane store
 
 def test_ingest_and_fetch_data_records(client):
+    """A payload ingested for a job is returned by the records read with its job id."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     job = client.post("/data-jobs", json={"dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
                                            "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1"}).json()
@@ -1073,16 +1123,19 @@ def test_ingest_and_fetch_data_records(client):
 
 
 def test_ingest_data_record_for_unknown_job_is_404(client):
+    """Ingesting a record for an unknown job is 404."""
     resp = client.post("/data-jobs/00000000-0000-0000-0000-000000000000/records", json={"payload": {}})
     assert resp.status_code == 404
 
 
 def test_fetch_data_records_for_unknown_job_is_404(client):
+    """Reading the records of an unknown job is 404."""
     resp = client.get("/data-jobs/00000000-0000-0000-0000-000000000000/records")
     assert resp.status_code == 404
 
 
 def test_fetch_data_records_respects_limit(client):
+    """The records read honours `limit`."""
     reg = client.post("/production-capabilities", json=register_type_body()).json()
     job = client.post("/data-jobs", json={"dataDeliveryMode": "CONTINUOUS", "dmeTypeId": reg["registrationId"],
                                            "dataDeliveryMethod": "PULL_HTTP", "consumerId": "rapp-1"}).json()
@@ -1123,12 +1176,16 @@ class FakeConfigJobResponse:
 
 @pytest.fixture
 def ran_nf_oam(monkeypatch):
+    """Replaces the R1 client's POST with `FakeRanNfOam`, which records the configuration jobs DME forwards and can be told to refuse them.
+    """
     fake = FakeRanNfOam()
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: fake.post(path, json=json, **kw))
     return fake
 
 
 def test_mediate_action_forwards_to_ran_nf_oam_and_records_provenance(client, ran_nf_oam):
+    """An action is forwarded to RAN NF OAM as a configuration job with its changes (class name included) and the default scope, and is recorded with its managed element, class, source context and the job id.
+    """
     resp = client.post("/actions", json={
         "requestedBy": "energy-optimizer",
         "changes": [{"managedElementRef": "me-1", "className": "GNBDUFunction", "attributeChanges": {"txPower": 10}}],
@@ -1152,6 +1209,8 @@ def test_mediate_action_forwards_to_ran_nf_oam_and_records_provenance(client, ra
 
 
 def test_mediate_action_records_a_change_whose_managed_element_is_null(client, ran_nf_oam):
+    """A change whose managed element is null does not crash the route; the action is recorded with an empty element reference.
+    """
     resp = client.post("/actions", json={"requestedBy": "r", "changes": [{"managedElementRef": None}]})
     assert resp.status_code != 500
     assert client.get(f"/actions/{resp.json()['actionId']}").json()["managedElementRef"] == ""
@@ -1181,6 +1240,7 @@ def test_mediate_action_answers_502_when_ran_nf_oam_fails_without_a_usable_body(
 
 
 def test_mediate_action_rejects_empty_changes(client, ran_nf_oam):
+    """An action with no changes is 422 and nothing is forwarded."""
     resp = client.post("/actions", json={"requestedBy": "energy-optimizer", "changes": []})
     assert resp.status_code == 422
     assert resp.json()["detail"]["title"] == "SCHEMA_VALIDATION_FAILED"
@@ -1188,6 +1248,7 @@ def test_mediate_action_rejects_empty_changes(client, ran_nf_oam):
 
 
 def test_get_unknown_action_is_404(client):
+    """An unknown action is 404."""
     resp = client.get("/actions/00000000-0000-0000-0000-000000000000")
     assert resp.status_code == 404
 
@@ -1217,6 +1278,7 @@ def test_an_action_held_for_approval_is_recorded_as_waiting_with_no_job(client, 
 
 
 def test_list_actions_filters_by_managed_element_ref(client, ran_nf_oam):
+    """The action list can be limited to one managed element."""
     client.post("/actions", json={"requestedBy": "rapp-1", "changes": [{"managedElementRef": "me-1"}]})
     client.post("/actions", json={"requestedBy": "rapp-2", "changes": [{"managedElementRef": "me-2"}]})
     listed = client.get("/actions", params={"managed_element_ref": "me-1"}).json()["items"]
@@ -1269,6 +1331,8 @@ def test_a_type_registration_notification_survives_a_crash_between_commit_and_se
 
 
 def test_a_job_push_to_producers_is_one_row_per_producer_and_sent_after_commit(client, monkeypatch):
+    """Creating a job writes one outbox row per producer of the type, to that producer's job callback, and sends nothing until the outbox is drained after the commit.
+    """
     client.post("/production-capabilities", json=register_type_body(producerId="rapp-1"))
     client.post("/production-capabilities", json=register_type_body(producerId="rapp-2", jobCallbackUrl="http://rapp-2:8000/jobs"))
     calls = []
@@ -1340,6 +1404,7 @@ def test_stopping_a_job_at_the_producers_is_a_delete_row_in_the_same_transaction
 
 
 def test_an_offer_with_no_delivery_method_is_refused(client):
+    """An offer with an empty delivery method list is 409 DELIVERY_METHOD_NOT_OFFERED."""
     resp = client.post("/offers", json={"dmeTypeId": "e3e70682-c209-1cac-a29f-6fbed82c07cd", "dataDeliveryMode": "CONTINUOUS",
                                         "dataDeliveryMethods": [], "dataOfferTerminationNotificationUri": "http://producer/terminate"})
     assert resp.status_code == 409

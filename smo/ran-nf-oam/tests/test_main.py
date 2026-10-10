@@ -25,6 +25,8 @@ from app.models import ElementOnboarding, LifecycleSubscription, OnboardingTempl
 
 @pytest.fixture
 def db_session_factory():
+    """Fixture: a SQLite session factory with every table the app's routes touch, created from the ORM models. Other test files import it (and `client`) from here.
+    """
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__,
@@ -47,6 +49,7 @@ def elements(db_session_factory):
 
 @pytest.fixture
 def client(db_session_factory):
+    """Fixture: a TestClient of the app with `get_session` overridden to a session from `db_session_factory`; the override is removed afterwards."""
     def override_get_session():
         session = db_session_factory()
         try:
@@ -60,6 +63,8 @@ def client(db_session_factory):
 
 
 def _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heartbeat_at=None):
+    """Registers element ME-1 with an adaptor endpoint of the given protocol, health and last heartbeat; the tests' standard starting state for a write.
+    """
     db = db_session_factory()
     endpoint = O1AdaptorEndpoint(managed_element_ref="ME-1", adaptor_uri="http://adaptor:9000/netconf",
                                   protocol_support=[protocol], health_status=health, last_heartbeat_at=last_heartbeat_at)
@@ -72,6 +77,7 @@ def _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heart
 
 
 def test_config_change_dispatches_netconf_and_applies(client, db_session_factory, monkeypatch):
+    """A config job for a NETCONF element dispatches the edit, ends COMPLETED, and its sub-change is APPLIED with the default merge operation."""
     _make_me(db_session_factory, protocol="NETCONF")
     monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id, operation="merge", **kw: True)
 
@@ -118,6 +124,7 @@ def test_config_change_threads_operation_and_allows_empty_payload_for_delete(cli
 
 
 def test_config_change_rejects_when_netconf_rpc_fails(client, db_session_factory, monkeypatch):
+    """A failed edit-config rejects the sub-change with NETCONF_RPC_FAILED and the job ends FAILED."""
     _make_me(db_session_factory, protocol="NETCONF")
     monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id, operation="merge", **kw: False)
 
@@ -168,6 +175,7 @@ def test_config_change_rejects_a_protocol_with_no_client(client, db_session_fact
 
 
 def test_config_change_rejects_unreachable_endpoint_without_dispatch(client, db_session_factory, monkeypatch):
+    """A write to an UNREACHABLE endpoint is rejected with ENDPOINT_UNREACHABLE and nothing is sent."""
     _make_me(db_session_factory, protocol="NETCONF", health="UNREACHABLE")
     monkeypatch.setattr("app.main.send_edit_config", lambda *a, **kw: pytest.fail("should not dispatch to an unreachable endpoint"))
 
@@ -198,6 +206,7 @@ def test_config_change_rejects_a_stale_active_endpoint_live_without_an_explicit_
 
 
 def test_config_change_proceeds_for_a_freshly_heartbeated_active_endpoint(client, db_session_factory, monkeypatch):
+    """An ACTIVE endpoint with a recent heartbeat is not aged and the write goes through."""
     fresh = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=5)
     _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heartbeat_at=fresh)
     monkeypatch.setattr("app.main.send_edit_config", lambda adaptor_uri, target_ref, attribute_changes, message_id, operation="merge", **kw: True)
@@ -211,6 +220,7 @@ def test_config_change_proceeds_for_a_freshly_heartbeated_active_endpoint(client
 
 
 def test_discover_endpoints_ages_a_stale_active_endpoint_to_degraded(client, db_session_factory):
+    """The discover sweep degrades an ACTIVE endpoint whose last heartbeat is older than the threshold."""
     stale = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10)
     _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heartbeat_at=stale)
 
@@ -225,6 +235,7 @@ def test_discover_endpoints_ages_a_stale_active_endpoint_to_degraded(client, db_
 
 
 def test_discover_endpoints_leaves_a_fresh_active_endpoint_alone(client, db_session_factory):
+    """The discover sweep leaves an ACTIVE endpoint with a recent heartbeat as it is."""
     fresh = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=5)
     _make_me(db_session_factory, protocol="NETCONF", health="ACTIVE", last_heartbeat_at=fresh)
 
@@ -294,6 +305,7 @@ def test_register_o1_adaptor_endpoint_starts_discovered_not_active(client, db_se
 
 
 def test_registered_endpoint_can_then_heartbeat_to_active(client, db_session_factory):
+    """An endpoint registered through the route starts DISCOVERED and a heartbeat makes it ACTIVE."""
     reg = client.post("/o1-adaptor-endpoints", json={
         "managedElementRef": "ME-4", "adaptorUri": "http://mock-o1-adaptor:8000/edit-config",
         "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF", "entityType": "O-DU",
@@ -327,6 +339,7 @@ def test_subscribe_pm_persists_and_returns_granularity_period(client, db_session
 
 
 def test_subscribe_pm_without_granularity_period_defaults_to_null(client, db_session_factory, monkeypatch, elements):
+    """A PM subscription without a granularity period answers null for it."""
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
 
     resp = client.post("/pm-subscriptions", params={
@@ -354,6 +367,7 @@ def test_unsubscribe_pm(client, db_session_factory, monkeypatch, elements):
 
 
 def test_unsubscribe_unknown_pm_subscription_is_idempotent(client):
+    """Deleting a PM subscription that does not exist is 204, as for every subscription route."""
     resp = client.delete(f"/pm-subscriptions/{uuid.uuid4()}")
     assert resp.status_code == 204
 
@@ -386,6 +400,7 @@ def test_subscribe_fm_registers_ran_nf_oam_as_a_dme_producer(client, db_session_
 
 
 def test_subscribe_fm_unknown_delivery_method_defaults_to_faultmns(client, db_session_factory, monkeypatch, elements):
+    """An FM subscription is served by the FaultMnS engine (the test sends `pull`; a method with no mapping also falls back to FaultMnS)."""
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
 
     resp = client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "pull"})
@@ -394,6 +409,7 @@ def test_subscribe_fm_unknown_delivery_method_defaults_to_faultmns(client, db_se
 
 
 def test_list_fm_subscriptions_filters_by_managed_element_ref(client, db_session_factory, monkeypatch, elements):
+    """The FM subscription list can be narrowed to one element."""
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
     client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "push"})
     client.post("/fm-subscriptions", params={"managed_element_ref": "ME-2", "delivery_method": "push"})
@@ -406,6 +422,7 @@ def test_list_fm_subscriptions_filters_by_managed_element_ref(client, db_session
 
 
 def test_unsubscribe_fm(client, db_session_factory, monkeypatch, elements):
+    """Deleting an FM subscription is 204 and removes the row."""
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
     sub_id = client.post("/fm-subscriptions", params={"managed_element_ref": "ME-1", "delivery_method": "push"}).json()["subscriptionId"]
 
@@ -417,6 +434,7 @@ def test_unsubscribe_fm(client, db_session_factory, monkeypatch, elements):
 
 
 def test_unsubscribe_unknown_fm_subscription_is_idempotent(client):
+    """Deleting an FM subscription that does not exist is 204."""
     resp = client.delete(f"/fm-subscriptions/{uuid.uuid4()}")
     assert resp.status_code == 204
 
@@ -501,6 +519,7 @@ def test_ingest_alarm_defaults_fault_fields_when_not_provided(client, db_session
 
 
 def test_query_alarms_filters_by_managed_element_ref(client, db_session_factory):
+    """The alarm list can be narrowed to one element."""
     db = db_session_factory()
     endpoint1 = O1AdaptorEndpoint(managed_element_ref="ME-1", adaptor_uri="http://adaptor-1:9000/netconf", protocol_support=["NETCONF"])
     endpoint2 = O1AdaptorEndpoint(managed_element_ref="ME-2", adaptor_uri="http://adaptor-2:9000/netconf", protocol_support=["NETCONF"])
@@ -522,6 +541,7 @@ def test_query_alarms_filters_by_managed_element_ref(client, db_session_factory)
 
 
 def test_change_alarm_ack_state(client, db_session_factory):
+    """Acknowledging an alarm sets its ack state."""
     _make_me(db_session_factory)
     alarm_id = client.post("/alarms/ingest", params={
         "source_alarm_id": "src-1", "managed_element_ref": "ME-1", "severity": "major",
@@ -541,6 +561,7 @@ def test_ack_and_clear_of_an_unknown_alarm_are_404(client):
 
 
 def test_ack_state_must_be_a_known_value_and_nothing_is_stored_otherwise(client, db_session_factory):
+    """An unknown ack state is 422 and the stored state is unchanged; both valid states can be set."""
     _make_me(db_session_factory)
     alarm_id = client.post("/alarms/ingest", params={
         "source_alarm_id": "src-1", "managed_element_ref": "ME-1", "severity": "major",
@@ -605,6 +626,7 @@ def test_cleared_alarm_still_appears_in_query_alarms(client, db_session_factory)
 
 
 def test_clear_alarm_without_clear_user_id_leaves_it_null(client, db_session_factory):
+    """Clearing an alarm without a user id leaves `clearUserId` null and sets the cleared time."""
     _make_me(db_session_factory)
     alarm_id = client.post("/alarms/ingest", params={
         "source_alarm_id": "src-1", "managed_element_ref": "ME-1", "severity": "warning",
@@ -619,6 +641,7 @@ def test_clear_alarm_without_clear_user_id_leaves_it_null(client, db_session_fac
 # ---------------------------------------------------------------- list reads (GUI pass)
 
 def test_query_alarms_filters_by_severity_and_exposes_raised_at(client, db_session_factory):
+    """The alarm list filters by severity (and `cleared` isolates cleared alarms) and shows when each was raised."""
     _make_me(db_session_factory)
     client.post("/alarms/ingest", params={"source_alarm_id": "a1", "managed_element_ref": "ME-1", "severity": "major"})
     minor = client.post("/alarms/ingest", params={"source_alarm_id": "a2", "managed_element_ref": "ME-1", "severity": "minor"}).json()
@@ -632,6 +655,7 @@ def test_query_alarms_filters_by_severity_and_exposes_raised_at(client, db_sessi
 
 
 def test_list_pm_subscriptions(client, db_session_factory, monkeypatch):
+    """PM subscriptions are listed with their engine and granularity, and can be filtered by element."""
     _make_me(db_session_factory)
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: None)
     sub = client.post("/pm-subscriptions", params={"managed_element_ref": "ME-1", "counter_type": "DRB.UEThpDl",
@@ -643,6 +667,7 @@ def test_list_pm_subscriptions(client, db_session_factory, monkeypatch):
 
 
 def test_list_o1_adaptor_endpoints_filters_by_health(client, db_session_factory):
+    """The endpoint list shows each element's health and can be filtered by it."""
     _make_me(db_session_factory, health="DEGRADED")
     listed = client.get("/o1-adaptor-endpoints").json()["items"]
     assert [(e["managedElementRef"], e["healthStatus"]) for e in listed] == [("ME-1", "DEGRADED")]
@@ -650,6 +675,7 @@ def test_list_o1_adaptor_endpoints_filters_by_health(client, db_session_factory)
 
 
 def test_list_config_and_software_jobs(client, db_session_factory, monkeypatch):
+    """Config jobs and software jobs can be listed."""
     _make_me(db_session_factory, last_heartbeat_at=datetime.datetime.now(datetime.UTC))
     monkeypatch.setattr("app.main.send_edit_config", lambda *a, **kw: None)
     job = client.post("/config-jobs", json={"requestedBy": "op", "scope": "cell", "changes": []}).json()
