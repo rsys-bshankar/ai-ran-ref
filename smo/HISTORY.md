@@ -2390,3 +2390,20 @@ Bookkeeping after PR-GUI-9 (#430), checked against the code before each step was
 - **SEC-5.5.** The cache default was decided in #399 (30 s, PR-SEC-5.5) but its row still read as the owner's open decision; the row now holds
   only what is still open there, a revocation broadcast between gateway replicas.
 
+### GUI-2.5 — the alarm console's list as a CSV file
+
+- **What.** "Export…" on the alarm table (operator) starts an export job of kind `alarms` (gui-bff `app/exports.py`, the GUI-9.5b jobs), with the
+  table's filters (severity, managed element, managed function, ack state, probable cause, open only) and the global scope. The job pages RAN NF
+  OAM's `GET /alarms?after=<cursor>` 500 at a time in the console order (most severe, then newest), so the file is the table in full; the
+  columns are the fields an operator reads in the console (`ALARM_COLUMNS`: id, raised, severity, element, function, cause, problem, type, ack
+  state / time / user, clear time / user, source id, correlation group, root-cause flag, repair actions joined by `;`), a formula-like cell
+  neutralised. It is listed, followed and downloaded on the Exports page like the other kinds. `KIND_FILTERS` names the filters of each kind,
+  so a decision filter on an alarm export (or the reverse) is a 422 rather than silently ignored.
+- **Tests.** gui-bff `tests/test_exports_scope.py`: the filters forwarded, `open_only` only when asked, the file's header and rows, the
+  neutralised formula and the joined list, a viewer refused, mixed-kind filters refused. GUI: the button for an operator only, the request it
+  sends (`Alarms.test.tsx`), and `alarmsExport` (`Exports.test.tsx`).
+- **Not taken.** A streamed `GET /alarms/export.csv` on RAN NF OAM like the decision export: the job already covers any size and every instance,
+  and a second path would need its own bounds. A viewer export: the decision export set the rule (a bulk copy is an operator's), and the BFF
+  keeps the two the same. A time filter on the table: the export takes `since` / `until`, but the table has none, so the button exports from the
+  first alarm; the 10,000,000-row limit bounds it.
+

@@ -6,7 +6,9 @@ accepted it, pages its source by keyset and appends the CSV to the database in c
 and downloads the file when it is DONE, from any instance on the same GUI_DATABASE_URL (the chunks are rows of `gui_export_chunk`, app/db.py).
 
 - Sources: `decisions` (role operator) pages RAN NF OAM's `GET /decision-records?after=<cursor>` through the gateway, newest first, `DECISION_PAGE`
-  rows a call, with the filters `since`, `until`, `invoker_id`, `disposition`, `region`, `site_cluster`; `audit` (role admin) reads the BFF's own
+  rows a call, with the filters `since`, `until`, `invoker_id`, `disposition`, `region`, `site_cluster`; `alarms` (role operator, GUI-2.5) pages
+  `GET /alarms?after=<cursor>` the same way, in the alarm console's order (most severe, then newest), with its filters `since` / `until` (raisedAt),
+  `severity`, `ack_state`, `open_only`, `probable_cause`, `managed_element_ref`, `managed_function_ref`, `region`, `site_cluster`; `audit` (role admin) reads the BFF's own
   `gui_audit_log` by id, newest first, with main.py's `audit_query` (`since`, `until`, `username`, `action`). No 31-day bound; at most `MAX_ROWS`
   rows (a job that reaches it ends DONE with `error` saying the file stops there); at most `MAX_ACTIVE_PER_USER` QUEUED or RUNNING jobs per user.
 - The columns are those of the streamed exports, and a cell a spreadsheet would run as a formula gets a leading `'` (main.py's `_csv_cell`).
@@ -55,12 +57,25 @@ FETCH_TIMEOUT_SECONDS = 30.0
 FETCH_ATTEMPTS = 3
 ACTIVE = ("QUEUED", "RUNNING")
 INTERRUPTED = "interrupted: the BFF instance running this export stopped before it finished"
-KIND_ROLES = {"decisions": Role.OPERATOR, "audit": Role.ADMIN}
+KIND_ROLES = {"decisions": Role.OPERATOR, "alarms": Role.OPERATOR, "audit": Role.ADMIN}
 DECISIONS_PATH = "/ran-nf-oam/decision-records"
+ALARMS_PATH = "/ran-nf-oam/alarms"
 # The columns of RAN NF OAM's own decision export (ran-nf-oam/app/main.py DECISION_CSV_COLUMNS), so both files read the same.
 DECISION_COLUMNS = ("decisionId", "occurredAt", "invokerId", "requestedBy", "disposition", "jobId", "approvalId", "actionId", "inputsRef",
                     "modelVersion", "rationale", "decidedBy", "decidedAt", "managedElements", "changeCount", "correlationId", "contentHash", "auditSeq")
 DISPOSITIONS = Literal["DIRECT", "APPROVED", "ROLLBACK", "REJECTED", "EXPIRED", "REFUSED"]
+# GUI-2.5: the alarm fields an operator reads in the console, in the order of its table and detail panel (ran-nf-oam/app/main.py `_alarm_view`).
+ALARM_COLUMNS = ("alarmId", "raisedAt", "severity", "managedElementRef", "managedFunctionRef", "probableCause", "specificProblem", "alarmType",
+                 "ackState", "ackTime", "ackUserId", "clearTime", "clearUserId", "sourceAlarmId", "correlationGroup", "rootCauseIndicator",
+                 "proposedRepairActions")
+SEVERITIES = Literal["critical", "major", "minor", "warning", "indeterminate", "cleared"]
+# The filters each kind takes (the others are refused with 422, so a filter is never silently ignored); `since` / `until` apply to every kind.
+KIND_FILTERS = {
+    "decisions": ("invokerId", "disposition", "region", "siteCluster"),
+    "alarms": ("severity", "ackState", "openOnly", "probableCause", "managedElementRef", "managedFunctionRef", "region", "siteCluster"),
+    "audit": ("username", "action"),
+}
+ALL_FILTERS = tuple(dict.fromkeys(f for fs in KIND_FILTERS.values() for f in fs))
 
 
 class ExportError(RuntimeError):
@@ -69,10 +84,12 @@ class ExportError(RuntimeError):
 
 class ExportRequest(BaseModel):
     """What to export. `since` is required and `until` defaults to the time of the request (both kept in the job, so the file is that span
-    whatever is written later). `invokerId`, `disposition`, `region` and `siteCluster` apply to `decisions`; `username` and `action` to `audit`."""
+    whatever is written later). The other filters belong to one or two kinds (`KIND_FILTERS`): `invokerId`, `disposition` to `decisions`;
+    `severity`, `ackState`, `openOnly`, `probableCause`, `managedElementRef`, `managedFunctionRef` to `alarms`; `region`, `siteCluster` to both;
+    `username`, `action` to `audit`."""
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["decisions", "audit"]
+    kind: Literal["decisions", "alarms", "audit"]
     since: datetime.datetime
     until: datetime.datetime | None = None
     invokerId: str | None = Field(None, min_length=1, max_length=200)
@@ -81,6 +98,12 @@ class ExportRequest(BaseModel):
     action: str | None = Field(None, min_length=1, max_length=64)
     region: str | None = None
     siteCluster: str | None = None
+    severity: SEVERITIES | None = None
+    ackState: Literal["ACKNOWLEDGED", "UNACKNOWLEDGED"] | None = None
+    openOnly: bool | None = None
+    probableCause: str | None = Field(None, min_length=1, max_length=200)
+    managedElementRef: str | None = Field(None, min_length=1, max_length=200)
+    managedFunctionRef: str | None = Field(None, min_length=1, max_length=500)
 
 
 def _utc(at: datetime.datetime) -> datetime.datetime:
@@ -233,8 +256,9 @@ class ExportRunner:
         out = _ChunkWriter(self.db, job_id)
         rows, note = 0, None
         try:
-            out.row(list(DECISION_COLUMNS if kind == "decisions" else self.audit_columns))
-            source = self._decisions(params) if kind == "decisions" else self._audit(params)
+            columns = {"decisions": DECISION_COLUMNS, "alarms": ALARM_COLUMNS}.get(kind, self.audit_columns)
+            out.row(list(columns))
+            source = {"decisions": self._decisions, "alarms": self._alarms}.get(kind, self._audit)(params)
             async for batch in source:
                 for values in batch[:MAX_ROWS - rows]:
                     out.row(values)
@@ -264,18 +288,18 @@ class ExportRunner:
             finished = _now()
             await run_in_threadpool(self._update, job_id, state="FAILED", error=reason, rows=rows, finished_at=finished, expires_at=finished + TTL)
 
-    async def _fetch(self, params: list[tuple[str, str]]) -> dict:
-        """One page of RAN NF OAM's decision records; retried `FETCH_ATTEMPTS` times on a transport error or a 5xx, a short pause between.
-        Raises ExportError when it still fails or the answer is not a keyset page."""
+    async def _fetch(self, params: list[tuple[str, str]], path: str = DECISIONS_PATH, what: str = "decision") -> dict:
+        """One keyset page of a RAN NF OAM list (`path`: the decision records, or the alarms); retried `FETCH_ATTEMPTS` times on a transport
+        error or a 5xx, a short pause between. Raises ExportError when it still fails or the answer is not a keyset page."""
         last = "no answer"
         for attempt in range(FETCH_ATTEMPTS):
             if attempt:
                 await asyncio.sleep(attempt)       # 1 s, then 2 s: a module restarting under a rolling upgrade is back by then
             try:
-                resp = await self.app.state.gateway.request("GET", DECISIONS_PATH, params=params, timeout=FETCH_TIMEOUT_SECONDS)
+                resp = await self.app.state.gateway.request("GET", path, params=params, timeout=FETCH_TIMEOUT_SECONDS)
             except (SmoAuthError, httpx.HTTPError) as exc:
                 last = exc.__class__.__name__
-                log.warning("export: a decision page failed: %r", exc)
+                log.warning("export: a %s page failed: %r", what, exc)
                 continue
             if resp.status_code >= 500:
                 last = f"HTTP {resp.status_code}"
@@ -285,12 +309,12 @@ class ExportRunner:
             except ValueError:
                 body = None
             if resp.status_code != 200 or not isinstance(body, dict) or not isinstance(body.get("items"), list):
-                raise ExportError(f"RAN NF OAM refused the decision page: HTTP {resp.status_code}")
+                raise ExportError(f"RAN NF OAM refused the {what} page: HTTP {resp.status_code}")
             return body
-        raise ExportError(f"RAN NF OAM did not answer the decision page ({last}) after {FETCH_ATTEMPTS} attempts")
+        raise ExportError(f"RAN NF OAM did not answer the {what} page ({last}) after {FETCH_ATTEMPTS} attempts")
 
-    def _decision_cell(self, value: Any) -> str:
-        """A decision field as a cell: a list joined by `;` (as RAN NF OAM's own export does), then neutralised."""
+    def _list_cell(self, value: Any) -> str:
+        """A field of a decision or an alarm as a cell: a list joined by `;` (as RAN NF OAM's own decision export does), then neutralised."""
         if isinstance(value, list):
             value = ";".join(str(v) for v in value)
         return self.csv_cell(value)
@@ -305,7 +329,27 @@ class ExportRunner:
         while True:
             body = await self._fetch([*query, ("after", cursor)])
             items = [r for r in body["items"] if isinstance(r, dict)]
-            yield [[self._decision_cell(r.get(c)) for c in DECISION_COLUMNS] for r in items]
+            yield [[self._list_cell(r.get(c)) for c in DECISION_COLUMNS] for r in items]
+            cursor = body.get("nextCursor") or ""
+            if not body.get("hasMore") or not cursor or not items:
+                return
+
+    async def _alarms(self, params: dict) -> AsyncIterator[list[list[str]]]:
+        """GUI-2.5: the alarms of the job's filters in the console order (most severe, then newest), one list of rows per page, by RAN NF OAM's
+        keyset cursor (`after`). A list field (the repair actions) is joined by `;` like the decision export's."""
+        query = [("limit", str(DECISION_PAGE)), ("since", params["since"]), ("until", params["until"])]
+        for key, name in (("severity", "severity"), ("ackState", "ack_state"), ("probableCause", "probable_cause"),
+                          ("managedElementRef", "managed_element_ref"), ("managedFunctionRef", "managed_function_ref"),
+                          ("region", "region"), ("siteCluster", "site_cluster")):
+            if params.get(key):
+                query.append((name, params[key]))
+        if params.get("openOnly"):
+            query.append(("open_only", "true"))
+        cursor = ""
+        while True:
+            body = await self._fetch([*query, ("after", cursor)], ALARMS_PATH, "alarm")
+            items = [r for r in body["items"] if isinstance(r, dict)]
+            yield [[self._list_cell(r.get(c)) for c in ALARM_COLUMNS] for r in items]
             cursor = body.get("nextCursor") or ""
             if not body.get("hasMore") or not cursor or not items:
                 return
@@ -368,14 +412,13 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
         since = _utc(body.since)
         if until <= since:
             return problem(422, "INVALID_EXPORT", "`until` must be after `since`")
-        wrong = [f for f in (("username", "action") if body.kind == "decisions" else ("invokerId", "disposition", "region", "siteCluster"))
-                 if getattr(body, f) is not None]
+        wrong = [f for f in ALL_FILTERS if f not in KIND_FILTERS[body.kind] and getattr(body, f) is not None]
         if wrong:
             return problem(422, "INVALID_EXPORT", f"{', '.join(wrong)} does not apply to a {body.kind} export")
         if any(v is not None and not SCOPE_RE.match(v) for v in (body.region, body.siteCluster)):
             return problem(422, "INVALID_EXPORT", "region and siteCluster are 1-64 characters of A-Z a-z 0-9 . _ -")
         params = {"since": since.isoformat(), "until": until.isoformat()}
-        for key in ("invokerId", "disposition", "username", "action", "region", "siteCluster"):
+        for key in ALL_FILTERS:
             if getattr(body, key) is not None:
                 params[key] = getattr(body, key)
         with app.state.db.session() as s:
@@ -399,7 +442,7 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
     @app.post("/api/exports", status_code=202)
     async def request_export(body: ExportRequest, session=Depends(current_session)):
         """GUI-9.5b: start an export job; answers 202 with the job (`{id, state: "QUEUED", ...}`) at once, and the file is written in the
-        background by this instance. `decisions` needs role operator, `audit` admin. No bound on the span; at most 10,000,000 rows; at most 3
+        background by this instance. `decisions` and `alarms` (GUI-2.5) need role operator, `audit` admin. No bound on the span; at most 10,000,000 rows; at most 3
         QUEUED or RUNNING jobs per user. Audited (`EXPORT_REQUESTED`). Expired jobs of every user are purged first. 403 `FORBIDDEN`, 422
         `INVALID_EXPORT` (a filter of the other kind, `until` not after `since`, a malformed region), 429 `TOO_MANY_EXPORTS`."""
         result = await run_in_threadpool(create, body, session)

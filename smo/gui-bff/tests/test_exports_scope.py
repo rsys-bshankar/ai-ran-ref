@@ -47,26 +47,39 @@ def decision(i: int) -> dict:
             "managedElements": ["gnb-1", "gnb-2"], "changeCount": 2, "correlationId": None, "contentHash": "h", "auditSeq": i}
 
 
+def alarm(i: int) -> dict:
+    """The i-th fake alarm (in console order in `ExportSmo.alarms`); alarm 1's specific problem is a formula, and every alarm has two repair actions."""
+    return {"alarmId": f"a-{i}", "raisedAt": f"2026-10-0{1 + i % 9}T00:00:00Z", "severity": "major", "managedElementRef": "gnb-1",
+            "managedFunctionRef": "NRCellDU=1", "probableCause": "LOS", "specificProblem": "=cmd|' /C calc'!A0" if i == 1 else f"link {i} down",
+            "alarmType": "COMMUNICATIONS_ALARM", "ackState": "UNACKNOWLEDGED", "ackTime": None, "ackUserId": None, "clearTime": None,
+            "clearUserId": None, "sourceAlarmId": f"src-{i}", "correlationGroup": None, "rootCauseIndicator": False,
+            "proposedRepairActions": ["check fibre", "reset port"]}
+
+
 class ExportSmo(CountingSmo):
     """CountingSmo plus the attention lists (`ATTENTION_ROWS` / `ATTENTION_TOTALS`, a module in `down_modules` fails) and RAN NF OAM's keyset
-    pages of `decisions` (the cursor is the index of the next record). Every list call is recorded in `lists`; `decision_status` forces a status."""
+    pages of `decisions` and `alarms` (GUI-2.5; the cursor is the index of the next row). Every list call is recorded in `lists`;
+    `decision_status` forces a status."""
 
     def __init__(self):
         super().__init__()
         self.lists: list[httpx.Request] = []
         self.decisions = [decision(i) for i in range(7)]
+        self.alarms = [alarm(i) for i in range(5)]
         self.decision_status: int | None = None
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path, params = request.url.path, request.url.params
         module = path.split("/")[1]
-        if request.url.host == "r1-termination" and request.method == "GET" and path == "/ran-nf-oam/decision-records" and "after" in params:
+        keyset = {"/ran-nf-oam/decision-records": self.decisions, "/ran-nf-oam/alarms": self.alarms}
+        if request.url.host == "r1-termination" and request.method == "GET" and path in keyset and "after" in params:
             self.lists.append(request)
             if self.decision_status is not None:
                 return httpx.Response(self.decision_status, json={"title": "BOOM"})
+            rows = keyset[path]
             start, limit = int(params["after"] or 0), int(params["limit"])
-            page = self.decisions[start:start + limit]
-            more = start + limit < len(self.decisions)
+            page = rows[start:start + limit]
+            more = start + limit < len(rows)
             return httpx.Response(200, json={"items": page, "limit": limit, "nextCursor": str(start + limit) if more else None, "hasMore": more})
         if request.url.host == "r1-termination" and request.method == "GET" and path in ATTENTION_ROWS and params.get("limit") not in (None, "1"):
             if module in self.down_modules:
@@ -329,6 +342,41 @@ def test_an_audit_export_is_admin_only_and_reads_the_bffs_own_log(client, app):
     assert all(r[4] == "LOGIN" for r in rows[1:]) and int(rows[1][0]) > int(rows[2][0])
 
 
+# The alarm export (GUI-2.5): the alarm console's list as a file, from the same keyset paging.
+def test_an_alarm_export_carries_the_consoles_filters_and_its_file_is_safe_csv(client, smo):
+    """The job pages `GET /alarms` with every alarm filter the console sends, ends DONE with each alarm, and the file has the alarm columns,
+    a formula neutralised and the repair actions joined."""
+    resp = client.post("/api/exports", json={"kind": "alarms", "since": SINCE, "severity": "major", "ackState": "UNACKNOWLEDGED", "openOnly": True,
+                                             "probableCause": "LOS", "managedElementRef": "gnb-1", "managedFunctionRef": "NRCellDU=1",
+                                             "region": "north", "siteCluster": "c1"})
+    assert resp.status_code == 202
+    view = wait(client, resp.json()["id"])
+    assert view["state"] == "DONE" and view["rows"] == 5 and view["fileName"].startswith("smo-alarms-")
+    first = smo.lists[0]
+    assert first.url.path == "/ran-nf-oam/alarms"
+    assert {k: first.url.params[k] for k in ("after", "severity", "ack_state", "open_only", "probable_cause", "managed_element_ref",
+                                              "managed_function_ref", "region", "site_cluster")} == {
+        "after": "", "severity": "major", "ack_state": "UNACKNOWLEDGED", "open_only": "true", "probable_cause": "LOS",
+        "managed_element_ref": "gnb-1", "managed_function_ref": "NRCellDU=1", "region": "north", "site_cluster": "c1"}
+    rows = list(csv.reader(io.StringIO(client.get(view["fileUrl"]).text)))
+    assert tuple(rows[0]) == exports.ALARM_COLUMNS and [r[0] for r in rows[1:]] == [f"a-{i}" for i in range(5)]
+    cause = exports.ALARM_COLUMNS.index("specificProblem")
+    assert rows[2][cause].startswith("'=") and rows[1][exports.ALARM_COLUMNS.index("proposedRepairActions")] == "check fibre;reset port"
+
+
+# Without "show cleared" the console sends open_only; with it, nothing: the file then holds the cleared alarms too.
+def test_an_alarm_export_without_open_only_asks_for_every_alarm(client, smo):
+    """`openOnly` false (or absent) sends no `open_only`, so RAN NF OAM's default (every alarm) applies."""
+    wait(client, client.post("/api/exports", json={"kind": "alarms", "since": SINCE, "openOnly": False}).json()["id"])
+    assert "open_only" not in smo.lists[0].url.params
+
+
+def test_a_viewer_may_not_export_alarms(app):
+    """Alarm exports need role operator, as decision exports do: the file is a bulk copy, which a viewer's reading does not need."""
+    resp = login(app, "viewer").post("/api/exports", json={"kind": "alarms", "since": SINCE})
+    assert resp.status_code == 403 and resp.json()["title"] == "FORBIDDEN"
+
+
 def test_a_viewer_may_not_export_decisions(app):
     """Decision exports need role operator."""
     resp = login(app, "viewer").post("/api/exports", json={"kind": "decisions", "since": SINCE})
@@ -337,9 +385,12 @@ def test_a_viewer_may_not_export_decisions(app):
 
 @pytest.mark.parametrize("body", [{"kind": "decisions", "since": SINCE, "username": "x"}, {"kind": "audit", "since": SINCE, "region": "north"},
                                   {"kind": "decisions", "since": SINCE, "until": SINCE}, {"kind": "decisions", "since": SINCE, "region": "a b"},
-                                  {"kind": "decisions", "since": SINCE, "extra": 1}, {"kind": "alarms", "since": SINCE},
-                                  {"kind": "decisions"}])
-# A filter of the other kind, an empty span, a malformed region, an unknown field, an unknown kind and a missing `since` are refused.
+                                  {"kind": "decisions", "since": SINCE, "extra": 1}, {"kind": "metrics", "since": SINCE},
+                                  {"kind": "decisions"}, {"kind": "alarms", "since": SINCE, "invokerId": "rapp-1"},
+                                  {"kind": "decisions", "since": SINCE, "severity": "major"}, {"kind": "alarms", "since": SINCE, "severity": "bad"},
+                                  {"kind": "alarms", "since": SINCE, "ackState": "maybe"}])
+# A filter of another kind, an empty span, a malformed region, an unknown field, an unknown kind and a missing `since` are refused; so are a
+# decision filter on an alarm export and an alarm filter on a decision export (GUI-2.5), and a severity or ack state that is not one.
 def test_malformed_export_requests_are_a_422(app, body):
     """Nothing is queued unless the request is a well-formed export the caller's role may make (the admin, so the role is never the reason)."""
     resp = login(app, "admin").post("/api/exports", json=body)

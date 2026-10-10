@@ -1,7 +1,7 @@
-/** Asynchronous CSV exports (GUI-9.5b): the BFF's export jobs (`gui-bff/app/exports.py`). "Export…" on the Decisions page and on Admin → Audit
- * log creates a job with the page's filters and the global scope (`POST /api/exports`, answered 202 at once); the job is written in the
+/** Asynchronous CSV exports (GUI-9.5b): the BFF's export jobs (`gui-bff/app/exports.py`). "Export…" on the Decisions page, on the alarm
+ * table (GUI-2.5) and on Admin → Audit log creates a job with the page's filters and the global scope (`POST /api/exports`, answered 202 at once); the job is written in the
  * background, page by page, and kept 24 h; the Exports page (`/exports`) lists the user's jobs (an admin's: everyone's), follows the running ones
- * and downloads the finished file (`GET /api/exports/{id}/file`). A decisions export needs the operator role, an audit export the admin role; at
+ * and downloads the finished file (`GET /api/exports/{id}/file`). A decisions or alarms export needs the operator role, an audit export the admin role; at
  * most three of one user's jobs run at once (429). Unlike the streamed exports they replace, a job has no 31-day bound, so "All" exports
  * everything from the first record (`since` = the Unix epoch). */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,7 +11,7 @@ import { useToast } from "../components/Toast";
 import type { Scope } from "./scope";
 
 /** What a job exports. */
-export type ExportKind = "decisions" | "audit";
+export type ExportKind = "decisions" | "alarms" | "audit";
 /** A job's state: QUEUED and RUNNING move on their own; DONE has a file until it EXPIRES (24 h); FAILED says why in `error`. */
 export type ExportState = "QUEUED" | "RUNNING" | "DONE" | "FAILED" | "EXPIRED";
 
@@ -21,10 +21,12 @@ export interface ExportJob {
   error: string | null; createdAt: string; finishedAt: string | null; expiresAt: string | null; fileName: string; fileUrl: string | null;
 }
 
-/** The body of `POST /api/exports` (`invokerId`, `disposition`, `region`, `siteCluster` for decisions; `username`, `action` for audit). */
+/** The body of `POST /api/exports` (`invokerId`, `disposition` for decisions; `severity`, `ackState`, `openOnly`, `probableCause`,
+ * `managedElementRef`, `managedFunctionRef` for alarms; `region`, `siteCluster` for both; `username`, `action` for audit). */
 export interface ExportRequest {
   kind: ExportKind; since: string; until?: string;
   invokerId?: string; disposition?: string; region?: string; siteCluster?: string; username?: string; action?: string;
+  severity?: string; ackState?: string; openOnly?: boolean; probableCause?: string; managedElementRef?: string; managedFunctionRef?: string;
 }
 
 /** The start of "All": the jobs have no span limit, so everything since the epoch. */
@@ -57,6 +59,17 @@ export function decisionsExport(query: Query, scope: Scope): ExportRequest {
   });
 }
 
+/** GUI-2.5: the alarms export of the alarm table's filters (`alarms/data/queries.ts` ranAlarmFilters: severity, element, function, ack
+ * state, probable cause, open only) and the scope, from the first alarm on (the table has no time filter). */
+export function alarmsExport(query: Query, scope: Scope): ExportRequest {
+  const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+  return compact({
+    kind: "alarms" as const, since: ALL_SINCE, severity: str(query.severity), ackState: str(query.ack_state), openOnly: query.open_only === true ? true : undefined,
+    probableCause: str(query.probable_cause), managedElementRef: str(query.managed_element_ref), managedFunctionRef: str(query.managed_function_ref),
+    region: scope.region ?? str(query.region), siteCluster: scope.region ? scope.cluster ?? undefined : undefined,
+  });
+}
+
 /** The audit export of the audit log's filters (user, action, since, until). */
 export function auditExport(f: { username?: string | null; action?: string | null; since?: string | null; until?: string | null }): ExportRequest {
   return compact({ kind: "audit" as const, since: f.since || ALL_SINCE, until: f.until || undefined, username: f.username || undefined, action: f.action || undefined });
@@ -66,7 +79,7 @@ export function auditExport(f: { username?: string | null; action?: string | nul
 export function exportErrorText(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 429) return "You already have three exports running; wait for one to finish or delete one.";
-    if (err.status === 403) return "Your role cannot make this export (decisions: operator, audit log: admin).";
+    if (err.status === 403) return "Your role cannot make this export (decisions and alarms: operator, audit log: admin).";
     if (err.status === 409) return "The file is not written yet.";
     if (err.status === 410) return "The file expired (kept 24 h after it finished); export again.";
     if (err.status === 422) return `The export was refused: ${err.detail ?? err.title}`;
