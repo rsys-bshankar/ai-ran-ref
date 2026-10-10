@@ -8,6 +8,7 @@ by default; any SQLAlchemy URL works via GUI_DATABASE_URL.
 """
 
 import datetime
+import uuid
 import time
 
 from typing import cast
@@ -202,7 +203,7 @@ class ExportJob(Base):
     __tablename__ = "gui_export_job"
     __table_args__ = (Index("ix_gui_export_job_username_created", "username", "created_at"),)
 
-    id: Mapped[object] = mapped_column(Uuid, primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     username: Mapped[str] = mapped_column(String, nullable=False)
     kind: Mapped[str] = mapped_column(String, nullable=False)
     params: Mapped[dict] = mapped_column(JSON, nullable=False)

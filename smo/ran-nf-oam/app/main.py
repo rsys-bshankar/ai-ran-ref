@@ -31,9 +31,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from smo_shared import mtls
 from smo_shared.errors import illegal_transition_error
 from smo_shared.statemachine import IllegalTransition
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import ColumnElement, and_, delete, func, or_, select
 from sqlalchemy.engine import CursorResult
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from smo_shared.logconfig import install_logging
 from smo_shared.metrics import install_metrics
@@ -2707,6 +2707,7 @@ def count_alarms(request: Request, group_by: AlarmGroupBy, filters: dict = Depen
     if group_by == "hour":
         return {"groupBy": "hour", "groups": _hourly_alarm_counts(db, filtered)}
     alarms = filtered.subquery()
+    key: ColumnElement[Any] | InstrumentedAttribute[str | None]
     if group_by == "region":
         key = ManagedEntity.region
         stmt = select(key.label("key"), func.count().label("n")).select_from(alarms).outerjoin(
@@ -2727,7 +2728,7 @@ def _hourly_alarm_counts(db: Session, filtered) -> list[dict]:
     bucket = alarm_query.hour_bucket(db, alarms.c.raised_at)
     rows = db.execute(select(bucket.label("hour"), alarms.c.severity, func.count().label("n")).select_from(alarms).group_by(bucket, alarms.c.severity)).all()
     hours = [(first + datetime.timedelta(hours=h)).strftime("%Y-%m-%dT%H:00:00Z") for h in range(ALARM_HOURS)]
-    out = {h: {"key": h, "count": 0, "bySeverity": dict.fromkeys(alarm_query.GRADED_SEVERITIES, 0)} for h in hours}
+    out: dict[str, dict[str, Any]] = {h: {"key": h, "count": 0, "bySeverity": dict.fromkeys(alarm_query.GRADED_SEVERITIES, 0)} for h in hours}
     for row in rows:
         group = out.get(row.hour)
         if group is None:                       # an alarm raised in the future (a clock ahead of ours) is outside the window

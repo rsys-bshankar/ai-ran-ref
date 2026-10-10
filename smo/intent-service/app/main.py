@@ -414,10 +414,10 @@ def fulfilment_percent(fulfilment_report: dict | None) -> float | None:
         infos = [e.get("expectationFulfilmentInfo") for e in results]
     if not infos:
         infos = [fulfilment_report.get("intentFulfilmentInfo")]
-    infos = [i for i in infos if isinstance(i, dict)]
-    if not infos:
+    graded = [i for i in infos if isinstance(i, dict)]
+    if not graded:
         return None
-    return round(100 * sum(i.get("fulfilmentStatus") == "FULFILLED" for i in infos) / len(infos), 1)
+    return round(100 * sum(i.get("fulfilmentStatus") == "FULFILLED" for i in graded) / len(graded), 1)
 
 
 def _apply_report(intent: Intent, report: IntentReport) -> None:
