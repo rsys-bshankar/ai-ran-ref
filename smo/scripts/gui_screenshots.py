@@ -78,7 +78,8 @@ PAGES = [
     ("pages/kpis-assurance", "admin", "/kpis#assurance", "dark"), ("pages/kpis-ocloud", "admin", "/kpis#ocloud", "dark"),
     ("pages/kpis-mlmf", "admin", "/kpis#mlmf", "dark"),
     ("pages/topology", "admin", "/topology", "dark"), ("pages/configuration", "admin", "/configuration", "dark"),
-    ("pages/software", "admin", "/software", "dark"),
+    ("pages/software", "admin", "/software", "dark"), ("pages/software-new", "admin", "/software#new", "dark"),
+    ("pages/configuration-onboarding", "admin", "/configuration#onboarding", "dark"),
     ("pages/infra-topology", "admin", "/infrastructure#topology", "dark"), ("pages/infra-nfo", "admin", "/infrastructure#nfo", "dark"),
     ("pages/infra-ocloud", "admin", "/infrastructure#ocloud", "dark"), ("pages/infra-o1", "admin", "/infrastructure#o1", "dark"),
     ("pages/infra-orders", "admin", "/infrastructure#orders", "dark"),
@@ -1073,12 +1074,19 @@ print(len(ids))
 def seed_console(w: Walk):
     """Gives the stack what the console's later features read and the demos do not make: a region and a site cluster on each demo element
     (`PUT /managed-entities/{me}/scope` and `/site-cluster`, admin), utilisation readings for the FOCOM resources (`UTILISATION_PRODUCER`,
-    run inside r1-termination as the runbook does), and one decisions export job (`POST /api/exports`) so the Exports page has a row."""
+    run inside r1-termination as the runbook does), one onboarding template for the demo elements' type (`PUT /onboarding-templates/{name}`,
+    admin, MGT-14.6) so Configuration → Element onboarding shows one, and one decisions export job (`POST /api/exports`) so the Exports page
+    has a row."""
     elements = w.items("/ran-nf-oam/managed-entities")
     for entity, (region, cluster) in zip(elements, DEMO_PLACES * (len(elements) // len(DEMO_PLACES) + 1)):
         ref = entity["managedElementRef"]
         w.api("PUT", f"/ran-nf-oam/managed-entities/{ref}/scope", json={"region": region, "tenant": entity.get("tenant")})
         w.api("PUT", f"/ran-nf-oam/managed-entities/{ref}/site-cluster", json={"siteCluster": cluster})
+    entity_type = next((e.get("entityType") for e in elements if e.get("entityType")), "O-DU")
+    w.api("PUT", "/ran-nf-oam/onboarding-templates/du-basic", json={
+        "entityType": entity_type, "vendorName": None, "description": "Unlock the DU function of a new element",
+        "changes": [{"managedFunctionRef": "GNBDUFunction=1", "attributeChanges": {"administrativeState": "UNLOCKED"}, "operation": "merge"}],
+        "softwareBaseline": None, "requireBaseline": False, "autoApply": False, "enabled": True})
     done = subprocess.run([*w.compose, "exec", "-T", "r1-termination", "python3", "-c", UTILISATION_PRODUCER], cwd=SMO, capture_output=True, text=True)
     if done.returncode != 0:
         raise RuntimeError(f"utilisation producer failed: {done.stderr[-300:]}")
