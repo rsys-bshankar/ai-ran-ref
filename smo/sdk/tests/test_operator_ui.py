@@ -1,4 +1,8 @@
-"""smo_sdk.operator_ui: the builders, the check, the manifest writer and the minimal example (GUI-8.8)."""
+"""Tests of `smo_sdk.operator_ui`: the builders, the check, the manifest writer and the minimal example (GUI-8.8).
+
+Run with `cd sdk && PYTHONPATH=.:../shared python -m pytest tests/test_operator_ui.py -q`. Needs the repository checkout (`examples/hello_operator_ui.py` and
+`docs/schemas/operator-ui.energy-saving.example.yaml`) and `smo_shared.operator_ui`, whose rules the SDK re-exports; no network.
+"""
 
 import importlib.util
 import io
@@ -15,6 +19,7 @@ ADR_EXAMPLE = Path(__file__).resolve().parents[2] / "docs" / "schemas" / "operat
 
 
 def _example_module():
+    """`examples/hello_operator_ui.py` loaded by path (an example, not a package)."""
     spec = importlib.util.spec_from_file_location("hello_operator_ui", EXAMPLE)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -23,6 +28,7 @@ def _example_module():
 
 
 def test_builders_drop_unset_fields():
+    """The builders leave unset optional fields out of the dict instead of sending nulls."""
     assert ui.column("a", "A") == {"path": "a", "label": "A"}
     assert ui.source("/x") == {"path": "/x"}
     assert ui.source("/x", query={"n": 1}, refresh_seconds=10) == {"path": "/x", "query": {"n": 1}, "refreshSeconds": 10}
@@ -31,17 +37,20 @@ def test_builders_drop_unset_fields():
 
 
 def test_a_string_source_is_a_route():
+    """A string given as a panel's source becomes `{path: ...}`."""
     panel = ui.key_values("kv", "KV", "/instances/{instanceId}", [ui.item("A", "a")])
     assert panel["source"] == {"path": "/instances/{instanceId}"}
 
 
 def test_declaration_validates_and_marks_read_only():
+    """`declaration` returns the validated value with `readOnly` true when asked and false otherwise."""
     out = ui.declaration(ui.key_values("kv", "KV", "/k", [ui.item("A", "a")]), read_only=True)
     assert out == {"version": 1, "readOnly": True, "panels": out["panels"]}
     assert ui.declaration(ui.key_values("kv", "KV", "/k", [ui.item("A", "a")]))["readOnly"] is False
 
 
 def test_a_mistake_is_raised_where_it_is_written_not_at_onboarding():
+    """A bad path, an action that changes nothing and a sparkline without `y` raise `OperatorUiInvalid` when the declaration is built, naming the place, instead of failing at onboarding."""
     with pytest.raises(ui.OperatorUiInvalid, match=r"operatorUi.panels\[0\].source.path: must not contain '..'"):
         ui.declaration(ui.key_values("kv", "KV", "/a/../b", [ui.item("A", "a")]))
     with pytest.raises(ui.OperatorUiInvalid, match="an action must change something"):
@@ -51,6 +60,7 @@ def test_a_mistake_is_raised_where_it_is_written_not_at_onboarding():
 
 
 def test_a_declaration_with_a_sparkline_row_action_and_a_kpi_panel_builds():
+    """A table with a sparkline column and a conditional row action, a KPI panel and a chart build, and their routes are listed in order."""
     out = ui.declaration(
         ui.table("cells", "Cells", ui.source("/instances/{instanceId}/cells"), rows="items", row_key="cellId",
                  columns=[ui.column("cellId", "Cell"), ui.column("trend", "Trend", "sparkline", y="v")],
@@ -63,6 +73,7 @@ def test_a_declaration_with_a_sparkline_row_action_and_a_kpi_panel_builds():
 
 
 def test_a_table_with_a_row_detail_builds_and_its_per_row_source_is_a_declared_read():
+    """A row-detail drawer of all four block kinds builds, its per-row source is a declared read, and a reference to a field that is not in the row, or a table block with neither rows nor source, is refused."""
     out = ui.declaration(ui.table(
         "cells", "Cells", "/instances/{instanceId}/cells", rows="items", row_key="cellId", columns=[ui.column("cellId", "Cell"), ui.column("trend", "Trend", "sparkline", y="v")],
         row_detail=ui.row_detail(
@@ -82,6 +93,7 @@ def test_a_table_with_a_row_detail_builds_and_its_per_row_source_is_a_declared_r
 
 
 def test_yaml_output_round_trips_in_block_style():
+    """`to_yaml` writes block-style YAML that loads back to the declaration."""
     out = ui.declaration(ui.table("t", "T", "/instances/{instanceId}/t", row_key="id", columns=[ui.column("id", "Id")]))
     text = ui.to_yaml(out)
     assert text.startswith("operatorUi:\n  version: 1\n") and "{" not in text.replace("{instanceId}", "")
@@ -89,6 +101,7 @@ def test_yaml_output_round_trips_in_block_style():
 
 
 def test_add_to_manifest_appends_and_keeps_comments(tmp_path):
+    """`add_to_manifest` appends the block to an existing manifest and leaves its comments and other keys as they were."""
     manifest = tmp_path / "manifest.yaml"
     manifest.write_text("# my rApp\nrappManifest:\n  manifestVersion: \"1.0\"\nname: X   # inline\n")
     ui.add_to_manifest(manifest, ui.declaration(ui.key_values("kv", "KV", "/k", [ui.item("A", "a")])))
@@ -100,6 +113,7 @@ def test_add_to_manifest_appends_and_keeps_comments(tmp_path):
 
 
 def test_add_to_manifest_creates_the_file_and_refuses_a_second_declaration(tmp_path):
+    """`add_to_manifest` creates a missing manifest, and refuses one that already has an `operatorUi` (top level or under `rappManifest`) or is not a mapping."""
     page = ui.declaration(ui.key_values("kv", "KV", "/k", [ui.item("A", "a")]))
     manifest = tmp_path / "manifest.yaml"
     ui.add_to_manifest(manifest, page)
@@ -116,6 +130,7 @@ def test_add_to_manifest_creates_the_file_and_refuses_a_second_declaration(tmp_p
 
 
 def test_add_to_manifest_checks_before_writing(tmp_path):
+    """An invalid declaration is refused before the manifest is touched."""
     manifest = tmp_path / "manifest.yaml"
     manifest.write_text("name: X\n")
     with pytest.raises(ui.OperatorUiInvalid):
@@ -124,6 +139,7 @@ def test_add_to_manifest_checks_before_writing(tmp_path):
 
 
 def test_the_minimal_example_builds_a_package_whose_declaration_passes_onboardings_check():
+    """The example builds a three-file CSAR whose declaration passes the same check Onboarding runs, lists its routes, and rebuilds byte-identically."""
     hello = _example_module()
     with zipfile.ZipFile(io.BytesIO(hello.build_bytes())) as z:
         assert sorted(z.namelist()) == ["Definitions/asd.yaml", "TOSCA-Metadata/TOSCA.meta", "manifest.yaml"]
@@ -136,4 +152,5 @@ def test_the_minimal_example_builds_a_package_whose_declaration_passes_onboardin
 
 
 def test_the_adr_example_can_be_loaded_through_the_helper():
+    """The example declaration in the ADR (`docs/adr/0004-operator-ui-declaration.md`) validates through the SDK helper."""
     assert ui.validate(yaml.safe_load(ADR_EXAMPLE.read_text())["operatorUi"])["panels"][2]["id"] == "cells"

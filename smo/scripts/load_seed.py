@@ -22,11 +22,13 @@ PM_FILES_PER_ELEMENT = 5
 
 
 def connect(args) -> psycopg.Connection:
+    """Opens a connection as the database owner `smo`, with the password read from `--password-file`; the caller commits (autocommit is off)."""
     password = Path(args.password_file).read_text(encoding="utf-8").strip()
     return psycopg.connect(host=args.host, port=args.port, dbname=args.database, user="smo", password=password, autocommit=False)
 
 
 def clean(conn) -> None:
+    """Deletes every row this script made (alarms, PM files and managed entities whose element reference starts with `load-me-`) and commits."""
     with conn.cursor() as cur:
         cur.execute("DELETE FROM ran_nf_oam.alarm WHERE managed_element_ref LIKE 'load-me-%'")
         cur.execute("DELETE FROM ran_nf_oam.pm_file WHERE managed_element_ref LIKE 'load-me-%'")
@@ -35,6 +37,11 @@ def clean(conn) -> None:
 
 
 def seed(conn, elements: int, seed_value: int) -> dict:
+    """Loads `elements` managed elements, 10 alarms and 5 PM files each, with COPY, then ANALYZEs the three tables; returns the counts.
+
+        The random choices (alarm age, severity, acknowledgement state, PM values) come from a generator seeded with `seed_value`, so a run is repeatable apart from the uuids
+        and the timestamps. Commits at the end only: a failure part-way leaves nothing behind in this transaction.
+    """
     rng = random.Random(seed_value)  # noqa: S311 — synthetic data, not a secret
     now = datetime.datetime.now(datetime.UTC)
     with conn.cursor() as cur:
@@ -62,6 +69,7 @@ def seed(conn, elements: int, seed_value: int) -> dict:
 
 
 def main() -> None:
+    """Removes the rows of an earlier seeding, then (unless `--clean`) seeds again and prints the counts as JSON, so running it twice never doubles the volume."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--elements", type=int, default=1000)
     ap.add_argument("--host", default="postgres")

@@ -21,6 +21,7 @@ from pathlib import Path
 
 
 def load(directory: Path) -> dict:
+    """The `load-results.json` that `scripts/load_run.py` wrote in `directory`."""
     return json.loads((directory / "load-results.json").read_text(encoding="utf-8"))
 
 
@@ -48,6 +49,7 @@ def verdict(off: dict, on: dict, min_saving: float) -> tuple[list[str], list[str
 
 
 def row(label: str, run: dict) -> str:
+    """One markdown table row for a run; the cache column is "off" when the run counted no cache lookups, the hit ratio when it did, "?" when unknown."""
     i, t = run.get("introspection") or {}, run["total"]
     cache = "off" if i and not (i["cache_hits"] + i["cache_misses"]) else (f"{i['cache_hit_ratio']:.1%} hits" if i and i["cache_hit_ratio"] is not None else "?")
     return (f"| {label} | {i.get('sme_introspections', '?')} | {i.get('gateway_calls', '?')} | {i.get('introspections_per_100_calls', '?')} | {cache} | {t['rps']} | {t['p50']} | {t['p95']} | "
@@ -55,6 +57,7 @@ def row(label: str, run: dict) -> str:
 
 
 def table(off: dict, on: dict, seconds: str, findings: list[str], problems: list[str]) -> str:
+    """The markdown report: the two rows, the findings, the requests-a-second and p95 comparison (only when the run without the cache has both numbers), and each problem as a `PROBLEM:` line."""
     lines = ["| run | introspections at SME | calls through the gateway | per 100 calls | cache | req/s | p50 ms | p95 ms | p99 ms | errors |", "|---|---:|---:|---:|---|---:|---:|---:|---:|---:|",
              row("cache off", off), row(f"cache {seconds} s", on), ""]
     lines += [f"- {f}" for f in findings]
@@ -66,6 +69,7 @@ def table(off: dict, on: dict, seconds: str, findings: list[str], problems: list
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Compares two load runs, prints the report, writes it to `--out` when given, and returns 1 when `verdict` found a problem, else 0."""
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--off", type=Path, required=True, help="the load_run.py output directory of the run without the cache")
     ap.add_argument("--on", type=Path, required=True, help="the output directory of the run with the cache")

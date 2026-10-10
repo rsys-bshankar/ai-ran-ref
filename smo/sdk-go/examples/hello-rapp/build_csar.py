@@ -27,6 +27,7 @@ def build_bytes() -> bytes:
 
 
 def main() -> None:
+    """Writes `hello-go-rapp.csar` into the directory given as the first argument (default: the current one) and prints its path."""
     out = Path(sys.argv[1] if len(sys.argv) > 1 else ".") / f"{NAME}.csar"
     out.write_bytes(build_bytes())
     print(f"wrote {out}")

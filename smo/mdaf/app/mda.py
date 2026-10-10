@@ -1,25 +1,20 @@
-"""TS 28.104 MDA NRM at REST level — Wave 5 (HISTORY.md
-W5-01..W5-04, decision D-9): MDAFunction, MDARequest and MDAReport with the
-spec's own attribute names and enums, as `{"id", "attributes"}` resources.
+"""The TS 28.104 MDA resources of MDAF, served as `{"id", "attributes"}` resources with the spec's attribute names:
+MDAFunction, MDARequest and MDAReport (design records: `HISTORY.md` W5-01 to W5-04, `docs/STANDARDS.md` decision D-9).
 
-The original producer-push surface (`POST /reports`, `/subscriptions`) is
-unchanged. This adds the spec's consumer-driven side on top of it: an
-MDARequest declares the outputs it wants (`requestedMDAOutputs`, with
-per-IE filters and thresholds), for which scope and time window, and how
-they are delivered (`reportingMethod`). Every report — spec-shaped from
-`POST /mda-reports` or legacy from `POST /reports` — is matched against the
-open requests and delivered to each one that it satisfies:
+Where it sits: a router mounted into the app by `main.py`, which also owns the older producer-push surface (`POST /reports`,
+`/subscriptions`). Both kinds of report, the spec-shaped one from `POST /mda-reports` and the legacy one, are matched against
+the open MDA requests and delivered per each request's `reportingMethod`:
 
-  NOTIFICATION  POST of the report to `reportingTarget` (best-effort)
-  FILE          the report is a downloadable file (`GET /mda-reports/{id}/file`)
-                and a file-ready notification goes to `reportingTarget`
-  STREAMING     recorded and retrievable; this build has no TS 28.532
-                streaming transport (the same gap OPEN_ITEMS.md §3 records
-                for RAN NF OAM), so this is the one reporting-method deviation
+  NOTIFICATION  an outbox row POSTing the report to `reportingTarget`
+  FILE          the report is downloadable (`GET /mda-reports/{id}/file`) and a file-ready notification goes to `reportingTarget`
+  STREAMING     a delivery row is recorded and nothing is sent; this build has no TS 28.532 streaming transport (OPEN_ITEMS.md §3)
 
-A DRIFT report (W5-04) naming a model (`mLModelRef` output IE) is forwarded
-to that model's AIMgF MLMF subscriptions as a performance report, so the
-existing guard-KPI floor decides whether retraining fires.
+A DRIFT report that names a model (`mLModelRef` output) is also forwarded to that model's AIMgF MLMF subscriptions as a
+performance report, so AIMgF's guard-KPI floor decides whether retraining fires.
+
+Before editing: `_deliver` commits (it ends the publish transaction that `main.py` started); the request matching in
+`_request_matches` mutates each request's `threshold_state`, which is committed with the report. The docstrings of routes and
+request bodies are published in `docs/openapi/mdaf.json`.
 """
 
 import datetime
@@ -44,25 +39,30 @@ from .models import MDAFReport, MDAFunction, MDAReportDelivery, MDARequest
 router = APIRouter()
 
 
+# Base for the request bodies below: unknown fields are refused (422).
 class _Body(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
 def _s(value) -> str | None:
+    """`str(value)`, or None for None."""
     return str(value) if value is not None else None
 
 
 def _iso(value: datetime.datetime | None) -> str | None:
+    """ISO 8601 text of a datetime, or None for None."""
     return value.isoformat() if value is not None else None
 
 
 def _aware(value: datetime.datetime | None) -> datetime.datetime | None:
+    """Treats a naive datetime as UTC (SQLite returns timezone-aware columns naive); None passes."""
     if value is not None and value.tzinfo is None:
         return value.replace(tzinfo=datetime.UTC)
     return value
 
 
 def _get(db: Session, cls, object_id: uuid.UUID, name: str):
+    """Loads an object by id or raises 404 NRM_OBJECT_NOT_FOUND naming `name`."""
     obj = db.get(cls, object_id)
     if obj is None:
         raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such {name} {object_id}")
@@ -71,6 +71,7 @@ def _get(db: Session, cls, object_id: uuid.UUID, name: str):
 
 # ================================================================ MDAFunction
 
+# Body of `POST` and `PUT /mda-functions`; capabilities must be TS 28.104 MDA types.
 class MDAFunctionBody(_Body):
     userLabel: str | None = None
     supportedMDACapabilities: list[ts28104.MDAType] = []
@@ -80,6 +81,7 @@ class MDAFunctionBody(_Body):
 
 
 def _function_view(f: MDAFunction) -> dict:
+    """The MDAFunction resource of a function."""
     return {"id": str(f.mda_function_id), "attributes": {
         "userLabel": f.user_label, "supportedMDACapabilities": list(f.supported_mda_capabilities or []),
         "supportedMDADomain": f.supported_mda_domain, "mLModelRefList": list(f.ml_model_refs or []),
@@ -87,6 +89,7 @@ def _function_view(f: MDAFunction) -> dict:
 
 
 def _apply_function(f: MDAFunction, body: MDAFunctionBody) -> None:
+    """Copies the body onto the function; the capabilities are stored sorted and without duplicates. Does not commit."""
     f.user_label = body.userLabel
     f.supported_mda_capabilities = sorted(set(body.supportedMDACapabilities))
     f.supported_mda_domain = body.supportedMDADomain
@@ -96,6 +99,7 @@ def _apply_function(f: MDAFunction, body: MDAFunctionBody) -> None:
 
 @router.post("/mda-functions", status_code=201)
 def create_mda_function(body: MDAFunctionBody, db: Session = Depends(get_session)):
+    # Creates an MDAFunction (201) and returns its resource.
     f = MDAFunction()
     _apply_function(f, body)
     db.add(f)
@@ -105,17 +109,20 @@ def create_mda_function(body: MDAFunctionBody, db: Session = Depends(get_session
 
 @router.get("/mda-functions")
 def list_mda_functions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Paginated MDAFunction resources.
     page = paginate(db, select(MDAFunction), limit, offset)
     return {**page, "items": [_function_view(f) for f in page["items"]]}
 
 
 @router.get("/mda-functions/{function_id}")
 def get_mda_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
+    # One MDAFunction resource (404 NRM_OBJECT_NOT_FOUND).
     return _function_view(_get(db, MDAFunction, function_id, "MDAFunction"))
 
 
 @router.put("/mda-functions/{function_id}")
 def replace_mda_function(function_id: uuid.UUID, body: MDAFunctionBody, db: Session = Depends(get_session)):
+    # Replaces all writable attributes of a function (404 NRM_OBJECT_NOT_FOUND).
     f = _get(db, MDAFunction, function_id, "MDAFunction")
     _apply_function(f, body)
     db.commit()
@@ -124,6 +131,8 @@ def replace_mda_function(function_id: uuid.UUID, body: MDAFunctionBody, db: Sess
 
 @router.delete("/mda-functions/{function_id}", status_code=204)
 def delete_mda_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Deletes a function (204; an unknown id is 204 too). Requests and reports that named it keep existing; on Postgres the
+    # reference is cleared by ON DELETE SET NULL.
     f = db.get(MDAFunction, function_id)
     if f is not None:
         db.delete(f)
@@ -132,6 +141,8 @@ def delete_mda_function(function_id: uuid.UUID, db: Session = Depends(get_sessio
 
 # ================================================================ MDARequest
 
+# Body of `POST /mda-requests`. Only the outputs, the scope, the time window and the IE filters take part in matching; the other
+# attributes are stored and returned.
 class MDARequestBody(_Body):
     mDAFunctionRef: uuid.UUID | None = None
     requestedMDAOutputs: list[ts28104.MDAOutputPerMDAType]
@@ -149,6 +160,7 @@ class MDARequestBody(_Body):
 
 
 def _request_view(r: MDARequest) -> dict:
+    """The MDARequest resource, with `active` computed now from its time window (not stored)."""
     return {"id": str(r.mda_request_id), "attributes": {
         "mDAFunctionRef": _s(r.mda_function_id), "requestedMDAOutputs": r.requested_mda_outputs,
         "reportingMethod": r.reporting_method, "reportingTarget": r.reporting_target,
@@ -159,6 +171,7 @@ def _request_view(r: MDARequest) -> dict:
 
 
 def _is_active(r: MDARequest, now: datetime.datetime) -> bool:
+    """True when `now` is inside the request's window; no start means already started and no stop means open ended. The stop time itself is outside."""
     start, stop = _aware(r.start_time), _aware(r.stop_time)
     return (start is None or start <= now) and (stop is None or now < stop)
 
@@ -169,6 +182,9 @@ def create_mda_request(body: MDARequestBody, db: Session = Depends(get_session))
     MDAFunction, every requested mDAType must be one of that function's
     supportedMDACapabilities. NOTIFICATION and FILE delivery need a
     reportingTarget."""
+    # Creates a request (201). 422 SCHEMA_VALIDATION_FAILED for empty `requestedMDAOutputs`, NOTIFICATION or FILE without a `reportingTarget`, or a
+    # `stopTime` not after the `startTime`; 404 NRM_OBJECT_NOT_FOUND for an unknown `mDAFunctionRef`; 422 MDA_CAPABILITY_NOT_SUPPORTED for a type the
+    # function does not support. All checks run before anything is written; times are stored as UTC.
     if not body.requestedMDAOutputs:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="requestedMDAOutputs must not be empty")
     if body.reportingMethod in ("NOTIFICATION", "FILE") and not body.reportingTarget:
@@ -199,6 +215,7 @@ def create_mda_request(body: MDARequestBody, db: Session = Depends(get_session))
 @router.get("/mda-requests")
 def list_mda_requests(requested_by: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                       db: Session = Depends(get_session)):
+    # Paginated MDARequest resources, optionally of one `requested_by`.
     stmt = select(MDARequest)
     if requested_by:
         stmt = stmt.where(MDARequest.requested_by == requested_by)
@@ -208,6 +225,7 @@ def list_mda_requests(requested_by: str | None = None, limit: int = PageLimit, o
 
 @router.get("/mda-requests/{request_id}")
 def get_mda_request(request_id: uuid.UUID, db: Session = Depends(get_session)):
+    # One MDARequest resource (404 NRM_OBJECT_NOT_FOUND).
     return _request_view(_get(db, MDARequest, request_id, "MDARequest"))
 
 
@@ -222,6 +240,8 @@ def delete_mda_request(request_id: uuid.UUID, db: Session = Depends(get_session)
 
 # ================================================================ MDAReport
 
+# Body of `POST /mda-reports`. `inputSources` must be DME data job ids; `mDARequestRef` addresses one request, and without it
+# the report is matched against all open requests.
 class MDAReportBody(_Body):
     mDAOutputs: list[ts28104.MDAOutputs]
     # Set when a producer answers one specific request; omitted, the report
@@ -247,6 +267,9 @@ def _outputs_of(report: MDAFReport) -> list[dict]:
 
 
 def _report_view_for(db: Session):
+    """Returns a function that renders a report as the MDAReport resource for this session, including the ids of the requests it was
+    delivered to (one query per report). A closure over `db` so a list can render many reports with one session.
+    """
     def view(report: MDAFReport) -> dict:
         deliveries = db.scalars(select(MDAReportDelivery).where(MDAReportDelivery.report_id == report.report_id)).all()
         return {"id": str(report.report_id), "attributes": {
@@ -259,7 +282,10 @@ def _report_view_for(db: Session):
 
 
 def _flat_entries(report: MDAFReport) -> dict[str, dict]:
-    """mDAType -> flattened IE name/value map of the report."""
+    """Flattens a report's outputs to `{mDAType: {IE name: value}}` for filtering and thresholds. Typed outputs are used as they
+    are, entry pairs are folded into a dict, a prediction list adds one entry per `pmName` with its predicted value, and several
+    outputs of the same type are merged (later values win).
+    """
     out: dict[str, dict] = {}
     for item in _outputs_of(report):
         flat = dict(item["mDAOutputList"]) if isinstance(item["mDAOutputList"], dict) else {
@@ -271,8 +297,9 @@ def _flat_entries(report: MDAFReport) -> dict[str, dict]:
 
 
 def _threshold_crossed(state: dict, entry: dict, value) -> tuple[bool, dict]:
-    """Same edge-triggered crossing with hysteresis as MDASubscription's
-    ThresholdInfo (main.py `_threshold_crossed`), per (request, IE)."""
+    """The same edge-triggered test as `main._threshold_crossed`, on one threshold of one request filter, but pure: it returns
+    `(crossed, new_state)` and leaves the caller to store the state. `entry["hysteresis"]` is optional here (default 0).
+    """
     ie, direction, threshold, hysteresis = (entry["monitoredMDAOutputIE"], entry["thresholdDirection"],
                                             entry["thresholdValue"], entry.get("hysteresis", 0))
     previous = state.get(ie)
@@ -288,6 +315,15 @@ def _threshold_crossed(state: dict, entry: dict, value) -> tuple[bool, dict]:
 
 
 def _request_matches(request: MDARequest, report: MDAFReport, entries: dict[str, dict], now: datetime.datetime) -> bool:
+    """Decides whether `report` satisfies `request`, and updates the request's threshold state as a side effect.
+
+    A request must be active and its `managedEntitiesScope` (if it has one and the report has one) must overlap the report's
+    (a request or a report without one passes). Then
+    it matches when at least one requested output type is in the report and passes its filters: a `timeOut` in the past fails the
+    output, a `filterValue` must equal the text of the IE value, and a `threshold` must have fired on this report (numeric values
+    only; a non-numeric value never fires). An `areaScope` is not evaluated. `request.threshold_state` is replaced with the
+    state after all thresholds were looked at, whether or not the request matched; the caller commits it.
+    """
     if not _is_active(request, now):
         return False
     scope = (request.analytics_scope or {}).get("managedEntitiesScope")
@@ -311,6 +347,8 @@ def _request_matches(request: MDARequest, report: MDAFReport, entries: dict[str,
                 ok = False
                 break
             for threshold in f.get("threshold") or []:
+                # A threshold gates the output: it passes only if the threshold fired on this report. `gated` is set again for
+                # each threshold, so with several thresholds the last one evaluated decides.
                 gated = True
                 if isinstance(value, (int, float)):
                     crossed, state = _threshold_crossed(state, threshold, value)
@@ -323,8 +361,14 @@ def _request_matches(request: MDARequest, report: MDAFReport, entries: dict[str,
 
 
 def _deliver(db: Session, report: MDAFReport, view: dict) -> None:
-    """Matches the report against open requests and delivers it per each
-    request's reportingMethod. Best-effort, like every notification here."""
+    """Delivers the report to the MDA requests it satisfies and commits the whole publish transaction.
+
+    Candidates: the one request the report names (`mda_request_id`), delivered without further checks, or every request for which
+    `_request_matches` is true. For each, a delivery row is written and, per the request's method, an outbox row (NOTIFICATION:
+    `notifyMDAReport` with the report; FILE: `notifyFileReady` with the file's path) is queued; STREAMING only records the delivery.
+    `notified` records that a row was queued, not that it was sent (`enqueue` drops a destination the SSRF guard refuses without
+    telling this code). Sending happens after the commit and is retried by the outbox.
+    """
     now = datetime.datetime.now(datetime.UTC)
     entries = _flat_entries(report)
     candidates: list[MDARequest | None]
@@ -354,9 +398,10 @@ def _deliver(db: Session, report: MDAFReport, view: dict) -> None:
 
 
 def _forward_drift_to_mlmf(report: MDAFReport) -> list[str]:
-    """W5-04: a DRIFT report naming `mLModelRef` is forwarded, as metrics,
-    to every AIMgF MLMF subscription on that model — AIMgF's existing
-    guard-KPI floor then decides whether a retrain fires. Best-effort."""
+    """Passes a DRIFT report's numeric outputs to the AIMgF MLMF subscriptions of the model named by `mLModelRef`, as performance
+    report metrics, and returns the subscription ids it reached. Best-effort: any error (AIMgF down, non-200) skips that output
+    and never fails the publish. Runs after the report is committed.
+    """
     forwarded = []
     for values in _flat_entries(report).values():
         model_ref = values.get("mLModelRef")
@@ -370,17 +415,25 @@ def _forward_drift_to_mlmf(report: MDAFReport) -> list[str]:
             for sub in subs.json().get("items", []):
                 _r1.post(f"/aimgf/mlmf/subscriptions/{sub['subscriptionId']}/reports", json=metrics)
                 forwarded.append(sub["subscriptionId"])
+        # Deliberately broad: forwarding is an extra and must not turn a stored report into a failed request.
         except Exception:  # noqa: BLE001, S112 — drift forwarding never fails the publish
             continue
     return forwarded
 
 
 def _infer_kind(outputs: list[dict]) -> str:
+    """PREDICTION if any output is one of the prediction MDA types, else ANALYTICS. DRIFT is never inferred; the caller must say so."""
     return "PREDICTION" if any(o["mDAType"] in ts28104.PREDICTION_MDA_TYPES for o in outputs) else "ANALYTICS"
 
 
 @router.post("/mda-reports", status_code=201)
 def publish_mda_report(body: MDAReportBody, db: Session = Depends(get_session)):
+    # Stores a spec-shaped report. 201 with the MDAReport resource. 422 for empty `mDAOutputs` or an unknown DME source; 404
+    # NRM_OBJECT_NOT_FOUND for an unknown `mDARequestRef` or `mDAFunctionRef`. The report's `analytics_type` and `mda_type` are the type of
+    # the first output; all outputs' entries are also flattened into the free-form `output` (a later output overwrites a same-named
+    # entry of an earlier one). Order: checks, add and flush, subscribers of that type notified, delivery to requests (which commits),
+    # then drift forwarding for a DRIFT report. The notification payload is rendered before the delivery rows exist, the response
+    # after the commit, so only the response lists `deliveredToRequestRefList`.
     if not body.mDAOutputs:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="mDAOutputs must not be empty")
     if body.mDARequestRef is not None:
@@ -411,8 +464,9 @@ def publish_mda_report(body: MDAReportBody, db: Session = Depends(get_session)):
 
 
 def deliver_legacy_report(db: Session, report: MDAFReport) -> None:
-    """Called by `POST /reports` so a producer-push report satisfies open
-    MDARequests too."""
+    """Entry point for `POST /reports` in `main.py`: matches a producer-push report against open MDA requests and delivers it. Commits,
+    as `_deliver` does.
+    """
     _deliver(db, report, _report_view_for(db)(report))
 
 
@@ -430,6 +484,8 @@ def list_mda_reports(mda_type: str | None = None, report_kind: str | None = None
     if mda_request_id:
         stmt = stmt.where(MDAFReport.report_id.in_(
             select(MDAReportDelivery.report_id).where(MDAReportDelivery.mda_request_id == mda_request_id)))
+    # All matching rows are loaded, newest first; the `managed_entity` filter and the paging are applied to that list in Python,
+    # so the cost grows with the number of matching reports.
     rows = db.scalars(stmt.order_by(MDAFReport.generated_at.desc())).all()
     if managed_entity:
         rows = [r for r in rows if managed_entity in ((r.scope or {}).get("managedEntitiesScope") or [])]
@@ -440,6 +496,7 @@ def list_mda_reports(mda_type: str | None = None, report_kind: str | None = None
 
 @router.get("/mda-reports/{report_id}")
 def get_mda_report(report_id: uuid.UUID, db: Session = Depends(get_session)):
+    # One MDAReport resource (404 NRM_OBJECT_NOT_FOUND).
     return _report_view_for(db)(_get(db, MDAFReport, report_id, "MDAReport"))
 
 

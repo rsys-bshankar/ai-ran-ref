@@ -1,23 +1,25 @@
-"""TS 28.105 AI/ML NRM at REST level — Wave 4 (HISTORY.md
-W4-04, decision D-9). Every IOC of specs/5G_APIs/TS28105_AiMlNrm.yaml that
-AIMgF owns, as a flat REST resource carrying the spec's own attribute
-names (`{"id": ..., "attributes": {...}}`, the same id/attributes split
-the spec's own `-Single` schemas use):
+"""The TS 28.105 AI/ML NRM as REST resources: the functions, requests, processes and reports AIMgF owns, as an `APIRouter` included at the end of `main.py`.
 
-  MLTrainingFunction / MLTrainingRequest / MLTrainingProcess / MLTrainingReport
-  MLTestingFunction / MLTestingRequest / MLTestingReport
-  AIMLInferenceFunction / AIMLInferenceReport / AIMLInferenceEmulationFunction
-  MLModelLoadingRequest / MLModelLoadingPolicy / MLModelLoadingProcess
-  MLUpdateFunction / MLUpdateRequest / MLUpdateProcess / MLUpdateReport
+What it is: for each IOC (MLTrainingFunction / Request / Process / Report, MLTestingFunction / Request / Report, AIMLInferenceFunction,
+AIMLInferenceEmulationFunction, AIMLInferenceReport, MLModelLoadingPolicy / Request / Process, MLUpdateFunction / Request / Process / Report) the create, list, read,
+modify and delete routes, plus `GET /ml-models/{id}/nrm-refs`. Every resource is rendered as `{"id", "attributes"}` with the spec's attribute names (the shape of the
+spec's `-Single` schemas); unknown ids are 404 `NRM_OBJECT_NOT_FOUND`; bodies inherit `extra="forbid"`, so an attribute the spec does not define is a 422.
+MLModel, MLModelRepository and MLModelCoordinationGroup are MLMR's. Standard and decision: TS 28.105, `docs/STANDARDS.md` D-9, HISTORY.md W4-04; per-resource
+behaviour: `aimgf/README.md` 2.4.
 
-(MLModel / MLModelRepository / MLModelCoordinationGroup are MLMR's.)
+Where it sits: it imports its machinery from `main.py` (`_start_training`, `_start_validation`, `_deploy_runtime`, `_activate_runtime`, the cancel and resume
+helpers, `_expire_overdue_jobs`, ...) and `main.py` imports `router` and `advance_ml_update_process` back from the bottom of its own file, which is why the NRM
+import there is last and at module level. Callers: rApps and the GUI through R1, MLMR (`nrm-refs`), SA SMOS and SO SMOS.
 
-Requests are not a parallel bookkeeping layer: an MLTrainingRequest *is*
-a TrainingJob and an MLTestingRequest *is* a ValidationJob, started through
-the same `_start_training`/`_start_validation` core as the original job
-routes, so the lifecycle gates, NFO execution runtimes and operator
-approvals all still apply. The one recorded deviation from the spec is
-addressing: DN-typed references are carried as this build's resource ids.
+Owns: the NRM views, the loading runs (MLModelLoadingRequest / Policy / Process) and the update runs (MLUpdateRequest / Process / Report). Does not own the run
+machinery: a request is not a parallel bookkeeping layer. An MLTrainingRequest is a `TrainingJob` and an MLTestingRequest is a `ValidationJob`, started through the
+same `_start_training` / `_start_validation` as `POST /training-jobs` and `POST /validation-jobs`, so the lifecycle gates, operator approvals, NFO execution runtimes
+and timeouts all apply to them. An MLModelLoadingRequest drives the model's serving runtime through `_deploy_runtime` and `_activate_runtime`.
+
+Before editing: the route functions and the request models are published in `docs/openapi/aimgf.json`; their docstrings are the API description, so maintainer
+notes are `#` blocks (`tests_integration/test_openapi_specs.py` compares the committed spec with the live schema). Every route here commits itself after the NFO
+calls its helpers make, so a failure in the middle leaves no AIMgF row but can leave an NFO runtime behind (README 2.5 and 2.8). Several GET routes write: they run
+the timeout sweep first.
 """
 
 import datetime
@@ -49,15 +51,21 @@ from .statemachine import TRAINABLE_STATES, ModelLifecycleEvent, ModelLifecycleS
 router = APIRouter()
 
 
+# Base of every request body in this file: `extra="forbid"`, so an attribute outside the spec is a 422 rather than silently dropped.
 class _Body(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
 def _s(value) -> str | None:
+    """Returns `str(value)`, or None for None: how an optional UUID column becomes an optional id string in a view."""
     return str(value) if value is not None else None
 
 
 def _get(db: Session, cls, object_id: uuid.UUID, name: str):
+    """Returns the row `object_id` of `cls`, or raises 404 `NRM_OBJECT_NOT_FOUND` naming `name` (the NRM type, used in the message).
+
+    Read-only. Used by every GET-by-id, by routes that need a referenced function or policy to exist, and for the update and loading helpers.
+    """
     obj = db.get(cls, object_id)
     if obj is None:
         raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such {name} {object_id}")
@@ -65,23 +73,31 @@ def _get(db: Session, cls, object_id: uuid.UUID, name: str):
 
 
 def _page(db: Session, stmt, limit: int, offset: int, view) -> dict:
+    """Returns a paginated list envelope for `stmt` with each row rendered by `view`.
+
+    `paginate` does the SQL `LIMIT` / `OFFSET` and, unless the caller asked for `total=false`, the `COUNT(*)`; `view` is called once per row, so a view that queries
+    (the `_for(db)` ones) costs extra queries per item.
+    """
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [view(o) for o in page["items"]]}
 
 
 def _monitor(status: str, pct: int, state_info: str | None, result_info: str | None) -> dict:
+    """Returns the TS 28.105 ProcessMonitor object (`progressStatus`) from a process row's status, percentage and the two info strings."""
     return {"status": status, "progressPercentage": pct, "progressStateInfo": state_info, "resultStateInfo": result_info}
 
 
 # TrainingJob/ValidationJob status -> TS 28.105 RequestStatus. ValidationJob's
 # own COMPLETED/FAILED both mean the request FINISHED; the outcome is in its
 # MLTestingReport (mLTestingResult), the same place the spec puts it.
+# ValidationJob status to TS 28.105 `requestStatus`: COMPLETED and FAILED both read FINISHED here, and the outcome is in the MLTestingReport.
 _VALIDATION_REQUEST_STATUS = {"RUNNING": "IN_PROGRESS", "SUSPENDED": "SUSPENDED", "COMPLETED": "FINISHED",
                               "FAILED": "FINISHED", "CANCELLED": "CANCELLED"}
 
 
 # ================================================================ MLTrainingFunction
 
+# Body of POST and PUT /ml-training-functions: the writable attributes of the function. `mLTrainingType` is read-only in the spec and is not accepted.
 class MLTrainingFunctionBody(_Body):
     userLabel: str | None = None
     supportedLearningTechnology: ts28105.SupportedLearningTechnology | None = None
@@ -91,6 +107,7 @@ class MLTrainingFunctionBody(_Body):
 
 
 def _training_function_view(f: MLTrainingFunction) -> dict:
+    """Returns the MLTrainingFunction as `{id, attributes}`; `mLTrainingType` is the type of the latest run started for it, or None."""
     return {"id": str(f.ml_training_function_id), "attributes": {
         "userLabel": f.user_label, "supportedLearningTechnology": f.supported_learning_technology,
         "fLParticipationInfo": f.fl_participation_info, "mLKnowledge": f.ml_knowledge,
@@ -98,6 +115,7 @@ def _training_function_view(f: MLTrainingFunction) -> dict:
 
 
 def _apply_training_function(f: MLTrainingFunction, body: MLTrainingFunctionBody) -> None:
+    """Copies every writable attribute of `body` onto `f`, so an attribute left out of the body becomes None (what PUT relies on). Does not touch `ml_training_type` or commit."""
     f.user_label = body.userLabel
     f.supported_learning_technology = ts28105.dump(body.supportedLearningTechnology)
     f.fl_participation_info = ts28105.dump(body.fLParticipationInfo)
@@ -107,6 +125,7 @@ def _apply_training_function(f: MLTrainingFunction, body: MLTrainingFunctionBody
 
 @router.post("/ml-training-functions", status_code=201)
 def create_ml_training_function(body: MLTrainingFunctionBody, db: Session = Depends(get_session)):
+    # Route notes: 201 with the new function. No uniqueness rule; commits once.
     f = MLTrainingFunction()
     _apply_training_function(f, body)
     db.add(f)
@@ -116,16 +135,20 @@ def create_ml_training_function(body: MLTrainingFunctionBody, db: Session = Depe
 
 @router.get("/ml-training-functions")
 def list_ml_training_functions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: paginated; does not run the timeout sweep (functions have no deadline).
     return _page(db, select(MLTrainingFunction), limit, offset, _training_function_view)
 
 
 @router.get("/ml-training-functions/{function_id}")
 def get_ml_training_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
     return _training_function_view(_get(db, MLTrainingFunction, function_id, "MLTrainingFunction"))
 
 
 @router.put("/ml-training-functions/{function_id}")
 def replace_ml_training_function(function_id: uuid.UUID, body: MLTrainingFunctionBody, db: Session = Depends(get_session)):
+    # Route notes: full replace through `_apply_training_function`: attributes omitted from the body are cleared, not kept. 404 for an unknown id. The type of
+    # the latest run is preserved.
     f = _get(db, MLTrainingFunction, function_id, "MLTrainingFunction")
     _apply_training_function(f, body)
     db.commit()
@@ -134,6 +157,7 @@ def replace_ml_training_function(function_id: uuid.UUID, body: MLTrainingFunctio
 
 @router.delete("/ml-training-functions/{function_id}", status_code=204)
 def delete_ml_training_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 204 whether or not it existed. Training requests that named the function keep their rows (the database sets their reference to NULL).
     f = db.get(MLTrainingFunction, function_id)
     if f is not None:
         db.delete(f)
@@ -142,6 +166,10 @@ def delete_ml_training_function(function_id: uuid.UUID, db: Session = Depends(ge
 
 # ================================================================ MLTrainingRequest (= TrainingJob)
 
+# Body of POST /ml-training-requests. Exactly one of `mLModelRef` and `mLModelCoordinationGroupRef` is required (checked in the route, 422
+# `COORDINATION_GROUP_MISMATCH`). `trainingRequestSource` is stored as the job's `producer_id`. The last block is not in the TS 28.105 attribute list:
+# `dmeDataJobIds` and `notificationUri` are this build's, as on POST /training-jobs; `packageId` / `runtimeProfile` size the runtime (an explicit profile wins)
+# and `timeoutSeconds` overrides the default deadline.
 class MLTrainingRequestBody(_Body):
     mLModelRef: uuid.UUID | None = None
     mLModelCoordinationGroupRef: uuid.UUID | None = None
@@ -171,6 +199,7 @@ class MLTrainingRequestBody(_Body):
     timeoutSeconds: int | None = Field(default=None, gt=0)
 
 
+# Body of the PATCH routes of the requests: the spec's in-place control flags. Null or omitted means no change; cancel wins when both are set.
 class RequestFlagsBody(_Body):
     """cancelRequest / suspendRequest — the spec's in-place control flags."""
     cancelRequest: bool | None = None
@@ -178,6 +207,7 @@ class RequestFlagsBody(_Body):
 
 
 def _training_request_view(j: TrainingJob) -> dict:
+    """Returns the TrainingJob as an MLTrainingRequest `{id, attributes}`; `requestStatus` is the job's status as stored (it includes FAILED, which TS 28.105 does not define)."""
     return {"id": str(j.training_job_id), "attributes": {
         "aIMLInferenceName": j.aiml_inference_name, "fLRequirement": j.fl_requirement,
         "candidateTrainingDataSource": j.candidate_training_data_source or [],
@@ -195,10 +225,16 @@ def _training_request_view(j: TrainingJob) -> dict:
 
 @router.post("/ml-training-requests", status_code=201)
 def create_ml_training_request(body: MLTrainingRequestBody, db: Session = Depends(get_session)):
+    # Route notes. Checks, in order: the named MLTrainingFunction exists (404), exactly one target (422 `COORDINATION_GROUP_MISMATCH`), every `dmeDataJobIds`
+    # entry resolves in DME (422 `DME_ARTIFACT_NOT_FOUND`), the package or profile resolves (404 `PACKAGE_NOT_FOUND`), then `_start_training`: 404
+    # `MODEL_NOT_FOUND` for an unknown model, 409 `LIFECYCLE_ILLEGAL_TRANSITION` for a model that cannot be (re)trained or for INITIAL_TRAINING on a model that
+    # is not REGISTERED. The NFO descriptor and deployment are created inside `_start_training`, before the single commit at the end, so a failure after that
+    # point leaves no AIMgF row but an NFO runtime. A coordination group id is not looked up anywhere. No NRM route takes an Idempotency-Key.
     if body.mLTrainingFunctionRef is not None:
         _get(db, MLTrainingFunction, body.mLTrainingFunctionRef, "MLTrainingFunction")
     if (body.mLModelRef is None) == (body.mLModelCoordinationGroupRef is None):
         raise framework_error(FrameworkError.COORDINATION_GROUP_MISMATCH)
+    # The DME check comes before any model lookup or NFO call, so a bad reference is reported without side effects.
     _validate_dme_data_job_ids(body.dmeDataJobIds)
     job = _start_training(
         db, model_id=body.mLModelRef, group_id=body.mLModelCoordinationGroupRef, producer_id=body.trainingRequestSource,
@@ -223,6 +259,8 @@ def create_ml_training_request(body: MLTrainingRequestBody, db: Session = Depend
 @router.get("/ml-training-requests")
 def list_ml_training_requests(ml_training_function_id: uuid.UUID | None = None, request_status: str | None = None,
                               limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built. `request_status` filters on
+    # the job's stored status.
     _expire_overdue_jobs(db)
     stmt = select(TrainingJob)
     if ml_training_function_id:
@@ -234,15 +272,20 @@ def list_ml_training_requests(ml_training_function_id: uuid.UUID | None = None, 
 
 @router.get("/ml-training-requests/{request_id}")
 def get_ml_training_request(request_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built. 404 `NRM_OBJECT_NOT_FOUND`
+    # for an unknown id.
     _expire_overdue_jobs(db)
     return _training_request_view(_get(db, TrainingJob, request_id, "MLTrainingRequest"))
 
 
 def _apply_training_flags(db: Session, job: TrainingJob, cancel: bool | None, suspend: bool | None) -> None:
-    """Cancel and resume go through main.py's one cancel/resume path, so a
-    cancel releases the model from TRAINING and a resume restarts the
-    timeout clock exactly as DELETE /training-jobs/{id} and
-    POST /training-jobs/{id}/resume do."""
+    """Applies the NRM control flags to a training run and raises 409 `TRAINING_JOB_ILLEGAL_TRANSITION` when the run is in the wrong status. Does not commit.
+
+    `cancel` truthy: allowed from IN_PROGRESS or SUSPENDED, goes through `_cancel_training_job` (the one cancel path, which releases the model from TRAINING, tears down
+    the NFO runtime and advances an MLUpdateProcess), and returns; `suspend` is then ignored. `suspend` True: only from IN_PROGRESS (409 otherwise). `suspend` False:
+    resumes through `_resume_training_job` (which restarts the timeout clock) only when the run is SUSPENDED, and is a silent no-op in any other status. None changes
+    nothing.
+    """
     if cancel:
         if job.status not in ACTIVE_TRAINING_STATUSES:
             raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
@@ -261,6 +304,8 @@ def _apply_training_flags(db: Session, job: TrainingJob, cancel: bool | None, su
 
 @router.patch("/ml-training-requests/{request_id}")
 def modify_ml_training_request(request_id: uuid.UUID, body: RequestFlagsBody, db: Session = Depends(get_session)):
+    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built. Then
+    # `_apply_training_flags` (409 `TRAINING_JOB_ILLEGAL_TRANSITION` for a cancel or suspend in the wrong status), one commit.
     _expire_overdue_jobs(db)
     job = _get(db, TrainingJob, request_id, "MLTrainingRequest")
     _apply_training_flags(db, job, body.cancelRequest, body.suspendRequest)
@@ -272,6 +317,8 @@ def modify_ml_training_request(request_id: uuid.UUID, body: RequestFlagsBody, db
 def delete_ml_training_request(request_id: uuid.UUID, db: Session = Depends(get_session)):
     """Deleting an in-flight request cancels it (the job row is kept as
     history, like `DELETE /training-jobs/{id}`)."""
+    # Route notes: always 204. Only an IN_PROGRESS or SUSPENDED run is cancelled; an unknown id, a FINISHED, FAILED or already CANCELLED run is left alone with
+    # the same 204. This differs from DELETE /training-jobs/{id}, which answers 409 for a FINISHED or FAILED run. No timeout sweep first.
     job = db.get(TrainingJob, request_id)
     if job is not None and job.status in ACTIVE_TRAINING_STATUSES:
         _cancel_training_job(db, job)
@@ -280,6 +327,8 @@ def delete_ml_training_request(request_id: uuid.UUID, db: Session = Depends(get_
 
 # ================================================================ MLTrainingProcess
 
+# Body of PATCH /ml-training-processes/{id}: `priority` and `terminationConditions` are plain writes; the two flags act on the run like the request's own
+# (cancel wins).
 class ProcessFlagsBody(_Body):
     priority: int | None = None
     terminationConditions: str | None = None
@@ -288,6 +337,11 @@ class ProcessFlagsBody(_Body):
 
 
 def _training_process_view_for(db: Session):
+    """Returns a function that renders an MLTrainingProcess as `{id, attributes}` using `db`.
+
+    The view loads the process's job and its newest report (two queries per process), so a list costs two extra queries per item. `trainingReportRef` is the newest
+    MLTrainingReport of the job, or None.
+    """
     def view(p: MLTrainingProcess) -> dict:
         job = db.get(TrainingJob, p.training_job_id)
         report = db.scalars(select(MLTrainingReport).where(MLTrainingReport.training_job_id == p.training_job_id)
@@ -306,12 +360,15 @@ def _training_process_view_for(db: Session):
 
 @router.get("/ml-training-processes")
 def list_ml_training_processes(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built.
     _expire_overdue_jobs(db)
     return _page(db, select(MLTrainingProcess), limit, offset, _training_process_view_for(db))
 
 
 @router.get("/ml-training-processes/{process_id}")
 def get_ml_training_process(process_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built. 404 `NRM_OBJECT_NOT_FOUND`
+    # for an unknown id.
     _expire_overdue_jobs(db)
     return _training_process_view_for(db)(_get(db, MLTrainingProcess, process_id, "MLTrainingProcess"))
 
@@ -320,6 +377,9 @@ def get_ml_training_process(process_id: uuid.UUID, db: Session = Depends(get_ses
 def modify_ml_training_process(process_id: uuid.UUID, body: ProcessFlagsBody, db: Session = Depends(get_session)):
     """priority/terminationConditions are plain writes; cancelProcess/
     suspendProcess act on the run exactly like the request's own flags."""
+    # Route notes: `priority` and `terminationConditions` are written to the process row first, then `_apply_training_flags` acts on the job; a 409 from the
+    # flags leaves the whole request uncommitted, so the plain writes are discarded too. `db.get_one` raises if the job row is gone (it cannot be while the
+    # process exists: `ON DELETE CASCADE`).
     _expire_overdue_jobs(db)
     p = _get(db, MLTrainingProcess, process_id, "MLTrainingProcess")
     if body.priority is not None:
@@ -336,6 +396,10 @@ def report_ml_training_progress(process_id: uuid.UUID, body: ts28105.ProcessMoni
     """The MLTF execution runtime's own progress write-back (ProcessMonitor).
     Only meaningful while the run is RUNNING; completion itself still goes
     through `POST /training-jobs/{id}/complete`."""
+    # Route notes: the NRM-level progress write-back (percentage and info strings of the ProcessMonitor). It does not move the job's `current_step`: the step is
+    # reported on POST /training-jobs/{id}/progress. 404 for an unknown process, 409 `TRAINING_JOB_ILLEGAL_TRANSITION` unless the process status is RUNNING (so
+    # not while suspended or ended). The percentage is stored as given; it is not required to increase. No timeout sweep first. Completion is still POST
+    # /training-jobs/{id}/complete.
     p = _get(db, MLTrainingProcess, process_id, "MLTrainingProcess")
     if p.status != "RUNNING":
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
@@ -351,6 +415,7 @@ def report_ml_training_progress(process_id: uuid.UUID, body: ts28105.ProcessMoni
 # ================================================================ MLTrainingReport
 
 def _training_report_view(r: MLTrainingReport) -> dict:
+    """Returns the MLTrainingReport as `{id, attributes}`; `trainingProcessRef` is left None here because the report row does not store it (`_training_report_view_for` fills it)."""
     return {"id": str(r.ml_training_report_id), "attributes": {
         "usedConsumerTrainingData": r.used_consumer_training_data or [],
         "modelConfidenceIndication": r.model_confidence_indication,
@@ -365,6 +430,7 @@ def _training_report_view(r: MLTrainingReport) -> dict:
 
 
 def _training_report_view_for(db: Session):
+    """Returns a function that renders an MLTrainingReport with `trainingProcessRef` filled in from the job's process (one extra query per report)."""
     def view(r: MLTrainingReport) -> dict:
         out = _training_report_view(r)
         process = db.scalar(select(MLTrainingProcess).where(MLTrainingProcess.training_job_id == r.training_job_id))
@@ -376,6 +442,8 @@ def _training_report_view_for(db: Session):
 @router.get("/ml-training-reports")
 def list_ml_training_reports(model_id: uuid.UUID | None = None, limit: int = PageLimit, offset: int = PageOffset,
                              db: Session = Depends(get_session)):
+    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built. Newest first. The
+    # `model_id` filter matches `ml_model_generated_ref`, which is set only for a successful run, so reports of failed runs are not found by it.
     _expire_overdue_jobs(db)
     stmt = select(MLTrainingReport)
     if model_id:
@@ -385,16 +453,19 @@ def list_ml_training_reports(model_id: uuid.UUID | None = None, limit: int = Pag
 
 @router.get("/ml-training-reports/{report_id}")
 def get_ml_training_report(report_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id. No timeout sweep (a report is written on completion; it does not age).
     return _training_report_view_for(db)(_get(db, MLTrainingReport, report_id, "MLTrainingReport"))
 
 
 # ================================================================ MLTestingFunction
 
+# Body of the POST routes of MLTestingFunction and AIMLInferenceEmulationFunction: only the free-text `userLabel`.
 class UserLabelBody(_Body):
     userLabel: str | None = None
 
 
 def _testing_function_view_for(db: Session):
+    """Returns a function that renders an MLTestingFunction; `mLModelRef` lists the distinct models of the validation jobs that named it (one query per function)."""
     def view(f: MLTestingFunction) -> dict:
         model_ids = db.scalars(select(ValidationJob.model_id).where(
             ValidationJob.ml_testing_function_id == f.ml_testing_function_id, ValidationJob.model_id.is_not(None))).all()
@@ -405,6 +476,7 @@ def _testing_function_view_for(db: Session):
 
 @router.post("/ml-testing-functions", status_code=201)
 def create_ml_testing_function(body: UserLabelBody, db: Session = Depends(get_session)):
+    # Route notes: 201; no uniqueness rule.
     f = MLTestingFunction(user_label=body.userLabel)
     db.add(f)
     db.commit()
@@ -413,16 +485,20 @@ def create_ml_testing_function(body: UserLabelBody, db: Session = Depends(get_se
 
 @router.get("/ml-testing-functions")
 def list_ml_testing_functions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: paginated; no timeout sweep.
     return _page(db, select(MLTestingFunction), limit, offset, _testing_function_view_for(db))
 
 
 @router.get("/ml-testing-functions/{function_id}")
 def get_ml_testing_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
     return _testing_function_view_for(db)(_get(db, MLTestingFunction, function_id, "MLTestingFunction"))
 
 
 @router.delete("/ml-testing-functions/{function_id}", status_code=204)
 def delete_ml_testing_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 204 whether or not it existed. Testing requests and reports that named the function keep their rows (the database sets the reference to
+    # NULL).
     f = db.get(MLTestingFunction, function_id)
     if f is not None:
         db.delete(f)
@@ -431,6 +507,9 @@ def delete_ml_testing_function(function_id: uuid.UUID, db: Session = Depends(get
 
 # ================================================================ MLTestingRequest (= ValidationJob)
 
+# Body of POST /ml-testing-requests. Exactly one of `mLModelRef` and `mLModelCoordinationGroupRef` is needed (422 `COORDINATION_GROUP_MISMATCH` otherwise, from
+# `_start_validation`). Not TS 28.105 attributes: `requestSource` (stored as `producer_id`, default `nrm`), `trainingJobId` (stored as given, not looked up),
+# `validationCriteria`, `notificationUri`, and the sizing fields `packageId` / `runtimeProfile` / `timeoutSeconds` as on MLTrainingRequest.
 class MLTestingRequestBody(_Body):
     mLModelRef: uuid.UUID | None = None
     mLModelCoordinationGroupRef: uuid.UUID | None = None
@@ -447,6 +526,7 @@ class MLTestingRequestBody(_Body):
 
 
 def _testing_request_view(j: ValidationJob) -> dict:
+    """Returns the ValidationJob as an MLTestingRequest `{id, attributes}`, with `requestStatus` mapped through `_VALIDATION_REQUEST_STATUS`."""
     return {"id": str(j.validation_job_id), "attributes": {
         "requestStatus": _VALIDATION_REQUEST_STATUS.get(j.status, j.status),
         "cancelRequest": j.cancel_request, "suspendRequest": j.suspend_request,
@@ -456,6 +536,9 @@ def _testing_request_view(j: ValidationJob) -> dict:
 
 @router.post("/ml-testing-requests", status_code=201)
 def create_ml_testing_request(body: MLTestingRequestBody, db: Session = Depends(get_session)):
+    # Route notes: 404 for an unknown MLTestingFunction; then `_start_validation` applies the same gates as POST /validation-jobs (422
+    # `COORDINATION_GROUP_MISMATCH`, 404 `MODEL_NOT_FOUND`, 409 `LIFECYCLE_ILLEGAL_TRANSITION` unless the model is TRAINED, 409 `TRAINING_NOT_APPROVED` without
+    # APPROVE_TRAINING), creates the NFO runtime and fires CREATE_VALIDATION; one commit at the end. A coordination group id is not looked up.
     if body.mLTestingFunctionRef is not None:
         _get(db, MLTestingFunction, body.mLTestingFunctionRef, "MLTestingFunction")
     job = _start_validation(db, model_id=body.mLModelRef, group_id=body.mLModelCoordinationGroupRef,
@@ -471,6 +554,7 @@ def create_ml_testing_request(body: MLTestingRequestBody, db: Session = Depends(
 @router.get("/ml-testing-requests")
 def list_ml_testing_requests(ml_testing_function_id: uuid.UUID | None = None, limit: int = PageLimit,
                              offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built.
     _expire_overdue_jobs(db)
     stmt = select(ValidationJob)
     if ml_testing_function_id:
@@ -480,6 +564,8 @@ def list_ml_testing_requests(ml_testing_function_id: uuid.UUID | None = None, li
 
 @router.get("/ml-testing-requests/{request_id}")
 def get_ml_testing_request(request_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built. 404 `NRM_OBJECT_NOT_FOUND`
+    # for an unknown id.
     _expire_overdue_jobs(db)
     return _testing_request_view(_get(db, ValidationJob, request_id, "MLTestingRequest"))
 
@@ -491,6 +577,11 @@ def modify_ml_testing_request(request_id: uuid.UUID, body: RequestFlagsBody, db:
     lifecycle's own retry point) rather than leaving it stuck VALIDATING.
     suspendRequest pauses/resumes a RUNNING job; resuming restarts its
     timeout clock, as for a training run."""
+    # Route notes. After the sweep: cancel is allowed from RUNNING or SUSPENDED (409 `TRAINING_JOB_ILLEGAL_TRANSITION` otherwise) and wins over suspend; suspend
+    # only from RUNNING; `suspendRequest` false resumes a SUSPENDED job and is a no-op otherwise. The cancel path deletes the NFO runtime first and then fires
+    # VALIDATION_FAILED with `_fire_model_event`, not `_fire_if_legal`: if the model is no longer VALIDATING the call answers 409
+    # `LIFECYCLE_ILLEGAL_TRANSITION`, the status change is not committed, and the NFO runtime is already gone. A cancel writes no MLTestingReport and sends no
+    # notification (unlike a timeout).
     _expire_overdue_jobs(db)
     job = _get(db, ValidationJob, request_id, "MLTestingRequest")
     if body.cancelRequest:
@@ -498,6 +589,7 @@ def modify_ml_testing_request(request_id: uuid.UUID, body: RequestFlagsBody, db:
             raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                    detail=f"cannot cancel a testing request in status {job.status}")
         job.status, job.cancel_request = "CANCELLED", True
+        # Order matters: the runtime is torn down before the lifecycle event, and the event can still refuse (409) and abort the request. See the route notes.
         _nfo_terminate_execution(job.nf_deployment_id)
         job.nf_deployment_id = None
         if job.model_id is not None:
@@ -517,6 +609,7 @@ def modify_ml_testing_request(request_id: uuid.UUID, body: RequestFlagsBody, db:
 # ================================================================ MLTestingReport
 
 def _testing_report_view(r: MLTestingReport) -> dict:
+    """Returns the MLTestingReport as `{id, attributes}`; `mLTestingResult` is PASSED or FAILED."""
     return {"id": str(r.ml_testing_report_id), "attributes": {
         "modelPerformanceTesting": r.model_performance_testing or [], "mLTestingResult": r.ml_testing_result,
         "testingRequestRef": str(r.validation_job_id), "mLTestingFunctionRef": _s(r.ml_testing_function_id),
@@ -526,6 +619,8 @@ def _testing_report_view(r: MLTestingReport) -> dict:
 @router.get("/ml-testing-reports")
 def list_ml_testing_reports(testing_request_id: uuid.UUID | None = None, limit: int = PageLimit,
                             offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built. Newest first;
+    # `testing_request_id` filters by validation job.
     _expire_overdue_jobs(db)
     stmt = select(MLTestingReport)
     if testing_request_id:
@@ -535,11 +630,13 @@ def list_ml_testing_reports(testing_request_id: uuid.UUID | None = None, limit: 
 
 @router.get("/ml-testing-reports/{report_id}")
 def get_ml_testing_report(report_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
     return _testing_report_view(_get(db, MLTestingReport, report_id, "MLTestingReport"))
 
 
 # ================================================================ AIMLInferenceFunction
 
+# Body of POST /aiml-inference-functions. `activationStatus` defaults to DEACTIVATED. The loaded-model list is read-only and starts empty.
 class AIMLInferenceFunctionBody(_Body):
     userLabel: str | None = None
     aIMLInferenceName: str | None = None
@@ -547,6 +644,7 @@ class AIMLInferenceFunctionBody(_Body):
     managedActivationScope: ts28105.ManagedActivationScope | None = None
 
 
+# Body of PATCH /aiml-inference-functions/{id}: only the attributes present are changed, so an attribute cannot be reset to null through it.
 class AIMLInferenceFunctionPatch(_Body):
     activationStatus: ts28105.ActivationStatus | None = None
     managedActivationScope: ts28105.ManagedActivationScope | None = None
@@ -554,6 +652,11 @@ class AIMLInferenceFunctionPatch(_Body):
 
 
 def _inference_function_view_for(db: Session):
+    """Returns a function that renders an AIMLInferenceFunction.
+
+    `usedByFunctionRefList` is derived, not stored: the distinct, sorted `consumer_ref` values of the inference jobs that named the function (one query per function).
+    `mLModelRefList` is the list of models loaded onto it.
+    """
     def view(f: AIMLInferenceFunction) -> dict:
         consumers = db.scalars(select(InferenceJob.consumer_ref).where(
             InferenceJob.aiml_inference_function_id == f.aiml_inference_function_id,
@@ -567,6 +670,7 @@ def _inference_function_view_for(db: Session):
 
 @router.post("/aiml-inference-functions", status_code=201)
 def create_aiml_inference_function(body: AIMLInferenceFunctionBody, db: Session = Depends(get_session)):
+    # Route notes: 201; the function starts with no models loaded (loading is MLModelLoadingRequest / Policy).
     f = AIMLInferenceFunction(user_label=body.userLabel, aiml_inference_name=body.aIMLInferenceName,
                               activation_status=body.activationStatus,
                               managed_activation_scope=ts28105.dump(body.managedActivationScope), ml_model_refs=[])
@@ -577,11 +681,13 @@ def create_aiml_inference_function(body: AIMLInferenceFunctionBody, db: Session 
 
 @router.get("/aiml-inference-functions")
 def list_aiml_inference_functions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: paginated; no timeout sweep.
     return _page(db, select(AIMLInferenceFunction), limit, offset, _inference_function_view_for(db))
 
 
 @router.get("/aiml-inference-functions/{function_id}")
 def get_aiml_inference_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
     return _inference_function_view_for(db)(_get(db, AIMLInferenceFunction, function_id, "AIMLInferenceFunction"))
 
 
@@ -589,6 +695,8 @@ def get_aiml_inference_function(function_id: uuid.UUID, db: Session = Depends(ge
 def modify_aiml_inference_function(function_id: uuid.UUID, body: AIMLInferenceFunctionPatch, db: Session = Depends(get_session)):
     """activationStatus gates inference: a DEACTIVATED function refuses
     `POST /models/{id}/inference-jobs?aiml_inference_function_id=...`."""
+    # Route notes: 404 for an unknown id. Null or omitted attributes are left as they are. The change takes effect on the next inference request that names the
+    # function (read in `request_inference`).
     f = _get(db, AIMLInferenceFunction, function_id, "AIMLInferenceFunction")
     if body.activationStatus is not None:
         f.activation_status = body.activationStatus
@@ -602,6 +710,8 @@ def modify_aiml_inference_function(function_id: uuid.UUID, body: AIMLInferenceFu
 
 @router.delete("/aiml-inference-functions/{function_id}", status_code=204)
 def delete_aiml_inference_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 204 whether or not it existed. The database cascades the deletion to the function's reports, loading policies, requests and processes, and
+    # sets the function reference of its inference jobs to NULL.
     f = db.get(AIMLInferenceFunction, function_id)
     if f is not None:
         db.delete(f)
@@ -611,11 +721,13 @@ def delete_aiml_inference_function(function_id: uuid.UUID, db: Session = Depends
 # ================================================================ AIMLInferenceEmulationFunction
 
 def _emulation_function_view(f: AIMLInferenceEmulationFunction) -> dict:
+    """Returns the AIMLInferenceEmulationFunction as `{id, attributes}` (only `userLabel`)."""
     return {"id": str(f.aiml_inference_emulation_function_id), "attributes": {"userLabel": f.user_label}}
 
 
 @router.post("/aiml-inference-emulation-functions", status_code=201)
 def create_aiml_inference_emulation_function(body: UserLabelBody, db: Session = Depends(get_session)):
+    # Route notes: 201; no uniqueness rule.
     f = AIMLInferenceEmulationFunction(user_label=body.userLabel)
     db.add(f)
     db.commit()
@@ -624,16 +736,20 @@ def create_aiml_inference_emulation_function(body: UserLabelBody, db: Session = 
 
 @router.get("/aiml-inference-emulation-functions")
 def list_aiml_inference_emulation_functions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: paginated; no timeout sweep.
     return _page(db, select(AIMLInferenceEmulationFunction), limit, offset, _emulation_function_view)
 
 
 @router.get("/aiml-inference-emulation-functions/{function_id}")
 def get_aiml_inference_emulation_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
     return _emulation_function_view(_get(db, AIMLInferenceEmulationFunction, function_id, "AIMLInferenceEmulationFunction"))
 
 
 @router.delete("/aiml-inference-emulation-functions/{function_id}", status_code=204)
 def delete_aiml_inference_emulation_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 204 whether or not it existed. The database cascades the deletion to the function's reports and sets the function reference of emulation jobs
+    # to NULL.
     f = db.get(AIMLInferenceEmulationFunction, function_id)
     if f is not None:
         db.delete(f)
@@ -642,6 +758,8 @@ def delete_aiml_inference_emulation_function(function_id: uuid.UUID, db: Session
 
 # ================================================================ AIMLInferenceReport
 
+# Body of POST /aiml-inference-reports. Exactly one of the two function references is required (checked in the route, 422 `SCHEMA_VALIDATION_FAILED`);
+# `mLModelRefList` is required.
 class AIMLInferenceReportBody(_Body):
     """Posted by an inference/emulation runtime that reports outside the
     resolve/complete calls (e.g. periodic reporting)."""
@@ -653,6 +771,7 @@ class AIMLInferenceReportBody(_Body):
 
 
 def _inference_report_view(r: AIMLInferenceReport) -> dict:
+    """Returns the AIMLInferenceReport as `{id, attributes}`, including the job reference (`inferenceJobRef` or `emulationJobRef`) when a job produced it."""
     return {"id": str(r.aiml_inference_report_id), "attributes": {
         "inferenceOutputs": r.inference_outputs or [], "potentialImpactInfo": r.potential_impact_info,
         "mLModelRefList": list(r.ml_model_refs or []),
@@ -664,6 +783,9 @@ def _inference_report_view(r: AIMLInferenceReport) -> dict:
 
 @router.post("/aiml-inference-reports", status_code=201)
 def create_aiml_inference_report(body: AIMLInferenceReportBody, db: Session = Depends(get_session)):
+    # Route notes: a report posted directly by a runtime that reports outside resolve and complete. 422 `SCHEMA_VALIDATION_FAILED` unless exactly one function
+    # reference is given; 404 `NRM_OBJECT_NOT_FOUND` if that function does not exist. The model ids are stored as strings and are not looked up in MLMR. One
+    # commit.
     if (body.aIMLInferenceFunctionRef is None) == (body.aIMLInferenceEmulationFunctionRef is None):
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED,
                                detail="exactly one of aIMLInferenceFunctionRef/aIMLInferenceEmulationFunctionRef")
@@ -686,6 +808,8 @@ def list_aiml_inference_reports(aiml_inference_function_id: uuid.UUID | None = N
                                 aiml_inference_emulation_function_id: uuid.UUID | None = None,
                                 model_id: uuid.UUID | None = None, limit: int = PageLimit, offset: int = PageOffset,
                                 db: Session = Depends(get_session)):
+    # Route notes: the two function filters are applied in SQL, but `model_id` is applied in Python over every matching row, and the page is then cut with
+    # `paginate_list` (so `total` counts the filtered list, and the cost grows with the number of reports). Newest first.
     stmt = select(AIMLInferenceReport)
     if aiml_inference_function_id:
         stmt = stmt.where(AIMLInferenceReport.aiml_inference_function_id == aiml_inference_function_id)
@@ -700,11 +824,14 @@ def list_aiml_inference_reports(aiml_inference_function_id: uuid.UUID | None = N
 
 @router.get("/aiml-inference-reports/{report_id}")
 def get_aiml_inference_report(report_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
     return _inference_report_view(_get(db, AIMLInferenceReport, report_id, "AIMLInferenceReport"))
 
 
 # ================================================================ MLModelLoadingPolicy / Request / Process
 
+# Body of POST /ml-model-loading-policies: the function the policy belongs to and the models to load when it is triggered. The models are not looked up until
+# the trigger.
 class MLModelLoadingPolicyBody(_Body):
     aIMLInferenceFunctionRef: uuid.UUID
     aIMLInferenceName: str | None = None
@@ -712,6 +839,8 @@ class MLModelLoadingPolicyBody(_Body):
     mLModelRef: list[uuid.UUID]
 
 
+# Body of POST /ml-model-loading-requests. With `cancelRequest` the request is recorded CANCELLED and loads nothing; with `suspendRequest` it waits until
+# PATCHed back; cancel wins when both are set.
 class MLModelLoadingRequestBody(_Body):
     aIMLInferenceFunctionRef: uuid.UUID
     mLModelToLoadRef: list[uuid.UUID]
@@ -720,12 +849,14 @@ class MLModelLoadingRequestBody(_Body):
 
 
 def _loading_policy_view(p: MLModelLoadingPolicy) -> dict:
+    """Returns the MLModelLoadingPolicy as `{id, attributes}`."""
     return {"id": str(p.ml_model_loading_policy_id), "attributes": {
         "aIMLInferenceFunctionRef": str(p.aiml_inference_function_id), "aIMLInferenceName": p.aiml_inference_name,
         "policyForLoading": p.policy_for_loading, "mLModelRef": list(p.ml_model_refs or [])}}
 
 
 def _loading_request_view(r: MLModelLoadingRequest) -> dict:
+    """Returns the MLModelLoadingRequest as `{id, attributes}`."""
     return {"id": str(r.ml_model_loading_request_id), "attributes": {
         "aIMLInferenceFunctionRef": str(r.aiml_inference_function_id), "requestStatus": r.request_status,
         "cancelRequest": r.cancel_request, "suspendRequest": r.suspend_request,
@@ -733,6 +864,7 @@ def _loading_request_view(r: MLModelLoadingRequest) -> dict:
 
 
 def _loading_process_view(p: MLModelLoadingProcess) -> dict:
+    """Returns the MLModelLoadingProcess as `{id, attributes}`, with the ProcessMonitor under `progressStatus`."""
     return {"id": str(p.ml_model_loading_process_id), "attributes": {
         "aIMLInferenceFunctionRef": str(p.aiml_inference_function_id),
         "progressStatus": _monitor(p.status, p.progress_percentage, p.progress_state_info, p.result_state_info),
@@ -743,8 +875,11 @@ def _loading_process_view(p: MLModelLoadingProcess) -> dict:
 
 
 def _check_loadable(db: Session, model_ids: list[uuid.UUID]) -> None:
-    """Validated up front, before anything is deployed: a request either
-    loads every named model or none."""
+    """Raises unless every model in `model_ids` may be loaded now; changes nothing except that it may add a missing lifecycle row to the session.
+
+    Per model: 404 `MODEL_NOT_FOUND` (asked of MLMR through `_get_model`), 409 `MODEL_NOT_CERTIFIED` unless the model is CERTIFIED or PROMOTED, 409
+    `LIFECYCLE_ILLEGAL_TRANSITION` if its runtime is TERMINATING or TERMINATED. Run before anything is deployed so a request loads every named model or none.
+    """
     for model_id in model_ids:
         _get_model(model_id)
         lifecycle = _get_or_create_lifecycle(db, model_id)
@@ -758,10 +893,13 @@ def _check_loadable(db: Session, model_ids: list[uuid.UUID]) -> None:
 
 def _run_loading(db: Session, function: AIMLInferenceFunction, model_ids: list[uuid.UUID], *,
                  request: MLModelLoadingRequest | None = None, policy: MLModelLoadingPolicy | None = None) -> MLModelLoadingProcess:
-    """Loads each model onto the function: brings its serving runtime up
-    through the real RuntimeLifecycle (deploy via NFO, then activate —
-    whichever steps it still needs) and adds it to the function's
-    mLModelRefList. Synchronous, like the rest of this build's NFO calls.
+    """Loads each model onto `function` and returns the finished MLModelLoadingProcess. Does not commit; the caller does.
+
+    For each model it brings the serving runtime up through the real RuntimeLifecycle, doing only the steps the runtime still needs: `_deploy_runtime` (an NFO descriptor
+    and deployment) when NOT_DEPLOYED, then `_activate_runtime` when DEPLOYED. A runtime that is already ACTIVE, or in another state, is left as it is. The model is added
+    to the function's `mLModelRefList` once. Synchronous, like every NFO call here. `request` or `policy` says what started the run and sets the request's status to
+    IN_PROGRESS and then FINISHED. A failure part-way (an NFO error) aborts the request before the commit:
+    models already deployed have an NFO runtime but no committed AIMgF state.
     """
     process = MLModelLoadingProcess(aiml_inference_function_id=function.aiml_inference_function_id, status="RUNNING",
                                     loading_request_refs=[str(request.ml_model_loading_request_id)] if request else [],
@@ -770,6 +908,7 @@ def _run_loading(db: Session, function: AIMLInferenceFunction, model_ids: list[u
     db.add(process)
     if request is not None:
         request.request_status = "IN_PROGRESS"
+    # Flushed so the process has an id and exists in the transaction before the NFO calls start.
     db.flush()
     loaded = list(function.ml_model_refs or [])
     for i, model_id in enumerate(model_ids, start=1):
@@ -780,8 +919,10 @@ def _run_loading(db: Session, function: AIMLInferenceFunction, model_ids: list[u
             _activate_runtime(db, model_id)
         if str(model_id) not in loaded:
             loaded.append(str(model_id))
+        # The list is rebuilt, not appended to: a JSON column does not track in-place mutation, so only an assignment is written.
         process.loaded_ml_model_refs = [*process.loaded_ml_model_refs, str(model_id)]
         process.progress_percentage = int(100 * i / len(model_ids))
+    # Assigned as a new list for the same reason as `loaded_ml_model_refs` above.
     function.ml_model_refs = loaded
     process.status, process.progress_percentage, process.result_state_info = "FINISHED", 100, "SUCCEEDED"
     if request is not None:
@@ -791,6 +932,8 @@ def _run_loading(db: Session, function: AIMLInferenceFunction, model_ids: list[u
 
 @router.post("/ml-model-loading-policies", status_code=201)
 def create_ml_model_loading_policy(body: MLModelLoadingPolicyBody, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` if the function does not exist; the model ids are stored as strings and not checked until the trigger. 201, one
+    # commit.
     _get(db, AIMLInferenceFunction, body.aIMLInferenceFunctionRef, "AIMLInferenceFunction")
     p = MLModelLoadingPolicy(aiml_inference_function_id=body.aIMLInferenceFunctionRef,
                              aiml_inference_name=body.aIMLInferenceName,
@@ -803,16 +946,19 @@ def create_ml_model_loading_policy(body: MLModelLoadingPolicyBody, db: Session =
 
 @router.get("/ml-model-loading-policies")
 def list_ml_model_loading_policies(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: paginated; no timeout sweep.
     return _page(db, select(MLModelLoadingPolicy), limit, offset, _loading_policy_view)
 
 
 @router.get("/ml-model-loading-policies/{policy_id}")
 def get_ml_model_loading_policy(policy_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
     return _loading_policy_view(_get(db, MLModelLoadingPolicy, policy_id, "MLModelLoadingPolicy"))
 
 
 @router.delete("/ml-model-loading-policies/{policy_id}", status_code=204)
 def delete_ml_model_loading_policy(policy_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 204 whether or not it existed. Processes that a trigger created keep naming the policy in `loading_policy_refs` (a plain list of ids).
     p = db.get(MLModelLoadingPolicy, policy_id)
     if p is not None:
         db.delete(p)
@@ -825,6 +971,9 @@ def trigger_ml_model_loading_policy(policy_id: uuid.UUID, db: Session = Depends(
     (its thresholdList, evaluated by whoever monitors it — e.g. an MLMF
     subscription's breach) is met. Starts an MLModelLoadingProcess with no
     MLModelLoadingRequest behind it, the spec's policy-triggered path."""
+    # Route notes: 404 for an unknown policy or function; `_check_loadable` first (404 / 409 as described there, nothing is deployed on failure), then
+    # `_run_loading` with the policy and no request. Answers 201 with the finished process; the work (NFO calls) happens inside the request. AIMgF does not
+    # evaluate the policy's thresholds: whoever monitors them calls this route.
     p = _get(db, MLModelLoadingPolicy, policy_id, "MLModelLoadingPolicy")
     function = _get(db, AIMLInferenceFunction, p.aiml_inference_function_id, "AIMLInferenceFunction")
     model_ids = [uuid.UUID(m) for m in p.ml_model_refs]
@@ -838,6 +987,9 @@ def trigger_ml_model_loading_policy(policy_id: uuid.UUID, db: Session = Depends(
 def create_ml_model_loading_request(body: MLModelLoadingRequestBody, db: Session = Depends(get_session)):
     """A request created with suspendRequest=true waits (SUSPENDED) until
     PATCHed back; cancelRequest=true records it CANCELLED and loads nothing."""
+    # Route notes: 404 for an unknown function; `_check_loadable` runs before the flags are looked at, so even a cancelled or suspended request is refused for
+    # an uncertified model (409 `MODEL_NOT_CERTIFIED`). The row is flushed first so it has an id. Then: cancel records CANCELLED, suspend records SUSPENDED,
+    # otherwise `_run_loading` runs inside this request and the answer is the FINISHED request. One commit at the end.
     function = _get(db, AIMLInferenceFunction, body.aIMLInferenceFunctionRef, "AIMLInferenceFunction")
     _check_loadable(db, body.mLModelToLoadRef)
     r = MLModelLoadingRequest(aiml_inference_function_id=function.aiml_inference_function_id,
@@ -857,16 +1009,22 @@ def create_ml_model_loading_request(body: MLModelLoadingRequestBody, db: Session
 
 @router.get("/ml-model-loading-requests")
 def list_ml_model_loading_requests(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: paginated; no timeout sweep.
     return _page(db, select(MLModelLoadingRequest), limit, offset, _loading_request_view)
 
 
 @router.get("/ml-model-loading-requests/{request_id}")
 def get_ml_model_loading_request(request_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
     return _loading_request_view(_get(db, MLModelLoadingRequest, request_id, "MLModelLoadingRequest"))
 
 
 @router.patch("/ml-model-loading-requests/{request_id}")
 def modify_ml_model_loading_request(request_id: uuid.UUID, body: RequestFlagsBody, db: Session = Depends(get_session)):
+    # Route notes: 409 `TRAINING_JOB_ILLEGAL_TRANSITION` for a request that is already FINISHED or CANCELLED. Otherwise, in this order: `cancelRequest` records
+    # CANCELLED; `suspendRequest` false on a SUSPENDED request re-checks `_check_loadable` and runs the loading; `suspendRequest` true records SUSPENDED;
+    # anything else (including `suspendRequest` false on a request that is not SUSPENDED) changes nothing. The 409 code is the one this module uses for every
+    # request that is in the wrong status.
     r = _get(db, MLModelLoadingRequest, request_id, "MLModelLoadingRequest")
     if r.request_status in ("FINISHED", "CANCELLED"):
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
@@ -887,22 +1045,27 @@ def modify_ml_model_loading_request(request_id: uuid.UUID, body: RequestFlagsBod
 
 @router.get("/ml-model-loading-processes")
 def list_ml_model_loading_processes(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: paginated; no timeout sweep.
     return _page(db, select(MLModelLoadingProcess), limit, offset, _loading_process_view)
 
 
 @router.get("/ml-model-loading-processes/{process_id}")
 def get_ml_model_loading_process(process_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
     return _loading_process_view(_get(db, MLModelLoadingProcess, process_id, "MLModelLoadingProcess"))
 
 
 # ================================================================ MLUpdateFunction / Request / Process / Report
 
+# Body of POST /ml-update-functions: label, optional capability report and the models the function covers.
 class MLUpdateFunctionBody(_Body):
     userLabel: str | None = None
     availMLCapabilityReport: ts28105.AvailMLCapabilityReport | None = None
     mLModelRef: list[uuid.UUID] = []
 
 
+# Body of POST /ml-update-requests. `mLModelRefList` must not be empty (checked in the route). `requestSource` (default `nrm`) is stored as the producer of each
+# training run; it is not a TS 28.105 attribute.
 class MLUpdateRequestBody(_Body):
     mLUpdateFunctionRef: uuid.UUID | None = None
     mLModelRefList: list[uuid.UUID]
@@ -914,12 +1077,14 @@ class MLUpdateRequestBody(_Body):
 
 
 def _update_function_view(f: MLUpdateFunction) -> dict:
+    """Returns the MLUpdateFunction as `{id, attributes}`."""
     return {"id": str(f.ml_update_function_id), "attributes": {
         "userLabel": f.user_label, "availMLCapabilityReport": f.avail_ml_capability_report,
         "mLModelRef": list(f.ml_model_refs or [])}}
 
 
 def _update_request_view_for(db: Session):
+    """Returns a function that renders an MLUpdateRequest; `mLUpdateProcessRef` comes from the process row (one query per request)."""
     def view(r: MLUpdateRequest) -> dict:
         process = db.scalar(select(MLUpdateProcess).where(MLUpdateProcess.ml_update_request_id == r.ml_update_request_id))
         return {"id": str(r.ml_update_request_id), "attributes": {
@@ -934,6 +1099,7 @@ def _update_request_view_for(db: Session):
 
 
 def _update_process_view_for(db: Session):
+    """Returns a function that renders an MLUpdateProcess; the report reference and the `trainingRequestRefList` (the update's training runs) are looked up per process (two queries)."""
     def view(p: MLUpdateProcess) -> dict:
         report = db.scalar(select(MLUpdateReport).where(MLUpdateReport.ml_update_process_id == p.ml_update_process_id))
         jobs = db.scalars(select(TrainingJob.training_job_id).where(TrainingJob.ml_update_process_id == p.ml_update_process_id)).all()
@@ -947,6 +1113,7 @@ def _update_process_view_for(db: Session):
 
 
 def _update_report_view(r: MLUpdateReport) -> dict:
+    """Returns the MLUpdateReport as `{id, attributes}`."""
     return {"id": str(r.ml_update_report_id), "attributes": {
         "updatedMLCapability": r.updated_ml_capability, "mLModelRefList": list(r.ml_model_refs or []),
         "mLUpdateProcessRef": str(r.ml_update_process_id), "createdAt": r.created_at.isoformat()}}
@@ -954,6 +1121,7 @@ def _update_report_view(r: MLUpdateReport) -> dict:
 
 @router.post("/ml-update-functions", status_code=201)
 def create_ml_update_function(body: MLUpdateFunctionBody, db: Session = Depends(get_session)):
+    # Route notes: 201; the model references are stored as strings and not looked up.
     f = MLUpdateFunction(user_label=body.userLabel, avail_ml_capability_report=ts28105.dump(body.availMLCapabilityReport),
                          ml_model_refs=[str(m) for m in body.mLModelRef])
     db.add(f)
@@ -963,16 +1131,19 @@ def create_ml_update_function(body: MLUpdateFunctionBody, db: Session = Depends(
 
 @router.get("/ml-update-functions")
 def list_ml_update_functions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: paginated; no timeout sweep.
     return _page(db, select(MLUpdateFunction), limit, offset, _update_function_view)
 
 
 @router.get("/ml-update-functions/{function_id}")
 def get_ml_update_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
     return _update_function_view(_get(db, MLUpdateFunction, function_id, "MLUpdateFunction"))
 
 
 @router.delete("/ml-update-functions/{function_id}", status_code=204)
 def delete_ml_update_function(function_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 204 whether or not it existed. Requests that named the function keep their rows (the database sets the reference to NULL).
     f = db.get(MLUpdateFunction, function_id)
     if f is not None:
         db.delete(f)
@@ -988,6 +1159,11 @@ def create_ml_update_request(body: MLUpdateRequestBody, db: Session = Depends(ge
     be trainable and not already training (REGISTERED/CERTIFIED/PROMOTED/
     FAILED) — checked before any run starts, so the update is
     all-or-nothing at start."""
+    # Route notes. Checks in order: empty list (422 `SCHEMA_VALIDATION_FAILED`), function exists (404), then per model `_get_model` (404 `MODEL_NOT_FOUND`) and
+    # a state in `TRAINABLE_STATES` but not TRAINING (409 `LIFECYCLE_ILLEGAL_TRANSITION` naming the state). Only after every model passed are the request, the
+    # process and one FINE_TUNING run per model created, all in this transaction. The states are read before any run starts, so a model listed twice passes both
+    # times; its second run then finds the model TRAINING and supersedes the first (`_start_training`), leaving the first run CANCELLED inside the same update.
+    # A failure (for example NFO) after some runs started rolls back the AIMgF rows but not the NFO runtimes already created. No timeout sweep first.
     if not body.mLModelRefList:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="mLModelRefList must not be empty")
     if body.mLUpdateFunctionRef is not None:
@@ -1018,12 +1194,15 @@ def create_ml_update_request(body: MLUpdateRequestBody, db: Session = Depends(ge
 
 @router.get("/ml-update-requests")
 def list_ml_update_requests(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built.
     _expire_overdue_jobs(db)
     return _page(db, select(MLUpdateRequest), limit, offset, _update_request_view_for(db))
 
 
 @router.get("/ml-update-requests/{request_id}")
 def get_ml_update_request(request_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built. 404 `NRM_OBJECT_NOT_FOUND`
+    # for an unknown id.
     _expire_overdue_jobs(db)
     return _update_request_view_for(db)(_get(db, MLUpdateRequest, request_id, "MLUpdateRequest"))
 
@@ -1032,6 +1211,11 @@ def get_ml_update_request(request_id: uuid.UUID, db: Session = Depends(get_sessi
 def modify_ml_update_request(request_id: uuid.UUID, body: RequestFlagsBody, db: Session = Depends(get_session)):
     """cancelRequest cancels every still-running training run of the
     update; suspendRequest suspends/resumes them together."""
+    # Route notes. After the sweep: 409 `TRAINING_JOB_ILLEGAL_TRANSITION` if the request is already FINISHED or CANCELLED. Cancel wins over suspend. Cancel
+    # marks the request and process CANCELLED up front and cancels every run still IN_PROGRESS or SUSPENDED with `advance_update=False`, so the process is not
+    # re-evaluated while it is being closed. Suspend or resume is applied to every run through `_apply_training_flags`, so one run that has already ended makes
+    # a suspend answer 409 for the whole request; the request and process status follow the flag (SUSPENDED or back to IN_PROGRESS / RUNNING) without checking
+    # each run. `.one()` assumes the process exists, which creation guarantees.
     _expire_overdue_jobs(db)
     r = _get(db, MLUpdateRequest, request_id, "MLUpdateRequest")
     if r.request_status in ("FINISHED", "CANCELLED"):
@@ -1056,9 +1240,14 @@ def modify_ml_update_request(request_id: uuid.UUID, body: RequestFlagsBody, db: 
 
 
 def advance_ml_update_process(db: Session, process_id: uuid.UUID) -> None:
-    """Called whenever one of an update's training runs finishes, fails or
-    is cancelled: recomputes progress and, once every run is terminal,
-    closes the process/request and writes the MLUpdateReport."""
+    """Recomputes an MLUpdateProcess after one of its training runs ended, and closes it when every run has. Does not commit; the caller (a completion, cancel or timeout
+    path in `main.py`) does.
+
+    Returns without change for an unknown process or one already FINISHED, FAILED or CANCELLED, which makes it safe to call after every run. Progress is the percentage of
+    runs that are FINISHED, FAILED or CANCELLED. Once all are, the process is FINISHED only if every run FINISHED, otherwise FAILED, with `resultStateInfo` "n/m models updated";
+    the request becomes FINISHED either way. An MLUpdateReport is written for the succeeded runs: its capability carries the request's first `newCapabilityVersionId` and the
+    numeric metrics of those runs as expected gains. The update function, when the request named one, gets that capability report and the union of the succeeded models.
+    """
     p = db.get(MLUpdateProcess, process_id)
     if p is None or p.status in ("FINISHED", "FAILED", "CANCELLED"):
         return
@@ -1075,8 +1264,11 @@ def advance_ml_update_process(db: Session, process_id: uuid.UUID) -> None:
     gains = []
     for j in succeeded:
         for name, score in (j.model_metrics or {}).items():
+            # Only numeric metrics become expected gains; other values in `model_metrics` are skipped.
             if isinstance(score, (int, float)):
                 gains.append({"performanceMetric": name, "performanceScore": float(score)})
+    # The report is flushed to get its id, which the capability object repeats as `availMLCapabilityReportID`; the capability is then written back onto the
+    # report.
     report = MLUpdateReport(ml_update_process_id=p.ml_update_process_id, ml_model_refs=[str(j.model_id) for j in succeeded],
                             updated_ml_capability=None)
     db.add(report)
@@ -1094,23 +1286,28 @@ def advance_ml_update_process(db: Session, process_id: uuid.UUID) -> None:
 
 @router.get("/ml-update-processes")
 def list_ml_update_processes(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built.
     _expire_overdue_jobs(db)
     return _page(db, select(MLUpdateProcess), limit, offset, _update_process_view_for(db))
 
 
 @router.get("/ml-update-processes/{process_id}")
 def get_ml_update_process(process_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the view is built. 404 `NRM_OBJECT_NOT_FOUND`
+    # for an unknown id.
     _expire_overdue_jobs(db)
     return _update_process_view_for(db)(_get(db, MLUpdateProcess, process_id, "MLUpdateProcess"))
 
 
 @router.get("/ml-update-reports")
 def list_ml_update_reports(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: paginated, newest first; no timeout sweep (a report is written once the update has ended).
     return _page(db, select(MLUpdateReport).order_by(MLUpdateReport.created_at.desc()), limit, offset, _update_report_view)
 
 
 @router.get("/ml-update-reports/{report_id}")
 def get_ml_update_report(report_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
     return _update_report_view(_get(db, MLUpdateReport, report_id, "MLUpdateReport"))
 
 
@@ -1122,6 +1319,9 @@ def get_ml_model_nrm_refs(model_id: uuid.UUID, db: Session = Depends(get_session
     own TS 28.105 MLModel view (`GET /mlmr/ml-models/{id}`): mLTrainingType
     (of the latest training), aIMLInferenceReportRefList and
     usedByFunctionRefList (the AIMLInferenceFunctions it is loaded on)."""
+    # Route notes: always 200, including for a model id that does not exist (the lists are then empty and the type None): AIMgF does not ask MLMR here, the
+    # caller is MLMR itself (`GET /mlmr/ml-models/{id}`). The type comes from the newest MLTrainingReport that generated the model; the report and function
+    # lists are found by loading every report and function and filtering in Python, so the cost grows with their number.
     latest_report = db.scalars(select(MLTrainingReport).where(MLTrainingReport.ml_model_generated_ref == model_id)
                                .order_by(MLTrainingReport.created_at.desc())).first()
     latest_job = db.get(TrainingJob, latest_report.training_job_id) if latest_report else None

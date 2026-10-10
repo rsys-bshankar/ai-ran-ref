@@ -14,6 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Create `rapp_kill`: one row per invoker whose writes are switched off, with who and why."""
     op.execute("""
         CREATE TABLE rapp_kill (
             invoker_id VARCHAR PRIMARY KEY,
@@ -25,4 +26,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop `rapp_kill`."""
     op.execute("DROP TABLE rapp_kill")

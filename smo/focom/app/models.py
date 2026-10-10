@@ -1,3 +1,20 @@
+"""SQLAlchemy models of the FOCOM module: the O-Cloud inventory, the inventory / alarm / performance subscriptions, alarms, performance and the generic
+O2-IMS object table.
+
+What it is: one class per table, on the shared `smo_shared.db.Base`. The tables are created by the Alembic revisions in `migrations/` (not by this file),
+and `scripts/check_migration_matches_models.py` fails when a column here is missing from, or differs in nullability from, the migrated schema.
+The table list is in `focom/README.md` (2.2).
+
+Where it sits: read and written by `main.py`, `sites.py`, `fcaps.py`, `provisioning.py` and `common.py`; the unit tests create the tables on SQLite.
+
+Owns: the column types and defaults. Does not own: any rule between rows. Foreign keys exist only on `resource.resource_type_id` and
+`resource.resource_pool_id`; every other reference (site to location, pool to site, `parent_id`, `job_id` on a metric, the attributes of an
+`o2ims_object`) is a plain value that the routes check.
+
+Before editing: a column change is a schema revision (`CLAUDE.md`, "Schema changes are revisions"), done in the same PR. `ARRAY(String)` columns carry a
+SQLite `JSON` variant so the unit tests run without Postgres; `none_as_null=True` keeps a Python `None` as SQL NULL rather than the JSON text `null`.
+"""
+
 import datetime
 import uuid
 
@@ -8,13 +25,10 @@ from smo_shared.db import Base
 
 
 class InventorySubscription(Base):
-    """HISTORY.md §7 item 8: ORAN.O2ims.Inventory.yaml's InventorySubscription
-    names this field `callback`, not `callbackUri` — this build's own
-    invented name, previously undocumented as a deviation. Renamed
-    outright rather than documented: no cross-module caller in this
-    build ever used the old name (only this module's own routes/tests).
-    consumerSubscriptionId (the spec's own consumer-provided tracking
-    id, nullable) was entirely absent.
+    """A subscriber to inventory-change notifications (O2-IMS `InventorySubscription`), table `inventory_subscription`.
+
+    `callback` is the URL notified on a resource CREATE or DELETE (the spec's name for the field); `consumer_subscription_id` is the consumer's own tracking
+    id and is echoed on every notification; `resource_type_id` is an optional filter, and an unset one matches every resource type.
     """
     __tablename__ = "inventory_subscription"
 
@@ -25,12 +39,10 @@ class InventorySubscription(Base):
 
 
 class ResourceType(Base):
-    """HISTORY.md §5: no ResourceType/ResourcePool/DeploymentManager
-    schema existed at all — not just an empty collection behind the
-    documented single-cluster limitation, but no model shape to extend
-    later. String PK (not a random UUID), matching this module's existing
-    literal-ID convention for Phase 1's degenerate concepts
-    (PHASE1_CLUSTER_ID, the "pool-0" resource pool).
+    """An O2-IMS `ResourceType`, table `resource_type`. The primary key is the caller-visible string id (`generic`, `gpu-l40`, ...), not a UUID.
+
+    The dictionary ids, `resource_kind`, `resource_class` and `extensions` are nullable: only `POST /resource-types` can set them, and the seeded and
+    auto-registered types leave them empty.
     """
     __tablename__ = "resource_type"
 
@@ -55,6 +67,7 @@ class ResourceType(Base):
 
 
 class ResourcePool(Base):
+    """An O2-IMS `ResourcePool`, table `resource_pool`. `o_cloud_site_id` names the `ocloud_site` the pool is part of (SA-FOCOM-2); it is not a foreign key."""
     __tablename__ = "resource_pool"
 
     resource_pool_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -67,7 +80,7 @@ class ResourcePool(Base):
 
 
 class Location(Base):
-    """O2IMS Location: where O-Cloud sites are or can be deployed (SA-FOCOM-2)."""
+    """O2-IMS `Location`: where O-Cloud sites are or can be deployed (SA-FOCOM-2), table `ocloud_location`. `coordinate` and `address` are free strings."""
     __tablename__ = "ocloud_location"
 
     global_location_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -80,7 +93,7 @@ class Location(Base):
 
 
 class OCloudSite(Base):
-    """O2IMS OCloudSite: a place resource pools are part of (SA-FOCOM-2)."""
+    """O2-IMS `OCloudSite`: a place resource pools are part of (SA-FOCOM-2), table `ocloud_site`. `location_id` is the owning location (not a foreign key)."""
     __tablename__ = "ocloud_site"
 
     o_cloud_site_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -92,13 +105,10 @@ class OCloudSite(Base):
 
 
 class Resource(Base):
-    """A provisioned resource within a ResourcePool — what
-    provision_resource/deprovision_resource actually persist now,
-    replacing the previous stub that returned a random UUID and stored
-    nothing. parent_id supports the reference's parent/child resource
-    tree (pserver -> CPU/RAM/interfaces/...); real hardware telemetry
-    populating that tree stays out of scope, same as elsewhere in this
-    build — only the shape exists.
+    """A provisioned resource in a resource pool, table `resource`; the row `POST /resources/provision` creates and `DELETE /resources/{id}` removes.
+
+    `parent_id` holds the parent / child resource tree of the O2-IMS inventory (a UUID, not a foreign key); no route sets it, only the shape exists
+    and the tests set it directly. `global_asset_id`, `tags` and `groups` are optional as in the spec.
     """
     __tablename__ = "resource"
 
@@ -117,6 +127,11 @@ class Resource(Base):
 
 
 class DeploymentManager(Base):
+    """An O2-IMS `DeploymentManager`, table `deployment_manager`: the endpoint (`service_uri`) that manages deployments on the O-Cloud.
+
+    Only the Phase 1 seed (`dm-0`) creates one; `supported_locations`, `capabilities` and `capacity` stay null because nothing introspects the cluster.
+    `GET /inventory` takes its `oCloudId`, `name` and `description` from the `dm-0` row.
+    """
     __tablename__ = "deployment_manager"
 
     deployment_manager_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -136,8 +151,11 @@ class DeploymentManager(Base):
 
 
 class OCloudAlarm(Base):
-    """An O2IMS AlarmEventRecord (SA-FOCOM-6). `severity` keeps the lowercase
-    wire value this build always used; `perceivedSeverity` is its upper-case view."""
+    """An O2-IMS `AlarmEventRecord` for the infrastructure domain (SA-FOCOM-6), table `ocloud_alarm`; RAN-function alarms are RAN NF OAM's.
+
+    `severity` stores the lowercase value this module has always returned (the GUI reads it); the routes show the spec's upper-case form as
+    `perceivedSeverity`. `clear` rewrites `severity` to `cleared`, so the original severity is not kept.
+    """
     __tablename__ = "ocloud_alarm"
 
     alarm_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -156,6 +174,10 @@ class OCloudAlarm(Base):
 
 
 class AlarmSubscription(Base):
+    """A subscriber to alarm notifications (O2-IMS `AlarmSubscription`), table `ocloud_alarm_subscription`.
+
+    `filter` limits it to one of NEW, CHANGE, CLEAR or ACKNOWLEDGE; unset means every kind. The route layer validates the value; the column is a plain string.
+    """
     __tablename__ = "ocloud_alarm_subscription"
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -165,8 +187,11 @@ class AlarmSubscription(Base):
 
 
 class OCloudPerformanceMetric(Base):
-    """An O2IMS PerformanceMeasurementRecord. `resource_ref` = resourceId,
-    `metric_name` = performanceMeasurementDefinitionId."""
+    """An O2-IMS `PerformanceMeasurementRecord`, table `ocloud_performance_metric`.
+
+    A scalar measurement is stored in `value`; an object-valued one in `measurement_value` (and `value` stays null). `job_id` is the string form of a
+    `PerformanceJob.job_id`, or null for a record ingested with no job.
+    """
     __tablename__ = "ocloud_performance_metric"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -180,7 +205,11 @@ class OCloudPerformanceMetric(Base):
 
 
 class PerformanceJob(Base):
-    """O2IMS PerformanceMeasurementJob."""
+    """An O2-IMS `PerformanceMeasurementJob`, table `ocloud_performance_job`.
+
+    FOCOM collects nothing: `collection_interval` is stored, and a job's measured resources and collected measurements are derived from the records ingested
+    for it. `status` moves to RUNNING on the first ingest for the job and back to IDLE when the job is suspended or deprecated.
+    """
     __tablename__ = "ocloud_performance_job"
 
     job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -196,7 +225,11 @@ class PerformanceJob(Base):
 
 
 class PerformanceSubscription(Base):
-    """O2IMS PerformanceSubscription (NOTIFICATION reporting)."""
+    """An O2-IMS `PerformanceSubscription` with NOTIFICATION reporting, table `ocloud_performance_subscription`.
+
+    `global_subscription_criteria` and `measurement_reporting_frequencies` are stored as the JSON the caller sent; only the criteria are used (to decide
+    which records are reported), the reporting frequencies are stored and echoed.
+    """
     __tablename__ = "ocloud_performance_subscription"
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -208,9 +241,11 @@ class PerformanceSubscription(Base):
 
 
 class O2imsObject(Base):
-    """Artifact, cluster, infrastructure and provisioning resources
-    (SA-FOCOM-7): one row per object, the spec's attributes in `attributes`,
-    validated per `kind` in provisioning.py."""
+    """One row per Artifact, Cluster, Infrastructure or Provisioning object (SA-FOCOM-7), table `o2ims_object`, keyed by (`kind`, `object_id`).
+
+    The spec's attributes are one JSON document in `attributes`, validated per kind by the pydantic models in `provisioning.py` before they are stored,
+    so the database enforces nothing about them; references between objects are checked by the routes.
+    """
     __tablename__ = "o2ims_object"
 
     kind: Mapped[str] = mapped_column(String, primary_key=True)

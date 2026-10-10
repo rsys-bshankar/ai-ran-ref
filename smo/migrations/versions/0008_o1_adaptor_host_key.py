@@ -15,6 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Create `o1_adaptor_host_key`: the pinned public SSH host keys, at most one per key type per endpoint, deleted with their endpoint."""
     op.execute("""
         CREATE TABLE o1_adaptor_host_key (
             id UUID PRIMARY KEY,
@@ -30,4 +31,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop `o1_adaptor_host_key`."""
     op.execute("DROP TABLE o1_adaptor_host_key")

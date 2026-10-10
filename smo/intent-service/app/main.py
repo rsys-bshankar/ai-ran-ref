@@ -1,23 +1,27 @@
-"""Intent Service (formerly "Policy Management & Info SMOS" — renamed in
-Wave 1 of the AI Platform Service Decomposition: this module's own
-surface was already entirely Intent-shaped, with no policy/rule/
-constraint code to leave behind under the old name. See
-docs/ARCHITECTURE.md (Intent Service).
+"""Intent Service: the FastAPI module for TS 28.312 intents, their reports, intent handling functions (RMIHs), utility formulas and rApp autonomy
+dispatches, served at `/intent-service` behind R1 Termination.
 
-SMO Design v1.3 section 3.12, extended by Policy Mgmt LLD sections 1-3:
-UpdateIntentAdminState and QueryIntent close operations v1.3 never had
-(intentAdminState existed with nothing to change it), and
-DeregisterIntentHandlingFunction restores register/deregister symmetry.
+What it is: every route of the service and the helpers behind them. An intent owner (an rApp or the GUI, the RMIO) addresses an intent to one RMIH it
+chose by `rmihId`; this module validates it, checks it against what that RMIH declares it can handle, stores it with an initial report, queues a push to
+the RMIH, and delivers every later report to the recipients named in the intent's report control. An autonomy dispatch (`HISTORY.md` OI-6.3) is the
+record that turns an AI/ML inference outcome into an intent according to the rApp instance's autonomy mode. Enactment belongs to the RMIH, not here.
+Design record: `intent-service/README.md`; SMO Design v1.3 section 3.12 and Policy Mgmt LLD sections 1-3 (this module was Policy Management & Info SMOS
+before it was renamed; `docs/ARCHITECTURE.md`, Intent Service).
 
-Wave 3 (docs/ARCHITECTURE.md's Intent Service "Open item carried
-into Wave 3"): CreateIntent now uses consumer-side RMIH selection — the
-caller addresses a specific, already-registered IntentHandlingFunction
-by `rmihId` — matching TS28312_IntentNrm.yaml's own NRM containment
-(IntentHandlingFunction *contains* Intent), replacing the former
-producer-side push that matched and notified every capability-matching
-function after the fact. A real consequence of that containment model:
-DeregisterIntentHandlingFunction now really does end every Intent still
-addressed to it (ON DELETE CASCADE), not just leave a dangling reference.
+Where it sits: rApps (through `sdk.intent`), the GUI BFF and SA SMOS call the routes through R1 Termination. The only outbound read is
+`GET /rapp-mgmt/instances/{id}` (through `R1Client`, autonomy dispatch only). Pushes and reports to an RMIH, a report recipient or an operator are outbox rows
+(`smo_shared.outbox`), never a direct HTTP call from a route. The spec models live in `ts28312.py`; this file does not redefine them.
+
+Owns: the capability, feasibility and conflict rules that decide whether an intent is accepted, the initial report, report delivery, the admin-state
+rule (only the creating RMIO may change it), the RMIH registration rule (an rApp identity may not register) and the autonomy-dispatch state machine
+(`AWAITING_SCOPE`, `DISPATCHED`, `SHADOWED`, `REJECTED`). Does not own: which caller may call which route (R1 Termination checks the token; the GUI BFF pins
+`rmioId` and restricts registration and report publication) or the autonomy mode and region scope of an instance (rApp Management).
+
+Before editing: (1) the docstring of a route function or a request model is published as OpenAPI text, so changing one makes
+`tests_integration/test_openapi_specs.py` fail until `scripts/generate_openapi_specs.py` is rerun; the maintainer notes for routes are `#` comments under
+the docstring. (2) `_create_intent_row` does not commit; its callers do, so the intent, its first report and the notifications are one transaction (PR-MSG-1.9).
+A route that creates or changes something enqueues its notifications before `db.commit()` and never after. (3) `import httpx` is kept although nothing here
+calls it: the tests patch `app.main.httpx.post` (see `ruff.toml`).
 """
 
 import datetime
@@ -25,6 +29,7 @@ import json
 import uuid
 from typing import Any
 
+# Unused here on purpose: the unit tests patch `app.main.httpx.post` and the integration tests patch `loaded_apps[<module>].httpx` (see `ruff.toml`, F401).
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -57,6 +62,7 @@ apply_correlation_id(app)
 # HISTORY.md OI-6.3: cross-module read of a RAppInstance's own
 # autonomyMode/regionScope (rApp Mgmt) — this module's first cross-module
 # call; every other route here is purely local.
+# The one cross-module client of this service; the tests replace `R1Client.get` to stand in for rApp Management.
 _r1 = R1Client()
 
 
@@ -96,6 +102,7 @@ class CreateIntentRequest(BaseModel):
     intentHandlingScope: ts28312.IntentHandlingScope | None = None
 
 
+# Body of PATCH /intents/{id}/admin-state. `requesterId` must equal the intent's `rmioId`; an unknown `newState` is a 422.
 class AdminStateRequest(BaseModel):
     newState: ts28312.IntentAdminState
     requesterId: str
@@ -133,6 +140,7 @@ class RegisterRmihRequest(BaseModel):
     intentHandlingScope: list[ts28312.IntentHandlingScope] | None = None
 
 
+# Body of POST /intent-utility-formulas. `utilityScale` defaults to 1 and `utilityOffset` to 0; unknown fields are refused.
 class IntentUtilityFormulaRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -142,6 +150,7 @@ class IntentUtilityFormulaRequest(BaseModel):
     utilityOffset: float = 0
 
 
+# Body of POST /intents/{id}/negotiation-feedback. `referredIntentOutcomeId` must be the id of an outcome in the intent's newest negotiation report.
 class NegotiationFeedbackRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -149,11 +158,12 @@ class NegotiationFeedbackRequest(BaseModel):
     consumerSatisfactionIndex: int | None = None
 
 
+# Body of POST /autonomy-dispatches. `instanceId` is the rApp instance whose autonomy mode decides the outcome; `expectations` are validated as TS 28.312
+# expectations. Unlike the intent request, unknown fields are not refused. `notificationDestination` is where the operator is told; without it nothing is sent.
 class CreateAutonomyDispatchRequest(BaseModel):
     instanceId: uuid.UUID
     modelId: uuid.UUID | None = None
-    # Wave 6: the Intent an AUTONOMOUS/ASSIST dispatch creates is a strict
-    # TS 28.312 Intent, so its expectations are validated as such up front.
+    # The Intent an AUTONOMOUS or resolved ASSIST dispatch creates is a strict TS 28.312 Intent, so its expectations are validated as such up front.
     expectations: list[ts28312.IntentExpectation] = Field(min_length=1)
     priority: int = Field(default=1, ge=1, le=100)
     rmihId: str
@@ -167,6 +177,7 @@ class CreateAutonomyDispatchRequest(BaseModel):
     userLabel: str | None = None
 
 
+# Body of POST /autonomy-dispatches/{id}/resolve. `regionScope` is a free dict; the keys used are `objectInstance` and `cells` (see `_scoped`).
 class ResolveAutonomyDispatchRequest(BaseModel):
     regionScope: dict
 
@@ -180,18 +191,25 @@ def create_intent(body: CreateIntentRequest, db: Session = Depends(get_session))
     or — for a fulfilment purpose — any of its targets (see
     `_create_intent_row`). Dispatch to the RMIH is best-effort.
     """
+    # Route notes (the docstring above is published): 201 `{intentId, intentReportReference}`. All checks are in `_create_intent_row`: 404
+    # `INTENT_HANDLING_FUNCTION_NOT_FOUND`, 422 `RMIH_CAPABILITY_MISMATCH`, 404 `NRM_OBJECT_NOT_FOUND` (unknown utility formula). `rmioId` is taken from the body
+    # as given (empty by default); the service does not check it against the caller, the GUI BFF pins it for GUI-created intents. A callback that is unreachable
+    # never fails the request: the RMIH push is an outbox row.
     intent = _create_intent_row(db, body)
     db.commit()  # the intent, its first report and their notifications commit together (PR-MSG-1.9)
     return {"intentId": str(intent.intent_id), "intentReportReference": _s(intent.intent_report_reference)}
 
 
 def _s(value) -> str | None:
+    """Returns `str(value)`, or None for None (a UUID column to its JSON form)."""
     return str(value) if value is not None else None
 
 
 def _supported_targets(fn: IntentHandlingFunction, object_type: str | None) -> list[dict] | None:
-    """The RMIH's supportedExpectationTargetInfoList for one object type
-    (None: the function declares no capability for it)."""
+    """Returns the `supportedExpectationTargetInfoList` of the first capability of `fn` for `object_type`, or None when `fn` declares no capability for it.
+
+    An empty list (a capability that names no targets) is different from None: it means the object type is covered but no target is supported.
+    """
     for cap in fn.intent_handling_capability_list or []:
         if cap.get("supportedExpectationObjectType") == object_type:
             return cap.get("supportedExpectationTargetInfoList") or []
@@ -199,10 +217,12 @@ def _supported_targets(fn: IntentHandlingFunction, object_type: str | None) -> l
 
 
 def _feasibility(fn: IntentHandlingFunction, expectations: list[dict]) -> dict:
-    """TS 28.312 IntentFeasibilityCheckReport, computed against the
-    handling function's own declared IntentHandlingCapability: a target is
-    feasible when the capability for its expectation's object type names
-    it (and, where declared, with the same condition)."""
+    """Returns a TS 28.312 `IntentFeasibilityCheckReport` computed against the capabilities `fn` declared.
+
+    A target is feasible when the capability for its expectation's object type lists its name and, if that entry names a condition, the target uses the same
+    one; value ranges are not compared. An expectation whose object type has no capability is skipped (the capability check has already refused it on
+    the create path). The result is `INFEASIBLE` with reason `INVALID_INTENT_EXPRESSION` and `inFeasibleExpectationInfos` when any target fails, else `FEASIBLE`.
+    """
     infeasible = []
     for exp in expectations:
         supported = _supported_targets(fn, exp["expectationObject"].get("objectType"))
@@ -225,9 +245,13 @@ def _feasibility(fn: IntentHandlingFunction, expectations: list[dict]) -> dict:
 
 
 def _conflicts(db: Session, expectations: list[dict]) -> list[dict]:
-    """TS 28.312 IntentConflictReport (TARGET_CONFLICT): another ACTIVATED
-    intent already sets the same target on the same object instance with
-    a different condition or value."""
+    """Returns the `TARGET_CONFLICT` reports for `expectations`: another ACTIVATED intent already sets the same target on the same object instance with a
+    different condition or value range.
+
+    Only expectations that name an `objectInstance` can conflict. The comparison reads every ACTIVATED intent in Python (any RMIH), so its cost grows with
+    the number of active intents. The new intent is not stored yet, so it cannot conflict with itself. Each report recommends `MODIFY`. A conflict is reported,
+    never a reason to refuse the intent.
+    """
     wanted = {}
     for exp in expectations:
         instance = exp["expectationObject"].get("objectInstance")
@@ -253,8 +277,11 @@ def _conflicts(db: Session, expectations: list[dict]) -> list[dict]:
 
 
 def _received_fulfilment(expectations: list[dict], state: str = "RECEIVED") -> dict:
-    """The initial (or suspended) IntentFulfilmentReport: nothing is
-    fulfilled yet, per expectation and per target."""
+    """Returns an `IntentFulfilmentReport` saying nothing is fulfilled yet: NOT_FULFILLED with `state` (RECEIVED, or SUSPENDED for a deactivated intent), for the
+    intent, each expectation and each target.
+
+    The key `expectaitonId` is the spec's own spelling (see `ts28312.ExpectationFulfilmentResult`).
+    """
     info = {"fulfilmentStatus": "NOT_FULFILLED", "notFullfilledState": state}
     return {"intentFulfilmentInfo": info, "expectationFulfilmentResult": [
         {"expectaitonId": e["expectationId"], "expectationFulfilmentInfo": info,
@@ -264,22 +291,17 @@ def _received_fulfilment(expectations: list[dict], state: str = "RECEIVED") -> d
 
 
 def _create_intent_row(db: Session, body: CreateIntentRequest) -> Intent:
-    """The real work CreateIntent does — shared with HISTORY.md OI-6.3's
-    AUTONOMOUS/resolve-ASSIST paths, so an autonomy-driven Intent is a real
-    Intent in every respect.
+    """Validates a `CreateIntentRequest` and adds the intent, its initial report and the notifications to `db`'s transaction; returns the intent. Does not commit.
 
-    Wave 6 (TS 28.312): every expectation object type must be one the
-    function declares a capability for; a purpose needing negotiation
-    (feasibility check / exploration / negotiated fulfilment) needs the
-    function to declare that functionality (when it declares any). The
-    feasibility of every target is checked against the capability's
-    supportedExpectationTargetInfoList: a FEASIBILITYCHECK* intent is
-    accepted and carries the INFEASIBLE report; a fulfilment intent with an
-    infeasible target is rejected (it could never be fulfilled). Target
-    conflicts with other ACTIVATED intents are reported, not rejected. The
-    initial IntentReport (fulfilment RECEIVED, plus conflict/feasibility
-    reports) becomes the intent's intentReportReference and is delivered
-    per intentReportControl.
+    Shared by `POST /intents` and the autonomy paths (AUTONOMOUS, and ASSIST at resolve), so an intent made from a dispatch is an intent in every respect.
+    Raises, in this order: 404 `INTENT_HANDLING_FUNCTION_NOT_FOUND` (no such `rmihId`); 422 `RMIH_CAPABILITY_MISMATCH` when the RMIH lacks a capability for
+    any expectation object type, does not cover the handling scope, lacks the negotiation functionality the `intentMgmtPurpose` needs (only when it declares
+    any), or, for a purpose other than FEASIBILITYCHECK*, an infeasible target; 404 `NRM_OBJECT_NOT_FOUND` for an unknown `intentUtilityFormulaRef`.
+
+    A FEASIBILITYCHECK* intent with infeasible targets is accepted and its initial report carries the INFEASIBLE feasibility report. Target conflicts are
+    added to the report, not refused. Side effects: an `Intent` row, an `IntentReport` row (fulfilment NOT_FULFILLED / RECEIVED, plus the conflict and
+    feasibility reports when present) that becomes `intent_report_reference`, one outbox row pushing the new intent to the RMIH, and one outbox row per
+    matching report recipient (`_deliver_report`). The caller commits; a rollback discards all of them.
     """
     fn = db.get(IntentHandlingFunction, body.rmihId)
     if fn is None:
@@ -311,6 +333,7 @@ def _create_intent_row(db: Session, body: CreateIntentRequest) -> Intent:
                     intent_handling_info=ts28312.dump(body.intentHandlingInfo),
                     intent_interpretation_assistance_info=ts28312.dump(body.intentInterpretationAssistanceInfo),
                     intent_utility_formula_id=body.intentUtilityFormulaRef)
+    # Two flushes: the intent first, so the report row can name its id; then the report, so `intent_report_reference` can name the report's id. Nothing is committed yet.
     db.add(intent)
     db.flush()
     report = IntentReport(intent_id=intent.intent_id, intent_fulfilment_report=_received_fulfilment(expectations),
@@ -331,8 +354,7 @@ def _create_intent_row(db: Session, body: CreateIntentRequest) -> Intent:
 
 
 def _requested_expectation_object_types(expectations: list[dict]) -> set[str]:
-    """TS28312_IntentNrm.yaml's `IntentExpectation.expectationObject.objectType`
-    — what kind of thing each expectation targets."""
+    """Returns the set of `expectationObject.objectType` values named by `expectations` (an expectation without one adds nothing)."""
     types: set[str] = set()
     for expectation in expectations:
         object_type = (expectation.get("expectationObject") or {}).get("objectType")
@@ -342,10 +364,12 @@ def _requested_expectation_object_types(expectations: list[dict]) -> set[str]:
 
 
 def _validate_rmih_can_handle(fn: IntentHandlingFunction, expectation_object_types: set[str], scope: str | None) -> None:
-    """Validates that the one addressed function covers what the Intent
-    asks for: its declared intentHandlingScope (HISTORY.md §7 item 1) and —
-    Wave 6, strict — a capability for *every* expectation object type the
-    intent names (previously any one sufficed)."""
+    """Raises 422 `RMIH_CAPABILITY_MISMATCH` unless `fn` covers the request: the handling `scope` (only checked when both the request and `fn` name one), and a
+    capability for every object type in `expectation_object_types` (all of them, not any one).
+
+    The negotiation-functionality and feasibility checks are not here; they are in `_create_intent_row`, so an autonomy dispatch that is only SHADOWED or
+    awaiting scope is not checked for them until an intent is actually made.
+    """
     if scope is not None and fn.intent_handling_scope and scope not in fn.intent_handling_scope:
         raise framework_error(FrameworkError.RMIH_CAPABILITY_MISMATCH,
                                detail=f"{fn.rmih_id} does not cover handling scope {scope!r}")
@@ -356,6 +380,7 @@ def _validate_rmih_can_handle(fn: IntentHandlingFunction, expectation_object_typ
                                detail=f"{fn.rmih_id} does not support {sorted(missing)}")
 
 
+# Report kind (the spec's attribute name) -> the `IntentReport` column that holds it. `publish_intent_report` and `_report_view` both walk this table.
 _REPORT_COLUMNS = {
     "intentFulfilmentReport": "intent_fulfilment_report", "intentConflictReports": "intent_conflict_reports",
     "intentFeasibilityCheckReport": "intent_feasibility_check_report", "intentExplorationReport": "intent_exploration_report",
@@ -366,6 +391,9 @@ _REPORT_COLUMNS = {
 
 
 def _report_view(r: IntentReport) -> dict:
+    """Returns the wire form of a report: `id` / `reportId`, `intentId`, and `attributes` with each report kind that is present plus `lastUpdatedTime` and
+    `intentReference`. A kind that was not published is left out, not null.
+    """
     attrs = {name: getattr(r, column) for name, column in _REPORT_COLUMNS.items()}
     attrs = {k: v for k, v in attrs.items() if v is not None}
     return {"id": str(r.id), "reportId": str(r.id), "intentId": str(r.intent_id),
@@ -373,9 +401,12 @@ def _report_view(r: IntentReport) -> dict:
 
 
 def _deliver_report(db: Session, intent: Intent, report: IntentReport) -> None:
-    """IntentReportControl: each control with a reportRecipientAddress gets
-    the report when it carries one of its expectedReportTypes (all types
-    when none are listed). One outbox row per recipient, in the caller's transaction; the caller commits after this."""
+    """Enqueues `report` for every report control of `intent` that has a `reportRecipientAddress` and wants it; the caller commits.
+
+    A control wants the report when one of its `expectedReportTypes` is among the kinds the report holds (all kinds when the list is empty). The payload is
+    `{"notificationType": "notifyIntentReport", ...report view}`. One outbox row per recipient, in the caller's transaction (PR-MSG-1.9); a destination the
+    SSRF guard refuses is dropped by `enqueue` with a warning.
+    """
     view = _report_view(report)
     present = {ts28312.REPORT_TYPE_OF[k] for k in view["attributes"] if k in ts28312.REPORT_TYPE_OF}
     for control in intent.intent_report_control or []:
@@ -397,6 +428,7 @@ def query_intent(intent_id: uuid.UUID, db: Session = Depends(get_session)):
 @app.get("/intents")
 def query_intents(admin_state: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                    db: Session = Depends(get_session)):
+    # Route notes: `admin_state` is an exact match and is not validated (an unknown value gives an empty page). Paginated, in primary-key order (a random UUID, so not creation order).
     stmt = select(Intent)
     if admin_state:
         stmt = stmt.where(Intent.intent_admin_state == admin_state)
@@ -410,6 +442,9 @@ def update_intent_admin_state(intent_id: uuid.UUID, body: AdminStateRequest, db:
     report moves to NOT_FULFILLED / SUSPENDED (TS 28.312 NotFulfilledState)
     and is delivered per intentReportControl; reactivating it reports
     RECEIVED again until the handler reports otherwise."""
+    # Route notes (the docstring above is published): 404 `INTENT_NOT_FOUND`; 409 `SERVICE_NAME_CONFLICT` when `requesterId` is not the intent's `rmioId` (the
+    # code is reused for this refusal). A change to the state it already has does nothing and writes no report. Otherwise: state changed, a new fulfilment report
+    # (SUSPENDED when deactivated, RECEIVED when activated) becomes the current report and is delivered, one commit. Returns the intent view.
     intent = db.get(Intent, intent_id)
     if intent is None:
         raise framework_error(FrameworkError.INTENT_NOT_FOUND, detail="no such intent")
@@ -432,6 +467,8 @@ def update_intent_admin_state(intent_id: uuid.UUID, body: AdminStateRequest, db:
 def delete_intent(intent_id: uuid.UUID, db: Session = Depends(get_session)):
     """HISTORY.md §7 item 5: an RMIO retracts an Intent it created.
     Idempotent."""
+    # Route notes: idempotent, 204 for an unknown id. The intent's reports are removed by the database foreign key (ON DELETE CASCADE), not by the ORM, so on SQLite
+    # they stay behind. Nothing is sent to the RMIH.
     intent = db.get(Intent, intent_id)
     if intent is not None:
         db.delete(intent)
@@ -443,6 +480,10 @@ def submit_negotiation_feedback(intent_id: uuid.UUID, body: NegotiationFeedbackR
     """TS 28.312 IntentFulfilmentNegotiationFeedback: the consumer picks one
     of the possibleIntentOutcomeList entries of the intent's latest
     negotiation report."""
+    # Route notes (the docstring above is published): 404 `INTENT_NOT_FOUND`; 404 `NRM_OBJECT_NOT_FOUND` when the intent has no negotiation report; 422
+    # `SCHEMA_VALIDATION_FAILED` when `referredIntentOutcomeId` is not one of that report's outcomes. The feedback is written into the newest negotiation report
+    # in place (a new JSON document is assigned so the change is saved): no new report row, no change to `intent_report_reference`, no notification to the RMIH.
+    # Calling it again overwrites the feedback. Returns the report view.
     intent = db.get(Intent, intent_id)
     if intent is None:
         raise framework_error(FrameworkError.INTENT_NOT_FOUND, detail="no such intent")
@@ -468,6 +509,9 @@ def publish_intent_report(body: IntentReportRequest, db: Session = Depends(get_s
     """PublishIntentReport — any of the spec's report kinds, at least one.
     The new report becomes the intent's intentReportReference and is
     delivered per its intentReportControl."""
+    # Route notes (the docstring above is published): 404 `INTENT_NOT_FOUND`; 422 `SCHEMA_VALIDATION_FAILED` when no report kind is present. Does not check who the
+    # caller is, so any caller that can reach R1 and the route may publish (the GUI BFF restricts it to admin). The new report row becomes
+    # `intent_report_reference`, is delivered per report control, one commit. Answers 201 with `reportId` and the report view (which repeats it).
     intent = db.get(Intent, body.intentReference)
     if intent is None:
         raise framework_error(FrameworkError.INTENT_NOT_FOUND, detail="no such intent")
@@ -490,6 +534,9 @@ def register_intent_handling_function(body: RegisterRmihRequest, db: Session = D
     rApp caller (always rejected here) from a framework-internal SMO
     module (SO SMOS / SA SMOS, the only legitimate callers).
     """
+    # Route notes (the docstring above is published): 409 `SERVICE_NAME_CONFLICT` for an `rmihId` that parses as a UUID (an rApp identity) and, with a different
+    # detail, for an `rmihId` that is already registered; both use that one code. The destination is not checked here; the SSRF guard runs when a push is
+    # enqueued. 201 with the RMIH view.
     if not is_framework_internal_identity(body.rmihId):
         raise framework_error(FrameworkError.SERVICE_NAME_CONFLICT, detail="external callers may never hold an rmihId (D-SEC-POLICY-1)")
     fn = IntentHandlingFunction(rmih_id=body.rmihId, sme_service_id=body.smeServiceId,
@@ -507,6 +554,8 @@ def register_intent_handling_function(body: RegisterRmihRequest, db: Session = D
 @app.delete("/intent-handling-functions/{rmih_id}", status_code=204)
 def deregister_intent_handling_function(rmih_id: str, db: Session = Depends(get_session)):
     """NEW — symmetric with Register, closing v1.3's gap (Policy Mgmt LLD section 1)."""
+    # Route notes: idempotent, 204 for an unknown id. The foreign keys then remove every intent and every autonomy dispatch addressed to the function (ON DELETE
+    # CASCADE, PostgreSQL only), so a later `GET /intents/{id}` can answer 404.
     fn = db.get(IntentHandlingFunction, rmih_id)
     if fn is not None:
         db.delete(fn)
@@ -514,8 +563,10 @@ def deregister_intent_handling_function(rmih_id: str, db: Session = Depends(get_
 
 
 def _intent_view(i: Intent) -> dict:
-    """This build's own summary keys (kept for existing readers) plus the
-    full TS 28.312 Intent under `attributes`."""
+    """Returns the wire form of an intent: summary keys the existing readers use, plus the full TS 28.312 Intent under `attributes`.
+
+    Attributes that are None are left out of `attributes`; `intentReportReference` and `intentUtilityFormulaRef` are strings.
+    """
     return {"id": str(i.intent_id), "intentId": str(i.intent_id), "intentAdminState": i.intent_admin_state,
             "intentPriority": i.intent_priority, "rmioId": i.rmio_id, "intentMgmtPurpose": i.intent_mgmt_purpose,
             "rmihId": i.rmih_id, "userLabel": i.user_label,
@@ -534,6 +585,9 @@ def _intent_view(i: Intent) -> dict:
 
 
 def _rmih_view(fn: IntentHandlingFunction) -> dict:
+    """Returns the wire form of a handling function: the summary keys (`rmihId`, `smeServiceId`, `notificationDestination`, `intentHandlingScope`) plus the spec
+    attributes under `attributes`.
+    """
     return {"id": fn.rmih_id, "rmihId": fn.rmih_id, "smeServiceId": fn.sme_service_id,
             "notificationDestination": fn.notification_destination, "intentHandlingScope": fn.intent_handling_scope,
             "attributes": {"intentHandlingScope": fn.intent_handling_scope,
@@ -562,15 +616,17 @@ def list_intent_reports(intent_id: uuid.UUID | None = None, limit: int = PageLim
 
 @app.get("/intent-reports/{report_id}")
 def get_intent_report(report_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` (not `INTENT_NOT_FOUND`) for an unknown report id.
     report = db.get(IntentReport, report_id)
     if report is None:
         raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail="no such IntentReport")
     return _report_view(report)
 
 
-# ---------------------------------------------------------------- Wave 6: IntentUtilityFormula (TS 28.312 IOC)
+# ---------------------------------------------------------------- IntentUtilityFormula (TS 28.312 IOC)
 
 def _formula_view(f: IntentUtilityFormula) -> dict:
+    """Returns the wire form of a utility formula: `id` and its spec attributes under `attributes`."""
     return {"id": str(f.intent_utility_formula_id), "attributes": {
         "utilityFunctionId": f.utility_function_id, "utilityParameterList": f.utility_parameter_list,
         "utilityScale": f.utility_scale, "utilityOffset": f.utility_offset}}
@@ -578,6 +634,7 @@ def _formula_view(f: IntentUtilityFormula) -> dict:
 
 @app.post("/intent-utility-formulas", status_code=201)
 def create_intent_utility_formula(body: IntentUtilityFormulaRequest, db: Session = Depends(get_session)):
+    # Route notes: 201. Stored as sent; an intent can name it later through `intentUtilityFormulaRef`.
     f = IntentUtilityFormula(utility_function_id=body.utilityFunctionId,
                              utility_parameter_list=ts28312.dump(body.utilityParameterList),
                              utility_scale=body.utilityScale, utility_offset=body.utilityOffset)
@@ -588,12 +645,14 @@ def create_intent_utility_formula(body: IntentUtilityFormulaRequest, db: Session
 
 @app.get("/intent-utility-formulas")
 def list_intent_utility_formulas(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: paginated.
     page = paginate(db, select(IntentUtilityFormula), limit, offset)
     return {**page, "items": [_formula_view(f) for f in page["items"]]}
 
 
 @app.get("/intent-utility-formulas/{formula_id}")
 def get_intent_utility_formula(formula_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `NRM_OBJECT_NOT_FOUND` for an unknown id.
     f = db.get(IntentUtilityFormula, formula_id)
     if f is None:
         raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail="no such IntentUtilityFormula")
@@ -602,6 +661,7 @@ def get_intent_utility_formula(formula_id: uuid.UUID, db: Session = Depends(get_
 
 @app.delete("/intent-utility-formulas/{formula_id}", status_code=204)
 def delete_intent_utility_formula(formula_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: idempotent, 204 for an unknown id. Intents that named the formula keep existing; the database sets their reference to null (PostgreSQL).
     f = db.get(IntentUtilityFormula, formula_id)
     if f is not None:
         db.delete(f)
@@ -611,13 +671,11 @@ def delete_intent_utility_formula(formula_id: uuid.UUID, db: Session = Depends(g
 # ---------------------------------------------------------------- HISTORY.md OI-6.3: rApp Autonomy Modes
 
 def _notify_autonomy_operator(db: Session, notification_destination: str | None, dispatch: AutonomyDispatch) -> None:
-    """All three modes always notify the operator of the AI/ML inference
-    outcome — not mode-gated; only enforcement (AUTONOMOUS/ASSIST apply
-    it, SHADOW doesn't) and scoping vary by mode. An outbox row in the
-    caller's transaction (PR-MSG-1.9; the caller commits after this), sent
-    once that commit happens and screened by smo_shared.webhook's SSRF
-    guard like every other caller-chosen callback destination (see that
-    module's docstring for why).
+    """Enqueues the dispatch summary for the operator at `notification_destination`; does nothing when it is None; the caller commits.
+
+    Every mode notifies, and so does every outcome (request, resolve, reject): sending is not tied to the autonomy mode. The payload carries the dispatch id,
+    instance, model, mode, current status, expectations, priority and the intent id (null until one exists). An outbox row in the caller's transaction
+    (PR-MSG-1.9), screened by the SSRF guard of `smo_shared.webhook` at enqueue and again at send.
     """
     enqueue(db, notification_destination, {
         "dispatchId": str(dispatch.dispatch_id), "instanceId": str(dispatch.instance_id),
@@ -641,6 +699,12 @@ def request_autonomy_dispatch(body: CreateAutonomyDispatchRequest, db: Session =
     computes nothing beyond this record — observe-only, never dispatched.
     All three always notify the operator.
     """
+    # Route notes (the docstring above is published): 201 with the dispatch view. In order: (1) `GET /rapp-mgmt/instances/{id}` through `R1Client`; any answer but
+    # 200 is 404 `RAPP_INSTANCE_NOT_FOUND` (an rApp Management outage looks the same). (2) 404 `INTENT_HANDLING_FUNCTION_NOT_FOUND` and 422
+    # `RMIH_CAPABILITY_MISMATCH` (object types and scope only) for every mode. (3) The dispatch row is stored with the instance's mode copied onto it. (4)
+    # AUTONOMOUS: the instance's `regionScope` is applied, an intent is created with `_create_intent_row` (which can still refuse it: purpose, infeasible target, 422
+    # on a region-scope conflict) and the dispatch becomes DISPATCHED; ASSIST: AWAITING_SCOPE; any other mode value behaves as SHADOW. (5) The operator is
+    # notified and everything commits once, so a refused intent leaves no dispatch behind.
     inst_resp = _r1.get(f"/rapp-mgmt/instances/{body.instanceId}")
     if inst_resp.status_code != 200:
         raise framework_error(FrameworkError.RAPP_INSTANCE_NOT_FOUND, detail="no such RAppInstance")
@@ -658,6 +722,7 @@ def request_autonomy_dispatch(body: CreateAutonomyDispatchRequest, db: Session =
     expectations = ts28312.dump(body.expectations)
     _validate_rmih_can_handle(fn, _requested_expectation_object_types(expectations), body.intentHandlingScope)
 
+    # The row starts as SHADOWED and the branches below only move it away from that: a mode that is neither AUTONOMOUS nor ASSIST stays observe-only.
     dispatch = AutonomyDispatch(instance_id=body.instanceId, model_id=body.modelId, autonomy_mode=autonomy_mode,
                                  expectations=expectations, priority=body.priority, rmih_id=body.rmihId,
                                  intent_mgmt_purpose=body.intentMgmtPurpose, intent_handling_scope=body.intentHandlingScope,
@@ -665,6 +730,7 @@ def request_autonomy_dispatch(body: CreateAutonomyDispatchRequest, db: Session =
     db.add(dispatch)
     db.flush()
     if autonomy_mode == "AUTONOMOUS":
+        # Set before `_dispatch_intent_request`, which reads `dispatch.region_scope` to fold the scope into the expectations.
         dispatch.region_scope = instance.get("regionScope")
         intent = _create_intent_row(db, _dispatch_intent_request(dispatch, body.userLabel))
         dispatch.status = "DISPATCHED"
@@ -686,6 +752,10 @@ def resolve_autonomy_dispatch(dispatch_id: uuid.UUID, body: ResolveAutonomyDispa
     only now creating the real Intent — distinct from AUTONOMOUS, whose
     scope was already fixed at onboarding.
     """
+    # Route notes (the docstring above is published): 404 `AUTONOMY_DISPATCH_NOT_FOUND`; 409 `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE` for any status but
+    # AWAITING_SCOPE. The operator's `regionScope` is stored as given and folded into the expectations (`_scoped`); the intent is created with the
+    # dispatch's recorded values and a generated label. An intent that `_create_intent_row` or `_scoped` refuses (422) leaves the dispatch AWAITING_SCOPE, since nothing was
+    # committed. The operator destination is notified; one commit.
     dispatch = db.get(AutonomyDispatch, dispatch_id)
     if dispatch is None:
         raise framework_error(FrameworkError.AUTONOMY_DISPATCH_NOT_FOUND, detail="no such autonomy dispatch")
@@ -702,6 +772,7 @@ def resolve_autonomy_dispatch(dispatch_id: uuid.UUID, body: ResolveAutonomyDispa
     return _autonomy_dispatch_view(dispatch)
 
 
+# Body of POST /autonomy-dispatches/{id}/reject. `rejectedBy` is stored as given; the GUI BFF pins it to the operator's identity.
 class RejectAutonomyDispatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -716,6 +787,8 @@ def reject_autonomy_dispatch(dispatch_id: uuid.UUID, body: RejectAutonomyDispatc
     (an ASSIST dispatch stays there until it is either resolved or
     rejected); no Intent is ever created, and the operator destination is
     notified like every other dispatch outcome."""
+    # Route notes (the docstring above is published): 404 `AUTONOMY_DISPATCH_NOT_FOUND`; 409 `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE` for any status but
+    # AWAITING_SCOPE. Stores `rejectedBy` and the reason, creates no intent, notifies the operator destination, one commit.
     dispatch = db.get(AutonomyDispatch, dispatch_id)
     if dispatch is None:
         raise framework_error(FrameworkError.AUTONOMY_DISPATCH_NOT_FOUND, detail="no such autonomy dispatch")
@@ -732,6 +805,7 @@ def reject_autonomy_dispatch(dispatch_id: uuid.UUID, body: RejectAutonomyDispatc
 
 @app.get("/autonomy-dispatches/{dispatch_id}")
 def query_autonomy_dispatch(dispatch_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: 404 `AUTONOMY_DISPATCH_NOT_FOUND` for an unknown id.
     dispatch = db.get(AutonomyDispatch, dispatch_id)
     if dispatch is None:
         raise framework_error(FrameworkError.AUTONOMY_DISPATCH_NOT_FOUND, detail="no such autonomy dispatch")
@@ -741,6 +815,7 @@ def query_autonomy_dispatch(dispatch_id: uuid.UUID, db: Session = Depends(get_se
 @app.get("/autonomy-dispatches")
 def list_autonomy_dispatches(instance_id: uuid.UUID | None = None, status: str | None = None, limit: int = PageLimit,
                               offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: optional exact-match filters `instance_id` and `status` (the status is not validated); newest first; paginated.
     stmt = select(AutonomyDispatch)
     if instance_id:
         stmt = stmt.where(AutonomyDispatch.instance_id == instance_id)
@@ -751,14 +826,16 @@ def list_autonomy_dispatches(instance_id: uuid.UUID | None = None, status: str |
 
 
 def _scoped(expectation: dict, region_scope: dict | None) -> dict:
-    """Wave 8: the dispatch's region scope (AUTONOMOUS: pre-configured on
-    the rApp instance; ASSIST: the operator's resolve) is where the Intent
-    applies, so it is folded into each expectation's object —
-    `regionScope.objectInstance` (the managed element / subnetwork) fills a
-    missing `objectInstance`, and `regionScope.cells` adds a TS 28.312 Cell
-    object context. Other regionScope keys are kept on the dispatch only."""
+    """Returns a copy of `expectation` with the dispatch's `region_scope` folded in; raises 422 `SCHEMA_VALIDATION_FAILED` when the expectation is outside it.
+
+    With no scope the expectation is returned unchanged. `regionScope.objectInstance` fills a missing `objectInstance`; an expectation that names a different one is
+    refused. `regionScope.cells` bound the expectation's `Cell` object contexts: cells outside the region are dropped, and an empty remainder is refused, so a
+    scope never widens what the rApp asked for. An expectation with no `Cell` context gets one made of all the region's cells. Other `regionScope` keys stay on
+    the dispatch and are not applied.
+    """
     if not region_scope:
         return expectation
+    # A deep copy through JSON, so the expectations stored on the dispatch are never modified in place.
     scoped = json.loads(json.dumps(expectation))
     obj = scoped["expectationObject"]
     region_instance = region_scope.get("objectInstance")
@@ -789,9 +866,12 @@ def _scoped(expectation: dict, region_scope: dict | None) -> dict:
 
 
 def _dispatch_intent_request(dispatch: AutonomyDispatch, user_label: str | None) -> CreateIntentRequest:
-    """The strict TS 28.312 Intent an AUTONOMOUS/resolved-ASSIST dispatch
-    creates: its expectations as dispatched, reports delivered to the
-    dispatch's own operator notification destination (when it has one)."""
+    """Builds the strict `CreateIntentRequest` that an AUTONOMOUS or resolved ASSIST dispatch turns into an intent.
+
+    Expectations are the dispatched ones with the region scope folded in (`_scoped`). The report control has a 60 second observation period and, when the
+    dispatch has a notification destination, sends reports there. `rmioId` is the instance id, so the instance is the intent's creator. The request is
+    built with `model_validate`, so the stored JSON is validated again; a `ValidationError` from it is not translated and would answer 500.
+    """
     control: dict[str, Any] = {"observationPeriod": 60}
     if dispatch.notification_destination:
         control["reportRecipientAddress"] = dispatch.notification_destination
@@ -804,6 +884,7 @@ def _dispatch_intent_request(dispatch: AutonomyDispatch, user_label: str | None)
 
 
 def _autonomy_dispatch_view(d: AutonomyDispatch) -> dict:
+    """Returns the wire form of a dispatch, with ids as strings (null when unset) and `createdAt` in ISO 8601."""
     return {
         "dispatchId": str(d.dispatch_id), "instanceId": str(d.instance_id),
         "modelId": str(d.model_id) if d.model_id else None, "autonomyMode": d.autonomy_mode,

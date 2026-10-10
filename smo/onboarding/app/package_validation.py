@@ -22,15 +22,11 @@ from smo_shared.runtime_resources import is_quantity
 
 
 class PackageValidationFailed(Exception):
-    """HISTORY.md §5: the reference's own ordered validator
-    chain (rapp-manager-models' csar/validator/*) catches a package
-    whose filename doesn't follow convention (NamingValidator) or that
-    duplicates one already onboarded (AsdDescriptorValidator's own
-    descriptorId-uniqueness check, adapted here to this build's own
-    identity — a content hash — since real ASD descriptor data is a
-    deliberate elision elsewhere in this build). _validate_package
-    previously only checked the zip was well-formed and had its entry
-    definitions.
+    """A package fails validation; the message says why and is shown to the operator as `failureReason`.
+
+    Raised for the reference validator chain's checks (rapp-manager-models' csar/validator/*): a location without the `.csar` name (NamingValidator), a duplicate of an
+    already onboarded package (AsdDescriptorValidator's uniqueness check, adapted to this build's identity, a content hash; HISTORY.md §5), and every rule of the
+    manifest, capabilities, limits, runtime-profile, operator-UI and signature checks. It is a member of PARSE_FAILURES.
     """
 
 
@@ -40,30 +36,28 @@ class PackageValidationFailed(Exception):
 PARSE_FAILURES = (zipfile.BadZipFile, KeyError, FileNotFoundError, PackageValidationFailed, yaml.YAMLError, json.JSONDecodeError, UnicodeDecodeError)
 
 
+# ASD property name -> key in the identity dict that `onboard_package` copies onto the package row. The first three are the package's name, version and vendor.
 _ASD_IDENTITY_FIELDS = {
     "application_name": "name", "application_version": "version", "provider": "vendor",
-    # Real ASD schema fields (asd_types.yaml's tosca.nodes.asd node type,
-    # grounded against nonrtric-plt-rappmanager's own real sample CSARs,
-    # not a summary) — required alongside the three above, never
-    # captured before this pass. Surfaced for real spec fidelity;
-    # package identity/uniqueness stays on integrity_hash, unchanged.
+    # The four descriptor fields of the real ASD schema (asd_types.yaml's tosca.nodes.asd node type, checked against nonrtric-plt-rappmanager's sample
+    # CSARs). They are stored as given; package identity and uniqueness stay on integrity_hash.
     "descriptor_id": "descriptor_id", "descriptor_invariant_id": "descriptor_invariant_id",
     "descriptor_version": "descriptor_version", "schema_version": "schema_version",
 }
 
 
 def _asd_identity(definitions: str) -> dict[str, str]:
-    """The ASD's own applicationServiceDescriptor identity properties
-    (application_name / application_version / provider), read from the
-    entry definitions so a validated package stops showing as
-    `unresolved-until-validated 0.0.0`. A line scan rather than a YAML
-    parse: these are flat scalar properties, and this module carries no
-    YAML dependency. Missing fields are simply absent from the result.
+    """Reads the ASD's identity properties out of the entry definitions text and returns them as {name, version, vendor, descriptor_id, ...}; a property that is absent or empty is left out.
+
+    The properties are those of `_ASD_IDENTITY_FIELDS` (application_name, application_version, provider and the four descriptor fields of the real ASD schema,
+    `tosca.nodes.asd`). It is a line scan, not a YAML parse: they are flat scalars, and this module does not parse the Definitions file as YAML. The first occurrence of a
+    key wins; a trailing ` # comment` and surrounding quotes are stripped.
     """
     found: dict[str, str] = {}
     for line in definitions.splitlines():
         key, sep, value = line.strip().partition(":")
         if sep and key in _ASD_IDENTITY_FIELDS and _ASD_IDENTITY_FIELDS[key] not in found:
+            # A YAML comment starts at ' #'; a '#' inside a value (no space before it) is kept.
             value = value.split(" #", 1)[0].strip().strip("\"'")
             if value:
                 found[_ASD_IDENTITY_FIELDS[key]] = value
@@ -71,25 +65,16 @@ def _asd_identity(definitions: str) -> dict[str, str]:
 
 
 def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
-    """Wave 1's rApp packaging extension (docs/architecture/
-    docs/ARCHITECTURE.md): an optional AI Platform capability
-    declaration, read from two new CSAR-root files alongside the existing
-    TOSCA-Metadata/Definitions/Artifacts layout —
+    """Reads the optional AI Platform declarations from `manifest.yaml` and `capabilities.yaml` at the CSAR root; returns a dict, or None when neither file gives anything.
 
-    - `manifest.yaml`: `rappManifest.manifestVersion` /
-      `rappManifest.aiRuntimeSdkVersion` (the sdk/ contract version this
-      rApp was built against).
-    - `capabilities.yaml`: `capabilities.consumes` / `capabilities.provides`,
-      each a list of `{namespace, description}` naming which of sdk/'s six
-      client namespaces (data/analytics/models/lifecycle/intent/platform)
-      this rApp uses.
+    `manifest.yaml`: `rappManifest.manifestVersion` and `aiRuntimeSdkVersion`; the AI-runtime keys `executionModes`, `autonomyModes`, `requiredServices` and `runtimeProfiles`
+    (under `rappManifest` or at the top level, W7-03); `limits` (AI-10.1); `operatorUi` (GUI-8.2). `capabilities.yaml`: `capabilities.consumes` and `provides`, each a list of
+    `{namespace, description}` naming which of the SDK's six namespaces (data, analytics, models, lifecycle, intent, platform) the rApp uses. The layout is specified in
+    docs/RAPP_PACKAGING.md.
 
-    Both are optional and additive: a package built before this extension,
-    or one that simply has neither file (every package this build produced
-    before this pass), still onboards exactly as before — this returns
-    None and `ApplicationPackage.ai_capabilities` stays NULL. Unlike
-    `_asd_identity`'s flat scalar line-scan, these files carry real nested
-    structure, so this one genuinely needs a YAML parse.
+    Both files are optional and independent; a package with neither returns None and `ApplicationPackage.ai_capabilities` stays NULL. Unlike `_asd_identity` these files
+    are nested, so they are parsed with `yaml.safe_load`. Raises PackageValidationFailed for a file or section that is not a mapping, a bad runtime profile, limit or operator
+    page; yaml.YAMLError for malformed YAML (both are in PARSE_FAILURES).
     """
     result: dict = {}
     names = z.namelist()
@@ -136,6 +121,7 @@ def _parse_ai_capabilities(z: zipfile.ZipFile) -> dict | None:
     return result or None
 
 
+# The execution modes a runtime profile may be declared for.
 EXECUTION_MODES = ("TRAINING", "VALIDATION", "EMULATION", "INFERENCE")
 
 
@@ -159,6 +145,7 @@ def _validate_runtime_profiles(profiles, execution_modes) -> dict:
         clean = {}
         for field in ("cpu", "gpu"):
             if field in profile:
+                # A bool would pass the number test (bool is a subclass of int), so it is refused explicitly.
                 if not isinstance(profile[field], (int, float)) or isinstance(profile[field], bool) or profile[field] < 0:
                     raise PackageValidationFailed(f"runtimeProfiles.{mode}.{field} must be a non-negative number")
                 clean[field] = profile[field]
@@ -190,6 +177,7 @@ def _validate_limits(limits) -> dict:
             raise PackageValidationFailed(f"limits: unknown limit {name!r} (known: {', '.join(sorted(LIMIT_SPECS))})")
         whole, largest = LIMIT_SPECS[name]
         number = isinstance(value, int) if whole else isinstance(value, (int, float))
+        # A bool is an int in Python and must not count as a limit. `value != value` is true only for NaN, which the range test already refuses; it is a second, explicit check.
         if not number or isinstance(value, bool) or not 0 < value <= largest or value != value:
             raise PackageValidationFailed(f"limits.{name} must be a {'whole number' if whole else 'number'} above 0 and at most {largest}")
         out[name] = value
@@ -197,24 +185,13 @@ def _validate_limits(limits) -> dict:
 
 
 def _parse_sme_declarations(z: zipfile.ZipFile) -> dict | None:
-    """The real O-RAN SC rApp Manager's own CSAR layout
-    (`nonrtric-plt-rappmanager/sample-rapp-generator/`'s real sample
-    packages): `Files/Sme/providers/*.json` (real CAPIF
-    `APIProviderEnrolmentDetails`) and `Files/Sme/serviceapis/*.json`
-    (real CAPIF `ServiceAPIDescription`) declare which SME provider/API
-    this package registers as, once deployed. Read here at onboarding
-    time and stored raw; registered per-instance by rapp-mgmt's
-    bootstrap-complete (`SmeDeployer.deployRappInstance`'s own real
-    per-*instance*, not per-package, timing — the reference's own
-    `primeRapp` is a documented no-op for SME).
+    """Reads the SME declarations out of the CSAR (`Files/Sme/providers/*.json`, `Files/Sme/serviceapis/*.json`) and returns {providers, serviceApis}, or None when there are none.
 
-    Optional and additive, like `manifest.yaml`/`capabilities.yaml`: a
-    package whose CSAR declares neither directory (every package before
-    this pass, and the ONAP-Files/Acm-only samples) onboards exactly as
-    before — this returns None, `ApplicationPackage.sme_declarations`
-    stays NULL, and bootstrap-complete simply has nothing to register.
-    Sorted names for deterministic ordering across multiple provider/
-    service-API files.
+    The layout is that of the O-RAN SC rApp Manager's sample packages (`nonrtric-plt-rappmanager/sample-rapp-generator`): CAPIF `APIProviderEnrolmentDetails` and
+    `ServiceAPIDescription` documents. They are stored raw at onboarding and registered with SME per instance by rApp Management's bootstrap-complete (the reference registers
+    at instance deployment, not at package priming). Optional and additive like `manifest.yaml`: a package without the directories gives None, `sme_declarations` stays
+    NULL and there is nothing to register. File names are sorted so the order is deterministic. Raises json.JSONDecodeError or UnicodeDecodeError for a file that is not
+    valid UTF-8 JSON (both are in PARSE_FAILURES).
     """
     names = z.namelist()
     providers = [json.loads(z.read(n)) for n in sorted(names) if n.startswith("Files/Sme/providers/") and n.endswith(".json")]
@@ -246,6 +223,8 @@ def verify_signature(data: bytes, trust: "csar_signing.TrustStore | None", requi
 
 
 def _carries_signing_entries(data: bytes) -> bool:
+    """True when the zip has a digest list or a signature entry; false for an unsigned package and for bytes that are not a zip (those fail later, in the parse).
+    """
     try:
         with zipfile.ZipFile(BytesIO(data)) as z:
             return csar_signing.is_signed(z.namelist())
@@ -257,16 +236,20 @@ def validate_package_bytes(data: bytes, location: str, *, trust: "csar_signing.T
                            require_signed: bool = False) -> tuple[str, list[tuple[str, str]], str, dict]:
     """Open TOSCA-Metadata/Definitions/Artifacts of a fetched CSAR, per Onboarding LLD section 1: (entry definitions, artifacts, integrity hash, identity).
     `location` gives each artifact its access URL and must end in `.csar` (NamingValidator). The signature is checked first (a tampered package is not parsed); see verify_signature."""
+    # Order matters: the signature is verified before the zip is opened for parsing (a tampered package is never parsed). The integrity hash is the SHA-256 of the whole
+    # fetched byte string, so it identifies the package file, not its contents.
     if not location.endswith(".csar"):
         raise PackageValidationFailed(f"package location {location!r} does not end with .csar")
     signature = verify_signature(data, trust, require_signed)
     with zipfile.ZipFile(BytesIO(data)) as z:
         meta = z.read("TOSCA-Metadata/TOSCA.meta").decode()
+        # TOSCA.meta is read as plain 'Key: value' lines; only Entry-Definitions is needed, and the path after the colon is looked up in the zip.
         entry_line = next((l for l in meta.splitlines() if l.startswith("Entry-Definitions:")), None)
         if entry_line is None:       # a bare next() raised StopIteration here, which no caller catches
             raise PackageValidationFailed("TOSCA-Metadata/TOSCA.meta has no Entry-Definitions: line")
         entry_definitions = entry_line.split(":", 1)[1].strip()
         identity: dict[str, Any] = _asd_identity(z.read(entry_definitions).decode(errors="replace"))  # raises KeyError if missing/malformed
+        # Every file under Artifacts/ is registered (directories are skipped) with an access URL that points into the package at its location.
         artifacts = [(n, f"{location}#{n}") for n in z.namelist() if n.startswith("Artifacts/") and not n.endswith("/")]
         ai_capabilities = _parse_ai_capabilities(z)
         if ai_capabilities is not None:
@@ -274,6 +257,7 @@ def validate_package_bytes(data: bytes, location: str, *, trust: "csar_signing.T
         sme_declarations = _parse_sme_declarations(z)
         if sme_declarations is not None:
             identity["sme_declarations"] = sme_declarations
+    # Merges what verify_signature knows (signature_verified, signed_by) into the identity; when it returned {} (nothing asked for) the keys are absent and `onboard_package` defaults signature_verified to True.
     identity.update(signature)
     integrity_hash = hashlib.sha256(data).hexdigest()
     return entry_definitions, artifacts, integrity_hash, identity

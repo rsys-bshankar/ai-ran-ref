@@ -4,6 +4,14 @@
 -- extensions, unified into single CREATE TABLEs rather than the ALTER-chain
 -- form each LLD document used incrementally) into the buildable Phase 1 schema.
 -- Ordered so foreign keys resolve top to bottom.
+--
+-- Where it sits: this file is the baseline of the Alembic history. `migrations/versions/0001_baseline.py` runs it unchanged, and docker compose's initdb
+-- can load it directly; a database made that way is stamped at revision 0001 instead of upgraded (`scripts/migrate.py`). Every later change is a revision in
+-- `migrations/versions/`. Tables are created in `public`; revisions 0023 to 0025 move each module's tables into a schema of its own, and
+-- `migrations/table_owners.json` says which module owns which table. The tables at the end (idempotency keys, module identities, periodic runs) are shared by all modules.
+--
+-- Before editing: never change this file to change the schema. A database that already ran it will not see the edit; add a revision instead (`smo/CLAUDE.md`,
+-- "Schema changes are revisions"). The file is sent to Postgres as one script with no bind parameters (see 0001_baseline.py), so a `:` or `%` in a constraint is safe.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;  -- gen_random_uuid()
 

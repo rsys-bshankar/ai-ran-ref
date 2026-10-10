@@ -1,7 +1,7 @@
-"""Tests for SO SMOS's routes (SO SMOS LLD section 1) — submit/query/cancel
-an order — none of which had test coverage before; only the dispatch
-table's execution semantics (test_dispatch.py) did.
-Run with: pytest smo/so-smos/tests -q
+"""The SO SMOS routes (`app/main.py`): submit, read, cancel, list and the health probe.
+
+Fixture `client`: the app over an in-memory SQLite with only the `service_order` table, `get_session` overridden to it. `execute_order` is replaced by a lambda in most tests, so no
+R1 call is made; the dispatch semantics are tested in `test_dispatch.py`. Run: `cd smo/so-smos && PYTHONPATH=.:../shared python -m pytest tests/test_main.py -q`.
 """
 
 import pytest
@@ -18,6 +18,8 @@ from app.models import ServiceOrder
 
 @pytest.fixture
 def client(monkeypatch):
+    """A TestClient of the app over an in-memory SQLite (one shared connection) holding the `service_order` table; the dependency override is removed after the test.
+    """
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine, tables=[ServiceOrder.__table__])
     TestSession = sessionmaker(bind=engine)
@@ -35,6 +37,7 @@ def client(monkeypatch):
 
 
 def test_submit_order_persists_and_returns_executed_steps(client, monkeypatch):
+    """POST /orders answers 202 with an orderId and the executed steps."""
     monkeypatch.setattr("app.main.execute_order", lambda r1, steps: [{**s, "status": "COMPLETED", "result": {}} for s in steps])
 
     resp = client.post("/orders", json={"scope": "deploy-rollout", "steps": [{"stepType": "DEPLOY", "targetModule": "NFO"}]})
@@ -45,6 +48,7 @@ def test_submit_order_persists_and_returns_executed_steps(client, monkeypatch):
 
 
 def test_query_order_status_returns_the_persisted_order(client, monkeypatch):
+    """GET /orders/{id} returns the same steps the submit answered with, read back from the database."""
     monkeypatch.setattr("app.main.execute_order", lambda r1, steps: [{**s, "status": "COMPLETED", "result": {}} for s in steps])
     created = client.post("/orders", json={"scope": "deploy-rollout", "steps": [{"stepType": "DEPLOY", "targetModule": "NFO"}]}).json()
 
@@ -54,10 +58,7 @@ def test_query_order_status_returns_the_persisted_order(client, monkeypatch):
 
 
 def test_cancel_order_marks_only_pending_steps_cancelled(client, monkeypatch):
-    """cancel_order must leave already-COMPLETED/FAILED steps alone —
-    only steps still PENDING (never attempted, per the fail-fast halt)
-    move to CANCELLED.
-    """
+    """Cancel changes only PENDING steps; COMPLETED and FAILED steps keep their status."""
     monkeypatch.setattr("app.main.execute_order", lambda r1, steps: [
         {**steps[0], "status": "COMPLETED"},
         {**steps[1], "status": "FAILED"},
@@ -75,14 +76,14 @@ def test_cancel_order_marks_only_pending_steps_cancelled(client, monkeypatch):
 
 
 def test_health_check_answers_the_gui_bff_liveness_probe(client):
-    """GUI pass: the BFF's /modules/status probes /<module>/health on every module."""
+    """The BFF's module-status probe, GET /health, answers 200 {"status": "healthy"}."""
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "healthy"}
 
 
 def test_list_orders_returns_every_persisted_order(client, monkeypatch):
-    """GUI pass: only GET /orders/{id} existed."""
+    """GET /orders lists the persisted orders with scope and steps, and is empty before any is submitted."""
     monkeypatch.setattr("app.main.execute_order", lambda r1, steps: [{**s, "status": "COMPLETED", "result": {}} for s in steps])
     assert client.get("/orders").json()["items"] == []
     created = client.post("/orders", json={"scope": "deploy-rollout", "steps": [{"stepType": "DEPLOY", "targetModule": "NFO"}]}).json()
@@ -92,6 +93,7 @@ def test_list_orders_returns_every_persisted_order(client, monkeypatch):
 
 
 def test_an_unknown_order_is_404_and_a_step_without_its_type_is_422(client):
+    """An unknown order id is 404 on read and cancel, and a step without stepType is refused with 422 by the request model."""
     unknown = "e3e70682-c209-1cac-a29f-6fbed82c07cd"
     assert client.get(f"/orders/{unknown}").status_code == 404
     assert client.post(f"/orders/{unknown}/cancel").status_code == 404
@@ -99,6 +101,7 @@ def test_an_unknown_order_is_404_and_a_step_without_its_type_is_422(client):
 
 
 def test_list_orders_total_false_skips_the_count_and_reports_has_more(client, monkeypatch):
+    """`total=false` leaves out `total` and reports hasMore: true when a row follows the page and false on the last page."""
     monkeypatch.setattr("app.main.execute_order", lambda r1, steps: [{**s, "status": "COMPLETED", "result": {}} for s in steps])
     for _ in range(3):
         client.post("/orders", json={"scope": "s", "steps": [{"stepType": "DEPLOY", "targetModule": "NFO"}]})

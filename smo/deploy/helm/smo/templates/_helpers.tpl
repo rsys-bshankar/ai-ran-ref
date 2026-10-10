@@ -1,3 +1,9 @@
+{{- /*
+  Named templates shared by the chart's other templates: image and tag, the merged settings of a module (smo.module), labels,
+  secret names, the database URL and environment, the database roles, and the mutual-TLS mode, secret and issuer. Nothing here
+  renders by itself. Each template's comment gives the dict it expects. smo.podLabels must stay free of anything that changes
+  between chart releases (it is part of every pod template).
+*/ -}}
 {{/* The tag of every SMO image. */}}
 {{- define "smo.tag" -}}
 {{- default .Chart.AppVersion .Values.image.tag -}}
@@ -15,6 +21,7 @@
 {{- toYaml $m -}}
 {{- end -}}
 
+{{- /* The labels of every object the chart makes, with the chart name and version: smo.labels (dict "root" .). Not for pod templates: use smo.podLabels. */}}
 {{- define "smo.labels" -}}
 app.kubernetes.io/part-of: smo
 app.kubernetes.io/managed-by: {{ .root.Release.Service }}

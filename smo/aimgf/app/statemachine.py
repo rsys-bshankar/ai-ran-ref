@@ -1,25 +1,21 @@
-"""Wave 2 (AI Platform Service Decomposition): AIMgF's own two real state
-machines, per docs/ARCHITECTURE.md (AIMgF) — replacing Wave 1's single
-flat `ModelState`/`ModelEvent` (which conflated a model's own identity/
-certification progress with its runtime/serving existence, and lived partly
-on MLMR's row via `PATCH /models/{id}/lifecycle`).
+"""AIMgF's three state machines and the group-retrain rule, as plain data: no database, no HTTP, no NFO.
 
-  - ModelLifecycle  (14 states) — a model's own identity/certification
-                      path: training -> validation -> emulation ->
-                      governance (approval/certification/promotion) ->
-                      deprecation/retirement. AIMgF's own truth end to end
-                      (docs/ARCHITECTURE.md:
-                      "Lifecycle state: AIMgF ✅, MLMR ❌").
-  - RuntimeLifecycle (8 states) — a model's serving existence once
-                      PROMOTED, jointly owned with NFO (NFO invocation:
-                      request runtime creation/termination/scaling).
-                      Decoupled from ModelLifecycle so retraining a
-                      PROMOTED model doesn't force its runtime down, and a
-                      runtime can be scaled/terminated without touching
-                      the model's own certification state.
+What it is: the transition tables for `ModelLifecycle` (14 states, a model's certification path: training, validation, emulation, governance, deprecation,
+retirement), `RuntimeLifecycle` (8 states, the model's serving runtime, jointly owned with NFO) and the inference-job FSM (RUNNING to COMPLETED or FAILED),
+plus the event sets that decide which route may fire which event and `should_trigger_group_retrain`. The two lifecycle FSMs move independently on the one
+`model_lifecycle` row: retraining a PROMOTED model does not take its runtime down, and a runtime can be scaled or terminated without touching certification.
 
-Also carries `should_trigger_group_retrain`, unchanged from Wave 1 (AI/ML
-Workflow LLD section 4.3-4.4's retrain-propagation decision).
+Where it sits: `main.py` fires the tables through `_fire_model_event` and `_fire_runtime_event`, which turn `IllegalTransition` into 409
+`LIFECYCLE_ILLEGAL_TRANSITION` and record a `LifecycleTransition` row; `nrm.py` imports `TRAINABLE_STATES`. The engine is `smo_shared.statemachine.StateMachine`.
+Design record: `aimgf/README.md` 2.3, HISTORY.md OI-6.1 (operator approval gates), OI-2-governance-bypass, OI-2-training-lifecycle-edges and
+OI-2-model-eol-serving.
+
+Owns: which (state, event) pairs are legal and the event sets. Does not own: the checks that read the row rather than the state (`training_approved` and
+`validation_approved` are tested in `main._start_validation` and `request_emulation`), or any NFO call.
+
+Before editing: `tests/test_statemachine.py` pins the state counts (14 and 8) and the edge sets; README 2.3 lists every edge, so change both. A new
+`ModelLifecycleEvent` that is neither in `ADVANCEABLE_EVENTS` nor in `main._JOB_ROUTE_FOR_EVENT` makes `POST /models/{id}/advance` fail with a KeyError (500)
+instead of the 422 that names the job route.
 """
 
 from __future__ import annotations
@@ -31,6 +27,9 @@ from smo_shared.statemachine import StateMachine
 # ---------------------------------------------------------------- ModelLifecycle
 
 class ModelLifecycleState(StrEnum):
+    """The 14 states of a model's certification path: REGISTERED, TRAINING / TRAINED, VALIDATING / VALIDATED, EMULATING / EMULATED, PENDING_APPROVAL, APPROVED,
+    CERTIFIED, PROMOTED, then DEPRECATED and RETIRED (terminal). FAILED is where any failed stage or a rejection lands; it is the retry point (retrain or retire).
+    """
     REGISTERED = "REGISTERED"
     TRAINING = "TRAINING"
     TRAINED = "TRAINED"
@@ -48,6 +47,11 @@ class ModelLifecycleState(StrEnum):
 
 
 class ModelLifecycleEvent(StrEnum):
+    """The events that move a model along `ModelLifecycleState`; the comment on each member gives its edge.
+
+    Two kinds: job-driven events (CREATE_*, *_COMPLETE, *_FAILED) are fired only by the job route that justifies them, and governance or end-of-life events
+    (`ADVANCEABLE_EVENTS`) are fired by `POST /models/{id}/advance`. See `ADVANCEABLE_EVENTS` for why the split matters.
+    """
     CREATE_TRAINING = "CREATE_TRAINING"            # REGISTERED/CERTIFIED/PROMOTED/FAILED -> TRAINING (first cycle or retrain)
     TRAINING_COMPLETE = "TRAINING_COMPLETE"          # -> TRAINED
     TRAINING_FAILED = "TRAINING_FAILED"                # -> FAILED
@@ -113,6 +117,12 @@ END_OF_LIFE_STATES = frozenset({ModelLifecycleState.DEPRECATED, ModelLifecycleSt
 
 
 def build_model_lifecycle_fsm() -> StateMachine[ModelLifecycleState, ModelLifecycleEvent]:
+    """Returns the transition table of `ModelLifecycleState` (README 2.3, first table).
+
+    Notable edges: `APPROVE_TRAINING` and `APPROVE_VALIDATION` are self-loops (TRAINED to TRAINED, VALIDATED to VALIDATED); they change no state, only the
+    `training_approved` / `validation_approved` flag that `_fire_model_event` sets. `CREATE_TRAINING` is legal from REGISTERED, CERTIFIED, PROMOTED and FAILED, so
+    a model is retrained from the top of the pipeline, never through a shortcut. RETIRED has no outgoing edge.
+    """
     fsm: StateMachine[ModelLifecycleState, ModelLifecycleEvent] = StateMachine()
     S, E = ModelLifecycleState, ModelLifecycleEvent
     fsm.add(S.REGISTERED, E.CREATE_TRAINING, S.TRAINING)
@@ -148,11 +158,13 @@ def build_model_lifecycle_fsm() -> StateMachine[ModelLifecycleState, ModelLifecy
     return fsm
 
 
+# The shared, stateless transition table; it holds edges, not any model's current state.
 MODEL_LIFECYCLE_FSM = build_model_lifecycle_fsm()
 
 # ---------------------------------------------------------------- RuntimeLifecycle
 
 class RuntimeLifecycleState(StrEnum):
+    """The 8 states of a model's serving runtime: NOT_DEPLOYED through DEPLOYED, ACTIVE and SCALING to TERMINATED (terminal)."""
     NOT_DEPLOYED = "NOT_DEPLOYED"
     DEPLOYMENT_REQUESTED = "DEPLOYMENT_REQUESTED"
     DEPLOYED = "DEPLOYED"
@@ -164,6 +176,7 @@ class RuntimeLifecycleState(StrEnum):
 
 
 class RuntimeLifecycleEvent(StrEnum):
+    """The events that move a model's runtime along `RuntimeLifecycleState`; all are fired from the runtime routes in `main.py`, none from `advance`."""
     REQUEST_DEPLOYMENT = "REQUEST_DEPLOYMENT"          # NFO: request runtime creation
     DEPLOYMENT_COMPLETE = "DEPLOYMENT_COMPLETE"
     ACTIVATE = "ACTIVATE"
@@ -175,6 +188,11 @@ class RuntimeLifecycleEvent(StrEnum):
 
 
 def build_runtime_lifecycle_fsm() -> StateMachine[RuntimeLifecycleState, RuntimeLifecycleEvent]:
+    """Returns the transition table of `RuntimeLifecycleState` (README 2.3, second table).
+
+    REQUEST_TERMINATION is legal from DEPLOYMENT_REQUESTED, DEPLOYED and ACTIVE only; there is no edge out of SCALING or TERMINATED, so a terminated runtime
+    cannot be redeployed. ACTIVATE and ACTIVATION_COMPLETE are AIMgF's own decision (no NFO call), unlike REQUEST_SCALE and REQUEST_TERMINATION.
+    """
     fsm: StateMachine[RuntimeLifecycleState, RuntimeLifecycleEvent] = StateMachine()
     S, E = RuntimeLifecycleState, RuntimeLifecycleEvent
     fsm.add(S.NOT_DEPLOYED, E.REQUEST_DEPLOYMENT, S.DEPLOYMENT_REQUESTED)
@@ -190,38 +208,45 @@ def build_runtime_lifecycle_fsm() -> StateMachine[RuntimeLifecycleState, Runtime
     return fsm
 
 
+# The shared, stateless transition table for the runtime FSM.
 RUNTIME_LIFECYCLE_FSM = build_runtime_lifecycle_fsm()
 
 # ---------------------------------------------------------------- InferenceJob
 
 class InferenceState(StrEnum):
+    """The states of an inference job: RUNNING, then COMPLETED or FAILED (both terminal)."""
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
 
 
 class InferenceEvent(StrEnum):
+    """The two events of an inference job: COMPLETE (a result can be pulled through DME) and FAIL (reported failure, or the timeout sweep)."""
     COMPLETE = "COMPLETE"   # signals result is now pullable via DME
     FAIL = "FAIL"
 
 
 def build_inference_job_fsm() -> StateMachine[InferenceState, InferenceEvent]:
+    """Returns the inference-job table: RUNNING to COMPLETED on COMPLETE, RUNNING to FAILED on FAIL, nothing out of either end state."""
     fsm: StateMachine[InferenceState, InferenceEvent] = StateMachine()
     fsm.add(InferenceState.RUNNING, InferenceEvent.COMPLETE, InferenceState.COMPLETED)
     fsm.add(InferenceState.RUNNING, InferenceEvent.FAIL, InferenceState.FAILED)
     return fsm
 
 
+# The shared, stateless transition table for inference jobs; `resolve_inference` and the timeout sweep fire it.
 INFERENCE_JOB_FSM = build_inference_job_fsm()
 
 # ---------------------------------------------------------------- retrain propagation
 
 def should_trigger_group_retrain(retrain_propagation: str, member_count: int, breached_count: int) -> bool:
-    """AI/ML Workflow LLD section 4.4's decision, made computable.
-    ANY_MEMBER_TRIGGERS is the checked-in default for all SHARED_MODEL
-    groups; MAJORITY_TRIGGERS and WEIGHTED_TRIGGERS are reserved policy
-    values with named revisit triggers, not yet exercised by any real
-    use case in this reference build.
+    """Returns True when a breached MLMF report should retrain the members of the model's coordination group.
+
+    `retrain_propagation` is the group's `retrainPropagation` value from MLMR (untrusted text: anything unknown raises `ValueError`). With no breach the answer is
+    always False. ANY_MEMBER_TRIGGERS: one breach is enough. MAJORITY_TRIGGERS: more than half the members must have breached; `main.report_performance` passes
+    `breached_count=1`, so in practice this only fires for a group of one member. WEIGHTED_TRIGGERS is reserved and raises `NotImplementedError`
+    (`OI-1-weighted-triggers`), which `report_performance` does not catch, so a report against such a group answers 500.
+    Pure function: no database, no side effects. Design: AI/ML Workflow LLD sections 4.3 and 4.4.
     """
     if breached_count == 0:
         return False

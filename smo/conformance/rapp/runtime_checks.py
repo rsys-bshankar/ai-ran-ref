@@ -21,6 +21,7 @@ from .kit import RUNTIME, Fail, RuntimeContext, check
 
 
 def _json(resp: httpx.Response, what: str, expected: int | tuple[int, ...]):
+    """The JSON body of a response whose status is `expected` (an int or a tuple), or None for an empty body; any other status or a non-JSON body fails the check, naming `what`."""
     expected = (expected,) if isinstance(expected, int) else expected
     if resp.status_code not in expected:
         raise Fail(f"{what}: answered {resp.status_code}, expected {' or '.join(map(str, expected))}" + _reason(resp))
@@ -31,6 +32,7 @@ def _json(resp: httpx.Response, what: str, expected: int | tuple[int, ...]):
 
 
 def _reason(resp: httpx.Response) -> str:
+    """The platform's explanation in a refusal (`failureReason`, `detail`, `title` or `message`), as a ` (text)` suffix of at most 200 characters, or an empty string."""
     try:
         body = resp.json()
     except ValueError:
@@ -43,10 +45,12 @@ def _reason(resp: httpx.Response) -> str:
 
 
 def _instance(ctx: RuntimeContext) -> dict:
+    """The instance this run created, read from rApp Management; skips when RT-2 did not create one."""
     return _json(ctx.call("rapp-mgmt", "get", f"/instances/{ctx.need('instance_id', 'RT-2 (the instance)')}"), "reading the instance", 200)
 
 
 def _delete_package(ctx: RuntimeContext, package_id: str) -> None:
+    """Clean-up: ask Onboarding to delete the package, ignoring the answer (the package ends DELETING, which frees its hash so the same file can be onboarded again)."""
     ctx.call("onboarding", "delete", f"/packages/{package_id}")
 
 
@@ -60,6 +64,11 @@ def _remove_instance(ctx: RuntimeContext, instance_id: str) -> None:
 
 @check("RT-1", "ONBOARD", "the package is fetched by Onboarding and reaches AVAILABLE with a deployment descriptor", RUNTIME)
 def rt_onboard(ctx: RuntimeContext) -> None:
+    """RT-1: Onboarding fetches the package from `--package-url` and it reaches AVAILABLE with an NFO deployment descriptor.
+
+    Answers 202 with a `packageId`; the state is then read from `onboarding-status`. Registers the package's deletion as a clean-up unless `--keep`. A package whose bytes
+    Onboarding already holds fails, and the failure says how to get a fresh one.
+    """
     answer = _json(ctx.call("onboarding", "post", "/packages", json={"location": ctx.package_url}), "onboarding the package", 202)
     package_id = answer.get("packageId") if isinstance(answer, dict) else None
     if not package_id:
@@ -78,6 +87,11 @@ def rt_onboard(ctx: RuntimeContext) -> None:
 
 @check("RT-2", "REGISTER", "an instance is created (DEPLOYING, with an identity and an NFO workload) and reaches RUNNING when it reports bootstrap-complete", RUNTIME)
 def rt_register(ctx: RuntimeContext) -> None:
+    """RT-2: an instance is created (202, with an instance id and an OAuth client id, state DEPLOYING, an NFO workload and the requested autonomy mode) and bootstrap-complete makes it RUNNING.
+
+    The creation is registered for clean-up before anything is asserted, so a failure in the next lines still removes the instance. The state is read back after bootstrap-complete
+    because the instance state must come from the stored row and not only from the POST's own answer.
+    """
     package_id = ctx.need("package_id", "RT-1 (the package)")
     answer = _json(ctx.call("rapp-mgmt", "post", "/instances", json={"packageId": package_id, "autonomyMode": ctx.autonomy_mode, "config": {"conformanceRun": ctx.run_id}}),
                    "creating the instance", 202)
@@ -85,6 +99,7 @@ def rt_register(ctx: RuntimeContext) -> None:
     if not instance_id or not answer.get("oauthClientId"):
         raise Fail("POST /instances answered no instanceId or no oauthClientId (the instance's identity at SME)")
     ctx.state["instance_id"] = instance_id
+    # Registered as soon as the instance exists, before the assertions below, so a failed run still terminates and deletes it (not with --keep).
     if not ctx.keep:
         ctx.cleanups.append(lambda: _remove_instance(ctx, instance_id))
     created = _instance(ctx)
@@ -103,6 +118,7 @@ def rt_register(ctx: RuntimeContext) -> None:
 
 @check("RT-3", "REGISTER", "Onboarding holds one active usage registration for the package, consumed by the instance", RUNTIME)
 def rt_usage(ctx: RuntimeContext) -> None:
+    """RT-3: Onboarding lists exactly one usage registration for the instance as consumer, and it is active while the instance runs; this registration is what blocks deleting a package that is in use."""
     package_id, instance_id = ctx.need("package_id", "RT-1 (the package)"), ctx.need("instance_id", "RT-2 (the instance)")
     page = _json(ctx.call("onboarding", "get", f"/packages/{package_id}/usage"), "listing the package's usage", 200)
     mine = [r for r in page.get("items", []) if r.get("consumerId") == instance_id]
@@ -114,6 +130,11 @@ def rt_usage(ctx: RuntimeContext) -> None:
 
 @check("RT-4", "HEARTBEAT", "performance reports (the rApp's periodic heartbeat) are recorded and listed newest first", RUNTIME)
 def rt_heartbeat(ctx: RuntimeContext) -> None:
+    """RT-4: two performance reports are recorded and listed newest first, and the instance stays RUNNING.
+
+    The platform has no heartbeat route; the periodic performance report is what a running rApp posts, so that is what plays the heartbeat. Only this run's reports are counted, by a
+    marker in the metrics.
+    """
     instance_id = ctx.need("instance_id", "RT-2 (the instance)")
     for beat in (1, 2):
         answer = _json(ctx.call("rapp-mgmt", "post", f"/instances/{instance_id}/performance", json={"heartbeat": f"{ctx.run_id}-{beat}", "beat": beat}),
@@ -130,6 +151,7 @@ def rt_heartbeat(ctx: RuntimeContext) -> None:
 
 @check("RT-5", "R1-USAGE", "the instance's configuration is stored and read back, and its package declarations are readable over R1", RUNTIME)
 def rt_config(ctx: RuntimeContext) -> None:
+    """RT-5: a configuration written with PUT is read back equal, and the package's onboarding-status carries the `aiCapabilities` and `smeDeclarations` fields."""
     instance_id, package_id = ctx.need("instance_id", "RT-2 (the instance)"), ctx.need("package_id", "RT-1 (the package)")
     config = {"conformanceRun": ctx.run_id, "threshold": 0.8, "cells": ["c1", "c2"]}
     answer = _json(ctx.call("rapp-mgmt", "put", f"/instances/{instance_id}/config", json=config), "writing the configuration", 200)
@@ -145,6 +167,7 @@ def rt_config(ctx: RuntimeContext) -> None:
 
 @check("RT-6", "R1-USAGE", "a warning fault is recorded and listed, and does not take the instance out of RUNNING", RUNTIME)
 def rt_fault(ctx: RuntimeContext) -> None:
+    """RT-6: a warning fault is acknowledged as recorded, listed, and leaves the instance RUNNING (only a critical fault may take it out)."""
     instance_id = ctx.need("instance_id", "RT-2 (the instance)")
     answer = _json(ctx.call("rapp-mgmt", "post", f"/instances/{instance_id}/fault", params={"severity": "warning", "description": f"conformance {ctx.run_id}"}),
                    "reporting a fault", 200)
@@ -159,6 +182,10 @@ def rt_fault(ctx: RuntimeContext) -> None:
 
 @check("RT-7", "TERMINATE", "terminate lands in UNDEPLOYED and releases the NFO workload and the usage registration", RUNTIME)
 def rt_terminate(ctx: RuntimeContext) -> None:
+    """RT-7: terminate answers UNDEPLOYED, the teardown report shows the NFO workload and the usage registration released (DONE), the usage registration is no longer active and a re-read agrees.
+
+    Sets `ctx.state["terminated"]`, which RT-8 requires.
+    """
     instance_id, package_id = ctx.need("instance_id", "RT-2 (the instance)"), ctx.need("package_id", "RT-1 (the package)")
     answer = _json(ctx.call("rapp-mgmt", "post", f"/instances/{instance_id}/terminate"), "terminating the instance", 200)
     if answer.get("state") != "UNDEPLOYED":
@@ -177,6 +204,7 @@ def rt_terminate(ctx: RuntimeContext) -> None:
 
 @check("RT-8", "TERMINATE", "the terminated instance is deleted, then answers 404", RUNTIME)
 def rt_delete(ctx: RuntimeContext) -> None:
+    """RT-8: the terminated instance is deleted with 204 and then answers 404; sets `ctx.state["deleted"]` so the clean-up does not repeat the removal."""
     instance_id = ctx.need("instance_id", "RT-2 (the instance)")
     ctx.need("terminated", "RT-7 (terminate)")
     resp = ctx.call("rapp-mgmt", "delete", f"/instances/{instance_id}")

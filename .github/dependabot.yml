@@ -45,3 +45,8 @@ updates:
   - package-ecosystem: docker-compose
     directory: /smo
     schedule: { interval: weekly }
+    ignore:
+      # Tempo 3 replaces the ingester and compactor and needs a Kafka-compatible ingest path, so it is a design change, not a version bump
+      # (OPEN_ITEMS.md OBS-3.9). Minor and patch updates of 2.x still arrive.
+      - dependency-name: "grafana/tempo"
+        update-types: ["version-update:semver-major"]

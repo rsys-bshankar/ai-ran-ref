@@ -453,7 +453,7 @@ OpenTelemetry spans to Tempo and log shipping to Loki exist (`HISTORY.md` §10, 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | OBS-3.4 | SQLAlchemy spans (server spans and `R1Client` client spans are done), and spans for the calls that do not go through `R1Client` (the gateway's token check, webhooks) | A request shows a database span under its server span | – |
-| OBS-3.6 | A live check: the compose `tracing` profile, one runbook call, its trace found by id (the stack is configured but was not run in CI) | Trace visible for a runbook call | – |
+| OBS-3.6 | A live check: the compose `tracing` profile, one gateway call, its trace found by id. Written: `scripts/obs_smoke.py` and the CI job `obs-stack` ("Tracing and logging profiles"), not yet seen green. Close it when the job has passed on `main` | Job green on `main` | – |
 | OBS-3.7 | Decide whether the release workflow also publishes a tracing-enabled image variant (`WITH_TRACING=1`) | Decision recorded | – |
 
 #### PR-OBS-4 — Business metrics (open: the remainder below; done in `HISTORY.md` §10)
@@ -481,7 +481,7 @@ Done: packages, rApp instances and intents by state, the outbox backlog and its 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | OBS-6.3 | Elasticsearch field mapping, shipped and tried (described in `docs/OBSERVABILITY.md`) | Index created, a log line indexed | – |
-| OBS-6.4 | A live check of the `logging` profile (Fluent Bit to Loki, a query by correlation id returns the request's lines); not run in CI | Query returns a request's lines | – |
+| OBS-6.4 | A live check of the `logging` profile (Fluent Bit to Loki, a query returns the request's line). Written: the same script and job as OBS-3.6 (the query is by trace id, not correlation id), not yet seen green. Close it when the job has passed on `main` | Job green on `main` | – |
 
 #### PR-OBS-7 — Runbooks (open: the entries below; template, index and one page per alert are in `HISTORY.md` §10)
 
@@ -490,6 +490,12 @@ Done: packages, rApp instances and intents by state, the outbox backlog and its 
 | OBS-7.2 | Entry: Postgres down (SME down and R1 down are the `SmoModuleDown` page); each page tried once on the compose stack (none has been: the commands were written from the code, not replayed) | Each tried once | – |
 | OBS-7.3 | Entries: O1 write failures, adaptor unreachable (the latter is partly `SmoOutboundCallsFailing`) | Same | OBS-4.3 |
 | OBS-7.6 | Entry: backup and restore | Same | DB-6.4 |
+
+#### PR-OBS-3.9 — Tempo 3 (open)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OBS-3.9 | Move the `tracing` profile and the chart's `observability.tempo` from Tempo 2.8.2 to 3.x. Tempo 3 removed the scalable single binary, replaced the ingester and compactor with block-builders, live-stores and a backend scheduler, and needs a Kafka-compatible ingest path (and refuses legacy flat overrides). The shipped `tempo.yaml` is a single binary on local disk, so the move means adding a Kafka-compatible broker (for example Redpanda) to compose and the chart and rewriting the config; Dependabot's bump to 3.1.0 failed the "Tracing and logging profiles" job for that reason, and the other three observability images (Grafana 13.2.3, Loki 3.7.8, Fluent Bit 5.1.3) are already bumped. Until then Dependabot ignores Tempo major versions | The `tracing` profile and the chart run Tempo 3.x with its ingest path, and the job is green | Decision: whether a lab trace store should carry a broker |
 
 #### PR-OBS-8 — Self-monitoring (all steps done: `HISTORY.md` PR-OBS-8)
 

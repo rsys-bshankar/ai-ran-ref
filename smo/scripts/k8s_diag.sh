@@ -14,6 +14,7 @@ dir="${2:?directory}"
 
 stamp() { while IFS= read -r line; do printf '%s %s\n' "$(date -u +%T.%3N)" "$line"; done; }
 
+# start: launch `run` detached and return.
 start() {   # detaches: the recorder runs in a session of its own and outlives the step that started it
   mkdir -p "$dir/logs"
   setsid nohup "$0" run "$dir" > "$dir/recorder.log" 2>&1 &
@@ -21,6 +22,7 @@ start() {   # detaches: the recorder runs in a session of its own and outlives t
   echo "recording the pods of namespace $ns into $dir"
 }
 
+# run (the recorder, started by `start`): follow events, pod phases, the database's lock waits and the logs of every pod that runs, writing into $dir until it is killed.
 run() {
   mkdir -p "$dir/logs"
   echo $$ > "$dir/leader"
@@ -49,17 +51,20 @@ run() {
   wait
 }
 
+# stop: kill the recorder's process group (its pid is in $dir/leader); does nothing when no recorder was started.
 stop() {   # the recorder is the leader of its own process group: this ends it and everything it started
   [ -f "$dir/leader" ] || exit 0
   kill -- "-$(cat "$dir/leader")" 2>/dev/null || true
   sleep 1
 }
 
+# show TITLE FILE PATTERN MAX: print TITLE, then up to MAX lines of FILE (each cut to 300 characters), only those matching the egrep PATTERN when it is not empty.
 show() {   # show <title> <file> <egrep pattern or empty> <max lines>
   echo; echo "---- $1"
   if [ -n "$3" ]; then grep -E "$3" "$2" 2>/dev/null | cut -c1-300 | head -"$4"; else cut -c1-300 "$2" 2>/dev/null | head -"$4"; fi
 }
 
+# report: print the timeline of pod events and phases, the seconds with a database lock wait, and per pod the error, 401 and 5xx lines and when it ran.
 report() {
   echo "==== what happened to the pods while the load ran (UTC) ===="
   show "events: pods stopped, created, started, failing a probe, scaled" "$dir/events.txt" ' Killing | Created | Started | Unhealthy | BackOff |ScalingReplicaSet|Evicted|OOM|FailedScheduling' 160

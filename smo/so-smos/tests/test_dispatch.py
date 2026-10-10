@@ -1,6 +1,6 @@
-"""Tests for SO SMOS's execution semantics (SO SMOS LLD section 1.1):
-sequential, fail-fast, no auto-compensation. Run with:
-pytest smo/so-smos/tests -q
+"""The dispatch table and the order executor of SO SMOS (`app/dispatch.py`): sequential, fail-fast execution without compensation (SO SMOS LLD section 1.1) and the request each dispatcher sends.
+
+No fixtures: `R1Client` is replaced by a MagicMock whose `post` returns canned responses (`_ok_response`). Run: `cd smo/so-smos && PYTHONPATH=.:../shared python -m pytest tests/test_dispatch.py -q`.
 """
 
 from unittest.mock import MagicMock
@@ -16,6 +16,7 @@ from app.dispatch import (
 
 
 def _ok_response(payload):
+    """A fake HTTP response with status 200 and `payload` as its JSON body."""
     resp = MagicMock()
     resp.json.return_value = payload
     resp.status_code = 200
@@ -23,6 +24,7 @@ def _ok_response(payload):
 
 
 def test_all_steps_succeed_in_order():
+    """Two valid steps are both COMPLETED and each makes exactly one R1 call."""
     r1 = MagicMock()
     r1.post.return_value = _ok_response({"jobId": "abc"})
 
@@ -37,8 +39,7 @@ def test_all_steps_succeed_in_order():
 
 
 def test_first_failure_halts_remaining_steps_as_pending():
-    """The core decision: fail-fast, no compensation. Steps after the
-    failure never execute — they stay PENDING, not SKIPPED or FAILED.
+    """Fail-fast without compensation: after a failed step the later steps are PENDING (not skipped or failed) and their dispatchers are never called.
     """
     r1 = MagicMock()
     r1.post.side_effect = [Exception("endpoint unreachable"), _ok_response({})]
@@ -56,6 +57,7 @@ def test_first_failure_halts_remaining_steps_as_pending():
 
 
 def test_unknown_step_target_pair_fails_without_crashing():
+    """A (stepType, targetModule) pair with no dispatcher fails that step with 'no dispatcher' instead of raising."""
     r1 = MagicMock()
     steps = [{"stepType": "CONFIG", "targetModule": "SOME_UNMAPPED_MODULE"}]
     results = execute_order(r1, steps)
@@ -64,12 +66,12 @@ def test_unknown_step_target_pair_fails_without_crashing():
 
 
 def test_ensure_ok_passes_through_a_successful_response():
+    """A 2xx response is returned as its JSON body."""
     assert _ensure_ok(_ok_response({"jobId": "abc"})) == {"jobId": "abc"}
 
 
 def test_ensure_ok_raises_downstream_error_on_4xx():
-    """The actual fix SO SMOS LLD section 1.1 needed: a non-2xx downstream
-    response must halt the order, not get recorded as COMPLETED.
+    """A downstream error response raises DownstreamError, so the order halts instead of recording the step COMPLETED with the error body as its result.
     """
     resp = MagicMock()
     resp.status_code = 422
@@ -78,6 +80,7 @@ def test_ensure_ok_raises_downstream_error_on_4xx():
         _ensure_ok(resp)
 
 
+# One row per dispatcher: the step fields it needs and the R1 path it must post to.
 @pytest.mark.parametrize("dispatcher,step,expected_path", [
     (dispatch_config, {"scope": "cell-1", "changes": []}, "/ran-nf-oam/config-jobs"),
     (dispatch_deploy, {"nfDeploymentDescriptorId": "d1"}, "/nfo/deployments"),
@@ -89,11 +92,7 @@ def test_ensure_ok_raises_downstream_error_on_4xx():
     (dispatch_inference, {"modelId": "m1"}, "/aimgf/models/m1/inference-jobs"),
 ])
 def test_each_dispatcher_posts_to_its_own_target_module(dispatcher, step, expected_path):
-    """SO SMOS LLD section 1's dispatch table, one entry at a time: each
-    stepType x targetModule pair must hit the exact module its LLD
-    section names — a typo here would silently route a step to the wrong
-    service.
-    """
+    """Each dispatcher posts to the path of the module its table entry names; a typo would route a step to the wrong service."""
     r1 = MagicMock()
     r1.post.return_value = _ok_response({"ok": True})
     dispatcher(r1, step)
@@ -101,9 +100,7 @@ def test_each_dispatcher_posts_to_its_own_target_module(dispatcher, step, expect
 
 
 def test_dispatch_inference_forwards_notification_destination_as_a_query_param():
-    """AIMgF's own RequestInference (call flow 02) takes
-    notification_destination as a query param, not a JSON body field —
-    mirroring that shape exactly rather than silently dropping it.
+    """AIMgF's RequestInference takes notification_destination as a query parameter, so the step's notificationDestination is sent as one and not in a JSON body.
     """
     r1 = MagicMock()
     r1.post.return_value = _ok_response({"inferenceJobId": "i1"})
@@ -112,6 +109,7 @@ def test_dispatch_inference_forwards_notification_destination_as_a_query_param()
 
 
 def test_dispatch_inference_without_notification_destination_sends_no_params():
+    """Without a notificationDestination the call carries no query parameters."""
     r1 = MagicMock()
     r1.post.return_value = _ok_response({"inferenceJobId": "i1"})
     dispatch_inference(r1, {"modelId": "m1"})
@@ -119,10 +117,7 @@ def test_dispatch_inference_without_notification_destination_sends_no_params():
 
 
 def test_full_ai_ml_pipeline_can_now_be_composed_in_one_order():
-    """HISTORY.md OI-6.6, closed: previously only TRAINING had a
-    dispatch entry — an operator could not compose Validation, Emulation,
-    a model-runtime Deploy, or Inference into a multi-step ServiceOrder
-    the way call flow 10 already shows for Training. All five now dispatch.
+    """Training, validation, emulation, model-runtime deploy and inference can be composed in one order (HISTORY.md OI-6.6), and each posts to its own AIMgF path in order.
     """
     r1 = MagicMock()
     r1.post.return_value = _ok_response({"ok": True})
@@ -144,10 +139,7 @@ def test_full_ai_ml_pipeline_can_now_be_composed_in_one_order():
 
 
 def test_model_runtime_deploy_and_workload_deploy_are_distinct_dispatch_entries():
-    """(\"DEPLOY\", \"NFO\") and (\"DEPLOY\", \"AIMGF\") share a stepType but
-    route to entirely different services — same key collision risk this
-    table already avoids everywhere else (distinct (stepType,
-    targetModule) pairs), just now exercised for DEPLOY specifically.
+    """("DEPLOY", "NFO") and ("DEPLOY", "AIMGF") share a stepType but go to different services (/nfo/deployments and the model runtime deploy path).
     """
     r1 = MagicMock()
     r1.post.return_value = _ok_response({"ok": True})

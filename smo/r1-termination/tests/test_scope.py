@@ -1,5 +1,8 @@
-"""PR-SEC-10.3: the scope claim at the gateway. SME's introspection says what an invoker is scoped to; the gateway forwards it in `X-R1-Scope` and nothing a caller
-sent can reach a module as the gateway's own claim (the same anti-spoofing property as the invoker id and the role)."""
+"""PR-SEC-10.3: the scope claim at the gateway. SME's introspection says what an invoker is scoped to; the gateway forwards it in `X-R1-Scope` and nothing a caller sent can reach a module as the gateway's own claim (the same anti-spoofing property as the invoker id and the role).
+
+Covers `_stamp_scope`, the claim as part of the cached introspection answer (and its eviction when a scope is changed through the gateway), and the same headers on the
+operator-API forward. A fake SME and backend replace httpx (`gateway` fixture). Run: `PYTHONPATH=.:../shared python -m pytest tests/test_scope.py -q`.
+"""
 
 import uuid
 
@@ -22,6 +25,7 @@ CLAIM_HEADER = '{"regions":["eu-west"],"tenants":["acme"]}'
 
 @pytest.fixture(autouse=True)
 def fresh_state(monkeypatch):
+    """Autouse fixture: empty rate buckets and introspection cache, and the cache off, before and after each test."""
     main._limiter.clear()
     main._introspection_cache.clear()
     monkeypatch.delenv("R1_INTROSPECTION_CACHE_SECONDS", raising=False)
@@ -32,6 +36,11 @@ def fresh_state(monkeypatch):
 
 @pytest.fixture
 def gateway(monkeypatch):
+    """Fixture: a fake SME and backend; returns the mutable `state` dict.
+
+    `state["sme_says"]` is the introspection answer (default: an active `rapp` caller with the scope `CLAIM`), `state["forwarded"]` the (method, url, lower-cased headers) of
+    each call that reached a backend, `state["introspections"]` how many times SME was asked.
+    """
     state = {"sme_says": {"active": True, "client_id": "inv-1", "role": "rapp", "authz_scope": CLAIM}, "forwarded": [], "introspections": 0}
 
     class FakeAsyncClient:
@@ -57,15 +66,18 @@ def gateway(monkeypatch):
 
 
 def sent(gateway, index=0):
+    """The lower-cased headers of the `index`-th call the backend received."""
     return gateway["forwarded"][index][2]
 
 
 def test_the_claim_sme_introspected_is_forwarded_as_compact_json(gateway):
+    """The scope claim SME holds for the caller reaches the backend in `X-R1-Scope` as compact JSON."""
     assert client.get("/ran-nf-oam/alarms", headers=AUTH).status_code == 200
     assert sent(gateway)[SCOPE_HEADER.lower()] == CLAIM_HEADER
 
 
 def test_an_unscoped_caller_gets_no_scope_header(gateway):
+    """A caller with no claim, or an empty one, gets no scope header at all (absent means unscoped)."""
     gateway["sme_says"] = {"active": True, "client_id": "inv-1", "role": "rapp"}
     client.get("/ran-nf-oam/alarms", headers=AUTH)
     assert SCOPE_HEADER.lower() not in sent(gateway) and ON_BEHALF_SCOPE_HEADER.lower() not in sent(gateway)
@@ -82,16 +94,19 @@ def test_a_scope_header_the_caller_sent_is_dropped_when_it_has_no_claim(gateway)
 
 
 def test_a_scope_header_the_caller_sent_is_overwritten_by_the_claim_of_the_token(gateway):
+    """A scope header the caller sent is replaced by the claim of its token, never forwarded."""
     client.get("/ran-nf-oam/alarms", headers={**AUTH, SCOPE_HEADER: '{"regions":["us-east"],"tenants":["globex"]}'})
     assert sent(gateway)[SCOPE_HEADER.lower()] == CLAIM_HEADER
 
 
 def test_an_rapp_cannot_pass_a_claim_on_for_somebody_else(gateway):
+    """An rApp's own on-behalf headers (id and scope) are dropped, so it cannot lend a claim to a module."""
     client.get("/ran-nf-oam/alarms", headers={**AUTH, "X-R1-On-Behalf-Of": "other", ON_BEHALF_SCOPE_HEADER: '{"regions":["us-east"]}'})
     assert ON_BEHALF_SCOPE_HEADER.lower() not in sent(gateway) and "x-r1-on-behalf-of" not in sent(gateway)
 
 
 def test_an_internal_module_may_pass_on_the_claim_of_the_rapp_it_acts_for_and_its_own_header_is_not_a_claim(gateway):
+    """A module's on-behalf scope is forwarded, but a spoofed `X-R1-Scope` from the module is dropped: only the gateway's own value counts."""
     gateway["sme_says"] = {"active": True, "client_id": "dme-client", "role": "internal"}
     client.get("/ran-nf-oam/alarms", headers={**AUTH, "X-R1-On-Behalf-Of": "es-client", ON_BEHALF_SCOPE_HEADER: CLAIM_HEADER, SCOPE_HEADER: '{"regions":["x"]}'})
     headers = sent(gateway)
@@ -99,6 +114,7 @@ def test_an_internal_module_may_pass_on_the_claim_of_the_rapp_it_acts_for_and_it
 
 
 def test_a_claim_on_an_internal_invoker_is_forwarded_as_its_own(gateway):
+    """A claim recorded for an internal invoker is forwarded as that invoker's own scope."""
     gateway["sme_says"] = {"active": True, "client_id": "gui", "role": "internal", "authz_scope": {"tenants": ["acme"]}}
     client.get("/ran-nf-oam/alarms", headers=AUTH)
     assert sent(gateway)[SCOPE_HEADER.lower()] == '{"tenants":["acme"]}'
@@ -106,12 +122,14 @@ def test_a_claim_on_an_internal_invoker_is_forwarded_as_its_own(gateway):
 
 @pytest.mark.parametrize("damaged", ["eu", ["eu"], {"regions": []}, {"regions": "eu"}, {"cells": ["c"]}, {"tenants": ["a b"]}, 7])
 def test_a_claim_that_cannot_be_read_permits_nothing_and_is_never_dropped(gateway, damaged):
+    """A claim that is damaged or of the wrong shape (table above) is forwarded as deny-all, never dropped, which would turn a broken claim into unrestricted access."""
     gateway["sme_says"]["authz_scope"] = damaged
     assert client.get("/ran-nf-oam/alarms", headers=AUTH).status_code == 200
     assert scope.decode(sent(gateway)[SCOPE_HEADER.lower()]) == scope.DENY_ALL
 
 
 def test_the_claim_is_part_of_the_cached_answer_and_a_change_through_the_gateway_applies_at_once(gateway, monkeypatch):
+    """The claim is cached with the introspection answer, so a change at SME shows after the TTL, except a scope change made through this gateway, which applies on the next request."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "60")
     gateway["sme_says"]["role"] = "internal"                                                                     # the operator's own caller; its claim is the one that changes
     client.get("/ran-nf-oam/alarms", headers=AUTH)
@@ -126,6 +144,7 @@ def test_the_claim_is_part_of_the_cached_answer_and_a_change_through_the_gateway
 
 
 def test_a_change_of_another_invokers_claim_does_not_evict_this_one(gateway, monkeypatch):
+    """Only a PUT of the caller's own `authz-scope` evicts its cache entry; another invoker's, a read, and a different route do not."""
     monkeypatch.setenv("R1_INTROSPECTION_CACHE_SECONDS", "60")
     gateway["sme_says"]["role"] = "internal"
     client.get("/ran-nf-oam/alarms", headers=AUTH)
@@ -137,6 +156,7 @@ def test_a_change_of_another_invokers_claim_does_not_evict_this_one(gateway, mon
 
 
 def test_a_rapp_is_refused_the_routes_that_set_a_scope_and_the_backend_is_never_called(gateway):
+    """An rApp cannot set a scope, its own or a target's: both routes are a 403 `ROLE_NOT_PERMITTED`."""
     for method, path in (("PUT", "/sme/invoker-registrations/inv-1/authz-scope"), ("PUT", "/ran-nf-oam/managed-entities/e/scope")):
         resp = client.request(method, path, headers=AUTH, json={})
         assert resp.status_code == 403 and resp.json()["title"] == "ROLE_NOT_PERMITTED"

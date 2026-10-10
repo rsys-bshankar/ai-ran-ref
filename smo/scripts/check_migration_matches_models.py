@@ -21,6 +21,11 @@ check (SQLAlchemy's generic String()/Text()/ARRAY-with-SQLite-variant
 types don't map to a single canonical Postgres type name, so a strict
 type comparison would produce noise unrelated to any real bug).
 
+Beyond those two, `main` also holds the migrated schema to the table-ownership
+rules: every table has an owner in `migrations/table_owners.json`, a module with
+a schema of its own (`migrations/db_roles.json`) keeps all its tables there, and
+no foreign key crosses a module boundary (PR-DB-2).
+
 Requires a live Postgres migrated to the head revision with
 `python scripts/migrate.py` (SMO_DATABASE_URL), which this script also
 verifies: a model change needs a revision (migrations/versions/, PR-OPS-1,
@@ -53,9 +58,8 @@ import smo_shared.outbox  # noqa: E402,F401  (registers notification_outbox on t
 import smo_shared.audit  # noqa: E402,F401  (registers audit_log and audit_head)
 import smo_shared.ratelimit  # noqa: E402,F401  (registers rate_bucket)
 
-# Every module that persists to Postgres via smo_shared.db.Base — the two
-# mock (mock-o1-adaptor) has no models and aren't part
-# of migrations/001_init.sql, so they're deliberately excluded here.
+# Every module that persists to Postgres via smo_shared.db.Base. mock-o1-adaptor has no
+# models and no tables in the migrations, so it is deliberately left out.
 ALL_MODULES = [
     "r1-termination", "sme", "dme", "onboarding", "rapp-mgmt", "ran-nf-oam",
     "nfo", "focom", "aimgf", "mlmr", "mllf", "ran-analytics", "mdaf",
@@ -68,6 +72,7 @@ ALL_MODULES = [
 
 
 def check_at_head(engine) -> None:
+    """Exits the process with a message unless the database is at the migration head: a model checked against an old schema would report drift that a migration has already fixed."""
     from alembic.config import Config
     from alembic.runtime.migration import MigrationContext
     from alembic.script import ScriptDirectory
@@ -83,6 +88,12 @@ def check_at_head(engine) -> None:
 
 
 def main() -> None:
+    """Loads every module's ORM models onto the shared `Base`, compares them with the migrated schema and exits 1 with a list of every mismatch, or prints a confirmation.
+
+        The comparisons, in order: each declared table exists; each declared column exists and has the same nullability; every table in the database has an owner in
+        `migrations/table_owners.json` and the other way round; a module with a schema of its own (`migrations/db_roles.json`) has all its tables there and nothing else
+        does; no foreign key points into another module's table (PR-DB-2.4). `SMO_DATABASE_URL` must be set (checked at import) and point at a migrated Postgres.
+    """
     for module_dir in ALL_MODULES:
         load_app_module(module_dir)  # side effect: registers that module's tables on the shared Base
 

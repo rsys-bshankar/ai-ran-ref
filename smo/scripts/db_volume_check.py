@@ -29,6 +29,7 @@ CASES = [
 
 
 def nodes(plan: dict) -> list[dict]:
+    """Every node of an `EXPLAIN` plan tree, the root first."""
     found = [plan]
     for child in plan.get("Plans", []):
         found += nodes(child)
@@ -36,6 +37,11 @@ def nodes(plan: dict) -> list[dict]:
 
 
 def main() -> None:
+    """Runs every case in `CASES` against the seeded database, writes a markdown table to `--out`, prints it and exits 1 if a gate failed.
+
+        A case with a budget fails when `EXPLAIN ANALYZE` reports a longer execution time; a case that must use an index fails when its plan contains a sequential scan. The
+        cases without a budget are only reported. Connects as the owner `smo`; the queries are read-only.
+    """
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--host", default="localhost")
     ap.add_argument("--port", type=int, default=5432)
@@ -48,7 +54,7 @@ def main() -> None:
                              "WHERE n.nspname = 'ran_nf_oam' AND relname IN ('alarm', 'pm_file', 'managed_entity') ORDER BY relname").fetchall()
         for name, sql, budget, needs_index in CASES:
             conn.execute("SELECT 1")                                                  # a warm connection; the first run of each also warms the cache
-            conn.execute("EXPLAIN (ANALYZE, FORMAT JSON) " + sql)
+            conn.execute("EXPLAIN (ANALYZE, FORMAT JSON) " + sql)          # run once to warm the cache; only the second run is measured
             plan = conn.execute("EXPLAIN (ANALYZE, FORMAT JSON) " + sql).fetchone()[0][0]
             ms = round(plan["Execution Time"], 1)
             types = sorted({n["Node Type"] for n in nodes(plan["Plan"]) if "Scan" in n["Node Type"]})

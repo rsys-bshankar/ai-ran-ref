@@ -18,6 +18,10 @@ import build_csar  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
+    """Writes a signed CSAR of sample `NAME` to `OUT.csar` with one extra file holding a random marker, so its bytes differ from every package a stack already holds.
+
+        Signed with the demo publisher key, as the committed samples are. Returns 2 with the usage line when the arguments are wrong. Not deterministic by design.
+    """
     if len(argv) != 2:
         print(__doc__.splitlines()[0], file=sys.stderr)
         return 2

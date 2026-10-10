@@ -14,6 +14,7 @@ failures = []
 
 
 def check(name, ok, detail=""):
+    """Prints one `ok` / `FAIL` line and remembers a failure, so the script reports every check and exits 1 at the end."""
     print(f"{'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f" -- {detail}"))
     if not ok:
         failures.append(name)

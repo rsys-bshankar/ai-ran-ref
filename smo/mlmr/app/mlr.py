@@ -51,10 +51,12 @@ AccessReq = Literal["PUBLICLY_AVAILABLE", "RESTRICTED", "PRIVATE_USE_ONLY"]
 Freshness = Literal["REAL_TIME", "NEAR_REAL_TIME", "HOURLY", "DAILY", "WEEKLY", "MONTHLY"]
 
 
+# Base for the TS 29.482 datatypes below: unknown fields are refused (422).
 class _Spec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# TS 29.482 MLModelPerf; at least one of its two attributes must be present (checked by the validator).
 class MLModelPerf(_Spec):
     resourceAddr: int | None = Field(default=None, ge=0, le=100)
     appSpecPerfData: str | None = None
@@ -66,6 +68,7 @@ class MLModelPerf(_Spec):
         return self
 
 
+# TS 29.482 MLModelTrainingInfo; at least one attribute must be present. `baseModelId` is the lineage link (SA-MLMR-7).
 class MLModelTrainingInfo(_Spec):
     dataSources: str | None = None
     dataVolume: int | None = Field(default=None, ge=0)
@@ -79,6 +82,7 @@ class MLModelTrainingInfo(_Spec):
         return self
 
 
+# TS 29.482 MLModelPhaseInfo. `phase` is required here; AIMgF writes it through `PATCH /models/{id}/phase-info`.
 class MLModelPhaseInfo(_Spec):
     phase: Phase
     observedPerf: MLModelPerf | None = None
@@ -87,6 +91,7 @@ class MLModelPhaseInfo(_Spec):
     contTrainParams: str | None = None
 
 
+# TS 29.482 MLModelAccessReqs. How the three access kinds are judged is in `access_denied`.
 class MLModelAccessReqs(_Spec):
     accessReq: AccessReq
     valServerIds: list[str] | None = None
@@ -95,6 +100,7 @@ class MLModelAccessReqs(_Spec):
     location: dict | None = None
 
 
+# TS 29.482 MLModelStoreDiscReqs (SA-MLMR-6); enforced by `is_expired` and `access_denied`. At least one attribute must be present.
 class MLModelStoreDiscReqs(_Spec):
     duration: int | None = Field(default=None, ge=0)
     accessReqs: MLModelAccessReqs | None = None
@@ -106,6 +112,7 @@ class MLModelStoreDiscReqs(_Spec):
         return self
 
 
+# TS 29.482 MLModelUsageReqs (SA-MLMR-8); stored and returned, not enforced.
 class MLModelUsageReqs(_Spec):
     usages: list[Usage] = Field(min_length=1)
 
@@ -152,10 +159,14 @@ class MLModelInfo(SpecAttributes):
 
 
 def _invalid(detail: str):
+    """Builds the 422 SCHEMA_VALIDATION_FAILED error with `detail` (returned, not raised; callers `raise` it)."""
     return framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=detail)
 
 
 def _dump(value: Any) -> Any:
+    """Plain-JSON form of a pydantic object or list of them, unset fields left out; other values pass through. Used for every
+    JSON column written here.
+    """
     if isinstance(value, BaseModel):
         return value.model_dump(exclude_none=True, mode="json")
     if isinstance(value, list):
@@ -164,7 +175,11 @@ def _dump(value: Any) -> Any:
 
 
 def apply_spec_attributes(model: MLModel, body: SpecAttributes) -> None:
-    """Set the attributes the caller sent; an omitted one is left alone (AIMgF owns `phaseInfo`)."""
+    """Writes the TS 29.482 attributes the caller sent onto `model`; an attribute left out (None) is kept as it is.
+
+    That keep-if-omitted rule is what lets AIMgF own `phaseInfo`: an rApp's PUT that does not mention it cannot erase what AIMgF
+    wrote. Shared by register, update and the profile handling in `_add_profiles`. Does not commit.
+    """
     for field, column in (("mlModelSrcId", "ml_model_src_id"), ("interopInfo", "interop_info"), ("valServiceIds", "val_service_ids"),
                           ("adaeAnalyticsId", "adae_analytics_id"), ("usageReqs", "usage_reqs"), ("phaseInfo", "phase_info"),
                           ("storeDiscReqs", "store_disc_reqs")):
@@ -174,13 +189,16 @@ def apply_spec_attributes(model: MLModel, body: SpecAttributes) -> None:
 
 
 def spec_attributes_view(m: MLModel) -> dict:
+    """The stored TS 29.482 attributes of a model under their spec names (None for unset)."""
     return {"mlModelSrcId": m.ml_model_src_id, "interopInfo": m.interop_info, "valServiceIds": m.val_service_ids,
             "adaeAnalyticsId": m.adae_analytics_id, "usageReqs": m.usage_reqs, "phaseInfo": m.phase_info,
             "storeDiscReqs": m.store_disc_reqs}
 
 
 def model_info_view(db: Session, m: MLModel) -> dict:
-    """The TS 29.482 MLModel record of a registered model (absent attributes are left out)."""
+    """The TS 29.482 MLModel record of a registered model, with unset attributes left out. `mlModelSize` is the size of the
+    latest artifact version (one query), absent when nothing was uploaded. This record is also what discovery matches against.
+    """
     size = db.scalar(select(ModelArtifact.size_bytes).where(ModelArtifact.model_id == m.model_id)
                      .order_by(ModelArtifact.artifact_version.desc()).limit(1))
     view = {"mlModelId": str(m.model_id), "adaeAnalyticsId": m.adae_analytics_id, "mlModelSize": size,
@@ -193,20 +211,31 @@ def model_info_view(db: Session, m: MLModel) -> dict:
 # ---------------------------------------------------------------- storeDiscReqs
 
 def _aware(t: datetime.datetime) -> datetime.datetime:
+    """Treats a naive timestamp as UTC; SQLite returns timezone-aware columns naive, Postgres does not."""
     return t if t.tzinfo else t.replace(tzinfo=datetime.UTC)
 
 
 def _now() -> datetime.datetime:
+    """Current UTC time; a module function so the expiry checks read one clock."""
     return datetime.datetime.now(datetime.UTC)
 
 
 def is_expired(m: MLModel) -> bool:
+    """True when the model's storeDiscReqs `duration` (seconds from `registered_at`) has passed. A model with no duration never
+    expires. Expiry hides the model from discovery and download; the registry record itself stays.
+    """
     duration = (m.store_disc_reqs or {}).get("duration")
     return duration is not None and _now() > _aware(m.registered_at) + datetime.timedelta(seconds=duration)
 
 
 def access_denied(m: MLModel, caller: str | None) -> str | None:
-    """The reason `caller` may not use the model, or None if it may."""
+    """Returns why `caller` may not use the model, or None when it may.
+
+    Order of checks: no `accessReqs` means open; then `timePeriod` (seconds from registration) closes access for everyone,
+    the owner included; then PUBLICLY_AVAILABLE is open; PRIVATE_USE_ONLY allows only the owner; RESTRICTED allows the owner and
+    the ids in `valServerIds` / `valClientIds`. `caller` is the id R1 Termination forwards; None (no id) matches no owner and no
+    listed id, so it is denied for the last two kinds. `accessReqs.location` is not evaluated.
+    """
     access = (m.store_disc_reqs or {}).get("accessReqs")
     if not access:
         return None
@@ -224,7 +253,9 @@ def access_denied(m: MLModel, caller: str | None) -> str | None:
 
 
 def require_usable(m: MLModel, caller: str | None) -> None:
-    """Refuse an expired or inaccessible model (artifact download)."""
+    """Raises 410 MODEL_EXPIRED for an expired model, else 403 MODEL_ACCESS_DENIED when `access_denied` gives a reason; returns
+    None when the model may be used. Called by the artifact download.
+    """
     if is_expired(m):
         raise framework_error(FrameworkError.MODEL_EXPIRED, detail=f"model {m.model_id} passed its storage duration")
     reason = access_denied(m, caller)
@@ -234,6 +265,7 @@ def require_usable(m: MLModel, caller: str | None) -> None:
 
 # ---------------------------------------------------------------- phase info (AIMgF)
 
+# Body of `PATCH /models/{id}/phase-info`: every attribute optional here, the merge rules are on the route.
 class PhaseInfoPatch(_Spec):
     phase: Phase | None = None
     observedPerf: MLModelPerf | None = None
@@ -247,6 +279,9 @@ def patch_phase_info(model_id: uuid.UUID, body: PhaseInfoPatch, db: Session = De
     """AIMgF's write-back (SA-MLMR-7): the model's phase and training lineage
     (`trainingInfo.baseModelId`, `dataSources`). The sent attributes are merged
     into `phaseInfo`; the first write must carry a `phase`."""
+    # Merge rules: the sent attributes overwrite the stored ones, except `trainingInfo`, which is merged field by field with
+    # the stored one. The first write for a model must carry `phase` (422 SCHEMA_VALIDATION_FAILED). 404 MODEL_NOT_FOUND.
+    # Single commit; returns the model's MLModel record.
     model = db.get(MLModel, model_id)
     if model is None:
         raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
@@ -254,6 +289,7 @@ def patch_phase_info(model_id: uuid.UUID, body: PhaseInfoPatch, db: Session = De
     if "phase" not in info and body.phase is None:
         raise _invalid("the first phaseInfo write needs a phase")
     sent = _dump(body) or {}
+    # trainingInfo is merged key by key (sent keys win) rather than replaced, so a later write that names only baseModelId keeps dataSources.
     training = {**info.get("trainingInfo", {}), **sent.pop("trainingInfo", {})}
     info.update(sent)
     if training:
@@ -265,6 +301,7 @@ def patch_phase_info(model_id: uuid.UUID, body: PhaseInfoPatch, db: Session = De
 
 # ---------------------------------------------------------------- storages and profiles
 
+# TS 29.482 MLModelProfile as sent in a storage; `mlModelInfo.mlModelId` must be present (validator) and names a registered model.
 class ProfileBody(_Spec):
     mlModelProfId: uuid.UUID | None = None
     aimleServId: str | None = None
@@ -279,6 +316,7 @@ class ProfileBody(_Spec):
         return self
 
 
+# Body of `POST` and `PUT /storages`; at least one of `mlModels` and `mlModelsAddresses` is required.
 class StorageBody(_Spec):
     mlModels: list[ProfileBody] | None = Field(default=None, min_length=1)
     mlModelsAddresses: list[EndPoint] | None = Field(default=None, min_length=1)
@@ -291,12 +329,14 @@ class StorageBody(_Spec):
         return self
 
 
+# Body of `PATCH /storages/{id}`: a list that is present replaces the stored list, an absent one is kept.
 class StoragePatch(_Spec):
     mlModels: list[ProfileBody] | None = Field(default=None, min_length=1)
     mlModelsAddresses: list[EndPoint] | None = Field(default=None, min_length=1)
 
 
 def _profile_view(db: Session, p: MLModelProfile) -> dict:
+    """A profile as returned: its own ids and URI plus the live MLModel record of the model it names (None if that model is gone)."""
     model = db.get(MLModel, p.model_id)
     view = {"mlModelProfId": str(p.profile_id), "aimleServId": p.aimle_serv_id, "aimleRepId": p.aimle_rep_id,
             "mlModelInfo": model_info_view(db, model) if model is not None else None, "mlModelUri": p.ml_model_uri}
@@ -304,6 +344,7 @@ def _profile_view(db: Session, p: MLModelProfile) -> dict:
 
 
 def _storage_view(db: Session, s: MLModelsStorage) -> dict:
+    """A storage with its profiles (one query for the profiles, plus the model record per profile)."""
     profiles = db.scalars(select(MLModelProfile).where(MLModelProfile.storage_id == s.storage_id)).all()
     view = {"storageId": str(s.storage_id), "mlModels": [_profile_view(db, p) for p in profiles] or None,
             "mlModelsAddresses": s.ml_models_addresses, "suppFeat": s.supp_feat}
@@ -311,6 +352,12 @@ def _storage_view(db: Session, s: MLModelsStorage) -> dict:
 
 
 def _add_profiles(db: Session, storage: MLModelsStorage, profiles: list[ProfileBody]) -> None:
+    """Adds one MLModelProfile per entry to `storage`, and applies each entry's `mlModelInfo` to the model it names.
+
+    Raises 422 when the model id is not a UUID and 404 MODEL_NOT_FOUND when it names no model. Side effect on purpose: the
+    domain, customDomain, vendors and spec attributes in `mlModelInfo` update the registered model (the model record is the
+    source of truth, the profile only points at it). Adds rows to the session; the caller commits.
+    """
     for item in profiles:
         try:
             model_id = uuid.UUID(item.mlModelInfo.mlModelId)
@@ -332,6 +379,7 @@ def _add_profiles(db: Session, storage: MLModelsStorage, profiles: list[ProfileB
 
 
 def _get_storage(db: Session, storage_id: uuid.UUID) -> MLModelsStorage:
+    """Loads a storage or raises 404 NRM_OBJECT_NOT_FOUND."""
     s = db.get(MLModelsStorage, storage_id)
     if s is None:
         raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such MLModelsStorage {storage_id}")
@@ -339,6 +387,7 @@ def _get_storage(db: Session, storage_id: uuid.UUID) -> MLModelsStorage:
 
 
 def _clear_profiles(db: Session, storage_id: uuid.UUID) -> None:
+    """Deletes all profiles of a storage and flushes, so a following insert in the same transaction sees them gone."""
     for p in db.scalars(select(MLModelProfile).where(MLModelProfile.storage_id == storage_id)).all():
         db.delete(p)
     db.flush()
@@ -346,6 +395,7 @@ def _clear_profiles(db: Session, storage_id: uuid.UUID) -> None:
 
 @router.post("/storages", status_code=201)
 def create_storage(body: StorageBody, db: Session = Depends(get_session)):
+    # Creates a storage and its profiles in one transaction (201). Any profile error (422 or 404) leaves nothing stored.
     storage = MLModelsStorage(ml_models_addresses=[_dump(a) for a in body.mlModelsAddresses] if body.mlModelsAddresses else None,
                               supp_feat=body.suppFeat)
     db.add(storage)
@@ -359,6 +409,7 @@ def create_storage(body: StorageBody, db: Session = Depends(get_session)):
 def list_storages(storage_ids: list[str] | None = Query(default=None, alias="storage-ids"),
                   profile_ids: list[str] | None = Query(default=None, alias="profile-ids"),
                   limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Paginated storages. `storage-ids` and `profile-ids` filter (a malformed id is 422); the two filters combine with AND.
     stmt = select(MLModelsStorage)
     if storage_ids:
         try:
@@ -377,11 +428,14 @@ def list_storages(storage_ids: list[str] | None = Query(default=None, alias="sto
 
 @router.get("/storages/{storage_id}")
 def get_storage(storage_id: uuid.UUID, db: Session = Depends(get_session)):
+    # One storage with its profiles; 404 NRM_OBJECT_NOT_FOUND.
     return _storage_view(db, _get_storage(db, storage_id))
 
 
 @router.put("/storages/{storage_id}")
 def replace_storage(storage_id: uuid.UUID, body: StorageBody, db: Session = Depends(get_session)):
+    # Replaces the storage: its profiles are deleted and re-created from the body and the addresses and suppFeat are overwritten
+    # (a PUT with no addresses clears them). 404 for an unknown storage.
     storage = _get_storage(db, storage_id)
     _clear_profiles(db, storage_id)
     storage.ml_models_addresses = [_dump(a) for a in body.mlModelsAddresses] if body.mlModelsAddresses else None
@@ -417,8 +471,10 @@ def delete_storage(storage_id: uuid.UUID, db: Session = Depends(get_session)):
 # ---------------------------------------------------------------- discovery
 
 def subset_match(criteria: Any, record: Any) -> bool:
-    """Whole-object matching: every attribute in `criteria` is in `record` with
-    an equal scalar, a containing list, or (recursively) a matching object."""
+    """Whole-object matching for discovery. `criteria` matches `record` when every key of a criteria dict is in the record with a
+    matching value; a scalar must be equal; a criteria list matches when each of its items matches some item of the record
+    list (so the record may have more); nested dicts recurse. An empty criteria dict matches everything.
+    """
     if isinstance(criteria, dict):
         return isinstance(record, dict) and all(k in record and subset_match(v, record[k]) for k, v in criteria.items())
     if isinstance(criteria, list):
@@ -427,6 +483,14 @@ def subset_match(criteria: Any, record: Any) -> bool:
 
 
 def discover(db: Session, criteria: MLModelInfo, caller: str | None, include_models: bool, limit: int, offset: int) -> dict:
+    """TS 29.482 ModelInformationDiscovery over every stored model, in registration order.
+
+    A model is a candidate only if it is not expired and the caller may access it; it matches when `criteria` is a subset of
+    its MLModel record. Pagination is applied to the matches, so `offset`/`limit` count matches, not rows. 404 MODEL_NOT_FOUND
+    when the requested page is empty. With `include_models` the answer carries the latest artifact of each page entry,
+    base64 encoded (`indicator` true); otherwise the stored profile of each model (or a bare record when it has none).
+    Loads all models and evaluates them in Python, so cost grows with the number of models.
+    """
     wanted = _dump(criteria) or {}
     matches = []
     for model in db.scalars(select(MLModel).order_by(MLModel.registered_at, MLModel.model_id)).all():

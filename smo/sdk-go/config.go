@@ -1,3 +1,11 @@
+// config.go holds Config, the one struct that configures a Client, and ConfigFromEnv, which fills it from the same
+// environment variables the Python SDK's R1Client reads, so one deployment environment (compose or the Helm chart) serves
+// either SDK. MutualTLSClient builds the http.Client for SMO_MTLS=on (PR-SEC-2).
+//
+// It reads the environment and the secret files and nothing else; New (client.go) validates the values. configFrom takes
+// the environment and the file reader as arguments so that config_test.go needs no real environment. The variable names
+// must stay equal to the Python client's.
+
 package smosdk
 
 import (
@@ -52,6 +60,10 @@ type Config struct {
 // SMO_IDENTITY_KIND is not read: this SDK is always an rApp (scope smo-rapp, no enrollment secret).
 func ConfigFromEnv() (Config, error) { return configFrom(os.Getenv, os.ReadFile) }
 
+// configFrom builds a Config from getenv and readFile (os.Getenv and os.ReadFile in ConfigFromEnv). A secret may be given
+// as NAME or NAME_FILE, not both; the file's content loses one trailing newline. It returns an error when both forms are
+// set, when a named file cannot be read, and when SMO_MTLS is on and the certificate files are unusable. GatewayURL
+// defaults to DefaultGatewayURL; with mutual TLS on, the first "http://" of it becomes "https://".
 func configFrom(getenv func(string) string, readFile func(string) ([]byte, error)) (Config, error) {
 	secret := func(name string) (string, error) { // NAME or NAME_FILE, not both
 		v, path := getenv(name), getenv(name+"_FILE")
@@ -78,6 +90,8 @@ func configFrom(getenv func(string) string, readFile func(string) ([]byte, error
 	if cfg.GatewayURL == "" {
 		cfg.GatewayURL = DefaultGatewayURL
 	}
+	// Any of on, 1, true, yes or require turns mutual TLS on; every other value, including off and empty, leaves the
+	// gateway URL and the HTTP client untouched. The file names default to those under /run/mtls, where the chart mounts them.
 	switch strings.ToLower(strings.TrimSpace(getenv("SMO_MTLS"))) {
 	case "on", "1", "true", "yes", "require":
 		dir := "/run/mtls"

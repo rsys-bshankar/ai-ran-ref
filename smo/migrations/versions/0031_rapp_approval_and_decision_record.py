@@ -28,6 +28,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Create the four approval and decision-record tables of RAN NF OAM with their indexes, and add `approval_policy` and `previous_approval_policy` to the rApp Management tables; every statement tolerates a rerun."""
     op.execute("""
         CREATE TABLE IF NOT EXISTS ran_nf_oam.rapp_approval_policy (
             invoker_id      VARCHAR PRIMARY KEY,
@@ -100,6 +101,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop the two columns and the four tables, in reverse order; the approval history and decision records are lost."""
     op.execute("ALTER TABLE rapp_mgmt.rapp_instance_version DROP COLUMN IF EXISTS previous_approval_policy")
     op.execute("ALTER TABLE rapp_mgmt.rapp_instance DROP COLUMN IF EXISTS approval_policy")
     op.execute("DROP TABLE IF EXISTS ran_nf_oam.rapp_decision_record")

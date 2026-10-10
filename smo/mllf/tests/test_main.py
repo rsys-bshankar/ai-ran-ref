@@ -1,12 +1,8 @@
-"""Tests for MLLF's routes (AI/ML Workflow LLD section 5).
-Run with: pytest smo/mllf/tests -q
+"""Tests of MLLF's one route, `POST /models/{id}/deploy`, and its health probe.
 
-Deliberately thin still (see app/main.py's own docstring): the one
-existing route (`request_model_deployment`) reads/writes AIMgF's own
-`model_lifecycle` row through R1Client (Wave 2 repointed it there from
-MLMR's row — lifecycle/node-group state was never MLMR's to carry),
-faked here the same "monkeypatch app.main.R1Client.<verb>" shape this
-build already uses for e.g. nfo/tests/test_main.py's own FOCOM double.
+Run: `cd smo/mllf && PYTHONPATH=.:../shared python -m pytest tests -q`. No database: AIMgF is faked by patching
+`app.main.R1Client.get` and `.patch` (see `_mock_lifecycle`), so the tests cover MLLF's gate and its call shape to AIMgF,
+not AIMgF itself.
 """
 
 import uuid
@@ -18,6 +14,7 @@ from app.main import app
 
 
 class FakeResponse:
+    """Stands in for an `httpx.Response`: only `status_code` and `json()` are used by the route."""
     def __init__(self, status_code, payload):
         self.status_code = status_code
         self._payload = payload
@@ -28,10 +25,14 @@ class FakeResponse:
 
 @pytest.fixture
 def client():
+    """A TestClient on the app; MLLF has no database to override."""
     return TestClient(app)
 
 
 def _mock_lifecycle(monkeypatch, model_id, model_lifecycle_state, cleared_node_groups=None):
+    """Patches `R1Client.get` to return a lifecycle row for `model_id` in the given state (404 for any other path) and `R1Client.patch`
+    to store the sent `clearedNodeGroups` in that row. Returns the row so a test can inspect it.
+    """
     lifecycle = {"modelId": str(model_id), "modelLifecycleState": model_lifecycle_state, "clearedNodeGroups": cleared_node_groups or []}
 
     def fake_get(self, path, **kw):
@@ -47,6 +48,7 @@ def _mock_lifecycle(monkeypatch, model_id, model_lifecycle_state, cleared_node_g
 
 
 def test_request_model_deployment_requires_certified_or_promoted(client, monkeypatch):
+    """A model that is not CERTIFIED or PROMOTED is refused with 409 MODEL_NOT_CERTIFIED, and the answer names the state."""
     model_id = uuid.uuid4()
     _mock_lifecycle(monkeypatch, model_id, "TRAINING")
     resp = client.post(f"/models/{model_id}/deploy", json=["ng1"])
@@ -56,7 +58,7 @@ def test_request_model_deployment_requires_certified_or_promoted(client, monkeyp
 
 
 def test_request_model_deployment_refuses_a_deprecated_model(client, monkeypatch):
-    """OI-2-model-eol-serving: no new placement for a model at end of life."""
+    """A DEPRECATED model gets no new placement, so a model at end of life is not put on node groups."""
     model_id = uuid.uuid4()
     _mock_lifecycle(monkeypatch, model_id, "DEPRECATED")
     resp = client.post(f"/models/{model_id}/deploy", json=["ng1"])
@@ -65,11 +67,7 @@ def test_request_model_deployment_refuses_a_deprecated_model(client, monkeypatch
 
 
 def test_request_model_deployment_stamps_cleared_node_groups(client, monkeypatch):
-    """RequestModelDeployment — triggers MLLF. Requires CERTIFIED-or-
-    PROMOTED ModelLifecycleState (the AIMgF gate, unchanged from v1.3,
-    read from AIMgF's own model_lifecycle row since Wave 2) and stamps
-    clearedNodeGroups (LLD section 5, MultiNode Q2's targeting gap).
-    """
+    """A CERTIFIED model is accepted and the node groups sent are written to AIMgF and echoed back."""
     model_id = uuid.uuid4()
     _mock_lifecycle(monkeypatch, model_id, "CERTIFIED")
     resp = client.post(f"/models/{model_id}/deploy", json=["edge-gpu-a", "edge-gpu-b"])
@@ -78,6 +76,7 @@ def test_request_model_deployment_stamps_cleared_node_groups(client, monkeypatch
 
 
 def test_request_model_deployment_also_allowed_once_promoted(client, monkeypatch):
+    """PROMOTED passes the gate as well as CERTIFIED."""
     model_id = uuid.uuid4()
     _mock_lifecycle(monkeypatch, model_id, "PROMOTED")
     resp = client.post(f"/models/{model_id}/deploy", json=["ng1"])
@@ -85,12 +84,14 @@ def test_request_model_deployment_also_allowed_once_promoted(client, monkeypatch
 
 
 def test_request_model_deployment_for_unknown_model_is_404(client, monkeypatch):
+    """When AIMgF has no lifecycle for the model, the route answers 404."""
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: FakeResponse(404, {}))
     resp = client.post(f"/models/{uuid.uuid4()}/deploy", json=["ng1"])
     assert resp.status_code == 404
 
 
 def test_health_check_answers_the_gui_bff_liveness_probe(client):
+    """`/health` answers 200 `{status: healthy}`, which the GUI BFF's module status probe relies on."""
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "healthy"}

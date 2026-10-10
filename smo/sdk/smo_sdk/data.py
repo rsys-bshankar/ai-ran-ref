@@ -1,8 +1,9 @@
-"""sdk.data — a thin client over DME (`dme/`), R1AP clause 7.
+"""sdk.data: a thin client over DME (`dme/`, R1AP clause 7) and over the read routes of RAN NF OAM an rApp needs before it acts (cell guards, alarms, capabilities, live configuration).
 
-One method per real DME route (dme/app/main.py, read fresh before writing
-this); no new business logic, no client-side re-validation of what DME
-itself already validates (schema checks, delivery-method commitments).
+One method per DME route (`dme/app/main.py`), with no business logic and no client-side re-validation of what DME validates itself (schema checks, delivery-method commitments). Beyond the
+routes it holds three pieces of client-side logic that are worth knowing before editing: the dataset convenience `get_dataset` (find a type by name, reuse or create the consumer's data job,
+page the records), the O1-action mediation `mediate_action` (the same route as `PlatformClient.execute_action`), and `alarm_cell` / `AlarmScope`, which decide which cells a critical alarm
+holds (HISTORY.md W10-alarm-cellref). Part of the SDK (`sdk/README.md`).
 """
 
 import uuid
@@ -11,13 +12,14 @@ from ._common import BaseClient, SdkError, ensure_ok
 
 
 class DataClient(BaseClient):
+    """The `sdk.data` namespace: DME types, producers, data jobs, offers, type subscriptions and the data-plane store; O1 action mediation; and RAN NF OAM inventory reads."""
     def register_type(self, namespace: str, name: str, version: str, type_name: str, producer_id: str,
                        data_production_schema: dict, producer_health_callback_url: str, job_callback_url: str,
                        collection_spec: dict | None = None, source_domain: str | None = None,
                        source_context: dict | None = None) -> dict:
-        """`source_domain`/`source_context` (Wave 3, docs/ARCHITECTURE.md (DME)):
-        LIVE_RAN | DIGITAL_TWIN provenance driving the Digital-Twin-
-        excluded-from-inference eligibility rule; both optional.
+        """Register a producer and the DME type it produces (`POST /dme/production-capabilities`).
+
+        `source_domain` and `source_context` (optional) carry the provenance, LIVE_RAN or DIGITAL_TWIN, that drives the rule excluding Digital-Twin data from inference (`docs/ARCHITECTURE.md`, DME).
         """
         return ensure_ok(self._r1.post("/dme/production-capabilities", json={
             "namespace": namespace, "name": name, "version": version, "typeName": type_name,
@@ -30,25 +32,18 @@ class DataClient(BaseClient):
         return ensure_ok(self._r1.get("/dme/dme-types", params={"data_category": data_category}))
 
     def list_producers(self) -> list[dict]:
-        """The real ICS `GET /data-producer/v1/info-producers` — a
-        producer is now its own real entity, not implied by a DmeType row.
-        """
+        """The registered producers (the ICS `GET /data-producer/v1/info-producers`); a producer is its own entity, not implied by a DME type row."""
         return ensure_ok(self._r1.get("/dme/production-capabilities"))
 
     def get_producer(self, producer_id: str) -> dict:
         return ensure_ok(self._r1.get(f"/dme/production-capabilities/{producer_id}"))
 
     def deregister_producer(self, producer_id: str) -> None:
-        """Removes only this producer and its type links — the types it
-        supported stay registered (see `delete_type`) if any other
-        producer still supports them, or simply go DISABLED if not.
-        """
+        """Remove this producer and its type links only; the types it supported stay registered if another producer still supports them (see `delete_type`), and go DISABLED if not."""
         ensure_ok(self._r1.delete("/dme/production-capabilities", params={"producer_id": producer_id}))
 
     def delete_type(self, dme_type_id: uuid.UUID | str) -> None:
-        """The real ICS `DELETE /data-producer/v1/info-types/{id}` —
-        409s if any producer still supports this type.
-        """
+        """The ICS `DELETE /data-producer/v1/info-types/{id}`; DME answers 409 (raised as `SdkError`) while any producer still supports the type."""
         ensure_ok(self._r1.delete(f"/dme/dme-types/{dme_type_id}"))
 
     def query_producer_status(self, producer_id: str) -> dict:
@@ -57,9 +52,9 @@ class DataClient(BaseClient):
     def create_data_job(self, dme_type_id: uuid.UUID | str, data_delivery_mode: str, data_delivery_method: str,
                          consumer_id: str, production_job_definition: dict | None = None, delivery_details: dict | None = None,
                          lifecycle_stage: str | None = None) -> dict:
-        """`lifecycle_stage` (Wave 3): TRAINING|TESTING|EMULATION|INFERENCE|
-        CLOSED_LOOP_FEEDBACK — DME 422s if this job's type is a
-        DIGITAL_TWIN source and lifecycle_stage is INFERENCE.
+        """Create a data job of a DME type for a consumer (`POST /dme/data-jobs`).
+
+        `lifecycle_stage` is TRAINING, TESTING, EMULATION, INFERENCE or CLOSED_LOOP_FEEDBACK (or None); DME answers 422 (raised as `SdkError`) for an INFERENCE job on a type whose source is a DIGITAL_TWIN.
         """
         return ensure_ok(self._r1.post("/dme/data-jobs", json={
             "dataDeliveryMode": data_delivery_mode, "dmeTypeId": str(dme_type_id),
@@ -73,6 +68,7 @@ class DataClient(BaseClient):
     def update_data_job(self, data_job_id: uuid.UUID | str, dme_type_id: uuid.UUID | str, data_delivery_mode: str,
                          data_delivery_method: str, consumer_id: str, production_job_definition: dict | None = None,
                          delivery_details: dict | None = None) -> dict:
+        """Replace a data job's definition (`PUT /dme/data-jobs/{id}`); every field of the job is sent again, and the lifecycle stage is not among them."""
         return ensure_ok(self._r1.put(f"/dme/data-jobs/{data_job_id}", json={
             "dataDeliveryMode": data_delivery_mode, "dmeTypeId": str(dme_type_id),
             "productionJobDefinition": production_job_definition or {}, "dataDeliveryMethod": data_delivery_method,
@@ -86,10 +82,7 @@ class DataClient(BaseClient):
         ensure_ok(self._r1.delete(f"/dme/data-jobs/{data_job_id}"))
 
     def terminate_data_jobs_for_consumer(self, consumer_id: str) -> None:
-        """The real ICS deleteJobsForOwner (ics-api.yaml) — every job this
-        consumer owns, torn down in one call rather than one terminate_data_job
-        per id.
-        """
+        """The ICS deleteJobsForOwner (`ics-api.yaml`): tear down every job this consumer owns in one call rather than one `terminate_data_job` per id."""
         ensure_ok(self._r1.delete("/dme/data-jobs", params={"consumer_id": consumer_id}))
 
     def list_data_jobs(self, dme_type_id: uuid.UUID | str | None = None, consumer_id: str | None = None) -> list[dict]:
@@ -98,6 +91,7 @@ class DataClient(BaseClient):
     def create_data_offer(self, dme_type_id: uuid.UUID | str, data_delivery_mode: str, data_delivery_methods: list[str],
                            data_offer_termination_notification_uri: str, production_job_definition: dict | None = None,
                            data_availability_notification_uri: str | None = None) -> dict:
+        """Create a data offer of a DME type (`POST /dme/offers`) with the delivery methods offered; the termination notification URI is required, the availability one optional."""
         return ensure_ok(self._r1.post("/dme/offers", json={
             "dmeTypeId": str(dme_type_id), "dataDeliveryMode": data_delivery_mode,
             "productionJobDefinition": production_job_definition or {}, "dataDeliveryMethods": data_delivery_methods,
@@ -137,9 +131,11 @@ class DataClient(BaseClient):
     # either caller.
 
     def ingest_data_record(self, data_job_id: uuid.UUID | str, payload: dict) -> dict:
+        """A producer stores one record into a data job's store (`POST /dme/data-jobs/{id}/records`, body `{payload}`); not restricted to either caller."""
         return ensure_ok(self._r1.post(f"/dme/data-jobs/{data_job_id}/records", json={"payload": payload}))
 
     def fetch_data_records(self, data_job_id: uuid.UUID | str, limit: int = 100) -> list[dict]:
+        """A consumer (an rApp or MDAF, no distinction here) reads up to `limit` records of a data job, in the order the route returns them (`GET /dme/data-jobs/{id}/records`)."""
         return ensure_ok(self._r1.get(f"/dme/data-jobs/{data_job_id}/records", params={"limit": limit}))
 
     # ---------------------------------------------------------------- Wave 3: O1 action mediation
@@ -148,6 +144,11 @@ class DataClient(BaseClient):
 
     def mediate_action(self, requested_by: str, changes: list[dict], scope: str = "single-ME",
                         msac_role: str | None = None, source_context: dict | None = None, decision: dict | None = None) -> dict:
+        """Submit an O1 configuration action to DME, which mediates it to RAN NF OAM's NETCONF dispatch (`POST /dme/actions`); DME does not speak O1 itself.
+
+        The same route as `PlatformClient.execute_action`, without its `action_id` idempotency key and without the approval hint; `decision` (PR-AI-13, why the rApp acts) is sent only when given.
+        Returns the action record; raises `SdkError` for the route's refusals.
+        """
         payload = {"requestedBy": requested_by, "changes": changes, "scope": scope, "msacRole": msac_role, "sourceContext": source_context}
         if decision is not None:                       # PR-AI-13: why the rApp acts (see Platform.execute_action)
             payload["decision"] = decision
@@ -167,6 +168,10 @@ class DataClient(BaseClient):
     def query_cell_guards(self, managed_element_ref: str | None = None, cell_id: str | None = None,
                           cell_class: str | None = None, sector_group: str | None = None,
                           incident_zone: str | None = None) -> list[dict]:
+        """The cells' guard attributes (HISTORY.md W9-01..06, D-5) an rApp consults before deciding an O1 action; each filter that is set narrows the list.
+
+        Unset filters are left out of the query (not sent as None), because `httpx` would send None as an empty string, which the enum-typed `cell_class` filter rejects with 422.
+        """
         # unset filters are left out: httpx would send None as an empty
         # string, which the enum-typed cell_class filter rejects
         params = {"managed_element_ref": managed_element_ref, "cell_id": cell_id, "cell_class": cell_class,
@@ -174,13 +179,16 @@ class DataClient(BaseClient):
         return ensure_ok(self._r1.get("/ran-nf-oam/cell-guards", params={k: v for k, v in params.items() if v is not None}))
 
     def query_critical_alarms(self, managed_element_ref: str) -> "AlarmScope":
-        """The element's active critical alarms, scoped to the cells they are
-        about (W10-alarm-cellref) — see `AlarmScope`."""
+        """The managed element's active critical alarms, wrapped in an `AlarmScope` that answers which of them hold which cells (HISTORY.md W10-alarm-cellref).
+
+        Reads the first 500 critical alarms of the element only (no paging).
+        """
         resp = self._r1.get("/ran-nf-oam/alarms", params={"managed_element_ref": managed_element_ref,
                                                           "severity": "critical", "limit": 500})
         return AlarmScope(ensure_ok(resp))
 
     def get_managed_entity(self, managed_element_ref: str) -> dict:
+        """The managed element as RAN NF OAM holds it (`GET /ran-nf-oam/managed-entities/{ref}`)."""
         return ensure_ok(self._r1.get(f"/ran-nf-oam/managed-entities/{managed_element_ref}"))
 
     def get_vendor_capability(self, vendor_name: str) -> dict:
@@ -195,12 +203,12 @@ class DataClient(BaseClient):
 
     def get_dataset(self, name: str, consumer_id: str, namespace: str | None = None, lifecycle_stage: str | None = None,
                     max_records: int = 2000) -> dict:
-        """A dataset is a DME type, found by its name, type name or leaf name
-        (RAN NF OAM's PM counter types are `PMCounters.<counter>`, so
-        "PRB_UTILIZATION" finds `PMCounters.PRB_UTILIZATION`). Reuse (or create)
-        this consumer's data job on it, and return its records, oldest
-        first: {dmeTypeId, dataJobId, sourceDomain, records}. Raises
-        SdkError(404) if no such type is registered."""
+        """The records of a dataset for a consumer, as `{dmeTypeId, dataJobId, sourceDomain, records}` with the records oldest first.
+
+        A dataset is a DME type found by its name, its type name or its leaf name (RAN NF OAM's PM counter types are `PMCounters.<counter>`, so "PRB_UTILIZATION" finds
+        `PMCounters.PRB_UTILIZATION`), searched within `namespace` when given. The consumer's data job for the same `lifecycle_stage` is reused if it exists, else created (CONTINUOUS, PULL_HTTP);
+        so a call can create a job as a side effect. Records are read 500 at a time up to `max_records`. Raises `SdkError(404)` when no type matches. Design record: `HISTORY.md` W10-03 (D-4).
+        """
         dme_type = next((t for t in self.discover_types(namespace)
                          if name in (t["dmeTypeIdStruct"]["name"], t["typeName"])
                          or t["dmeTypeIdStruct"]["name"].rsplit(".", 1)[-1] == name), None)
@@ -223,8 +231,7 @@ class DataClient(BaseClient):
                 "records": list(reversed(records[:max_records]))}
 
     def read_config(self, managed_element_ref: str, managed_function_ref: str | None = None) -> dict:
-        """The managed object's live running configuration (NETCONF
-        get-config through RAN NF OAM) — read-after-write verification."""
+        """The managed object's live running configuration (NETCONF get-config through RAN NF OAM), for read-after-write verification of an action."""
         return ensure_ok(self._r1.get(f"/ran-nf-oam/managed-entities/{managed_element_ref}/config",
                                       params={"managed_function_ref": managed_function_ref}))
 
@@ -233,14 +240,17 @@ class DataClient(BaseClient):
 
 # IOCs addressed per cell (`<IOC>=<cellId>`) and per relation of a cell
 # (`<IOC>=<cellId>-<other>`): an alarm on one of them is about that cell.
+# The IOC names an alarm's managedFunctionRef can start with when the alarm is about one cell; an IOC listed in neither set makes the alarm element-wide, so it holds every cell.
 CELL_IOCS = frozenset({"NRCellDU", "NRCellCU", "NRSectorCarrier", "CommonBeamformingFunction", "CESManagementFunction"})
 RELATION_IOCS = frozenset({"NRCellRelation", "NRFreqRelation"})
 
 
 def alarm_cell(alarm: dict) -> str | None:
-    """The cell an alarm is about, from its `managedFunctionRef`; None when it
-    names no cell (no ref, or a function of the element as a whole such as
-    `DMROFunction`) — such an alarm holds the whole managed element."""
+    """The cell an alarm is about, read from its `managedFunctionRef`; None when it names no cell.
+
+    None for no ref, a malformed ref, or a function of the element as a whole such as `DMROFunction`; such an alarm holds the whole managed element. A ref `<IOC>=<cellId>` of a cell IOC gives the
+    cell id, and `<IOC>=<cellId>-<other>` of a relation IOC gives the cell id before the first dash.
+    """
     ioc, sep, instance = (alarm.get("managedFunctionRef") or "").partition("=")
     if not sep or not instance:
         return None
@@ -252,18 +262,18 @@ def alarm_cell(alarm: dict) -> str | None:
 
 
 class AlarmScope:
-    """A managed element's active alarms, by the cells they hold. An alarm
-    that names no cell holds every cell (`element_wide`); one that names a
-    cell holds that cell only — callers decide whether its neighbours count
-    (`holding(cells)`)."""
+    """A managed element's critical alarms, by the cells they hold.
+
+    An alarm that names no cell holds every cell (`element_wide`); one that names a cell holds that cell only. Callers decide whether a cell's neighbours count by passing them to `holding`.
+    """
 
     def __init__(self, alarms: list[dict]):
+        """Keep only the alarms whose severity is `critical` (the list may hold others) and split off the ones that name no cell."""
         self.alarms = [a for a in alarms if a.get("severity") == "critical"]
         self.element_wide = [a for a in self.alarms if alarm_cell(a) is None]
 
     def holding(self, cells) -> list[dict]:
-        """The alarms that hold any of `cells`: every element-wide alarm, plus
-        those raised on one of the cells."""
+        """The alarms that hold any of `cells`: every element-wide alarm, plus those raised on one of the cells."""
         wanted = set(cells)
         return self.element_wide + [a for a in self.alarms if (cell := alarm_cell(a)) is not None and cell in wanted]
 

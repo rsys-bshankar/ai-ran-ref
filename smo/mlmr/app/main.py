@@ -1,14 +1,18 @@
-"""MLMR (ML Model Repository) — TS 28.105 AI/ML NRM realization.
+"""MLMR (ML Model Repository): the HTTP app that holds model truth for the AI/ML platform (TS 28.105 MLModel, MLModelRepository
+and MLModelCoordinationGroup; the TS 29.482 model-management API is mounted from `mlr.py`).
 
-Wave 1 of the AI Platform Service Decomposition split this module out of
-the former flat `ai-ml-workflow/` (see docs/ARCHITECTURE.md
-and docs/ARCHITECTURE.md (MLMR)); Wave 2 finished the job — MLMR is
-model truth (identity, versions, artifacts, coordination groups) and has
-no lifecycle logic of its own, and as of this wave no longer stores any
-either: `state`/`training_job_id`/`cleared_node_groups` moved to AIMgF's
-own `model_lifecycle` table, and `PATCH /models/{id}/lifecycle` below is
-gone along with them. AIMgF's `GET/PATCH /aimgf/models/{id}/lifecycle`
-is the real thing now.
+Where it sits: one FastAPI app behind R1 Termination at `/mlmr`. AIMgF, rApps (through the SDK) and the GUI BFF call it;
+the only call it makes is the best-effort read of AIMgF's `nrm-refs` in `_aimgf_refs`. The design records are
+`docs/ARCHITECTURE.md` (MLMR) and the MLMR section of `HISTORY.md` §7.
+
+What it owns: a model's identity (`model_type` + `version` is unique), its registration metadata and TS 28.105 attributes, the
+uploaded artifact bytes (kept in the database, no object store), coordination groups and repositories. What it does not own:
+lifecycle state, training jobs and node-group targeting; those are AIMgF's `model_lifecycle` row, and MLMR neither stores nor
+changes them.
+
+Before editing: the docstrings of the route functions and request models here are published in `docs/openapi/mlmr.json`, so
+maintainer notes go in `#` blocks and a changed route shape needs `scripts/generate_openapi_specs.py` (checked by
+`tests_integration/test_openapi_specs.py`). The cascade that cleans other modules' rows on a model delete is a database foreign key, not code here.
 """
 
 import json
@@ -47,28 +51,36 @@ app.include_router(mlr.router)
 install_health(app, checks=[database_check, sme_token_check])  # /live, /ready and the /health alias (PR-ST-7)
 
 
+# Base for the request bodies below: `extra="forbid"`, so a field that is not in the TS 28.105 / 29.482 schema is a 422
+# rather than being silently dropped.
 class _Spec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# TS 28.105 MLContext datatype; both lists are opaque references stored as sent.
 class MLContext(_Spec):
     """TS 28.105 MLContext."""
     inferenceEntityRef: list[str] | None = None
     dataProviderRef: list[str] | None = None
 
 
+# TS 28.105 SupportedPerfIndicator datatype (a performance indicator name and whether training and testing support it).
 class SupportedPerfIndicator(_Spec):
     performanceIndicatorName: str
     isSupportedForTraining: bool = False
     isSupportedForTesting: bool = False
 
 
+# TS 28.105 MLCapabilityInfo datatype; `mLCapabilityParameters` is stored as an opaque object.
 class MLCapabilityInfo(_Spec):
     aIMLInferenceName: str | None = None
     capabilityName: str | None = None
     mLCapabilityParameters: dict | None = None
 
 
+# The writable TS 28.105 MLModel attributes, mixed into both the register and the update request. Unlike the `_Spec` bodies it
+# keeps pydantic's default config, so an unknown top-level field on a register or update body is ignored, not refused;
+# the nested datatypes (`MLContext` and the others) still forbid unknown fields.
 class TS28105ModelAttributes(BaseModel):
     """Wave 4 — the writable TS 28.105 MLModel attributes, accepted on
     register and update alongside this build's own fields."""
@@ -85,6 +97,9 @@ class TS28105ModelAttributes(BaseModel):
 
 
 def _dump(value):
+    """Turns an optional pydantic object, or a list of them, into plain dicts with unset fields left out; returns None for None.
+    Used to store the TS 28.105 datatypes as spec-shaped JSON columns.
+    """
     if value is None:
         return None
     if isinstance(value, list):
@@ -93,6 +108,12 @@ def _dump(value):
 
 
 def _apply_ts28105(db: Session, model: MLModel, body: TS28105ModelAttributes) -> None:
+    """Copies the TS 28.105 attributes of `body` onto `model` after checking that the two references it can carry exist.
+
+    Raises 404 NRM_OBJECT_NOT_FOUND for an unknown `mLModelRepositoryRef` and 404 MODEL_NOT_FOUND for an unknown
+    `sourceTrainedMLModelRef`. Every attribute is assigned, including to None, so on a PUT an omitted TS 28.105 attribute is
+    cleared (unlike the `SpecAttributes`). Does not add to the session or commit; the caller does.
+    """
     if body.mLModelRepositoryRef is not None and db.get(MLModelRepository, body.mLModelRepositoryRef) is None:
         raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such MLModelRepository {body.mLModelRepositoryRef}")
     if body.sourceTrainedMLModelRef is not None and db.get(MLModel, body.sourceTrainedMLModelRef) is None:
@@ -109,6 +130,8 @@ def _apply_ts28105(db: Session, model: MLModel, body: TS28105ModelAttributes) ->
     model.ml_model_repository_id = body.mLModelRepositoryRef
 
 
+# Body of `POST /models`. `modelType` + `version` are the model's identity; everything else is optional metadata. Inherits the
+# TS 28.105 attributes and `mlr.SpecAttributes` (TS 29.482 attributes), so the same fields are accepted on register and update.
 class RegisterModelRequest(TS28105ModelAttributes, mlr.SpecAttributes):
     modelType: str
     version: str
@@ -124,6 +147,7 @@ class RegisterModelRequest(TS28105ModelAttributes, mlr.SpecAttributes):
     vendors: list[str] | None = None
 
 
+# Body of `POST /coordination-groups`; the route refuses fewer than two `memberModelIds`.
 class CreateCoordinationGroupRequest(BaseModel):
     memberModelIds: list[uuid.UUID]
     memberUseCases: list[str] = []
@@ -132,6 +156,9 @@ class CreateCoordinationGroupRequest(BaseModel):
     mLModelRepositoryRef: uuid.UUID | None = None
 
 
+# Body of `PUT /models/{id}`. `modelType` and `version` must repeat the stored values (identity is immutable, 400
+# MODEL_IDENTITY_IMMUTABLE otherwise); every other field replaces the stored one, so an omitted metadata field becomes empty.
+# The TS 29.482 attributes in `SpecAttributes` are the exception: an omitted one is kept.
 class UpdateModelRequest(TS28105ModelAttributes, mlr.SpecAttributes):
     modelType: str
     version: str
@@ -150,6 +177,7 @@ class UpdateModelRequest(TS28105ModelAttributes, mlr.SpecAttributes):
 
 
 def _validate_domain(domain: str | None) -> None:
+    """Refuses a `domain` that is not one of `models.MODEL_DOMAINS` (422 SCHEMA_VALIDATION_FAILED); None passes."""
     if domain is not None and domain not in MODEL_DOMAINS:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"unknown domain {domain!r}")
 
@@ -171,6 +199,11 @@ def register_model(body: RegisterModelRequest, db: Session = Depends(get_session
     domain/customDomain/vendors (Wave 3, HISTORY.md §7's MLMR section):
     TS29482_MLR_MLModelManagement.yaml's own MLModel schema.
     """
+    # Registers a model. 201 `{modelId}`; 422 for an unknown domain, 404 when a referenced repository or source model does not
+    # exist, 409 MODEL_ALREADY_REGISTERED when (modelType, version) already exists.
+    # Ordering: validation and reference checks run before the row is added; the duplicate is detected from the database's unique
+    # constraint at commit (not a prior SELECT), so two concurrent registrations cannot both succeed. The session is rolled
+    # back before the error is raised.
     _validate_domain(body.domain)
     model = MLModel(registration_id=str(uuid.uuid4()), model_type=body.modelType, version=body.version,
                      required_resource_type_id=body.requiredResourceTypeId,
@@ -182,6 +215,7 @@ def register_model(body: RegisterModelRequest, db: Session = Depends(get_session
     mlr.apply_spec_attributes(model, body)
     db.add(model)
     try:
+        # The unique (model_type, version) constraint is the duplicate check: it holds under concurrency, a SELECT-then-INSERT would not.
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -202,6 +236,10 @@ def discover_models(request: Request, model_type: str | None = None,
     files in `mlModels`); 404 when nothing matches. `supported-features` is
     accepted and ignored (no optional feature is negotiated).
     """
+    # One path, two behaviours chosen by `filt-criteria`. Without it: MLMR's own paginated list (optional `model_type` filter,
+    # the management view of every model, no access filtering). With it: the TS 29.482 discovery in `mlr.discover`, which hides
+    # expired and access-restricted models from the caller (the id R1 Termination forwards) and answers 404 when nothing matches.
+    # A `filt-criteria` that is not JSON or not an MLModel is 422 SCHEMA_VALIDATION_FAILED.
     if filt_criteria is not None:
         try:
             criteria = mlr.MLModelInfo.model_validate(json.loads(filt_criteria))
@@ -222,6 +260,7 @@ def get_model(model_id: uuid.UUID, db: Session = Depends(get_session)):
     side AIMgF/MLLF call to learn a model's current state before deciding
     whether a transition/deploy is legal.
     """
+    # Returns one model (404 MODEL_NOT_FOUND). No access or expiry filtering: this is the management read.
     model = db.get(MLModel, model_id)
     if model is None:
         raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
@@ -244,6 +283,9 @@ def update_model(model_id: uuid.UUID, body: UpdateModelRequest, db: Session = De
     state and node-group targeting are AIMgF's own `model_lifecycle` row
     entirely (Wave 2) — not this module's concern at all any more.
     """
+    # Replaces a model's metadata. 404 MODEL_NOT_FOUND; 400 MODEL_IDENTITY_IMMUTABLE when modelType or version differ from the
+    # stored ones; 422 for an unknown domain. Does not touch `artifact_location` (the artifact upload owns it) or any lifecycle
+    # state. Commits once at the end; nothing is written when a check fails.
     model = db.get(MLModel, model_id)
     if model is None:
         raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
@@ -289,6 +331,9 @@ def deregister_model(model_id: uuid.UUID, db: Session = Depends(get_session)):
     deleting an unknown id is a silent no-op, matching this module's
     other DELETE routes.
     """
+    # Deletes a model, its artifacts and its profiles. Idempotent: an unknown id is 204 too. The artifact and profile rows are
+    # removed here explicitly; rows other modules hold against the model (AIMgF jobs, subscriptions) go through the
+    # `ON DELETE CASCADE` foreign keys in the schema, which the SQLite unit tests do not enforce.
     model = db.get(MLModel, model_id)
     if model is None:
         return
@@ -307,6 +352,10 @@ def upload_model_artifact(model_id: uuid.UUID, file: UploadFile = File(...), db:
     is elided (see ModelArtifact's docstring); the bytes are stored for real
     here instead of being discarded, so upload+download round-trip.
     """
+    # Stores an uploaded .zip as the model's next artifact version. 404 MODEL_NOT_FOUND; 415 ARTIFACT_FORMAT_INVALID when the
+    # file name does not end in .zip (only the name is checked, not the content). The version is max+1 per model, read and written
+    # without a lock, and the table has no unique constraint on (model_id, artifact_version). The whole file is read into memory.
+    # Updates the model's `artifact_location` to the new version in the same commit.
     model = db.get(MLModel, model_id)
     if model is None:
         raise framework_error(FrameworkError.MODEL_NOT_FOUND, detail="no such model")
@@ -333,6 +382,10 @@ def download_model_artifact(request: Request, model_id: uuid.UUID, artifact_vers
     are enforced here (SA-MLMR-6): 410 `MODEL_EXPIRED` past its `duration`,
     403 `MODEL_ACCESS_DENIED` for a caller its `accessReqs` exclude.
     """
+    # Returns the bytes of one artifact version. Order: the model's storeDiscReqs are enforced first (410 MODEL_EXPIRED, 403
+    # MODEL_ACCESS_DENIED, judged on the forwarded caller id); only then is the artifact looked up (404 ARTIFACT_VERSION_NOT_FOUND).
+    # An unknown model skips the check and falls through to that 404. The file name in Content-Disposition is the name the
+    # uploader sent, inserted unescaped.
     model = db.get(MLModel, model_id)
     if model is not None:
         mlr.require_usable(model, invoker_id(request))
@@ -360,6 +413,10 @@ def create_coordination_group(body: CreateCoordinationGroupRequest, db: Session 
     against real Postgres — SQLite's schema never enforces it, so no
     unit test had ever caught it either.
     """
+    # Registers a coordination group. 422 COORDINATION_GROUP_TOO_SMALL below two members; 404 NRM_OBJECT_NOT_FOUND for an unknown
+    # repository. The member ids are not checked to be existing models. The size check duplicates the schema's CHECK on purpose:
+    # the SQLite schema of the unit tests has no CHECK, and on Postgres the CHECK alone would surface as an unhandled IntegrityError
+    # (a bare 500).
     if len(body.memberModelIds) < 2:
         raise framework_error(FrameworkError.COORDINATION_GROUP_TOO_SMALL, detail="a coordination group needs at least 2 memberModelIds")
 
@@ -382,6 +439,8 @@ def list_coordination_groups(limit: int = PageLimit, offset: int = PageOffset, d
     through this route and filters in Python, exactly as it did in-process
     before the split.
     """
+    # Lists groups with their members. AIMgF reads this to find the groups a model belongs to when a performance report
+    # should propagate a retrain, and filters the page itself.
     page = paginate(db, select(MLModelCoordinationGroup), limit, offset)
     return {**page, "items": [{"groupId": str(g.group_id), "groupType": g.group_type,
              "memberModelIds": [str(m) for m in g.member_model_ids], "memberUseCases": g.member_use_cases or [],
@@ -390,6 +449,7 @@ def list_coordination_groups(limit: int = PageLimit, offset: int = PageOffset, d
 
 
 def _model_view(m: MLModel) -> dict:
+    """The management JSON of a model: own fields, then the TS 29.482 attributes, then the TS 28.105 writable ones."""
     return {"modelId": str(m.model_id), "modelType": m.model_type, "version": m.version,
             "artifactLocation": m.artifact_location,
             "description": m.description, "author": m.author, "owner": m.owner,
@@ -400,6 +460,7 @@ def _model_view(m: MLModel) -> dict:
 
 
 def _ts28105_writable_view(m: MLModel) -> dict:
+    """The TS 28.105 writable attributes of a model as returned on reads; empty lists, not None, for unset list attributes."""
     return {"aIMLInferenceName": m.aiml_inference_name, "expectedRunTimeContext": m.expected_run_time_context,
             "trainingContext": m.training_context, "runTimeContext": m.run_time_context,
             "supportedPerformanceIndicators": m.supported_performance_indicators or [],
@@ -412,9 +473,11 @@ def _ts28105_writable_view(m: MLModel) -> dict:
 # ---------------------------------------------------------------- Wave 4: TS 28.105 NRM views
 
 def _aimgf_refs(model_id: uuid.UUID) -> dict:
-    """The read-only MLModel attributes whose truth is AIMgF's. Best-effort:
-    an unreachable AIMgF yields empty values rather than failing the read
-    of MLMR's own model truth."""
+    """Reads the TS 28.105 attributes whose truth is AIMgF's (`mLTrainingType`, report refs, using functions) over R1.
+
+    Best-effort by design: a transport error or any non-200 answer yields empty values, so MLMR's own model read still works
+    when AIMgF is down. The catch-all `except` is deliberate for that reason.
+    """
     try:
         resp = _r1.get(f"/aimgf/ml-models/{model_id}/nrm-refs")
         if resp.status_code == 200:
@@ -440,6 +503,7 @@ def get_ml_model_nrm(model_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 def _group_nrm_view(g: MLModelCoordinationGroup) -> dict:
+    """The TS 28.105 MLModelCoordinationGroup resource (`id` + `attributes`) of a group."""
     return {"id": str(g.group_id), "attributes": {
         "memberMLModelRefList": [str(x) for x in g.member_model_ids],
         "mLModelRepositoryRef": str(g.ml_model_repository_id) if g.ml_model_repository_id else None}}
@@ -455,11 +519,15 @@ def get_ml_model_coordination_group_nrm(group_id: uuid.UUID, db: Session = Depen
     return _group_nrm_view(g)
 
 
+# Body of `POST /ml-model-repositories`; `userLabel` is a free label.
 class MLModelRepositoryBody(_Spec):
     userLabel: str | None = None
 
 
 def _repository_view(db: Session, r: MLModelRepository) -> dict:
+    """The TS 28.105 MLModelRepository resource: its label plus the ids of the models and groups it contains (two extra queries per
+    repository).
+    """
     model_ids = db.scalars(select(MLModel.model_id).where(MLModel.ml_model_repository_id == r.ml_model_repository_id)).all()
     group_ids = db.scalars(select(MLModelCoordinationGroup.group_id).where(
         MLModelCoordinationGroup.ml_model_repository_id == r.ml_model_repository_id)).all()
@@ -469,6 +537,7 @@ def _repository_view(db: Session, r: MLModelRepository) -> dict:
 
 @app.post("/ml-model-repositories", status_code=201)
 def create_ml_model_repository(body: MLModelRepositoryBody, db: Session = Depends(get_session)):
+    # Creates a repository (201) and returns its resource view; it starts empty.
     r = MLModelRepository(user_label=body.userLabel)
     db.add(r)
     db.commit()
@@ -477,12 +546,14 @@ def create_ml_model_repository(body: MLModelRepositoryBody, db: Session = Depend
 
 @app.get("/ml-model-repositories")
 def list_ml_model_repositories(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Paginated repositories, each with the ids of its models and groups.
     page = paginate(db, select(MLModelRepository), limit, offset)
     return {**page, "items": [_repository_view(db, r) for r in page["items"]]}
 
 
 @app.get("/ml-model-repositories/{repository_id}")
 def get_ml_model_repository(repository_id: uuid.UUID, db: Session = Depends(get_session)):
+    # One repository resource; 404 NRM_OBJECT_NOT_FOUND.
     r = db.get(MLModelRepository, repository_id)
     if r is None:
         raise framework_error(FrameworkError.NRM_OBJECT_NOT_FOUND, detail=f"no such MLModelRepository {repository_id}")

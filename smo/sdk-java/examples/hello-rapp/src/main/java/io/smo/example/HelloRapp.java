@@ -43,6 +43,13 @@ public final class HelloRapp implements AutoCloseable {
      * @param heartbeat       the heartbeat period ({@code HELLO_HEARTBEAT_SECONDS}, default 30)
      */
     public record Settings(String instanceId, int port, String operatorApiBase, Duration heartbeat) {
+        /**
+         * Reads the settings from {@code env} (a function, so a test passes a map): {@code SMO_INSTANCE_ID} and
+         * {@code HELLO_OPERATOR_API_BASE} are required, {@code PORT} defaults to 8000 and {@code HELLO_HEARTBEAT_SECONDS} to 30.
+         *
+         * @throws IllegalStateException when a required variable is missing or blank
+         * @throws NumberFormatException when {@code PORT} or {@code HELLO_HEARTBEAT_SECONDS} is not a number
+         */
         public static Settings fromEnv(Function<String, String> env) {
             String instance = env.apply("SMO_INSTANCE_ID");
             if (instance == null || instance.isBlank()) {
@@ -79,6 +86,10 @@ public final class HelloRapp implements AutoCloseable {
     private int dmeTypes = -1;
     private int models = -1;
 
+    /**
+     * Creates the rApp and the operator API server, which binds its port here (port 0 picks a free one). Nothing is served or
+     * sent to the platform until {@link #start()}.
+     */
     public HelloRapp(SmoSdk sdk, Settings settings, Clock clock) throws IOException {
         this.sdk = sdk;
         this.settings = settings;
@@ -86,6 +97,9 @@ public final class HelloRapp implements AutoCloseable {
         this.server = new OperatorServer(this, settings.port());
     }
 
+    /**
+     * Runs the rApp until SIGTERM: a failed start is logged and ends the JVM with exit code 1.
+     */
     public static void main(String[] args) throws Exception {
         Settings settings = Settings.fromEnv(System::getenv);
         HelloRapp app = new HelloRapp(SmoSdk.fromEnv(), settings, Clock.systemUTC());
@@ -146,6 +160,10 @@ public final class HelloRapp implements AutoCloseable {
         return entry;
     }
 
+    /**
+     * The JSON for {@code GET /instances/{id}/status}: state, mode (always SHADOW), the number of runs, the time of the last run
+     * and the counts it saw (-1 before the first run).
+     */
     synchronized ObjectNode status() {
         ObjectNode node = JSON.createObjectNode();
         node.put("state", state);
@@ -157,6 +175,9 @@ public final class HelloRapp implements AutoCloseable {
         return node;
     }
 
+    /**
+     * The newest recorded runs, at most {@code limit}, newest first, as {@code {"items": [...]}}. Only the last 50 runs are kept.
+     */
     synchronized ObjectNode runs(int limit) {
         ArrayNode items = JSON.createArrayNode();
         runs.stream().limit(limit).forEach(items::add);

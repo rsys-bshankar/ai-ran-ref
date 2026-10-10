@@ -106,6 +106,11 @@ public final class R1Client implements AutoCloseable {
         return http.send(method, url, headers, json, config.retry());
     }
 
+    /**
+     * Builds the query string for {@code query}, with the leading {@code ?}; "" when {@code query} is null or empty. A null
+     * value is left out, a collection becomes a repeated key, and keys and values are URL-encoded as form data (a space is
+     * {@code +}). Parameters come in the map's iteration order.
+     */
     static String queryString(Map<String, ?> query) {
         if (query == null || query.isEmpty()) {
             return "";
