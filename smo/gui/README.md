@@ -20,8 +20,7 @@ Browser ──► gui (nginx :3000) ──/api──► gui-bff ──Bearer (SM
   FastAPI endpoints (`../docs/openapi/<module>.json`) and doesn't
   reimplement any lifecycle logic.
 
-Screenshots of the pages, tabs and lifecycle flows: [Screenshots](#screenshots) (taken before the redesign below; they show the
-same data and actions in the earlier look).
+Screenshots of the pages, tabs and lifecycle flows: [Screenshots](#screenshots).
 
 ## Look, structure and scale (the "Signal" redesign, `PR-GUI-9`)
 
@@ -221,210 +220,250 @@ A row opens `/rapps/<instance>`. It shows, first, **the page the rApp's package 
 
 ## Screenshots
 
-Captured by a Playwright walk-through of the full stack (every module, R1
-Termination, the BFF and the GUI, on Postgres), starting from an empty
-database. The state on screen is live: it was produced through the module
-APIs, the four reference-rApp demo scripts (`samples/*/demo.py`) and the GUI
-itself, signed in as `admin` at 1440 px wide, except the role views. The
-walk-through finished with no 5xx responses from the GUI's own API.
+Every screenshot here is taken by `../scripts/gui_screenshots.py`, a Playwright walk-through of the redesigned console (its docstring says how to
+run it and what it needs). It ran against a stack started fresh with `docker compose up` (every module, R1 Termination, the BFF and the GUI, on
+Postgres) and seeded by the four sample-rApp demos (`samples/*/demo.py all`, run inside `r1-termination`). The script signs in through the
+sign-in form and then makes the state itself, through the GUI's own forms, dialogs and buttons: it onboards and deploys packages, reports faults
+with the admin tools, trains a model to an active runtime, raises and clears alarms, runs a service order and CM writes, and so on. Where a step
+needs another party it acts as that party the way `../DEMO_RUNBOOK.md` does: a new package version is built from `samples/energy-saving-rapp` and
+copied into `r1-termination`'s CSAR server, and a failed training run is reported through the BFF. Each run uses its own names (a run id in
+versions, model types and labels), so a screen can show rows of earlier runs too. Signed in as `admin`, 1440 px wide, dark theme, unless the
+caption says otherwise; a drawer or dialog is shown whole (the window is made as tall as its content). A full walk-through takes about 17 minutes:
 
-Lifecycle (LCM) screens are in the order the lifecycle runs, so a module's
-rows read as a story: the state before an action, then the state after it.
+    GUI_E2E_PASSWORD=... GUI_E2E_OPERATOR_PASSWORD=... GUI_E2E_VIEWER_PASSWORD=... python scripts/gui_screenshots.py [--only lcm-rapps]
+
+Lifecycle (LCM) screens are in the order the walk-through takes them, so a module's rows read as a story: the state before an action, then the
+state after it.
 
 ### Generic
 
 | Screen | What it shows |
 |---|---|
-| [Sign in](docs/screenshots/generic/login.png) | The only page reachable signed out. With OIDC on it also offers "Sign in with <provider>"; for an account with a one-time code a second step asks for the code (not in the screenshot: it shows the default, password only) |
-| [Failed sign-in](docs/screenshots/generic/login-failed.png) | Wrong password: a generic error that does not say which half was wrong; 5 failures lock the account for 5 minutes |
-| [Account locked](docs/screenshots/generic/login-locked.png) | After 5 failed attempts the account is locked for 5 minutes; the message does not say whether the user exists |
-| [Dashboard](docs/screenshots/pages/dashboard.png) | Module health for every service, open alarms by severity, SA SMOS escalations, model KPIs, rApp performance and fleet counts |
-| [Lifecycle flows (list)](docs/screenshots/pages/flows.png) | The ten call-flow journeys; pick one, then the entity to follow |
-| [Change password](docs/screenshots/generic/change-password-dialog.png) | Any signed-in user, from the sidebar footer |
+| [Sign in](docs/screenshots/generic/login.png) | The only page reachable signed out. With OIDC on it also offers "Sign in with <provider>"; an account with a one-time code gets a second step (not shown: the default is password only) |
+| [Failed sign-in](docs/screenshots/generic/login-failed.png) | Wrong password: a generic error that does not say which half was wrong |
+| [Account locked](docs/screenshots/generic/login-locked.png) | After 5 failed attempts the name is locked for 5 minutes; the message does not say whether the user exists |
+| [Dashboard](docs/screenshots/pages/dashboard.png) | Network health, open alarms by severity, autonomous actions, approvals and model guard breaches; the region health map, worst elements and what needs attention |
+| [Dashboard, light theme](docs/screenshots/pages/dashboard-light.png) | The same page in the light theme |
+| [Search (⌘K)](docs/screenshots/generic/search.png) | The top bar's search: page jumps plus the elements, rApps, alarms, models and decisions matching "gnb" |
+| [Change password](docs/screenshots/generic/change-password-dialog.png) | Any signed-in user, from the sidebar's user card |
+| [Preferences](docs/screenshots/pages/preferences.png) | Theme, accent, text size and display defaults (start page, rows per page, time zone…), kept by the BFF per user |
+| [Preferences, light theme](docs/screenshots/pages/preferences-light.png) | The same page in the light theme |
+| [Account security](docs/screenshots/pages/security.png) | Two-step sign-in, recovery codes and the user's own recent sign-ins |
+| [Users and roles](docs/screenshots/pages/admin-users.png) | Admin: users with role and last activity, deactivate / reset password / revoke sessions, and the role matrix the BFF enforces |
 | [Add user](docs/screenshots/generic/admin-add-user-dialog.png) | Admin: create a GUI user with a role |
-| [Users and role matrix](docs/screenshots/pages/admin-users.png) | Admin: users, roles, deactivate / reset password, and the role matrix the BFF enforces |
-| [Audit log](docs/screenshots/generic/admin-audit-log.png) | Admin: the append-only log of every mutating call (allowed or denied), sign-ins and user administration |
+| [Audit log](docs/screenshots/generic/admin-audit-log.png) | Admin: the append-only log of every mutating call (allowed or denied), sign-ins and user administration, with CSV export |
+| [MSAC](docs/screenshots/pages/admin-msac.png) | Admin: the MSAC tiers that gate wide-scope configuration writes |
 
 ### Lifecycle flows (`/flows`)
-| Flow | Result |
+
+Each board follows one subject (the picker at the top), proves each step from live state and offers the next action.
+
+| Flow | What the board shows |
 |---|---|
-| [01 rApp onboarding → running instance](docs/screenshots/flows/f01.png) | Energy Saving package → instance → NFO deployment → bootstrapped; 6/6 |
-| [02 AI/ML model: register → train → certify → deploy → infer → monitor](docs/screenshots/flows/f02.png) | 11 steps: runtime ACTIVE, an inference job, and an MLMF floor breach that triggers a retrain |
-| [03 Configuration write, schema-checked, fleet-aware](docs/screenshots/flows/f03.png) | `PARTIAL_SUCCESS`: one ME applied, one never registered (`ENDPOINT_UNREACHABLE`) |
-| [04 Closed-loop assurance: monitor → decide → remediate → escalate](docs/screenshots/flows/f04.png) | Threshold breach, `RECONNECT` resolved; 5/5 |
-| [06 Package failure and the cascade-delete guard](docs/screenshots/flows/f06.png) | A package that failed validation; `CreateInstance` is refused (409) |
-| [06 (guard blocking)](docs/screenshots/flows/f06-blocked.png) | A PRIMED package with active usage registrations: the guard is the failing step, so delete reads as blocked |
-| [07 rApp fault and performance reporting](docs/screenshots/flows/f07.png) | Critical fault → FAULTED → recovered → RUNNING; the next action is Terminate |
-| [08 RAN Analytics: producer → report → subscriber query](docs/screenshots/flows/f08.png) | Producer, SME service, push subscription, report, pull query; 5/5 |
-| [09 Intent registration → fulfilment reporting → admin state](docs/screenshots/flows/f09.png) | Handler reports received, intent deactivated by its RMIO; 5/5 |
-| [10 SO SMOS multi-step order: INFRA → TRAINING → DEPLOY](docs/screenshots/flows/f10.png) | Three steps dispatched to FOCOM, AI/ML Workflow and NFO, all completed |
+| [Flow board (list)](docs/screenshots/pages/flows.png) | The flow journeys, each with its progress; pick one, then the subject |
+| [01 rApp onboarding → running instance](docs/screenshots/flows/f01.png) | A demo package: onboarded, descriptor created, instance deployed on NFO; 5/6, waiting for the bootstrap (Mark bootstrapped) |
+| [02 AI/ML model: register → train → certify → deploy → infer → monitor](docs/screenshots/flows/f02.png) | The walk-through's model: certified, node groups cleared, runtime ACTIVE, inference jobs and an MLMF floor breach |
+| [03 Configuration write, schema-checked, fleet-aware](docs/screenshots/flows/f03.png) | The two-element CM write: `PARTIAL_SUCCESS`, one element APPLIED, one REJECTED (`NETCONF_UNREACHABLE`); the endpoints offer Heartbeat |
+| [04 Closed-loop assurance: monitor → decide → remediate → escalate](docs/screenshots/flows/f04.png) | An order-scoped monitor: thresholds, MDAF and MLMF reports, `RECONNECT` RESOLVED, an escalation; 5/5 |
+| [06 Package lifecycle (failed validation)](docs/screenshots/flows/f06.png) | A package that failed validation (a second onboarding of the demo's CSAR): CreateInstance is refused, Delete is the next action |
+| [06 Package lifecycle (guard blocking)](docs/screenshots/flows/f06-blocked.png) | A PRIMED package with active usage registrations: the cascade-delete guard is the failing step, with Stop usage offered |
+| [07 rApp instance lifecycle](docs/screenshots/flows/f07.png) | An instance that reported performance, a minor and a critical fault, was recovered and bootstrapped again; 6/7, Terminate next |
+| [08 RAN Analytics: producer → report → subscriber query](docs/screenshots/flows/f08.png) | Producer registered and discoverable at SME, reports published; the subscribe step is offered |
+| [09 Intent registration → fulfilment reporting → admin state](docs/screenshots/flows/f09.png) | The walk-through's intent: addressed to SA SMOS, handler reports received, deactivated by its RMIO (`smo-gui`); 5/5 |
+| [10 SO SMOS multi-step order: INFRA → TRAINING → DEPLOY](docs/screenshots/flows/f10.png) | The walk-through's order: three steps dispatched to FOCOM, AI/ML Workflow and NFO, all COMPLETED |
+| [15 NFO workload: instantiate → scale → heal → terminate](docs/screenshots/flows/f15.png) | A service order's NF deployment, RUNNING; Scale and Terminate offered |
+| [16 FOCOM resource & inventory](docs/screenshots/flows/f16.png) | A provisioned O-Cloud resource with the inventory subscriptions it matches; Deprovision next |
+| [19 RAN software job: download → install → activate](docs/screenshots/flows/f19.png) | The walk-through's software job: DOWNLOAD done, now in INSTALL with ok / failed offered |
 
 ### By module
 
 Each table: the page's tabs first, then the lifecycle screens for that module.
 
-
 #### rApps: packages and instances (Onboarding, rApp Management)
 
 | Screen | What it shows |
 |---|---|
-| [Packages (tab)](docs/screenshots/pages/rapps-packages.png) | Onboarded packages with state, signature and NF descriptor; two FAILED (rejected duplicate onboardings), the rest AVAILABLE |
-| [Instances (tab)](docs/screenshots/pages/rapps-instances.png) | rApp instances with state and autonomy mode (SHADOW, ASSIST, AUTONOMOUS) |
-| [Package: failed validation](docs/screenshots/lcm/rapps-package-failed.png) | A package that never became AVAILABLE; nothing to deploy, only Delete |
-| [Onboard a package](docs/screenshots/lcm/rapps-onboard-form.png) | The CSAR location form, filled but not submitted |
-| [Package: onboarded](docs/screenshots/lcm/rapps-package-onboarded.png) | A second version of a package, AVAILABLE after Onboarding validated it |
-| [Package: AVAILABLE](docs/screenshots/lcm/rapps-package-drawer.png) | TOSCA / ASD descriptor, SME declarations, artifacts, usage registrations, Prime |
-| [Package: PRIMED, deprime blocked](docs/screenshots/lcm/rapps-package-primed-deprime-blocked.png) | Deprime is disabled while two usage registrations are active, with the reason |
-| [Deploy dialog](docs/screenshots/lcm/rapps-deploy-dialog.png) | Instance configuration and autonomy mode, fixed for the instance's lifetime |
-| [Instance: RUNNING](docs/screenshots/lcm/rapps-instance-drawer.png) | Provenance, configuration, version history, performance and faults |
+| [Directory (tab)](docs/screenshots/pages/rapp-directory.png) | Every rApp instance with state, autonomy mode, whether it declares a page, and the pin star; search and filters |
+| [Instances (tab)](docs/screenshots/pages/rapps-instances.png) | rApp instances with state, the flow 07 lifecycle cell, autonomy mode, headline KPI and actions |
+| [Packages (tab)](docs/screenshots/pages/rapps-packages.png) | The onboard form, the package pipeline counts (each a filter) and the packages with state, signature, NF descriptor and actions |
+| [Rollouts (tab)](docs/screenshots/pages/rapps-rollouts.png) | Instances being upgraded right now, with Upgrade succeeded / failed |
+| [Package: failed validation](docs/screenshots/lcm/rapps-package-failed.png) | The FAILED filter after onboarding the demo's CSAR a second time (same content hash): nothing to deploy, only Delete |
+| [Onboard a package](docs/screenshots/lcm/rapps-onboard-form.png) | The CSAR location of a new version (1.1), filled but not submitted |
+| [Package: onboarded](docs/screenshots/lcm/rapps-package-onboarded.png) | Version 1.1 AVAILABLE after Onboarding validated it, with Deploy, Prime, Deprecate and Delete |
+| [Package: AVAILABLE](docs/screenshots/lcm/rapps-package-drawer.png) | The package drawer: identity, AI capabilities, ASD descriptor, SME declarations, artifacts, Prime, usage registrations |
+| [Deploy dialog](docs/screenshots/lcm/rapps-deploy-dialog.png) | Instance configuration and autonomy mode (ASSIST), fixed for the instance's lifetime; optional operator API base |
+| [Package: PRIMED, deprime blocked](docs/screenshots/lcm/rapps-package-primed-deprime-blocked.png) | Deprime is disabled while two usage registrations are active (the instance and a test usage), with the reason |
+| [Instance: RUNNING](docs/screenshots/lcm/rapps-instance-drawer.png) | The bootstrapped instance: provenance, configuration, version history, performance sparklines and a minor fault, reported with the admin tools |
 | [Instance: FAULTED](docs/screenshots/lcm/rapps-instance-faulted.png) | After a critical fault report: Recover and Terminate |
-| [Instance: recovering](docs/screenshots/lcm/rapps-instance-recovering.png) | Recover re-enters DEPLOYING until the rApp bootstraps again |
-| [Instance: RUNNING again](docs/screenshots/lcm/rapps-instance-recovered.png) | Marked bootstrapped; the fault history remains |
-| [Upgrade dialog](docs/screenshots/lcm/rapps-upgrade-dialog.png) | Pick an AVAILABLE package; the upgrade runs as two rows and is resolved success / failure |
-| [Upgrade: UPGRADING](docs/screenshots/lcm/rapps-upgrade-in-progress.png) | The instance waits for the replacement; resolve with Upgrade succeeded or Upgrade failed |
-| [Upgrade: replacement DEPLOYING](docs/screenshots/lcm/rapps-upgrade-replacement-deploying.png) | The replacement instance on the new package, awaiting its bootstrap |
-| [Upgrade: committed](docs/screenshots/lcm/rapps-upgrade-committed.png) | The replacement is RUNNING, the version history shows the UPGRADE and Roll back is offered |
+| [Instance: recovering](docs/screenshots/lcm/rapps-instance-recovering.png) | Recover re-enters DEPLOYING until the rApp bootstraps again (Mark bootstrapped) |
+| [Instance: RUNNING again](docs/screenshots/lcm/rapps-instance-recovered.png) | Bootstrapped again; the fault history remains |
+| [Upgrade dialog](docs/screenshots/lcm/rapps-upgrade-dialog.png) | Pick an AVAILABLE package (version 1.2); the upgrade runs as two rows, resolved success / failure |
+| [Upgrade: UPGRADING](docs/screenshots/lcm/rapps-upgrade-in-progress.png) | The instance names its pending replacement; Upgrade succeeded / Upgrade failed |
+| [Upgrade: replacement DEPLOYING](docs/screenshots/lcm/rapps-upgrade-replacement-deploying.png) | The replacement instance on version 1.2, awaiting its bootstrap |
+| [Upgrade: committed](docs/screenshots/lcm/rapps-upgrade-committed.png) | The replacement is RUNNING, its last teardown is the UPGRADE_COMMIT of the old instance, the history shows the UPGRADE and Roll back is offered |
 | [Rollback: UPGRADING](docs/screenshots/lcm/rapps-rollback-in-progress.png) | Roll back starts a replacement on the previous package and configuration |
-| [Rollback: committed](docs/screenshots/lcm/rapps-rollback-committed.png) | Version history now shows ROLLBACK, and the upgrade it undid is marked rolled back |
-| [Instance: UNDEPLOYED](docs/screenshots/lcm/rapps-instance-terminated.png) | After Terminate: NFO teardown and usage stop recorded under *Last teardown* |
-| [Package: PRIMED, usage released](docs/screenshots/lcm/rapps-package-primed-usage-released.png) | Both usage registrations stopped, so Deprime is enabled |
+| [Rollback: committed](docs/screenshots/lcm/rapps-rollback-committed.png) | The history now shows ROLLBACK, and the upgrade it undid is marked rolled back |
+| [Instance: UNDEPLOYED](docs/screenshots/lcm/rapps-instance-terminated.png) | After Terminate: NFO teardown and usage stop recorded under Last teardown; Delete remains |
+| [Package: PRIMED, usage released](docs/screenshots/lcm/rapps-package-primed-usage-released.png) | Every usage registration stopped, so Deprime is enabled |
 | [Package: AVAILABLE again](docs/screenshots/lcm/rapps-package-deprimed.png) | Deprime succeeded (PRIMED → DEPRIMING → AVAILABLE) |
 | [Package: DEPRECATED](docs/screenshots/lcm/rapps-package-deprecated.png) | After Deprecate: no new instances; Restore and Delete remain |
 | [Package: DELETING](docs/screenshots/lcm/rapps-package-delete-requested.png) | Delete requested; the cascade-delete guard found no active usage |
 
-#### AI/ML (MLMR, AIMgF, MLLF)
+#### rApp directory and declared pages (`/rapps`, `/rapps/<instance>`)
 
 | Screen | What it shows |
 |---|---|
-| [Models (tab)](docs/screenshots/pages/aiml-models.png) | Registered models with lifecycle state and cleared node groups |
-| [Training jobs (tab)](docs/screenshots/pages/aiml-training.png) | Jobs with status, step and metrics |
-| [Inference jobs (tab)](docs/screenshots/pages/aiml-inference.png) | Completed and failed inference jobs per model |
-| [Coordination groups (tab)](docs/screenshots/pages/aiml-groups.png) | A group of two or more models retrained together |
-| [Performance monitoring, MLMF (tab)](docs/screenshots/pages/aiml-mlmf.png) | Subscriptions with a KPI floor |
-| [Feature groups (tab)](docs/screenshots/pages/aiml-features.png) | Registered datalake feature groups |
-| [Register model](docs/screenshots/lcm/aiml-register-model-dialog.png) | Filled but not submitted |
-| [Model: TRAINING](docs/screenshots/lcm/aiml-model-training.png) | Pipeline stepper, training job in progress |
-| [Model: TRAINED, approval gate](docs/screenshots/lcm/aiml-model-trained-approval-gate.png) | After the training job finishes; an operator must approve before validation |
-| [Model: retrain requested](docs/screenshots/lcm/aiml-model-retrain-requested.png) | Retry training after a failed run starts a new training job |
+| [Energy Saving page](docs/screenshots/pages/rapp-page-energy-saving.png) | The page declared in the package: instance, closed-loop buttons, cells with sparklines and row actions, then the platform overview |
+| [Mobility page](docs/screenshots/pages/rapp-page-mobility.png) | The same renderer on another package, as an admin |
+| [Mobility page, as a viewer](docs/screenshots/pages/rapp-page-mobility-viewer.png) | No change button, and a sentence saying why |
+| [Mobility: relation drawer](docs/screenshots/pages/rapp-drawer-mobility.png) | The drawer of a row: trend chart, the latest execution as JSON, the history fetched for that row |
+| [Pinned rApp in the sidebar](docs/screenshots/pages/rapp-sidebar-pinned.png) | A pinned rApp under the one rApps entry |
+
+**Tenant and region scope (`SEC-10`).** The O1 endpoints table shows where each managed element is and whom it belongs to (`region / tenant`, a dash for what is not set), and the rApp page (Platform overview, Lifecycle) shows the instance's *Access scope*: the regions and tenants it may touch, or "Unscoped (every managed element)". The Safeguards page lists a refusal for a scope (`SCOPE_DENIED`) with the other refusals. The claim and an element's place are set through the API for now (`OPEN_ITEMS.md`, `SEC-10.10`); the console itself is not scoped (`GUI-5.1`).
+
+#### Approvals, decisions and safeguards
+
+| Screen | What it shows |
+|---|---|
+| [Approvals](docs/screenshots/pages/approvals.png) | rApp changes waiting for a person, with the lapse countdown, and the decided ones |
+| [Decisions](docs/screenshots/pages/decisions.png) | Why each rApp change was made: filters, tiles and the decision records, with the chain inputs → model → config job → approval |
+| [Safeguards](docs/screenshots/pages/safeguards.png) | Stop all rApp writes, per-rApp limits, refusals and watchers |
+
+#### AI/ML (MLMR, AIMgF, MLLF, MLMF)
+
+| Screen | What it shows |
+|---|---|
+| [Models (tab)](docs/screenshots/pages/aiml-models.png) | Models by stage (board), training now and waiting for governance |
+| [Training jobs (tab)](docs/screenshots/pages/aiml-training.png) | Jobs with status, step, progress, runtime and metrics; Suspend / Resume / Cancel |
+| [Inference jobs (tab)](docs/screenshots/pages/aiml-inference.png) | Inference jobs per model with status and runtime |
+| [Feature groups (tab)](docs/screenshots/pages/aiml-features.png) | The new feature group form and the registered datalake feature groups |
+| [Coordination groups (tab)](docs/screenshots/pages/aiml-groups.png) | The new group form and groups of models retrained together |
+| [Performance monitoring, MLMF (tab)](docs/screenshots/pages/aiml-mlmf.png) | The subscribe form and model-performance subscriptions with a KPI floor |
+| [Registry (tab)](docs/screenshots/pages/aiml-registry.png) | MLMR repositories, storages and artifact versions |
+| [Register model](docs/screenshots/lcm/aiml-register-model-dialog.png) | Type, version, description, owner, resource type and data types; filled but not submitted |
+| [Model: TRAINING](docs/screenshots/lcm/aiml-model-training.png) | Pipeline stepper, the training job in progress, Training complete |
+| [Model: TRAINED, approval gate](docs/screenshots/lcm/aiml-model-trained-approval-gate.png) | After the training job finishes, an operator must approve before validation |
 | [Model: VALIDATING](docs/screenshots/lcm/aiml-model-validating.png) | After the training approval and Request validation |
 | [Model: VALIDATED, approval gate](docs/screenshots/lcm/aiml-model-validated-approval-gate.png) | A second operator gate before emulation |
-| [Model: EMULATED](docs/screenshots/lcm/aiml-model-emulated-submit.png) | Submit for approval opens the governance steps |
+| [Model: EMULATED](docs/screenshots/lcm/aiml-model-emulated-submit.png) | Submit for approval opens the governance steps; the governance history lists both approvals |
 | [Model: PENDING_APPROVAL](docs/screenshots/lcm/aiml-model-pending-approval.png) | Approve or Reject |
-| [Model: CERTIFIED](docs/screenshots/lcm/aiml-model-certified.png) | Promote, Retrain or Deprecate |
+| [Model: CERTIFIED](docs/screenshots/lcm/aiml-model-certified.png) | Promote, Retrain or Deprecate; the deploy-to-node-groups form appears |
 | [Model: PROMOTED](docs/screenshots/lcm/aiml-model-promoted-deploy-node-groups.png) | The Deploy to node groups field, filled |
-| [Deploy targets cleared](docs/screenshots/lcm/aiml-model-node-groups-cleared.png) | `clearedNodeGroups` stamped by MLLF |
+| [Deploy targets cleared](docs/screenshots/lcm/aiml-model-node-groups-cleared.png) | `clearedNodeGroups` stamped by MLLF; Deploy runtime offered |
 | [Runtime: DEPLOYED](docs/screenshots/lcm/aiml-model-runtime-deployed.png) | AIMgF and NFO deployed the runtime; Activate or Terminate |
-| [Runtime: ACTIVE](docs/screenshots/lcm/aiml-model-runtime-active-inference-requested.png) | An inference job RUNNING, with Completed / Failed to resolve it |
-| [Model: PROMOTED, runtime ACTIVE](docs/screenshots/lcm/aiml-model-promoted-runtime-active.png) | Cleared node groups, artifact, runtime actions, training and inference jobs |
+| [Runtime: ACTIVE, inference requested](docs/screenshots/lcm/aiml-model-runtime-active-inference-requested.png) | An inference job RUNNING, with Completed / Failed (AIMgF fails a job left running for 5 s) |
+| [Model: PROMOTED, runtime ACTIVE](docs/screenshots/lcm/aiml-model-promoted-runtime-active.png) | Cleared node groups, governance history, runtime actions, the training job and two inference jobs (COMPLETED, FAILED) |
 | [Write back model metrics](docs/screenshots/lcm/aiml-training-metrics-dialog.png) | What the trainer reports for a job; replaces the stored metrics |
 | [Inference jobs](docs/screenshots/lcm/aiml-inference-job-running.png) | COMPLETED and FAILED outcomes across models |
+| [Model: retrain requested](docs/screenshots/lcm/aiml-model-retrain-requested.png) | A second model whose training run failed: Retry training started a new job (the FAILED one stays in the list) |
 | [New coordination group](docs/screenshots/lcm/aiml-coordination-group-form.png) | Two members picked, use cases entered |
-| [MLMF: subscription and reports](docs/screenshots/lcm/aiml-mlmf-subscription-and-reports.png) | Subscribe form, subscriptions, and reports with a floor breach |
+| [MLMF: subscription and reports](docs/screenshots/lcm/aiml-mlmf-subscription-and-reports.png) | The subscription, then three reports: two above the floor, one BREACHED, drawn against the floor |
 | [New feature group](docs/screenshots/lcm/aiml-feature-group-form.png) | Name, features and datalake settings; the token field is masked |
 
 #### Alarms (RAN NF OAM O1 FM, FOCOM)
 
 | Screen | What it shows |
 |---|---|
-| [RAN NF alarms (tab)](docs/screenshots/pages/alarms-ran.png) | Severity counters, alarm list, injection tool and FM subscriptions |
+| [RAN NF alarms (tab)](docs/screenshots/pages/alarms-ran.png) | Severity tiles (each a filter), time to acknowledge, raised per hour, the alarm table with its server filters, the detail panel and the injection tool |
+| [RAN NF alarms, light theme](docs/screenshots/pages/alarms-ran-light.png) | The same tab in the light theme |
 | [O-Cloud alarms (tab)](docs/screenshots/pages/alarms-ocloud.png) | Infrastructure alarms from FOCOM |
-| [Filter: critical](docs/screenshots/lcm/alarms-filter-critical.png) | Clicking a severity counter filters the list |
-| [Alarm: raised](docs/screenshots/lcm/alarm-raised-unacknowledged.png) | 3GPP TS 28.532 / 28.111 fault fields, UNACKNOWLEDGED |
-| [Alarm: acknowledged](docs/screenshots/lcm/alarm-acknowledged.png) | Ack recorded against the GUI user |
+| [Filter: critical](docs/screenshots/lcm/alarms-filter-critical.png) | Two alarms injected with the admin tool (what the element's NotifyNewAlarm carries); the critical tile filters the list |
+| [Alarm: raised](docs/screenshots/lcm/alarm-raised-unacknowledged.png) | 3GPP TS 28.532 / 28.111 fault fields, the lifecycle timeline and the likely root cause; UNACKNOWLEDGED |
+| [Alarm: acknowledged](docs/screenshots/lcm/alarm-acknowledged.png) | Ack recorded against the GUI user, with the time |
 | [Alarm: cleared](docs/screenshots/lcm/alarm-cleared.png) | Clear recorded with who and when; Unack remains |
-| [List with cleared alarms](docs/screenshots/lcm/alarms-with-cleared.png) | *show cleared* includes the cleared alarm |
+| [List with cleared alarms](docs/screenshots/lcm/alarms-with-cleared.png) | *show cleared* includes the cleared alarms |
 
-#### KPIs & Assurance (rApp Management, MLMF, MDAF, SA SMOS, FOCOM)
+#### KPIs & Assurance (RAN NF OAM PM, MDAF, SA SMOS, MLMF, FOCOM)
 
 | Screen | What it shows |
 |---|---|
+| [Overview (tab)](docs/screenshots/pages/kpis-overview.png) | KPI tiles over the chosen range, assurance monitors, escalations and the worst elements |
+| [PM subscriptions (tab)](docs/screenshots/pages/kpis-pm.png) | The new subscription form and counter subscriptions per managed element |
 | [rApp performance (tab)](docs/screenshots/pages/kpis-rapp.png) | Sparklines per reported metric |
-| [PM subscriptions (tab)](docs/screenshots/pages/kpis-pm.png) | Counter subscriptions per managed element |
-| [Model KPIs, MLMF (tab)](docs/screenshots/pages/kpis-mlmf.png) | Model KPI reports and floor breaches |
-| [RAN Analytics (tab)](docs/screenshots/pages/kpis-analytics.png) | Reports, producers and subscriptions |
-| [Assurance, SA SMOS (tab)](docs/screenshots/pages/kpis-assurance.png) | Monitors and remedial actions with outcomes |
-| [O-Cloud performance (tab)](docs/screenshots/pages/kpis-ocloud.png) | FOCOM metrics (empty: this build has no ingest route) |
+| [RAN Analytics (tab)](docs/screenshots/pages/kpis-analytics.png) | MDA requests and reports, the analytics reports, producers and subscriptions, and the producer tools |
+| [Assurance, SA SMOS (tab)](docs/screenshots/pages/kpis-assurance.png) | The register form, monitors and remedial actions with outcomes |
+| [O-Cloud performance (tab)](docs/screenshots/pages/kpis-ocloud.png) | FOCOM performance |
+| [Model KPIs, MLMF (tab)](docs/screenshots/pages/kpis-mlmf.png) | The MLMF tab of the AI/ML page, here too |
 | [New PM subscription](docs/screenshots/lcm/kpis-pm-subscription-form.png) | Managed element, counter, delivery and granularity |
-| [Analytics report](docs/screenshots/lcm/kpis-analytics-report-dialog.png) | One report's output |
-| [Monitor: threshold breach](docs/screenshots/lcm/kpis-monitor-evaluate-breach.png) | Evaluate with a metric below its floor |
-| [Remedial action: RESOLVED](docs/screenshots/lcm/kpis-remedial-action-resolved.png) | `RECONNECT` executed against the order's NF deployment |
-| [Escalated to operator](docs/screenshots/lcm/kpis-escalated-to-operator.png) | Escalate with a reason; outcome ESCALATED |
-| [Group-scoped remediation](docs/screenshots/lcm/kpis-group-retrain-remediation.png) | Any action on a model-group monitor retrains the group |
+| [Analytics report](docs/screenshots/lcm/kpis-analytics-report-dialog.png) | One report's output, published with the producer tools as `energy-saving-rapp` |
 | [Register assurance monitor](docs/screenshots/lcm/kpis-register-monitor-form.png) | Scope picked from the SO SMOS orders, metric floors entered |
-| [Monitor registered](docs/screenshots/lcm/kpis-monitor-registered.png) | The new monitor listed with no actions yet |
+| [Monitor registered](docs/screenshots/lcm/kpis-monitor-registered.png) | The new monitor listed |
+| [Monitor: threshold breach](docs/screenshots/lcm/kpis-monitor-evaluate-breach.png) | Evaluate with a metric below its floor: the breach comes back inline |
+| [Remedial action: RESOLVED](docs/screenshots/lcm/kpis-remedial-action-resolved.png) | `RECONNECT` executed against the order's NF deployment; the monitor counts one action taken |
+| [Escalated to operator](docs/screenshots/lcm/kpis-escalated-to-operator.png) | Escalate with a reason; the outcome is ESCALATED |
+| [Group-scoped remediation](docs/screenshots/lcm/kpis-group-retrain-remediation.png) | A monitor on a model coordination group: any action type retrains the group (scope "model group (retrain)", RESOLVED) |
 
 #### Intents (Intent Service)
 
 | Screen | What it shows |
 |---|---|
-| [Intents (tab)](docs/screenshots/pages/policy-intents.png) | TS 28.312 intents with admin state |
+| [Intents (tab)](docs/screenshots/pages/policy-intents.png) | Tiles, TS 28.312 intents with admin state and fulfilment, and the new-intent form |
 | [Intent handlers, RMIH (tab)](docs/screenshots/pages/policy-handlers.png) | Framework-internal handlers and their capabilities |
-| [Autonomy dispatches (tab)](docs/screenshots/pages/policy-autonomy.png) | DISPATCHED, SHADOWED and AWAITING_SCOPE dispatches by autonomy mode |
-| [Create intent](docs/screenshots/lcm/policy-intent-create-form.png) | Handler, expectation object type, targets, priority and purpose |
-| [Intent: ACTIVATED](docs/screenshots/lcm/policy-intent-drawer.png) | Expectations and the handler's reports |
+| [Autonomy dispatches (tab)](docs/screenshots/pages/policy-autonomy.png) | The request form and dispatches by autonomy mode |
+| [Utility formulas (tab)](docs/screenshots/pages/policy-formulas.png) | The registered intent utility formulas |
+| [Create intent](docs/screenshots/lcm/policy-intent-create-form.png) | Handler SA SMOS, label, object type, a target the handler declares (energy-saving control), priority and purpose; checked against the handler |
+| [Intent: ACTIVATED](docs/screenshots/lcm/policy-intent-drawer.png) | Expectations and the handler's reports: RECEIVED, then DEGRADED (the expectation names no managed element) |
 | [Intent: DEACTIVATED](docs/screenshots/lcm/policy-intent-deactivated.png) | Admin state changed by the intent's own RMIO (`smo-gui`) |
 | [Publish an intent report](docs/screenshots/lcm/policy-intent-report-form.png) | The admin tool for acting as the handling RMIH |
 | [Intent report published](docs/screenshots/lcm/policy-intent-report-published.png) | The new fulfilment report appears first in the intent's reports |
-| [Autonomy: AWAITING_SCOPE](docs/screenshots/lcm/policy-autonomy-awaiting-scope.png) | An ASSIST instance waits for an operator to scope it, or reject it |
+| [Autonomy: AWAITING_SCOPE](docs/screenshots/lcm/policy-autonomy-awaiting-scope.png) | An ASSIST instance asked for a dispatch: it waits for an operator to scope it, or reject it |
 | [Autonomy: resolved](docs/screenshots/lcm/policy-autonomy-resolved.png) | Scope supplied; an intent was created and the dispatch is DISPATCHED |
 
-#### rApp directory and declared pages (`/rapps`, `/rapps/<instance>`)
+#### RAN pages (RAN NF OAM)
 
 | Screen | What it shows |
 |---|---|
-| [rApp directory](docs/screenshots/pages/rapp-directory.png) | Search, filters, state, whether a page is declared, the pin star |
-| [Energy Saving page, as an operator](docs/screenshots/pages/rapp-page-energy-saving.png) | The page declared in the package: instance, buttons, cells with sparklines and a row action, then the platform overview |
-| [Mobility page, as a viewer](docs/screenshots/pages/rapp-page-mobility-viewer.png) | The same renderer on another package; no change button, and a sentence saying why |
-| [Mobility: relation drawer](docs/screenshots/pages/rapp-drawer-mobility.png) | The drawer of a row: trend chart, the latest execution as JSON, the history fetched for that row |
-| [Pinned rApp in the sidebar](docs/screenshots/pages/rapp-sidebar-pinned.png) | A pinned rApp under the one rApps entry |
-
-**Tenant and region scope (`SEC-10`).** The O1 endpoints table shows where each managed element is and whom it belongs to (`region / tenant`, a dash for what is not set), and the rApp page (Platform overview, Lifecycle) shows the instance's *Access scope*: the regions and tenants it may touch, or "Unscoped (every managed element)". The Safeguards page lists a refusal for a scope (`SCOPE_DENIED`) with the other refusals. The claim and an element's place are set through the API for now (`OPEN_ITEMS.md`, `SEC-10.10`); the console itself is not scoped (`GUI-5.1`).
+| [RAN topology](docs/screenshots/pages/topology.png) | Relation tiles, the cell graph and the problem table (relations not reciprocal, external, ambiguous) |
+| [Configuration](docs/screenshots/pages/configuration.png) | CM write jobs with staged waves, halts, rollback and KPI guards |
+| [Software](docs/screenshots/pages/software.png) | Software campaigns in waves with their gates |
+| [Element](docs/screenshots/pages/element.png) | One managed element (`gnb-du-demo-01`): overview, alarms, cells and guards |
+| [Element: managed objects](docs/screenshots/pages/element-mos.png) | The same element's managed-object tree |
 
 #### Infrastructure (NFO, FOCOM, RAN NF OAM, SO SMOS)
 
 | Screen | What it shows |
 |---|---|
-| [NF deployments (tab)](docs/screenshots/pages/infra-nfo.png) | Deployments with state, heal / scale / terminate, and descriptors |
-| [O-Cloud inventory (tab)](docs/screenshots/pages/infra-ocloud.png) | Pool resources, deployment managers, inventory subscriptions, resource types |
 | [Topology (tab)](docs/screenshots/pages/infra-topology.png) | TEIV entities and relationships exported from FOCOM |
-| [O1 endpoints & jobs (tab)](docs/screenshots/pages/infra-o1.png) | Managed elements (with their region and tenant, `SEC-10.2`; the register form takes both), CM write jobs and software management jobs |
-| [Service orders (tab)](docs/screenshots/pages/infra-orders.png) | Orders: completed, and a failed one whose pending step was cancelled |
-| [NF deployment: RUNNING](docs/screenshots/lcm/nfo-deployment-running.png) | LCM operations and linked O-Cloud resources |
+| [NF deployments (tab)](docs/screenshots/pages/infra-nfo.png) | State tiles (each a filter), deployments with heal / scale / terminate, and the descriptors |
+| [O-Cloud inventory (tab)](docs/screenshots/pages/infra-ocloud.png) | The level picker (locations → sites → clusters…, provisioning, O2-IMS pools) and inventory subscriptions |
+| [O1 endpoints & jobs (tab)](docs/screenshots/pages/infra-o1.png) | Managed elements (with region and tenant, `SEC-10.2`), CM write jobs and software management jobs |
+| [Service orders (tab)](docs/screenshots/pages/infra-orders.png) | Orders as steppers coloured by step status, with Details |
+| [Compose service order](docs/screenshots/lcm/orders-compose.png) | INFRA, TRAINING and DEPLOY step templates added to the order (prefilled with the newest model and an unused NF descriptor) |
+| [Service order: executed](docs/screenshots/lcm/order-drawer-steps.png) | Per-step results: resource, training job, NF deployment, all COMPLETED |
+| [NF deployment: RUNNING](docs/screenshots/lcm/nfo-deployment-running.png) | The order's deployment: LCM operations and linked O-Cloud resources |
 | [NF deployment: heal and scale](docs/screenshots/lcm/nfo-heal-and-scale-operations.png) | HEAL and SCALE operations recorded |
-| [NF deployment: ABNORMAL](docs/screenshots/lcm/nfo-runtime-failure-abnormal.png) | A deployment-manager `RUNTIME_FAILURE` with its reason |
+| [NF deployment: ABNORMAL](docs/screenshots/lcm/nfo-runtime-failure-abnormal.png) | A deployment-manager `RUNTIME_FAILURE` (reported from the drawer) with its reason |
 | [NF deployment: healed](docs/screenshots/lcm/nfo-healed-running.png) | Heal returns it to RUNNING |
-| [O-Cloud resource provisioned](docs/screenshots/lcm/ocloud-resource-provisioned.png) | A new resource in the pool, with Deprovision |
+| [O-Cloud resource provisioned](docs/screenshots/lcm/ocloud-resource-provisioned.png) | A new resource in pool-0, with Deprovision |
 | [Inventory-change subscription](docs/screenshots/lcm/ocloud-inventory-subscription-form.png) | Callback and resource type filter, filled |
 | [Subscription created](docs/screenshots/lcm/ocloud-inventory-subscription-created.png) | Notified on provision / deprovision of matching resources |
-| [Register O1 endpoint](docs/screenshots/lcm/o1-register-endpoint-dialog.png) | Managed element, adaptor URI, protocols, vendor |
+| [Register O1 endpoint](docs/screenshots/lcm/o1-register-endpoint-dialog.png) | Managed element, entity type, adaptor URI, protocol, vendor, region and tenant |
 | [O1 health discovery](docs/screenshots/lcm/o1-health-discovery.png) | Run health discovery re-ages every endpoint's health |
-| [CM write to a RESTCONF ME](docs/screenshots/lcm/o1-cm-write-restconf-applied.png) | A RESTCONF managed element accepts the write; one sub-change APPLIED |
-| [New CM write](docs/screenshots/lcm/o1-cm-write-dialog.png) | Several managed elements, scope, operation, schema-checked changes |
+| [New CM write](docs/screenshots/lcm/o1-cm-write-dialog.png) | Two managed elements (one whose adaptor does not answer), scope, operation, schema-checked changes, staged rollout and KPI guard |
 | [CM write submitted](docs/screenshots/lcm/o1-cm-write-submitted.png) | The new job in the list |
-| [CM job: PARTIAL_SUCCESS](docs/screenshots/lcm/o1-cm-job-partial-success.png) | Per-managed-element sub-changes: APPLIED and REJECTED |
-| [Software management job](docs/screenshots/lcm/o1-software-job-advanced.png) | A job advanced to its next phase |
-| [Compose service order](docs/screenshots/lcm/orders-compose.png) | Step templates added to the order |
-| [Service order: executed](docs/screenshots/lcm/order-drawer-steps.png) | Per-step results |
+| [CM job: PARTIAL_SUCCESS](docs/screenshots/lcm/o1-cm-job-partial-success.png) | Per-element sub-changes: APPLIED and REJECTED (`NETCONF_UNREACHABLE`); Roll back offered |
+| [CM write to a RESTCONF ME](docs/screenshots/lcm/o1-cm-write-restconf-applied.png) | An element registered with RESTCONF at its RFC 8040 root accepts the write: one sub-change APPLIED |
+| [Software management job](docs/screenshots/lcm/o1-software-job-advanced.png) | A job advanced past DOWNLOAD to its next phase (INSTALL) |
 
 #### Data & Exposure (DME, SME)
 
 | Screen | What it shows |
 |---|---|
-| [DME: types, jobs, offers (tab)](docs/screenshots/pages/data-dme.png) | Producers, data types, data jobs, offers and type subscriptions |
-| [SME: services & invokers (tab)](docs/screenshots/pages/data-sme.png) | Providers, published APIs, invokers, discovery and CAPIF event subscriptions (one unscoped, one limited by `apiIds`) |
-| [DME offer: notify data ready](docs/screenshots/lcm/dme-offer-notify-data-ready.png) | The producer's availability signal for a committed offer |
+| [DME: flow & jobs (tab)](docs/screenshots/pages/data-dme.png) | Producers → data types → consumers, and the data jobs with the create form |
+| [DME: producers & offers (tab)](docs/screenshots/pages/data-offers.png) | Producers, data types, offers and type subscriptions |
+| [SME: services & invokers (tab)](docs/screenshots/pages/data-sme.png) | Providers and published APIs, invokers, discovery and CAPIF event subscriptions |
 | [Register a producer data type](docs/screenshots/lcm/dme-register-type-form.png) | The admin tool for acting as a producer |
-| [Create a data job](docs/screenshots/lcm/dme-data-job-form.png) | Type, mode, delivery (limited to what an offer committed) and consumer |
+| [DME offer: notify data ready](docs/screenshots/lcm/dme-offer-notify-data-ready.png) | An offer for the new type (DME committed a method), and the producer's availability signal |
+| [Create a data job](docs/screenshots/lcm/dme-data-job-form.png) | Type, mode, delivery (the hint names the committed method) and consumer |
 | [Data job](docs/screenshots/lcm/dme-data-job-dialog.png) | The created job's record |
 | [SME invoker secret](docs/screenshots/lcm/sme-invoker-secret-dialog.png) | Shown once and never again; SME keeps only a hash |
-| [Trusted-invoker security context](docs/screenshots/lcm/sme-trusted-invoker-dialog.png) | AEF, API and preferred security method |
-| [CAPIF event subscription form](docs/screenshots/lcm/sme-event-subscription-form.png) | Subscriber, events and callback |
+| [Trusted-invoker security context](docs/screenshots/lcm/sme-trusted-invoker-dialog.png) | Notification destination, AEF, API and preferred security method |
+| [CAPIF event subscription form](docs/screenshots/lcm/sme-event-subscription-form.png) | Subscriber, events, callback and optional filters |
 | [CAPIF event subscription created](docs/screenshots/lcm/sme-event-subscription-created.png) | Listed under its subscriber |
 
 ### Role views
 
-Each screen is the same live state seen through a lower role. Actions the
-role can't perform aren't rendered, and the BFF refuses them anyway.
+Each screen is the same live state seen through a lower role. Actions the role can't perform aren't rendered, and the BFF refuses them anyway.
 
 | Role | Screens |
 |---|---|

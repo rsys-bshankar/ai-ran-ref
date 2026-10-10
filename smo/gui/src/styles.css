@@ -509,6 +509,9 @@ button.tile { cursor: pointer; }
 .tile.warn { border-color: color-mix(in srgb, var(--warn) 55%, transparent); background: linear-gradient(0deg, var(--warn-soft), var(--warn-soft)), var(--raised); }
 .tile.bad { border-color: color-mix(in srgb, var(--bad) 55%, transparent); background: linear-gradient(0deg, var(--bad-soft), var(--bad-soft)), var(--raised); }
 .tile b { font: 600 1.25rem var(--f-display); }
+.tile .row { flex-wrap: wrap; }                       /* a tile is narrow: its action buttons wrap (a table cell keeps them on one line) */
+.tile .row.end { justify-content: flex-start; }
+.tile .btn { white-space: normal; text-align: center; }
 .attention > li { align-items: flex-start; }
 .feed > li { align-items: flex-start; }
 .sev-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
