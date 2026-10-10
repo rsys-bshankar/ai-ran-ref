@@ -168,6 +168,65 @@ def test_ingest_checks_the_job(client):
     assert client.delete(f"/performance-jobs/{job}").status_code == 204 and client.get(f"/performance-jobs/{job}").status_code == 404
 
 
+# ---------------------------------------------------------------- node utilisation (PR-GUI-9.8b)
+
+def _utilisation(client, resource: str, definition: str, value, at: str, **extra):
+    """Ingests one utilisation record for `resource` collected at `at` and returns the response."""
+    return client.post("/performance/ingest", json={"resourceId": resource, "performanceMeasurementDefinitionId": definition,
+                                                    "measurementValue": value, "timeStamp": at, **extra})
+
+
+def test_a_resource_utilisation_is_its_newest_cpu_and_memory_record(client):
+    """The utilisation of a resource is the newest CPU and the newest memory record (whatever order they arrive in), `at` is the newer of the two, and
+    a suspect record, another resource's record and another measurement are not counted."""
+    _utilisation(client, "node-1", "CPU_UTILIZATION", 40, "2026-10-01T10:00:00Z")
+    _utilisation(client, "node-1", "CPU_UTILIZATION", 72.5, "2026-10-01T10:05:00Z")
+    _utilisation(client, "node-1", "CPU_UTILIZATION", 10, "2026-10-01T09:00:00Z")          # older, arrives last
+    _utilisation(client, "node-1", "CPU_UTILIZATION", 99, "2026-10-01T11:00:00Z", isSuspect=True)
+    _utilisation(client, "node-1", "MEMORY_UTILIZATION", 55, "2026-10-01T10:02:00Z")
+    _utilisation(client, "node-2", "CPU_UTILIZATION", 5, "2026-10-01T12:00:00Z")
+    client.post("/performance/ingest", json={"resourceId": "node-1", "performanceMeasurementDefinitionId": "cpu_load", "measurementValue": 1})
+    out = client.get("/resources/node-1/utilisation")
+    assert out.status_code == 200
+    body = out.json()
+    assert body["resourceId"] == "node-1" and body["cpuPercent"] == 72.5 and body["memoryPercent"] == 55
+    assert body["at"].startswith("2026-10-01T10:05:00")
+
+
+def test_a_resource_with_no_utilisation_record_answers_nulls_not_404(client):
+    """An id with no record (a host name, an unknown id, or one with only memory) answers 200 with nulls where there is nothing."""
+    assert client.get("/resources/nowhere/utilisation").json() == {"resourceId": "nowhere", "cpuPercent": None, "memoryPercent": None, "at": None}
+    _utilisation(client, "mem-only", "MEMORY_UTILIZATION", 30, "2026-10-01T10:00:00Z")
+    body = client.get("/resources/mem-only/utilisation").json()
+    assert body["cpuPercent"] is None and body["memoryPercent"] == 30 and body["at"].startswith("2026-10-01T10:00:00")
+
+
+def test_the_batched_utilisation_answers_one_item_per_id_in_order(client):
+    """`GET /utilisation` answers one item per id in the order given, a duplicate once, nulls for an id with no record."""
+    _utilisation(client, "a", "CPU_UTILIZATION", 11, "2026-10-01T10:00:00Z")
+    _utilisation(client, "b", "MEMORY_UTILIZATION", 22, "2026-10-01T10:00:00Z")
+    items = client.get("/utilisation", params={"resource_ids": "b, a,zz,a"}).json()["items"]
+    assert [i["resourceId"] for i in items] == ["b", "a", "zz"]
+    assert (items[0]["memoryPercent"], items[1]["cpuPercent"], items[2]["cpuPercent"], items[2]["at"]) == (22, 11, None, None)
+
+
+def test_the_batched_utilisation_refuses_no_id_and_more_than_100(client):
+    """No id at all, or more than 100 distinct ids, is 422; exactly 100 is accepted."""
+    assert client.get("/utilisation", params={"resource_ids": " , "}).status_code == 422
+    assert client.get("/utilisation", params={"resource_ids": ",".join(f"n{i}" for i in range(101))}).status_code == 422
+    assert len(client.get("/utilisation", params={"resource_ids": ",".join(f"n{i}" for i in range(100))}).json()["items"]) == 100
+
+
+def test_a_utilisation_record_must_be_a_percentage(client):
+    """For the two utilisation measurements, ingest refuses a value below 0, above 100 or an object (422); other measurements are not checked."""
+    for bad in (-1, 100.5, {"cpu": 3}):
+        assert _utilisation(client, "n", "CPU_UTILIZATION", bad, "2026-10-01T10:00:00Z").status_code == 422, bad
+        assert _utilisation(client, "n", "MEMORY_UTILIZATION", bad, "2026-10-01T10:00:00Z").status_code == 422, bad
+    assert _utilisation(client, "n", "CPU_UTILIZATION", 0, "2026-10-01T10:00:00Z").status_code == 201
+    assert _utilisation(client, "n", "MEMORY_UTILIZATION", 100, "2026-10-01T10:00:00Z").status_code == 201
+    assert _utilisation(client, "n", "cpu_load", 250, "2026-10-01T10:00:00Z").status_code == 201
+
+
 def test_performance_subscriptions_receive_reports_for_matching_job_records(client, sent):
     """A report goes only to a subscription whose criteria match the job-linked record, carries the job and subscription ids and the value, and a record with no job is never reported."""
     job = _job(client).json()["performanceMeasurementJobId"]

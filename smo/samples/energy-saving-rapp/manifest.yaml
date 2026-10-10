@@ -146,3 +146,37 @@ operatorUi:
               - {path: reason, label: Reason}
               - {path: outcome, label: Outcome, format: badge}
               - {path: executionId, label: Execution, format: id}
+    # GUI-9.8b: each cell's state over the last day, from the rApp's own decision trail (GET /instances/{id}/cell-states). The chart draws one
+    # series per cell (2 serving, 1 pre-sleep, 0 sleep, stepping at each change); the table lists the changes, newest first.
+    - id: cell-state-history
+      title: Cell state, last 24 h (2 serving, 1 pre-sleep, 0 sleep)
+      kind: chart
+      source:
+        path: "/instances/{instanceId}/cell-states"
+        query: {hours: 24}
+        refreshSeconds: 60
+      type: line
+      points: points
+      x: t
+      y: level
+      seriesBy: cellId
+    - id: cell-state-transitions
+      title: Cell state changes, last 24 h
+      kind: table
+      source:
+        path: "/instances/{instanceId}/cell-states"
+        query: {hours: 24}
+        refreshSeconds: 60
+      rows: transitions
+      rowKey: transitionId
+      empty: No cell changed state in the last 24 hours.
+      columns:
+        - {path: at, label: Changed, format: datetime}
+        - {path: cellId, label: Cell}
+        - {path: fromState, label: From, format: badge}
+        - {path: toState, label: To, format: badge}
+        - {path: o1Value, label: O1}
+        - {path: decision, label: Decision, format: badge}
+        - {path: reason, label: Reason}
+        - {path: outcome, label: Outcome, format: badge}
+        - {path: executionId, label: Execution, format: id}
