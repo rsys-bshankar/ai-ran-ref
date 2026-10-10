@@ -1,3 +1,6 @@
+/** The pre-redesign shared components every page still uses: page header, card, tabs (with the URL-hash tab hook), state badges and severity chips,
+ * ids, key–value lists, the client table, drawer, modal, form field, and the role-gated `ActionButton` / `Can`. Restyled through styles.css; the
+ * redesign's new primitives live in `kit/` (STRUCTURE.md §5). `StateBadge`'s `TONES` table is the one place a backend state gets its colour. */
 import { useEffect, useState, type ReactNode } from "react";
 
 import type { Query } from "../api/client";
@@ -8,6 +11,7 @@ import { shortId } from "../lib/domain";
 
 // ---------------------------------------------------------------- layout bits
 
+/** The page title row: optional eyebrow, the title, a subtitle and actions on the right. */
 export function PageHeader({ title, subtitle, actions, eyebrow }: { title: string; subtitle?: ReactNode; actions?: ReactNode; eyebrow?: ReactNode }) {
   return (
     <header className="page-header">
@@ -21,6 +25,7 @@ export function PageHeader({ title, subtitle, actions, eyebrow }: { title: strin
   );
 }
 
+/** A surface with an optional title row (title, `sub` line, actions); `section` names the box for logs and tests. */
 export function Card({ title, sub, actions, children, className = "", section }: {
   title?: ReactNode; sub?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string;
   /** The box's stable id (STRUCTURE.md rule 3: `alarms.table`), put on the root as `data-section`. */
@@ -69,6 +74,7 @@ export function useHashTab<T extends string>(ids: readonly T[], fallback: T): [T
 
 // ---------------------------------------------------------------- status display
 
+/** The tone of every backend state word the console shows (ok, warn, bad, info, muted); an unknown word is muted. */
 const TONES: Record<string, string> = {
   RUNNING: "ok", ACTIVE: "ok", AVAILABLE: "ok", PRIMED: "ok", ENFORCED: "ok", COMPLETED: "ok", RESOLVED: "ok",
   APPLIED: "ok", ACTIVATED: "ok", ENABLED: "ok", ACKNOWLEDGED: "ok", CERTIFIED: "info", LOADED: "info", FINISHED: "ok",
@@ -112,6 +118,7 @@ export function SeverityChip({ severity }: { severity: string }) {
   return <span className={`sev sev-${sevClass(severity)} sev-${severity.toLowerCase()}`}>{severity}</span>;
 }
 
+/** A shortened id in mono; a click copies the full id. */
 export function Id({ value }: { value: string | null | undefined }) {
   if (!value) return <span className="muted">—</span>;
   return (
@@ -121,6 +128,7 @@ export function Id({ value }: { value: string | null | undefined }) {
   );
 }
 
+/** A definition list of label–value pairs; a missing value shows "—". */
 export function KeyValue({ items }: { items: [ReactNode, ReactNode][] }) {
   return (
     <dl className="kv">
@@ -131,10 +139,12 @@ export function KeyValue({ items }: { items: [ReactNode, ReactNode][] }) {
   );
 }
 
+/** A value as pretty-printed JSON in a scrollable box. */
 export function Json({ value }: { value: unknown }) {
   return <pre className="json" tabIndex={0}>{JSON.stringify(value, null, 2)}</pre>;
 }
 
+/** An error's message in a red box, or nothing. */
 export function ErrorBox({ error }: { error: unknown }) {
   if (!error) return null;
   return <div className="error-box">{error instanceof Error ? error.message : String(error)}</div>;
@@ -142,8 +152,11 @@ export function ErrorBox({ error }: { error: unknown }) {
 
 // ---------------------------------------------------------------- table
 
+/** One column of a `DataTable`: header, cell renderer, optional class (`actions` sticks to the right). */
 export interface Column<T> { header: ReactNode; render: (row: T) => ReactNode; className?: string }
 
+/** A client-side table of `rows` (one page the caller already has): loading, error and empty rows, clickable and selected rows.
+ * A list the backend pages uses `kit/ServerTable`, which wraps this. */
 export function DataTable<T>({ rows, columns, rowKey, loading, error, empty = "Nothing here yet.", onRowClick, selectedKey }: {
   rows: T[] | undefined; columns: Column<T>[]; rowKey: (r: T) => string; loading?: boolean; error?: unknown;
   empty?: ReactNode; onRowClick?: (r: T) => void; selectedKey?: string | null;
@@ -172,6 +185,7 @@ export function DataTable<T>({ rows, columns, rowKey, loading, error, empty = "N
 
 // ---------------------------------------------------------------- overlays
 
+/** A panel sliding in from the right over a scrim; Escape or a click outside closes it. */
 export function Drawer({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
   useEscape(onClose);
   return (
@@ -184,6 +198,7 @@ export function Drawer({ title, onClose, children }: { title: ReactNode; onClose
   );
 }
 
+/** A centred dialog over a scrim; Escape or a click outside closes it. */
 export function Modal({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
   useEscape(onClose);
   return (
@@ -196,6 +211,7 @@ export function Modal({ title, onClose, children }: { title: ReactNode; onClose:
   );
 }
 
+/** Calls `onClose` when Escape is pressed while the overlay is open. */
 function useEscape(onClose: () => void) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -206,6 +222,7 @@ function useEscape(onClose: () => void) {
 
 // ---------------------------------------------------------------- forms
 
+/** A labelled form control with an optional hint under it. */
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <label className="field">

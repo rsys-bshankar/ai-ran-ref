@@ -3,6 +3,9 @@
 
   - the page renders (a heading shows) and none of its calls to the backend for frontend answers 5xx or 401;
   - `axe-core` finds no serious or critical accessibility violation (WCAG 2 A and AA rules) that `security/gui-axe-baseline.json` does not accept;
+  - the same holds for `THEME_PAGES` in both themes and with every accent colour (the redesign's preferences, BRIEF §4d): the theme and the accent are
+    put on `<html>` as the console's ThemeProvider does, without saving anything to the user's preferences, and each finding is keyed
+    `"<route> [<theme>/<accent>] <rule id>"`;
   - a screenshot is kept, so the artifact shows what each page looked like.
 
     GUI_E2E_PASSWORD=... scripts/gui_e2e.py [--base-url http://localhost:3000] [--out gui-e2e] [--axe gui/node_modules/axe-core/axe.min.js]
@@ -25,7 +28,11 @@ from playwright.sync_api import sync_playwright
 
 SMO = Path(__file__).resolve().parent.parent
 PAGES = ["/", "/flows", "/rapps", "/safeguards", "/approvals", "/decisions", "/aiml", "/alarms", "/kpis", "/policy",
-         "/infrastructure", "/data", "/security", "/admin"]
+         "/topology", "/configuration", "/software", "/infrastructure", "/data", "/preferences", "/security", "/admin"]
+# The pages checked again in every theme × accent: the ones with the most kinds of text-on-colour (tiles, badges, severity chips, buttons, links).
+THEME_PAGES = ["/", "/alarms", "/approvals", "/preferences"]
+THEMES = ["dark", "light"]
+ACCENTS = ["volt", "blue", "teal", "amber", "radisys"]
 LOGIN = "/login"
 BAD_API_STATUS = (401, 500, 501, 502, 503, 504)
 WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]
@@ -61,6 +68,22 @@ def slug(route: str) -> str:
     return "home" if route == "/" else route.strip("/").replace("/", "-")
 
 
+def theme_violations(page, axe_source: str, route: str) -> dict[str, str]:
+    """The serious and critical axe findings of the page open at `route` in every theme × accent, keyed `"<route> [<theme>/<accent>] <rule id>"`.
+
+        Sets `data-theme` and `data-accent` on `<html>` directly (what the console's ThemeProvider does), so the user's saved preferences are untouched;
+        restores the dark theme with the default accent afterwards.
+    """
+    found: dict[str, str] = {}
+    for theme in THEMES:
+        for accent in ACCENTS:
+            page.evaluate("([t, a]) => { document.documentElement.dataset.theme = t; document.documentElement.dataset.accent = a; }", [theme, accent])
+            page.wait_for_timeout(50)                           # let the style recalculation land before axe reads computed colours
+            found.update(axe_violations(page, axe_source, f"{route} [{theme}/{accent}]"))
+    page.evaluate("() => { document.documentElement.dataset.theme = 'dark'; document.documentElement.dataset.accent = 'volt'; }")
+    return found
+
+
 def run(base_url: str, out: Path, user: str, password: str, axe_path: Path, baseline: dict[str, str], chromium: str | None) -> int:
     """Signs in once, opens every route in `PAGES`, and returns the exit code (0 only when nothing was reported).
 
@@ -84,13 +107,13 @@ def run(base_url: str, out: Path, user: str, password: str, axe_path: Path, base
         page.on("pageerror", lambda e: page_errors.append(str(e).splitlines()[0]))
         try:
             page.goto(f"{base_url}{LOGIN}")
-            page.get_by_text("Operator Console").wait_for()
+            page.get_by_label("Username").wait_for()
             accessibility.update(axe_violations(page, axe_source, LOGIN))
             page.screenshot(path=str(out / "login.png"))
             page.get_by_label("Username").fill(user)
             page.get_by_label("Password").fill(password)
             page.get_by_role("button", name="Sign in").click()
-            page.get_by_text("Modules healthy").wait_for()
+            page.get_by_role("navigation", name="Main").wait_for()        # the sidebar: signed in
             for route in PAGES:
                 before = len(api_failures), len(page_errors)
                 page.goto(f"{base_url}{route}")
@@ -101,6 +124,8 @@ def run(base_url: str, out: Path, user: str, password: str, axe_path: Path, base
                     pass                                     # a page that polls never goes idle; the heading is what says it rendered
                 page.screenshot(path=str(out / f"{slug(route)}.png"), full_page=True)
                 accessibility.update(axe_violations(page, axe_source, route))
+                if route in THEME_PAGES:
+                    accessibility.update(theme_violations(page, axe_source, route))
                 for failure in api_failures[before[0]:]:
                     problems.append(f"{route}: the backend answered {failure}")
                 for error in page_errors[before[1]:]:

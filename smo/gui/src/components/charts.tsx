@@ -1,3 +1,6 @@
+/** The console's SVG charts, drawn with the theme's chart classes (`.ln-*`, `.ar-*`, `.floor`, `.fill-*` in styles.css): sparkline, model
+ * lifecycle stepper, count bar, stacked bars over time, ring gauge and line chart with a floor. Pure components: the caller passes points that are
+ * already bounded (SCALE.md P12); `LineChart` thins anything past 300 points. */
 import { pipelineSteps } from "../lib/domain";
 
 /** A single metric over time. `floor` draws the guard-KPI floor line

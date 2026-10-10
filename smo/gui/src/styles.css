@@ -1,4 +1,4 @@
-/* AI-RAN SMO Operator Console — the "Signal" theme (smo/gui redesign, docs/GUI_DESIGN.md).
+/* AI-RAN SMO Operator Console — the "Signal" theme (the GUI redesign: docs/redesign/README.md, docs/redesign/designs/console.css is its source).
    Every colour is a token. The user's preferences sit on <html> as attributes, set by shell/ThemeProvider.tsx (and, before React mounts, by public/theme-boot.js):
      data-theme="dark|light"   data-accent="volt|blue|teal|amber|radisys"   data-size="s|m|l|xl" (the root font size: every font size below is in rem)
    Pages never hard-code a hex for text, surfaces or the accent. Status and severity colours do not follow the accent; the light theme darkens them for white grounds.
@@ -30,6 +30,7 @@
   --warn: #f0b43c;  --warn-soft: rgba(240, 180, 60, 0.14);
   --bad: #ff5d52;   --bad-soft: rgba(255, 93, 82, 0.14);
   --info: #6cb2ff;  --info-soft: rgba(108, 178, 255, 0.14);
+  --bad-ink: #ff8a80;          /* red text on its own soft fill: --bad itself is 4.45:1 there on a raised surface, this is ≥ 5.3:1 */
 
   --sev-critical: #ff5d52;
   --sev-major: #ff8a3d;
@@ -75,10 +76,13 @@
   --shadow: 0 12px 32px rgba(16, 24, 40, 0.16);
   --volt-text: var(--acc-text-l, #4b6a00);
   --volt-soft: var(--acc-soft-l, rgba(122, 160, 0, 0.12));
-  --ok: #13804f;    --ok-soft: rgba(19, 128, 79, 0.10);
-  --warn: #8a5a00;  --warn-soft: rgba(184, 120, 0, 0.12);
-  --bad: #c42b1f;   --bad-soft: rgba(196, 43, 31, 0.09);
-  --info: #1f5fbf;  --info-soft: rgba(31, 95, 191, 0.09);
+  /* darker than the hand-off's values (#13804f, #8a5a00, #c42b1f, #1f5fbf): those fell to 3.7–4.5:1 as badge text on their soft fill over the
+     raised and hover grounds (axe, scripts/gui_e2e.py); these keep ≥ 4.8:1 on every light ground */
+  --ok: #0e6b41;    --ok-soft: rgba(19, 128, 79, 0.10);
+  --warn: #7d5200;  --warn-soft: rgba(184, 120, 0, 0.12);
+  --bad: #b42318;   --bad-soft: rgba(196, 43, 31, 0.09);
+  --info: #1b55ab;  --info-soft: rgba(31, 95, 191, 0.09);
+  --bad-ink: var(--bad);
   --sev-critical: #c42b1f;
   --sev-major: #c2410c;
   --sev-minor: #a16207;
@@ -90,8 +94,8 @@
 
 /* Accent choices (one attribute, both themes). The text-on-ground variants keep 4.5:1 in each theme. */
 :root[data-accent="volt"]    { --acc: #c8f051; --acc-ink: #0b0f14; --acc-text-d: #c8f051; --acc-text-l: #4b6a00; --acc-soft-d: rgba(200,240,81,.12); --acc-soft-l: rgba(122,160,0,.12); --acc-line: rgba(200,240,81,.5); }
-:root[data-accent="blue"]    { --acc: #4c9bf5; --acc-ink: #06121f; --acc-text-d: #7db8ff; --acc-text-l: #1f5fbf; --acc-soft-d: rgba(76,155,245,.14); --acc-soft-l: rgba(31,95,191,.10); --acc-line: rgba(76,155,245,.55); }
-:root[data-accent="teal"]    { --acc: #2dd4bf; --acc-ink: #04201c; --acc-text-d: #5eead4; --acc-text-l: #0f766e; --acc-soft-d: rgba(45,212,191,.13); --acc-soft-l: rgba(15,118,110,.10); --acc-line: rgba(45,212,191,.55); }
+:root[data-accent="blue"]    { --acc: #4c9bf5; --acc-ink: #06121f; --acc-text-d: #7db8ff; --acc-text-l: #1b55ab; --acc-soft-d: rgba(76,155,245,.14); --acc-soft-l: rgba(31,95,191,.10); --acc-line: rgba(76,155,245,.55); }
+:root[data-accent="teal"]    { --acc: #2dd4bf; --acc-ink: #04201c; --acc-text-d: #5eead4; --acc-text-l: #0b625b; --acc-soft-d: rgba(45,212,191,.13); --acc-soft-l: rgba(15,118,110,.10); --acc-line: rgba(45,212,191,.55); }
 :root[data-accent="amber"]   { --acc: #fbbf24; --acc-ink: #1f1300; --acc-text-d: #fcd34d; --acc-text-l: #92400e; --acc-soft-d: rgba(251,191,36,.13); --acc-soft-l: rgba(146,64,14,.09); --acc-line: rgba(251,191,36,.55); }
 :root[data-accent="radisys"] { --acc: #df1f4e; --acc-ink: #ffffff; --acc-text-d: #ff7a98; --acc-text-l: #b3123b; --acc-soft-d: rgba(223,31,78,.16); --acc-soft-l: rgba(179,18,59,.09); --acc-line: rgba(223,31,78,.6); }
 
@@ -257,7 +261,7 @@ button.kpi.on { box-shadow: inset 0 0 0 2px var(--volt); }
 .badge.plain::before { display: none; }
 .b-ok, .tone-ok { background: var(--ok-soft); color: var(--ok); }
 .b-warn, .tone-warn { background: var(--warn-soft); color: var(--warn); }
-.b-bad, .tone-bad { background: var(--bad-soft); color: var(--bad); }
+.b-bad, .tone-bad { background: var(--bad-soft); color: var(--bad-ink); }
 .b-info, .tone-info { background: var(--info-soft); color: var(--info); }
 .b-mute, .tone-muted { background: var(--raised); color: var(--muted); border: 1px solid var(--line); }
 .b-volt { background: var(--volt-soft); color: var(--volt-text); }

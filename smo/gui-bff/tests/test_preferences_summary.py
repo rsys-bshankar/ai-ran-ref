@@ -41,11 +41,13 @@ class CountingSmo(FakeSmo):
 
 @pytest.fixture
 def smo():
+    """A fresh CountingSmo per test."""
     return CountingSmo()
 
 
 @pytest.fixture
 def app(smo):
+    """The BFF on an in-memory database with the three seeded users, talking to `smo` through the real gateway client."""
     cfg = Settings(r1_url=R1, jwt_secret="test-secret", cookie_secure=False, admin_password=PASSWORDS["admin"],
                    operator_password=PASSWORDS["operator"], viewer_password=PASSWORDS["viewer"])
     db = Database("sqlite://")
