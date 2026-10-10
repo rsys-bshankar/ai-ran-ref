@@ -2,14 +2,13 @@
 
 Where it sits: every module's `models.py` subclasses `Base`; request handlers take `get_session` as a FastAPI dependency, background code uses
 `session_scope()`. The URL comes from `SMO_DATABASE_URL` (or `SMO_DATABASE_URL_FILE`, with the password from `secretfile.read_secret`); see PR-DB-1
-and PR-ST-6 for the decisions. There is no default URL: a process without one raises `MissingDatabaseUrl` at import, except under pytest.
+and PR-ST-6 for the decisions. There is no default URL: a process without one raises `MissingDatabaseUrl` at import, unless `SMO_ALLOW_SQLITE_FALLBACK` is set (the unit-test conftests set it).
 
 What a maintainer must know: `engine` and `SessionLocal` are built when this module is first imported (the engine opens no connection until first
 use), so the environment must be complete before any `smo_shared.db` import. `session_scope` commits and `get_session` does not: a route that writes
 through `get_session` commits itself.
 """
 import os
-import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -33,20 +32,29 @@ class MissingDatabaseUrl(RuntimeError):
 
 
 # The unit tests build the engine at import without a database (they override the session, or use
-# `testing.make_test_engine()`), so under pytest an unset URL is an in-memory SQLite, never a server.
+# `testing.make_test_engine()`), so when `SMO_ALLOW_SQLITE_FALLBACK` is switched on an unset URL is an in-memory SQLite, never a server.
+# The fallback is an explicit opt-in (each test suite's conftest.py sets it through `testing.enable_sqlite_fallback()`), not a guess from
+# "pytest" being in sys.modules: a production process that happens to import pytest (a plugin, a debugging shell) must still refuse to start
+# without a database rather than silently keep its data in memory.
 TEST_DATABASE_URL = "sqlite://"
+SQLITE_FALLBACK_VARIABLE = "SMO_ALLOW_SQLITE_FALLBACK"
+_TRUE = frozenset({"1", "true", "yes", "on"})
 
 
-def resolve_database_url(environ=os.environ, under_pytest: bool | None = None) -> str:
+def resolve_database_url(environ=os.environ, allow_sqlite_fallback: bool | None = None) -> str:
     """The database URL, from `SMO_DATABASE_URL` or the file named by `SMO_DATABASE_URL_FILE`; the password may
     be kept out of the URL in `SMO_DATABASE_PASSWORD` or, better, the file named by `SMO_DATABASE_PASSWORD_FILE`
     (`secretfile.py`), and is then put into it. Compose uses that last form, so no container's environment
-    carries the password."""
+    carries the password.
+
+    When no URL is configured it returns the in-memory SQLite URL only if `allow_sqlite_fallback` is true (None reads `SMO_ALLOW_SQLITE_FALLBACK`
+    from `environ`: `1`, `true`, `yes` or `on`); otherwise it raises `MissingDatabaseUrl`.
+    """
     url = (read_secret("SMO_DATABASE_URL", environ) or "").strip()
     if not url:
-        if under_pytest is None:
-            under_pytest = "pytest" in sys.modules
-        if under_pytest:
+        if allow_sqlite_fallback is None:
+            allow_sqlite_fallback = (environ.get(SQLITE_FALLBACK_VARIABLE) or "").strip().lower() in _TRUE
+        if allow_sqlite_fallback:
             return TEST_DATABASE_URL
         raise MissingDatabaseUrl(
             "SMO_DATABASE_URL is not set. Set it to the Postgres URL for this deployment, for example "

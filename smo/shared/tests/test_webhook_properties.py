@@ -3,7 +3,8 @@
 The example-based cases in test_webhook.py pin known good and bad destinations;
 these generate thousands of inputs to check the guard's contract: it never
 raises, a non-http(s) scheme is never allowed, and an IP literal is allowed
-exactly when it is not loopback / link-local / multicast / unspecified / reserved.
+exactly when it is not loopback / link-local / multicast / unspecified / reserved
+(for IPv6, judged by the IPv4 address inside a mapped, 6to4 or NAT64 address).
 Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests -q
 """
 
@@ -15,6 +16,11 @@ from smo_shared.webhook import is_safe_webhook_destination
 
 
 def _blocked(ip) -> bool:
+    """The oracle: blocked ranges, and for an IPv6 address that wraps an IPv4 one (mapped, 6to4, NAT64) the verdict on the IPv4 address inside."""
+    if ip.version == 6:
+        embedded = ip.ipv4_mapped or ip.sixtofour or (ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF) if ip in ipaddress.ip_network("64:ff9b::/96") else None)
+        if embedded is not None and _blocked(embedded):
+            return True
     return ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved
 
 

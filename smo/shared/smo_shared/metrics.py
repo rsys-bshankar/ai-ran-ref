@@ -153,7 +153,7 @@ _TARGET_OK = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 def r1_target(path: str) -> str:
     """The module a path through R1 addresses (`/sme/x` is `sme`); anything that is not a module-shaped segment is `other`."""
     segment = path.lstrip("/").split("/", 1)[0].split("?", 1)[0]
-    return segment if _TARGET_OK.match(segment) else "other"
+    return segment if _TARGET_OK.fullmatch(segment) else "other"
 
 
 def outcome_of(status: int) -> str:
@@ -183,7 +183,7 @@ def refusal_reason(status: int) -> str | None:
 
 def _module_name() -> str:
     name = os.environ.get("MODULE", "")
-    return name if _TARGET_OK.match(name) else "unknown"
+    return name if _TARGET_OK.fullmatch(name) else "unknown"
 
 
 def record_refusal(status: int, module: str | None = None) -> None:

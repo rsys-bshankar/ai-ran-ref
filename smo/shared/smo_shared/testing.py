@@ -36,6 +36,7 @@ Postgres-shaped models against an in-memory SQLite test DB:
 """
 
 import json
+import os
 import uuid
 
 from contextlib import contextmanager
@@ -53,6 +54,16 @@ def _uuid_aware_default(obj):
 
 def _uuid_aware_json_serializer(*args, **kwargs):
     return json.dumps(*args, default=_uuid_aware_default, **kwargs)
+
+
+def enable_sqlite_fallback() -> None:
+    """Opts the current process in to the in-memory SQLite fallback of `smo_shared.db` (sets `SMO_ALLOW_SQLITE_FALLBACK=1` unless the caller already
+    chose a value).
+
+    Every test suite's `conftest.py` calls this before any application module is imported, because `smo_shared.db` builds its engine at import.
+    The fallback is never inferred from pytest being loaded: a production process must opt in explicitly, and only a test suite does.
+    """
+    os.environ.setdefault("SMO_ALLOW_SQLITE_FALLBACK", "1")
 
 
 def make_test_engine():

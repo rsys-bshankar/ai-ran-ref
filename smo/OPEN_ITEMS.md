@@ -427,17 +427,6 @@ Done (`HISTORY.md`, PR-SEC-10; decision `docs/adr/0005-tenant-region-authorizati
 |---|---|---|---|
 | SEC-13.4 | Same settings in the Helm chart | `kubectl` shows them | OPS-2.2 |
 
-#### PR-SEC-15 (part 2) — what the ownership and identity change leaves open
-
-`HISTORY.md` "PR-SEC-15 (part 2)" closes SEC-15.1, 15.4, 15.7, 15.8, 15.9 and the type overwrite of 15.10. When the table of `PR-SEC-15` is merged in (it comes with the shared-library hardening change), those rows are removed from it and these stay:
-
-| ID | What | Done when | Needs |
-|---|---|---|---|
-| SEC-15.1b | The gateway's allow-list (`roles.RAPP_MAY_CHANGE`, `/aimgf`) still names `POST /models/{id}/advance`, so the SDK's `advance_model_lifecycle` reaches AIMgF and is refused there; remove the entry and retire the method for rApps | `r1-termination/tests/test_roles.py` shows the gateway refusing it and the SDK no longer offering it to an rApp | The shared-library hardening change merged (it edits `roles.py`) |
-| SEC-15.8b | The deprecated body field `decidedBy` of `POST /rapp-approvals/{id}/approve|reject` is accepted for one minor release; drop it. Other places that take a person from the body or a query (AIMgF's `decided_by`, `requestedBy` forced by the console) can read `X-R1-Acting-User` the same way | The next minor release: the field is gone from the schema and `check_breaking_changes.py` carries a waiver for it | A release |
-| SEC-15.10b | DME `producerId` is the caller's own word: a rApp can name another producer's id and replace that producer's callback URLs on `POST /production-capabilities`. A check that an rApp's `producerId` is its own invoker id would break producers that register under a name of their own (RAN NF OAM) | An rApp-role caller can only use its own id; `internal` callers keep their names | A decision on how SMO modules name themselves |
-| SEC-15.7b | `DELETE` and `PUT /vendor-capabilities/{vendor}` act on a registry entry that is global: a scoped caller whose elements use a vendor can change what the elements of other tenants of that vendor are checked against | Either an admin-only rule for the registry or a per-tenant entry | A decision |
-
 #### PR-SEC-14 — Threat model
 
 | Step | What | Done when | Needs |
@@ -446,6 +435,36 @@ Done (`HISTORY.md`, PR-SEC-10; decision `docs/adr/0005-tenant-region-authorizati
 | SEC-14.2 | STRIDE table per flow | Table with a mitigation or an item ID per row | SEC-14.1 |
 | SEC-14.3 | Findings imported as items in this file | Each has an ID | SEC-14.2 |
 | SEC-14.4 | Scope for an external penetration test | One-page scope | SEC-4.5 |
+
+
+#### PR-SEC-15 — Findings of the security review of October 2026 (registered, not fixed here)
+
+Found while hardening `smo_shared` (branch `claude/sec-shared-hardening`, which closes the four shared findings listed under "Closed" below). Each row is a finding that is
+registered and not yet fixed. "Planned PR" is the follow-up change that is meant to close it: PR 2 = authorization and ownership of routes, PR 3 = integrity and state
+of what the routes accept, PR 4 = clients, tooling and migrations; "none yet" means no follow-up is planned.
+
+| ID | Finding | Where | Planned PR |
+|---|---|---|---|
+| SEC-15.2 | The AIMgF feature-group token is stored and returned in clear text | `aimgf/app` (feature groups) | PR 3 |
+| SEC-15.3 | AIMgF runtime routes (deploy, activate, inference) do not check MLMR for the model (whether it exists, its phase, who owns it) | `aimgf/app` | PR 3 |
+| SEC-15.5 | `build_edit_config_rpc` builds the NETCONF `edit-config` XML without escaping values | `ran-nf-oam/app` (NETCONF client) | PR 3 |
+| SEC-15.6 | MSAC `check_credential` is never called, and compares without a constant-time function | `ran-nf-oam/app` (MSAC) | PR 3 |
+| SEC-15.10 | DME: `mediate_action` leaves the action in `FORWARDED` when the forward fails; an unregistered `dmeTypeId` is accepted (the overwrite of a type is closed, `HISTORY.md` "PR-SEC-15 (part 2)") | `dme/app` | PR 3 |
+| SEC-15.1b | The gateway's allow-list (`roles.RAPP_MAY_CHANGE`, `/aimgf`) still names `POST /models/{id}/advance`, so the SDK's `advance_model_lifecycle` reaches AIMgF and is refused there; remove the entry and retire the method for rApps | see `HISTORY.md` "PR-SEC-15 (part 2)" | The shared-library hardening change merged (it edits `roles.py`) |
+| SEC-15.8b | The deprecated body field `decidedBy` of `POST /rapp-approvals/{id}/approve|reject` is accepted for one minor release; drop it. Other places that take a person from the body or a query (AIMgF's `decided_by`, `requestedBy` forced by the console) can read `X-R1-Acting-User` the same way | see `HISTORY.md` "PR-SEC-15 (part 2)" | A release |
+| SEC-15.10b | DME `producerId` is the caller's own word: a rApp can name another producer's id and replace that producer's callback URLs on `POST /production-capabilities`. A check that an rApp's `producerId` is its own invoker id would break producers that register under a name of their own (RAN NF OAM) | see `HISTORY.md` "PR-SEC-15 (part 2)" | A decision on how SMO modules name themselves |
+| SEC-15.7b | `DELETE` and `PUT /vendor-capabilities/{vendor}` act on a registry entry that is global: a scoped caller whose elements use a vendor can change what the elements of other tenants of that vendor are checked against | see `HISTORY.md` "PR-SEC-15 (part 2)" | A decision |
+| SEC-15.11 | GUI-BFF login lockout is keyed by user name only, so one attacker locks out a user from anywhere and a spread attack is not slowed | `gui-bff/app` | PR 3 |
+| SEC-15.12 | The audit record's path includes query values (which can carry secrets or personal data) | `shared/smo_shared/audit.py`, `r1-termination` | PR 3 |
+| SEC-15.13 | Java SDK registration retries without an idempotency key, so a retry after a lost answer can register twice | `sdk-java/` | PR 4 |
+| SEC-15.14 | Migration 0017 `downgrade()` deletes the `rapp_limit` rows | `migrations/versions/` | PR 4 |
+| SEC-15.15 | `scripts/check_breaking_changes.py` passes silently when `--base` does not resolve, so the gate checks nothing | `scripts/check_breaking_changes.py` | PR 4 |
+| SEC-15.16 | The webhook guard resolves a host name once to check it and the HTTP client resolves it again to connect, so DNS rebinding between the two is not caught; closing it needs the client to connect to the vetted address (a pinned transport) | `shared/smo_shared/webhook.py` | none yet |
+| SEC-15.17 | Onboarding's own parse of an unsigned package opens the zip without the size limits `csar_signing.verify_zip` now applies (`ZipLimits`) | `onboarding/app/package_validation.py` | none yet |
+
+Closed by this change (details in `CHANGELOG.md` and the `shared` README): the webhook SSRF guard accepted spellings of loopback, unspecified and link-local addresses
+(`localhost.`, `127.1`, `2130706433`, `0x7f.0.0.1`, octal, `0`, IPv4-mapped IPv6) and did not look at what a name resolves to; `roles.py` allow-list patterns ended in `$`, which
+also matches before a trailing newline; `smo_shared.db` fell back to in-memory SQLite whenever `pytest` was imported; `csar_signing.verify_zip` read an archive of any size.
 
 
 ### 5.5 Observability (`PR-OBS`)

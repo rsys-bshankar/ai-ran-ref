@@ -5,6 +5,12 @@ tests use for their service doubles. Every recorded call is also checked against
 (`smo_shared.roles.rapp_may_change`, PR-SEC-14). Needs `smo_shared` on the path (`PYTHONPATH=.:../shared`); no network and no database.
 """
 
+import os
+
+# The in-memory SQLite fallback of smo_shared.db is an explicit opt-in (SMO_ALLOW_SQLITE_FALLBACK), never inferred from pytest being loaded; set here,
+# before any application module is imported, because smo_shared.db builds its engine at import.
+os.environ.setdefault("SMO_ALLOW_SQLITE_FALLBACK", "1")
+
 import pytest
 
 from smo_shared import roles
