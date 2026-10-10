@@ -104,6 +104,10 @@ RULES: list[Rule] = [
     _rule("PUT", "/rapp-mgmt/instances/{id}/kill", O,
           json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
     _rule("DELETE", "/rapp-mgmt/instances/{id}/kill", A),
+    # GUI-9.6: the one-call global stop of every rApp's writes and its resume, the same tiers and attribution as the per-instance kill above
+    _rule("PUT", "/rapp-mgmt/kill-all", O,
+          json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
+    _rule("DELETE", "/rapp-mgmt/kill-all", A),
     _rule("POST", "/rapp-mgmt/instances/{id}/terminate", A),
     _rule("DELETE", "/rapp-mgmt/instances/{id}", A),
     _rule("POST", "/rapp-mgmt/instances/{id}/(performance|fault)", A),   # test-data injection
@@ -169,6 +173,8 @@ RULES: list[Rule] = [
           json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}", "msacRole": "admin" if u.role == Role.ADMIN else None}),
     _rule("POST", "/ran-nf-oam/config-jobs/{id}/(continue|halt|abort)", O,
           json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
+    # GUI-9.7: re-running a job's KPI check only reads PM and records the verdict on the job: operator, like driving the job
+    _rule("POST", "/ran-nf-oam/config-jobs/{id}/kpi-check", O),
     # KPI definitions and their schedules are platform configuration (internal-only at R1): admin
     _rule("PUT", "/ran-nf-oam/kpi-definitions/{id}", A),
     _rule("DELETE", "/ran-nf-oam/kpi-definitions/{id}", A),
@@ -178,6 +184,17 @@ RULES: list[Rule] = [
     _rule("POST", "/ran-nf-oam/(pm-subscriptions|software-management-jobs|o1-adaptor-endpoints|o1-adaptor-endpoints/discover)", O),
     _rule("POST", "/ran-nf-oam/software-management-jobs/{id}/advance", O),
     _rule("POST", "/ran-nf-oam/o1-adaptor-endpoints/{id}/heartbeat", A),   # what the ME's adaptor sends: simulation
+    # GUI-9.7: a pinned SSH host key is the trust anchor of the O1 session, so re-pinning or unpinning one is admin; who pinned it is the
+    # signed-in user, never what the browser sent (STD-4.6). DELETE is `/host-keys/{keyType}` in RAN NF OAM; the bare path is matched too.
+    _rule("PUT", "/ran-nf-oam/o1-adaptor-endpoints/{id}/host-keys", A,
+          json_overrides=lambda u: {"pinnedBy": f"smo-gui:{u.username}"}),
+    _rule("DELETE", "/ran-nf-oam/o1-adaptor-endpoints/{id}/host-keys(/{id})?", A),
+    # GUI-9.7: reading an element's managed objects again over O1 changes only the SMO's copy: operator
+    _rule("POST", "/ran-nf-oam/managed-entities/{id}/managed-objects/refresh", O),
+    # GUI-9.7: the MSAC roles, identities and access rules decide who may write to the RAN: administrative
+    _rule("POST", "/ran-nf-oam/msac/(roles|identities|access-rules)(/{id})?", A),
+    _rule("PUT", "/ran-nf-oam/msac/(roles|identities|access-rules)(/{id})?", A),
+    _rule("DELETE", "/ran-nf-oam/msac/(roles|identities|access-rules)(/{id})?", A),
     # MGT-14 / MGT-15: what a new element is configured with is platform configuration (admin); applying it to an element and driving a software campaign are
     # operator actions, attributed to the signed-in user. The sweep (`advance-due`) is the worker's and is not exposed.
     _rule("PUT", "/ran-nf-oam/onboarding-templates/{id}", A),
@@ -199,6 +216,7 @@ RULES: list[Rule] = [
 
     # SEC-10: where a managed element is and whom it belongs to, and which regions and tenants an invoker (an rApp) may touch, are administrative decisions
     _rule("PUT", "/ran-nf-oam/managed-entities/{id}/scope", A),
+    _rule("PUT", "/ran-nf-oam/managed-entities/{id}/site-cluster", A),    # GUI-9.8: which site cluster an element belongs to, the same tier as its scope
     _rule("PUT", "/sme/invoker-registrations/{id}/authz-scope", A),
 
     # AI-10.2/10.3, AI-10.6: what an rApp may do (its limits) and who is told when it is refused are administrative decisions
@@ -272,6 +290,8 @@ RULES: list[Rule] = [
     _rule("POST", "/intent-service/intents", O, json_overrides=lambda u: {"rmioId": GUI_RMIO_ID}),
     _rule("PATCH", "/intent-service/intents/{id}/admin-state", O, json_overrides=lambda u: {"requesterId": GUI_RMIO_ID}),
     _rule("DELETE", "/intent-service/intents/{id}", A),
+    # GUI-9.7: the consumer's answer to a negotiation report (TS 28.312 IntentFulfilmentNegotiationFeedback) is an operator's, like changing the admin state
+    _rule("POST", "/intent-service/intents/{id}/negotiation-feedback", O),
     # RMIH registration is framework-internal only (D-SEC-POLICY-1: SO/SA SMOS
     # identities) and fulfilment reports come from an RMIH, so both are admin
     # acting on the framework's behalf (call flow 09)
@@ -290,6 +310,8 @@ RULES: list[Rule] = [
     # to mdaf/, producer registration stays in ran-analytics/)
     _rule("POST", "/mdaf/subscriptions", O),
     _rule("DELETE", "/mdaf/subscriptions/{id}", O),
+    _rule("POST", "/mdaf/mda-requests", O),                          # GUI-9.7: asking MDAF for an analysis, and withdrawing the request
+    _rule("DELETE", "/mdaf/mda-requests/{id}", O),
     _rule("POST", "/ran-analytics/producers", A),                    # producer side of call flow 08
     _rule("POST", "/mdaf/reports", A),
 

@@ -17,7 +17,8 @@ Routes (all under /api, which nginx forwards here unchanged, except /.well-known
   POST /api/logout              ends the session; an OIDC user also gets the provider's end-session URL when it has one
   GET  /api/me                  current user, role, CSRF token
   POST /api/me/password
-  GET|POST /api/me/totp[...]    one-time-code enrolment: status, begin, confirm (recovery codes shown once), new recovery codes (PR-SEC-7)
+  GET|POST /api/me/totp[...]    one-time-code enrolment: status (with which recovery-code slots are used), begin, confirm (recovery codes shown once), new recovery codes (PR-SEC-7)
+  GET  /api/me/sign-ins         the caller's own recent sign-ins, failed sign-ins and sign-outs, from the audit log (GUI-9.8)
   GET  /api/permissions         the RBAC table, so the SPA gates on the same rules
   GET  /api/modules/status      every module's health, readiness and build version via R1, probed in parallel
   *    /api/smo/{module}/...    RBAC-checked proxy to R1 Termination
@@ -26,12 +27,18 @@ Routes (all under /api, which nginx forwards here unchanged, except /.well-known
   GET|PUT|DELETE /api/me/pins   the rApps the user pinned to the sidebar (at most 5)
   GET|PUT /api/me/preferences   the user's console preferences: theme, text size, accent, start page, rows per page… (preferences.py)
   GET  /api/summary/{page}      the true counts behind one console page's tiles and badges, cached 5 s and shared (summary.py)
-  /api/admin/users[...]         user + role CRUD, break-glass flag, revoke a user's sessions, reset a user's one-time code (admin)
-  GET  /api/admin/audit         the append-only audit log (admin)
+  GET  /api/events              Server-Sent Events: the summary counts of up to four pages, pushed when they change (events.py, GUI-9.1)
+  GET  /api/search              the ⌘K typeahead over elements, rApps, alarms, models and decisions (search.py, GUI-9.2)
+  /api/admin/users[...]         user + role CRUD, break-glass flag, revoke a user's sessions, reset a user's one-time code (admin); the list has last-active times
+  GET  /api/admin/audit         the append-only audit log, offset or keyset (`after_id`) pages, `since`/`until` (admin)
+  GET  /api/admin/audit.csv     the same rows as a streamed CSV download, at most 1,000,000 (admin, GUI-9.5)
 """
 
 import asyncio
+import csv
+import datetime
 import hashlib
+import io
 import hmac
 import json
 import logging
@@ -41,18 +48,18 @@ import secrets
 import time
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Iterator, cast
 from urllib.parse import urlencode
 
 import httpx
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from .config import Settings, settings as default_settings
-from . import preferences, rapps, summary, totp
+from . import events, preferences, rapps, search, summary, totp
 from .db import AuditEntry, Database, GuiUser, LoginFailure
 from .oidc import LOGIN_TTL_SECONDS, MAX_PENDING_LOGINS, OidcClient, OidcConfig, OidcError
 from .rbac import MODULES, RULES, Role, Rule, User, decide
@@ -84,6 +91,15 @@ MIN_TOTP_KEY_LENGTH = 32
 # With GUI_ADMIN_MFA_REQUIRED, a local admin without an enrolled one-time code reaches only these (the SPA sends them to enrolment).
 MFA_OPEN_PATHS = frozenset({"/api/me", "/api/me/totp", "/api/me/totp/begin", "/api/me/totp/confirm"})
 OIDC_COOKIE = "smo_oidc"      # the browser binding of a sign-in in flight; Lax because the provider's redirect back is a cross-site navigation
+
+# GUI-9.8: the audit actions that are a sign-in, a failed one or a sign-out (what `GET /api/me/sign-ins` lists), and of those the successful
+# sign-ins (what `lastSignInAt` in the user list is the newest of). A token grant (`TOKEN`) is a sign-in by a script.
+SIGN_IN_ACTIONS = ("LOGIN", "OIDC_LOGIN", "BREAK_GLASS_LOGIN", "TOKEN")
+SIGN_IN_HISTORY_ACTIONS = (*SIGN_IN_ACTIONS, "LOGIN_FAILED", "OIDC_LOGIN_FAILED", "LOGIN_LOCKED", "LOGOUT")
+# GUI-9.5: the CSV export of the audit log stops after this many rows, read from the database this many at a time.
+AUDIT_CSV_MAX_ROWS = 1_000_000
+AUDIT_CSV_BATCH = 1000
+AUDIT_CSV_COLUMNS = ("id", "at", "username", "role", "action", "method", "path", "statusCode", "detail")
 
 # RFC 7230 section 6.1 hop-by-hop headers, plus headers the BFF must own
 # itself: lengths/encodings are recomputed (httpx has already decoded the
@@ -169,6 +185,25 @@ def _problem_exception(status: int, title: str, detail: str | None = None) -> HT
     response) — current_session/require_admin below.
     """
     return HTTPException(status_code=status, detail=_problem_body(status, title, detail))
+
+
+def _iso(at: datetime.datetime | None) -> str | None:
+    """ISO 8601 with the UTC offset, or None. SQLite hands timestamps back without a zone; every one the BFF writes is UTC."""
+    if at is None:
+        return None
+    return (at if at.tzinfo else at.replace(tzinfo=datetime.UTC)).isoformat()
+
+
+def _utc(at: datetime.datetime) -> datetime.datetime:
+    """A caller's `since`/`until` as an aware UTC time (one without a zone is taken as UTC), the form the audit times are compared in."""
+    return at.replace(tzinfo=datetime.UTC) if at.tzinfo is None else at.astimezone(datetime.UTC)
+
+
+def _csv_cell(value: Any) -> str:
+    """One CSV cell. A text that a spreadsheet would run as a formula (it starts with = + - @ or a tab or carriage return) gets a leading
+    apostrophe: a username typed at the sign-in page lands in the audit log as it was typed (CSV injection)."""
+    text = "" if value is None else str(value)
+    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
 
 
 def seed_users(db: Database, cfg: Settings) -> None:
@@ -665,10 +700,12 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
     def totp_status(session: Session = Depends(current_session)):
         username = session.user.username
         if username.startswith(OIDC_PREFIX):
-            return {"available": False, "enrolled": False, "pending": False, "recoveryCodesLeft": 0, "reason": "identity provider"}
+            return {"available": False, "enrolled": False, "pending": False, "recoveryCodesLeft": 0, "recoveryCodes": [], "reason": "identity provider"}
         enrolled, pending = app.state.db.totp_state(username)
+        # GUI-9.8: which of the recovery codes are spent, by the slot they were shown in, never the codes themselves
+        slots = [{"slot": slot, "used": used_at is not None, "usedAt": _iso(used_at)} for slot, used_at in app.state.db.recovery_code_slots(username)] if enrolled else []
         return {"available": bool(cfg.totp_key), "enrolled": enrolled, "pending": pending,
-                "recoveryCodesLeft": app.state.db.recovery_codes_left(username) if enrolled else 0}
+                "recoveryCodesLeft": app.state.db.recovery_codes_left(username) if enrolled else 0, "recoveryCodes": slots}
 
     @app.post("/api/me/totp/begin")
     def totp_begin(session: Session = Depends(current_session)):
@@ -728,6 +765,15 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         app.state.db.replace_recovery_codes(username, [totp.hash_recovery_code(cfg.totp_key, username, c) for c in codes])
         audit("RECOVERY_CODES_REGENERATED", session.user, detail=f"{len(codes)} issued")
         return {"recoveryCodes": codes, "recoveryCodesLeft": len(codes)}
+
+    @app.get("/api/me/sign-ins")
+    def my_sign_ins(limit: int = Query(20, ge=1, le=100, description="At most this many rows, newest first."), session: Session = Depends(current_session)):
+        """The caller's own recent sign-ins, failed sign-ins (also those typed under the caller's name by someone else) and sign-outs, newest first:
+        `[{at, action, detail}]` from the audit log. Never another user's rows, whatever the role."""
+        stmt = (select(AuditEntry).where(AuditEntry.username == session.user.username, AuditEntry.action.in_(SIGN_IN_HISTORY_ACTIONS))
+                .order_by(AuditEntry.id.desc()).limit(limit))
+        with app.state.db.session() as s:
+            return [{"at": _iso(e.at), "action": e.action, "detail": e.detail} for e in s.scalars(stmt).all()]
 
     class ChangePasswordRequest(BaseModel):
         currentPassword: str
@@ -869,6 +915,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     preferences.install(app, current_session=current_session)
     summary.install(app, current_session=current_session, problem=_problem)
+    events.install(app, current_session=current_session, problem=_problem)       # GUI-9.1: needs summary's cached computation
+    search.install(app, current_session=current_session, problem=_problem)       # GUI-9.2: needs rapps' directory
 
     # ------------------------------------------------------------ admin
 
@@ -883,11 +931,17 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         password: str | None = Field(default=None, min_length=MIN_PASSWORD_LENGTH)
         breakGlass: bool | None = None
 
-    def _user_view(u: GuiUser, enrolled: set[str] | None = None) -> dict:
+    def _user_view(u: GuiUser, enrolled: set[str] | None = None, activity: dict | None = None) -> dict:
+        """The admin's view of one user. `enrolled` and `activity` (Database.user_activity) are read for this user alone when not given; the list
+        passes them for every user at once. `lastActiveAt` is the user's newest audit row (sign-ins, changes, refusals: plain reads are not
+        audited), `lastSignInAt` the newest successful sign-in; null when there is none."""
         if enrolled is None:
             enrolled = {u.username} if app.state.db.totp_state(u.username)[0] else set()
+        if activity is None:
+            activity = app.state.db.user_activity(SIGN_IN_ACTIONS, u.username)
+        last_active, last_sign_in = activity.get(u.username, (None, None))
         return {"username": u.username, "role": u.role, "active": u.active, "createdAt": u.created_at.isoformat(),
-                "breakGlass": u.break_glass, "totpEnrolled": u.username in enrolled}
+                "breakGlass": u.break_glass, "totpEnrolled": u.username in enrolled, "lastActiveAt": _iso(last_active), "lastSignInAt": _iso(last_sign_in)}
 
     def _active_admins(s) -> int:
         return len(s.scalars(select(GuiUser).where(GuiUser.role == Role.ADMIN, GuiUser.active.is_(True))).all())
@@ -896,7 +950,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
     def list_users(session: Session = Depends(require_admin)):
         with app.state.db.session() as s:
             enrolled = app.state.db.totp_enrolled_users()
-            return [_user_view(u, enrolled) for u in s.scalars(select(GuiUser).order_by(GuiUser.username)).all()]
+            activity = app.state.db.user_activity(SIGN_IN_ACTIONS)        # one grouped query for every user
+            return [_user_view(u, enrolled, activity) for u in s.scalars(select(GuiUser).order_by(GuiUser.username)).all()]
 
     @app.post("/api/admin/users", status_code=201)
     def create_user(body: CreateUserRequest, session: Session = Depends(require_admin)):
@@ -994,19 +1049,74 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         audit("TOTP_RESET", session.user, detail=f"{username}: {'removed' if had else 'none was set'}")
         return {"status": "one-time code removed" if had else "no one-time code was set", "username": username}
 
-    @app.get("/api/admin/audit")
-    def list_audit(limit: int = PageLimit, offset: int = PageOffset, username: str | None = None, action: str | None = None,
-                    session: Session = Depends(require_admin)):
+    def audit_query(username: str | None, action: str | None, since: datetime.datetime | None, until: datetime.datetime | None):
+        """The audit rows matching the filters, newest first (by id: rows are appended, so id order is time order)."""
         stmt = select(AuditEntry).order_by(AuditEntry.id.desc())
         if username:
             stmt = stmt.where(AuditEntry.username == username)
         if action:
             stmt = stmt.where(AuditEntry.action == action)
+        if since is not None:
+            stmt = stmt.where(AuditEntry.at >= _utc(since))
+        if until is not None:
+            stmt = stmt.where(AuditEntry.at < _utc(until))
+        return stmt
+
+    def audit_view(e: AuditEntry) -> dict:
+        return {"id": e.id, "at": e.at.isoformat(), "username": e.username, "role": e.role, "action": e.action,
+                "method": e.method, "path": e.path, "statusCode": e.status_code, "detail": e.detail}
+
+    @app.get("/api/admin/audit")
+    def list_audit(limit: int = PageLimit, offset: int = PageOffset, username: str | None = None, action: str | None = None,
+                   after_id: int | None = Query(None, ge=1, description="Keyset paging: only rows with an id below this one (the `nextAfterId` of the "
+                                                                         "previous page). Use it instead of `offset` on a long log."),
+                   since: datetime.datetime | None = Query(None, description="Only rows at or after this time (ISO 8601; no zone means UTC)."),
+                   until: datetime.datetime | None = Query(None, description="Only rows before this time."),
+                   session: Session = Depends(require_admin)):
+        """The audit log, newest first, by offset or by keyset (`after_id`; GUI-9.5). `nextAfterId` is the id to pass for the next page, null when
+        this page was not full."""
+        stmt = audit_query(username, action, since, until)
+        if after_id is not None:
+            stmt = stmt.where(AuditEntry.id < after_id)
         with app.state.db.session() as s:
             page = _paginate(s, stmt, limit, offset)
-            return {**page, "items": [{"id": e.id, "at": e.at.isoformat(), "username": e.username, "role": e.role, "action": e.action,
-                     "method": e.method, "path": e.path, "statusCode": e.status_code, "detail": e.detail}
-                    for e in page["items"]]}
+            items = [audit_view(e) for e in page["items"]]
+        return {**page, "items": items, "nextAfterId": items[-1]["id"] if items and len(items) == int(limit) else None}
+
+    @app.get("/api/admin/audit.csv", responses={200: {"description": "The audit rows as CSV, newest first", "content": {"text/csv": {}}}})
+    def export_audit(username: str | None = None, action: str | None = None,
+                     since: datetime.datetime | None = Query(None, description="Only rows at or after this time (ISO 8601; no zone means UTC)."),
+                     until: datetime.datetime | None = Query(None, description="Only rows before this time."),
+                     session: Session = Depends(require_admin)):
+        """The audit rows matching the filters as a CSV download (GUI-9.5), newest first, streamed in batches so a long log never sits in memory;
+        at most 1,000,000 rows. The export itself is audited (`AUDIT_EXPORTED`) before the first row is sent."""
+        filters = " ".join(f"{k}={v}" for k, v in (("username", username), ("action", action), ("since", since and _iso(_utc(since))),
+                                                    ("until", until and _iso(_utc(until)))) if v)
+        audit("AUDIT_EXPORTED", session.user, detail=filters or "all")
+        stmt = audit_query(username, action, since, until)
+
+        def rows() -> Iterator[str]:
+            """The CSV text, a header then batches of AUDIT_CSV_BATCH rows read by keyset (each batch its own short read)."""
+            buffer = io.StringIO()
+            writer = csv.writer(buffer)
+            writer.writerow(AUDIT_CSV_COLUMNS)
+            sent, below = 0, None
+            while sent < AUDIT_CSV_MAX_ROWS:
+                batch_stmt = stmt if below is None else stmt.where(AuditEntry.id < below)
+                with app.state.db.session() as s:
+                    batch = s.scalars(batch_stmt.limit(min(AUDIT_CSV_BATCH, AUDIT_CSV_MAX_ROWS - sent))).all()
+                for e in batch:
+                    writer.writerow([_csv_cell(v) for v in (e.id, _iso(e.at), e.username, e.role, e.action, e.method, e.path, e.status_code, e.detail)])
+                yield buffer.getvalue()
+                buffer.seek(0)
+                buffer.truncate()
+                if len(batch) < AUDIT_CSV_BATCH:
+                    return
+                sent += len(batch)
+                below = batch[-1].id
+
+        name = f"smo-gui-audit-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.csv"
+        return StreamingResponse(rows(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
     return app
 

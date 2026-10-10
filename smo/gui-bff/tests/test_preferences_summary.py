@@ -16,17 +16,26 @@ from test_main import PASSWORDS, R1, FakeSmo, login
 
 
 class CountingSmo(FakeSmo):
-    """FakeSmo whose list routes answer `{"items": [], "total": N}`: N from `totals[(path, filter)]`, 0 when not listed. A module in `down_modules` fails."""
+    """FakeSmo whose list routes answer `{"items": [], "total": N}`: N from `totals[(path, filter)]`, 0 when not listed, and whose statistics routes
+    answer `stats[path]`. A module in `down_modules` fails."""
 
     def __init__(self):
         super().__init__()
         self.totals: dict[tuple[str, str], int] = {("/ran-nf-oam/alarms", "severity=critical"): 1234, ("/ran-nf-oam/alarms", ""): 5000,
                                                    ("/ran-nf-oam/rapp-approvals", "status=PENDING"): 18}
         self.count_calls: list[httpx.Request] = []
+        # the two statistics answers that are read by field, not by `total` (RAN NF OAM's /alarms/stats, rApp Management's GET /kill-all)
+        self.stats: dict[str, dict] = {"/ran-nf-oam/alarms/stats": {"windowHours": 24, "mttaSeconds": 42.5, "acked": 3, "open": 7},
+                                       "/rapp-mgmt/kill-all": {"stopped": 2}}
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
         module = path.split("/")[1]
+        if request.url.host == "r1-termination" and request.method == "GET" and path in self.stats:
+            if module in self.down_modules:
+                raise httpx.ConnectError("down")
+            self.count_calls.append(request)
+            return httpx.Response(200, json=self.stats[path])
         if request.url.host == "r1-termination" and not path.endswith(("/health", "/ready", "/version", "/bootstrap")) and request.method == "GET" \
                 and request.url.params.get("limit") == "1":
             if request.headers.get("authorization", "").removeprefix("Bearer ") not in self.issued:
@@ -106,7 +115,7 @@ def test_summary_reads_true_totals_not_a_first_page(app, smo):
     body = login(app, "viewer").get("/api/summary/alarms").json()
     assert body["counts"]["alarms.critical"] == 1234 and body["counts"]["alarms.total"] == 5000 and body["counts"]["alarms.major"] == 0
     assert body["partial"] == []
-    assert all(c.url.params["limit"] == "1" for c in smo.count_calls)
+    assert all(c.url.params["limit"] == "1" for c in smo.count_calls if not c.url.path.endswith("/stats"))
 
 
 def test_summary_is_cached_and_shared_between_users(app, smo):
@@ -137,3 +146,35 @@ def test_an_unknown_summary_page_is_a_404_and_a_session_is_needed(app):
     assert login(app, "viewer").get("/api/summary/nope").status_code == 404
     assert TestClient(app).get("/api/summary/nav").status_code == 401
     assert set(summary.PAGES) >= {"nav", "dashboard", "alarms", "rapps"}
+
+
+def test_unacknowledged_alarms_and_the_mean_time_to_acknowledge_are_on_the_alarm_and_dashboard_pages(app, smo):
+    """GUI-9.8: `alarms.unacked` is the filtered total, `alarms.mtta` the `mttaSeconds` of RAN NF OAM's statistics over 24 h (not a page total)."""
+    smo.totals[("/ran-nf-oam/alarms", "ack_state=UNACKNOWLEDGED")] = 321
+    viewer = login(app, "viewer")
+    for page in ("alarms", "dashboard"):
+        counts = viewer.get(f"/api/summary/{page}").json()["counts"]
+        assert counts["alarms.unacked"] == 321 and counts["alarms.mtta"] == 42.5
+    stats = [c for c in smo.count_calls if c.url.path == "/ran-nf-oam/alarms/stats"]
+    assert stats and stats[0].url.params["window_hours"] == "24" and "limit" not in stats[0].url.params
+
+
+def test_no_acknowledged_alarm_is_a_null_mtta_and_not_a_missing_module(app, smo):
+    """A good answer with `mttaSeconds: null` (nothing acknowledged in the window) leaves `partial` empty: the tile shows "—" without blaming a module."""
+    smo.stats["/ran-nf-oam/alarms/stats"]["mttaSeconds"] = None
+    body = login(app, "viewer").get("/api/summary/alarms").json()
+    assert body["counts"]["alarms.mtta"] is None and body["partial"] == []
+
+
+def test_a_module_without_the_statistics_route_is_named_in_partial(app, smo):
+    """An older RAN NF OAM (no `/alarms/stats`, so no `mttaSeconds` in what it answers) makes the value null and the summary partial, not wrong."""
+    del smo.stats["/ran-nf-oam/alarms/stats"]
+    body = login(app, "viewer").get("/api/summary/alarms").json()
+    assert body["counts"]["alarms.mtta"] is None and body["partial"] == ["ran-nf-oam"]
+
+
+def test_the_number_of_stopped_rapps_is_on_the_rapps_and_dashboard_pages(app, smo):
+    """GUI-9.6: `rappsStopped` is the `stopped` count rApp Management's `GET /kill-all` reports."""
+    viewer = login(app, "viewer")
+    assert viewer.get("/api/summary/rapps").json()["counts"]["rappsStopped"] == 2
+    assert viewer.get("/api/summary/dashboard").json()["counts"]["rappsStopped"] == 2

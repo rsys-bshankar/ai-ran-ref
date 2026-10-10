@@ -12,7 +12,7 @@ import time
 
 from typing import cast
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, create_engine, delete, event, false, func, inspect, select, text, update
+from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, case, create_engine, delete, event, false, func, inspect, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -81,8 +81,12 @@ class LoginChallenge(Base):
 class AuditEntry(Base):
     """Append-only: nothing in the BFF updates or deletes a row, and the
     ORM guard below refuses it if anything ever tries.
+
+    The index on (username, id) serves a user's own sign-ins (`GET /api/me/sign-ins`) and the last-active time per user (`GET /api/admin/users`);
+    a database made before it existed gets it from `Database._add_missing_indexes`.
     """
     __tablename__ = "gui_audit_log"
+    __table_args__ = (Index("ix_gui_audit_log_username_id", "username", "id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
@@ -205,6 +209,7 @@ class Database:
                     raise
                 time.sleep(0.25)
         self._add_missing_columns()
+        self._add_missing_indexes()
 
     def _add_missing_columns(self) -> None:
         """`create_all` makes absent tables but never alters a table that exists, so a column added to one later is added here (expand only: nullable or
@@ -222,8 +227,33 @@ class Database:
                     if name not in {c["name"] for c in inspect(self.engine).get_columns(table)}:
                         raise
 
+    def _add_missing_indexes(self) -> None:
+        """Like `_add_missing_columns`, for indexes added to a table after its first release: `create_all` makes an index only with its table.
+        `IF NOT EXISTS` works on SQLite and Postgres; a race between two instances starting together is tolerated like a column's."""
+        wanted = {"ix_gui_audit_log_username_id": "gui_audit_log (username, id)"}
+        for name, target in wanted.items():
+            try:
+                with self.engine.begin() as conn:
+                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {target}"))
+            except (OperationalError, ProgrammingError, IntegrityError):
+                # another instance made it at the same moment (Postgres can report that as a unique violation): fine if it is there now
+                if name not in {i["name"] for i in inspect(self.engine).get_indexes(target.split(" ")[0])}:
+                    raise
+
     def session(self) -> Session:
         return self.sessions()
+
+    # ------------------------------------------------------------ what the audit log says about users (GUI-9.8)
+
+    def user_activity(self, sign_in_actions: tuple[str, ...], username: str | None = None) -> dict[str, tuple[datetime.datetime | None, datetime.datetime | None]]:
+        """username -> (time of the user's newest audit row, time of the newest row whose action is one of `sign_in_actions`), in one grouped query;
+        only for `username` when given. A user with no audit row is absent."""
+        stmt = (select(AuditEntry.username, func.max(AuditEntry.at), func.max(case((AuditEntry.action.in_(sign_in_actions), AuditEntry.at))))
+                .where(AuditEntry.username.is_not(None)).group_by(AuditEntry.username))
+        if username is not None:
+            stmt = stmt.where(AuditEntry.username == username)
+        with self.session() as s:
+            return {row[0]: (row[1], row[2]) for row in s.execute(stmt)}
 
     # ------------------------------------------------------------ state shared by every instance (PR-ST-5)
 
@@ -384,6 +414,13 @@ class Database:
             if done.rowcount != 1:
                 return None
         return self.recovery_codes_left(username)
+
+    def recovery_code_slots(self, username: str) -> list[tuple[int, datetime.datetime | None]]:
+        """(slot, when it was used or None) for each of the user's recovery codes, slot 1 the first issued (the order they were shown in). Never a code
+        or its hash."""
+        with self.session() as s:
+            used = s.scalars(select(GuiRecoveryCode.used_at).where(GuiRecoveryCode.username == username).order_by(GuiRecoveryCode.id)).all()
+        return [(i + 1, at) for i, at in enumerate(used)]
 
     def recovery_codes_left(self, username: str) -> int:
         with self.session() as s:
