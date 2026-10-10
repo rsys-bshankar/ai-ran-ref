@@ -225,10 +225,9 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     assert notifications[1]["resourceId"] == resource_id
 
     # FOCOM FCAPS — a distinct domain from RAN NF OAM's RAN-function
-    # alarms: real infrastructure/O-Cloud alarm ingest + query, plus
-    # performance query (no ingest route exists in this build — real
-    # O2ims collection elision — so it's asserted empty, honestly, not
-    # skipped).
+    # alarms: real infrastructure/O-Cloud alarm ingest + query, then the
+    # performance query (empty: FOCOM collects nothing) and the runbook's
+    # node-utilisation ingest and read (PR-GUI-9.8b).
     alarm = mesh["focom"].post("/alarms/ingest", params={"resource_ref": "phase1-degenerate-cluster", "severity": "critical"})
     assert alarm.status_code == 200
     alarms = mesh["focom"].get("/alarms")
@@ -237,6 +236,14 @@ def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callback
     performance = mesh["focom"].get("/performance")
     assert performance.status_code == 200
     assert performance.json()["items"] == []
+    for name, value in (("CPU_UTILIZATION", 63.5), ("MEMORY_UTILIZATION", 41.0)):
+        ingested = mesh["focom"].post("/performance/ingest", json={
+            "resourceId": "phase1-degenerate-cluster", "performanceMeasurementDefinitionId": name, "measurementValue": value})
+        assert ingested.status_code == 201
+    utilisation = mesh["focom"].get("/resources/phase1-degenerate-cluster/utilisation").json()
+    assert (utilisation["cpuPercent"], utilisation["memoryPercent"]) == (63.5, 41.0) and utilisation["at"]
+    batch = mesh["focom"].get("/utilisation", params={"resource_ids": "phase1-degenerate-cluster,unreported-node"}).json()["items"]
+    assert [i["cpuPercent"] for i in batch] == [63.5, None]
 
     # step 10: Intent Service automation — register an RMIH, create an
     # Intent addressed to it (Wave 3's consumer-side selection —

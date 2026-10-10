@@ -4513,6 +4513,7 @@
     },
     "/intents": {
       "get": {
+        "description": "QueryIntents, paginated. `admin_state` is an exact match. GUI-9.8: `fulfilled` keeps the intents whose newest fulfilment report says\nFULFILLED (`true`) or NOT_FULFILLED (`false`; an intent with no fulfilment report matches neither); `in_conflict` keeps the intents whose\nnewest conflict report names a conflict (`true`) or the others (`false`).",
         "operationId": "query_intents_intents_get",
         "parameters": [
           {
@@ -4529,6 +4530,38 @@
                 }
               ],
               "title": "Admin State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fulfilled",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fulfilled"
+            }
+          },
+          {
+            "in": "query",
+            "name": "in_conflict",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "In Conflict"
             }
           },
           {

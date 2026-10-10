@@ -65,6 +65,9 @@ LISTS = {
     "kpi": _kpi,
     "topology": lambda c, h: {a["attributes"]["managedElementRef"] for g in c.get("/topology", headers=h).json()["entities"] for a in g["o-ran-smo-teiv-ran:ManagedObject"]},
     "links": lambda c, h: {l["aElement"] for l in c.get("/topology/links", headers=h).json()["items"]},
+    # PR-GUI-9.3/9.4/9.8, merged with MGT-2.6: the console's aggregates hide the same elements as the lists
+    "alarm counts": lambda c, h: {g["key"] for g in c.get("/alarms/counts", headers=h, params={"group_by": "managed_element_ref"}).json()["groups"]},
+    "worst elements": lambda c, h: _refs(c.get("/managed-entities/worst", headers=h).json()),
 }
 EVERY = set(ELEMENTS)
 
@@ -171,3 +174,24 @@ def test_the_deletes_are_unchanged_with_the_switch_off(client, world, monkeypatc
     assert client.delete(f"/pm-subscriptions/{sub}", headers=as_("nobody")).status_code == 204
     with world["db"]() as db:
         assert db.query(PMSubscription).count() == 3
+
+
+# The console's counts (PR-GUI-9.3, 9.4, 9.8) for the three callers: each agrees with what that caller's lists show, so no count includes a hidden element.
+@pytest.mark.parametrize("who, elements", [("reader", 2), ("nobody", 0), ("everything", len(ELEMENTS))])
+def test_the_console_counts_count_only_what_the_caller_may_read(client, world, on, who, elements):
+    """Health map, scope picker, alarm statistics, hourly alarm buckets and link counts each count the elements (or their alarms and links) the caller may read."""
+    h = as_(who)
+    assert sum(g["elements"] for g in client.get("/managed-entities/health", headers=h).json()["groups"]) == elements
+    assert sum(r["elements"] for r in client.get("/managed-entities/scopes", headers=h).json()["regions"]) == elements
+    assert client.get("/alarms/stats", headers=h).json()["open"] == elements                      # one open alarm per element
+    assert sum(b["count"] for b in client.get("/alarms/counts", headers=h, params={"group_by": "hour"}).json()["groups"]) == elements
+    links = client.get("/topology/links", headers=h).json()["items"]
+    assert client.get("/topology/links/counts", headers=h).json()["total"] == len(links)
+
+
+# The root-cause hint of one alarm: an alarm on an element the caller may not read is not there for it, as the list leaves it out.
+def test_the_correlated_alarms_of_an_unreadable_element_are_a_404(client, world, on):
+    """`GET /alarms/{id}/correlated` answers for an alarm the caller's list shows, and 404 `ALARM_NOT_FOUND` for one on an element it may not read."""
+    ids = {a["managedElementRef"]: a["alarmId"] for a in client.get("/alarms").json()["items"]}
+    assert client.get(f"/alarms/{ids['ME-1']}/correlated", headers=as_("reader")).status_code == 200
+    assert client.get(f"/alarms/{ids['ME-3']}/correlated", headers=as_("reader")).status_code == 404

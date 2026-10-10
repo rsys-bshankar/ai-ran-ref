@@ -1687,6 +1687,29 @@
         "title": "SelectRequest",
         "type": "object"
       },
+      "SiteClusterBody": {
+        "additionalProperties": false,
+        "description": "The site cluster of an element (`null` clears it). Same alphabet as a region: 1 to 100 letters, digits and `. _ : / @ + -`.",
+        "properties": {
+          "siteCluster": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sitecluster"
+          }
+        },
+        "required": [
+          "siteCluster"
+        ],
+        "title": "SiteClusterBody",
+        "type": "object"
+      },
       "TemplateChange": {
         "additionalProperties": false,
         "description": "One change of a template: the element is the new element's own, so there is no `managedElementRef`.",
@@ -2220,9 +2243,41 @@
   "paths": {
     "/alarms": {
       "get": {
-        "description": "`severity` filter (GUI pass) \u2014 the alarm console filters by ME and\nby perceivedSeverity; `severity=cleared` isolates the cleared history.\n`managed_function_ref` (W10-alarm-cellref) narrows to the alarms raised\non one managed function, e.g. a cell's `NRCellDU=101`.\n\nPR-SEC-10.6: a caller with a scope claim sees only the alarms of the elements inside it (the list is filtered, never refused: naming an element outside\nthe scope in `managed_element_ref` gives an empty page, the same as an element with no alarms).",
+        "description": "`severity` filter (GUI pass) \u2014 the alarm console filters by ME and\nby perceivedSeverity; `severity=cleared` isolates the cleared history.\n`managed_function_ref` (W10-alarm-cellref) narrows to the alarms raised\non one managed function, e.g. a cell's `NRCellDU=101`.\n\nPR-GUI-9.4/9.5: `ack_state`, `open_only` (no cleared alarms), `probable_cause`, `since`/`until` (raisedAt, inclusive/exclusive), `region` and\n(PR-GUI-9.3) `site_cluster` (the managed element's) narrow further. `after` switches to keyset paging in the console order: severity (critical first), raisedAt newest first, alarmId;\nthe answer is then `{items, limit, nextCursor, hasMore}` (`nextCursor` null on the last page). Without `after` the answer and its order are unchanged.\n\nPR-SEC-10.6: a caller with a scope claim sees only the alarms of the elements inside it (the list is filtered, never refused: naming an element outside\nthe scope in `managed_element_ref` gives an empty page, the same as an element with no alarms).",
         "operationId": "query_alarms_alarms_get",
         "parameters": [
+          {
+            "description": "Keyset paging: the `nextCursor` of the previous page; an empty value asks for the first page. When given, the answer is `{items, limit, nextCursor, hasMore}` and `offset` and `total` are not used.",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keyset paging: the `nextCursor` of the previous page; an empty value asks for the first page. When given, the answer is `{items, limit, nextCursor, hasMore}` and `offset` and `total` are not used.",
+              "title": "After"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
           {
             "in": "query",
             "name": "managed_element_ref",
@@ -2272,17 +2327,127 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
             "in": "query",
-            "name": "offset",
+            "name": "ack_state",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "enum": [
+                    "ACKNOWLEDGED",
+                    "UNACKNOWLEDGED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ack State"
+            }
+          },
+          {
+            "description": "Leave cleared alarms out.",
+            "in": "query",
+            "name": "open_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Leave cleared alarms out.",
+              "title": "Open Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "probable_cause",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Probable Cause"
+            }
+          },
+          {
+            "description": "raisedAt at or after this time.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "raisedAt at or after this time.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "raisedAt before this time.",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "raisedAt before this time.",
+              "title": "Until"
+            }
+          },
+          {
+            "description": "The region of the alarm's managed element (ADR 0005).",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The region of the alarm's managed element (ADR 0005).",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -2423,6 +2588,314 @@
           }
         },
         "summary": "Query Alarms"
+      }
+    },
+    "/alarms/counts": {
+      "get": {
+        "description": "PR-GUI-9.4: how many alarms there are per `group_by`, with the filters of `GET /alarms`, counted in SQL: `{\"groupBy\", \"groups\": [{\"key\", \"count\"}]}`.\n\n`severity`, `ack_state`: every value present. `probable_cause`, `managed_element_ref`, `region` (the element's region): the top 50 groups by count\n(then by key); a NULL cause or region is the key `null`. `hour`: the last 24 hourly buckets of raisedAt, oldest first, every hour present (count 0\nwhen none), keys `2026-10-10T08:00:00Z` (UTC), each with `bySeverity` `{critical, major, minor, warning}` (a cleared or indeterminate alarm counts\nin `count` only). Filtered to the caller's scope claim like the list.",
+        "operationId": "count_alarms_alarms_counts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": true,
+            "schema": {
+              "enum": [
+                "severity",
+                "ack_state",
+                "probable_cause",
+                "managed_element_ref",
+                "region",
+                "hour"
+              ],
+              "title": "Group By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Element Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "managed_function_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Function Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ack_state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ACKNOWLEDGED",
+                    "UNACKNOWLEDGED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ack State"
+            }
+          },
+          {
+            "description": "Leave cleared alarms out.",
+            "in": "query",
+            "name": "open_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Leave cleared alarms out.",
+              "title": "Open Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "probable_cause",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Probable Cause"
+            }
+          },
+          {
+            "description": "raisedAt at or after this time.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "raisedAt at or after this time.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "raisedAt before this time.",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "raisedAt before this time.",
+              "title": "Until"
+            }
+          },
+          {
+            "description": "The region of the alarm's managed element (ADR 0005).",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The region of the alarm's managed element (ADR 0005).",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Count Alarms"
       }
     },
     "/alarms/ingest": {
@@ -2689,6 +3162,173 @@
           }
         },
         "summary": "Ingest Alarm"
+      }
+    },
+    "/alarms/stats": {
+      "get": {
+        "description": "PR-GUI-9.8: `{\"windowHours\", \"mttaSeconds\", \"acked\", \"open\"}`. `mttaSeconds`: the mean time to acknowledge, the mean of ackTime - raisedAt over\nthe alarms acknowledged within the last `window_hours` (null when none was); `acked`: how many those are; `open`: the alarms not cleared now\n(whatever their age). `region` and `site_cluster` narrow to the elements of one region or site cluster; filtered to the caller's scope claim. An alarm acknowledged before the\nack time was recorded (revision 0036) has none and is not counted.",
+        "operationId": "alarm_stats_alarms_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window_hours",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "maximum": 744,
+              "minimum": 1,
+              "title": "Window Hours",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Alarm Stats"
       }
     },
     "/alarms/{alarm_id}/ack": {
@@ -2992,6 +3632,147 @@
           }
         },
         "summary": "Clear Alarm"
+      }
+    },
+    "/alarms/{alarm_id}/correlated": {
+      "get": {
+        "description": "PR-GUI-9.8 (PR-MGT-9): the alarms that probably belong with this one, by a stated heuristic rather than a root-cause analysis: the other alarms\non the same managed element raised within `window_seconds` before or after it (cleared ones included), oldest first, at most 200.\n`{\"alarmId\", \"rule\": \"same-element-within-window\", \"windowSeconds\", \"items\", \"truncated\"}`. 404 `ALARM_NOT_FOUND` for an unknown alarm or one\noutside the caller's scope claim or on an element its access rules do not let it read (MGT-2.6).",
+        "operationId": "correlated_alarms_alarms__alarm_id__correlated_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alarm_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alarm Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window_seconds",
+            "required": false,
+            "schema": {
+              "default": 60,
+              "maximum": 3600,
+              "minimum": 1,
+              "title": "Window Seconds",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Correlated Alarms"
       }
     },
     "/approval-subscriptions": {
@@ -3519,7 +4300,7 @@
     },
     "/cell-guards": {
       "get": {
-        "description": "The guard query any rApp uses (e.g. the EnergySaving rApp never\nsleeps an EMERGENCY cell, nor two cells of one sectorGroup at once). PR-SEC-10.6: only the elements inside the caller's scope claim.",
+        "description": "The guard query any rApp uses (e.g. the EnergySaving rApp never\nsleeps an EMERGENCY cell, nor two cells of one sectorGroup at once). PR-SEC-10.6: only the elements inside the caller's scope claim.\nPR-GUI-9.3: `region` and `site_cluster` keep the cells of the elements of that place.",
         "operationId": "query_cell_guards_cell_guards_get",
         "parameters": [
           {
@@ -3605,6 +4386,46 @@
                 }
               ],
               "title": "Incident Zone"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -4319,6 +5140,7 @@
     },
     "/config-jobs": {
       "get": {
+        "description": "The config jobs. `status` narrows; `region` and `site_cluster` (PR-GUI-9.3) keep the jobs with at least one target element (a sub-change's\nelement) in that place. A scoped caller sees only jobs all of whose elements are inside its scope (an unregistered element counts as outside);\na managed caller does not see jobs that wrote to an element it may not read; a scoped rApp sees only its own jobs, including the rollbacks of\nthem (PR-SEC-10.11).",
         "operationId": "list_write_config_jobs_config_jobs_get",
         "parameters": [
           {
@@ -4335,6 +5157,46 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -5561,7 +6423,7 @@
     },
     "/decision-records": {
       "get": {
-        "description": "AI-13.3: why rApps acted, newest first: one record per config job an rApp made (and per approval that ended with none). Narrow by rApp (`invoker_id`),\n`job_id`, `approval_id`, `disposition`, `model_version` and the time (`since` inclusive, `until` exclusive). `?total=false` skips the count. Names other rApps'\nactions: internal-only at R1 (an rApp reads a record by id).",
+        "description": "AI-13.3: why rApps acted, newest first: one record per config job an rApp made (and per approval that ended with none). Narrow by rApp (`invoker_id`),\n`job_id`, `approval_id`, `disposition`, `model_version` and the time (`since` inclusive, `until` exclusive). `?total=false` skips the count. Names other rApps'\nactions: internal-only at R1 (an rApp reads a record by id). PR-GUI-9.5: `after` pages by keyset in the same order (occurredAt newest first, decisionId):\nthe answer is then `{items, limit, nextCursor, hasMore}`. PR-GUI-9.3: `region` and `site_cluster` keep the records whose `managedElements` name at\nleast one element of that place (any element matches; a record with no element never does).",
         "operationId": "list_decision_records_decision_records_get",
         "parameters": [
           {
@@ -5686,6 +6548,64 @@
                 }
               ],
               "title": "Until"
+            }
+          },
+          {
+            "description": "Keyset paging: the `nextCursor` of the previous page; an empty value asks for the first page. When given, the answer is `{items, limit, nextCursor, hasMore}` and `offset` and `total` are not used.",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keyset paging: the `nextCursor` of the previous page; an empty value asks for the first page. When given, the answer is `{items, limit, nextCursor, hasMore}` and `offset` and `total` are not used.",
+              "title": "After"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -5840,6 +6760,230 @@
           }
         },
         "summary": "List Decision Records"
+      }
+    },
+    "/decision-records/export.csv": {
+      "get": {
+        "description": "PR-GUI-9.5: the decision records of a time span as a streamed CSV file (`Content-Disposition: attachment`), oldest first, one header row then one\nrow per record (the fields of `GET /decision-records`; `managedElements` joined by `;`). `since` (inclusive) is required, `until` (exclusive)\ndefaults to now, and the span is at most 31 days (422 otherwise); at most 1,000,000 rows. `invoker_id`, `disposition`, `region` and `site_cluster`\n(as on the list) narrow it. Internal-only at R1, like the list.",
+        "operationId": "export_decision_records_decision_records_export_csv_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "Since",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          },
+          {
+            "in": "query",
+            "name": "invoker_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Invoker Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "disposition",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "DIRECT",
+                    "APPROVED",
+                    "ROLLBACK",
+                    "REJECTED",
+                    "EXPIRED",
+                    "REFUSED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Disposition"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {}
+            },
+            "description": "The records as CSV"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Export Decision Records"
       }
     },
     "/decision-records/{decision_id}": {
@@ -6224,6 +7368,7 @@
     },
     "/element-onboarding": {
       "get": {
+        "description": "MGT-14.5: the onboarding rows, narrowed by `status`, `software_check` and (PR-GUI-9.3) the `region` and `site_cluster` of the row's element.\nA caller with a scope claim sees only the rows of the elements inside it.",
         "operationId": "list_element_onboarding_element_onboarding_get",
         "parameters": [
           {
@@ -6269,6 +7414,46 @@
                 }
               ],
               "title": "Software Check"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -10049,7 +11234,7 @@
     },
     "/managed-entities": {
       "get": {
-        "description": "The registered managed elements. `region` and `tenant` narrow the list (PR-SEC-10.2). A caller with a scope claim sees only the elements inside it\n(PR-SEC-10.6: the list is filtered, never refused).",
+        "description": "The registered managed elements. `region` and `tenant` narrow the list (PR-SEC-10.2), and `site_cluster` (PR-GUI-9.8). `search` (PR-GUI-9.2)\nkeeps the elements whose managed element ref or managed function ref contains it, ignoring case. A caller with a scope claim sees only the elements\ninside it (PR-SEC-10.6: the list is filtered, never refused).",
         "operationId": "list_managed_entities_managed_entities_get",
         "parameters": [
           {
@@ -10098,6 +11283,40 @@
                 }
               ],
               "title": "Tenant"
+            }
+          },
+          {
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Site Cluster"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
             }
           },
           {
@@ -10252,6 +11471,459 @@
           }
         },
         "summary": "List Managed Entities"
+      }
+    },
+    "/managed-entities/health": {
+      "get": {
+        "description": "PR-GUI-9.8: the health map. `{\"groups\": [{\"key\", \"elements\", \"unhealthy\", \"worstSeverity\"}], \"healthScore\"}`, one group per `group_by` value\n(`region` or `site_cluster`; elements without one are the group `null`), ordered by unhealthy count then key. Unhealthy: an element with an open\ncritical or major alarm. worstSeverity: the worst graded severity of an open alarm in the group, or null. healthScore: 100 x (elements - unhealthy)\n/ elements over all the groups, one decimal, null when there are no elements. `region` narrows to one region and `site_cluster` (PR-GUI-9.3) to one\nsite cluster; the caller's scope claim applies.",
+        "operationId": "fleet_health_managed_entities_health_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "default": "region",
+              "enum": [
+                "region",
+                "site_cluster"
+              ],
+              "title": "Group By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Fleet Health"
+      }
+    },
+    "/managed-entities/scopes": {
+      "get": {
+        "description": "PR-GUI-9.3: the places the console's scope picker offers: `{\"regions\": [{\"region\", \"elements\", \"siteClusters\": [{\"siteCluster\", \"elements\"}]}]}`,\none entry per region with its element count and its site clusters (each with its count), regions and clusters by name with `null` (not set)\nlast. Elements without a region are the region `null`; without a cluster, the cluster `null`. One SQL GROUP BY; the caller's scope claim and access rules (MGT-2.6) apply.",
+        "operationId": "fleet_scopes_managed_entities_scopes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Fleet Scopes"
+      }
+    },
+    "/managed-entities/worst": {
+      "get": {
+        "description": "PR-GUI-9.8: the elements with open alarms, worst first: `[{managedElementRef, region, siteCluster, critical, major, openAlarms}]` ranked by open\ncritical alarms, then open major, then all open alarms (then the reference), in one SQL query. An element with no open alarm is not listed.\n`region` narrows to one region and `site_cluster` (PR-GUI-9.3) to one site cluster; the caller's scope claim applies.",
+        "operationId": "worst_elements_managed_entities_worst_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Worst Elements"
       }
     },
     "/managed-entities/{managed_element_ref}": {
@@ -11396,6 +13068,144 @@
           }
         },
         "summary": "Set Managed Entity Scope"
+      }
+    },
+    "/managed-entities/{managed_element_ref}/site-cluster": {
+      "put": {
+        "description": "PR-GUI-9.8: set (or with `null` clear) the site cluster of a managed element \u2192 `{managedElementRef, siteCluster}`. Commits. 404\n`MANAGED_ENTITY_NOT_FOUND` for an unknown element; 422 for a value outside the alphabet. An admin's call in the GUI backend.",
+        "operationId": "set_site_cluster_managed_entities__managed_element_ref__site_cluster_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "managed_element_ref",
+            "required": true,
+            "schema": {
+              "title": "Managed Element Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteClusterBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Set Site Cluster"
       }
     },
     "/managed-objects/{dn}": {
@@ -13701,7 +15511,7 @@
     },
     "/o1-adaptor-endpoints": {
       "get": {
-        "description": "The registered O1 adaptor endpoints, one per managed element, with the element's `region` and `tenant` (PR-SEC-10.2). A caller with a scope claim sees only the\nendpoints of the elements inside it (PR-SEC-10.6).",
+        "description": "The registered O1 adaptor endpoints, one per managed element, with the element's `region` and `tenant` (PR-SEC-10.2). A caller with a scope claim sees only the\nendpoints of the elements inside it (PR-SEC-10.6). `region` and `site_cluster` keep the endpoints of the elements of that place (PR-GUI-9.3).",
         "operationId": "list_o1_adaptor_endpoints_o1_adaptor_endpoints_get",
         "parameters": [
           {
@@ -13718,6 +15528,46 @@
                 }
               ],
               "title": "Health Status"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -16424,7 +18274,7 @@
     },
     "/rapp-approvals": {
       "get": {
-        "description": "AI-11.2: the approval queue, newest first. `status=PENDING` is the inbox. Requests whose time has passed are lapsed first. Names other rApps'\nactions: internal-only at R1 (an rApp reads its own request by id).",
+        "description": "AI-11.2: the approval queue, newest first. `status=PENDING` is the inbox. Requests whose time has passed are lapsed first. Names other rApps'\nactions: internal-only at R1 (an rApp reads its own request by id). PR-GUI-9.3: `region` and `site_cluster` keep the requests whose change\ntouches at least one element of that place (`managedElements`, recorded when the request was parked).",
         "operationId": "list_approvals_rapp_approvals_get",
         "parameters": [
           {
@@ -16481,6 +18331,46 @@
                 }
               ],
               "title": "Since"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -18209,7 +20099,7 @@
     },
     "/safeguard-refusals": {
       "get": {
-        "description": "AI-10.6: the refusals recorded, newest first, whether or not anyone was subscribed. Narrow by rApp (`invoker_id`), `code` and `since`.",
+        "description": "AI-10.6: the refusals recorded, newest first, whether or not anyone was subscribed. Narrow by rApp (`invoker_id`), `code` and `since`.\n\nNot narrowed by `region` or `site_cluster` (PR-GUI-9.3): a refusal records the rApp and the code, not the elements of the change it refused,\nso it cannot be placed; the list is fleet-wide.",
         "operationId": "list_safeguard_refusals_safeguard_refusals_get",
         "parameters": [
           {
@@ -18958,6 +20848,7 @@
     },
     "/software-campaigns": {
       "get": {
+        "description": "MGT-15.1: the campaigns, narrowed by `status`. PR-GUI-9.3: `region` and `site_cluster` keep a campaign when any of its elements (the `elements`\nfixed at creation, which every wave's jobs are made from) is in that place; with `region` alone, also a campaign whose selector chose that region\n(its elements may have moved since). A caller with a scope claim sees only the campaigns none of whose jobs is outside it (PR-SEC-10).",
         "operationId": "list_software_campaigns_software_campaigns_get",
         "parameters": [
           {
@@ -18984,6 +20875,46 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           },
           {
@@ -20787,7 +22718,7 @@
     },
     "/topology/links": {
       "get": {
-        "description": "PR-MGT-10.2: the neighbour relations declared in the cell guards, each with its link type (`topology.py`): both cells on one element\n(`INTRA_ELEMENT`), on different elements (`INTER_ELEMENT`), a cell id several elements claim (`AMBIGUOUS`) or none does (`EXTERNAL`), and whether\nthe other side declares the relation back (`reciprocal`). `managed_element_ref` keeps the links with that element at either end.\n\nPR-SEC-10.9: a caller with a scope claim gets the links among the elements inside it. The elements outside are not part of its world, so a neighbour that is declared\non one of them is `EXTERNAL` for it (and `AMBIGUOUS` and `reciprocal` are worked out among its elements only): the answer never names an element it may not touch.\nMGT-2.6: the same for the elements its access rules do not let it read.",
+        "description": "PR-MGT-10.2: the neighbour relations declared in the cell guards, each with its link type (`topology.py`): both cells on one element\n(`INTRA_ELEMENT`), on different elements (`INTER_ELEMENT`), a cell id several elements claim (`AMBIGUOUS`) or none does (`EXTERNAL`), and whether\nthe other side declares the relation back (`reciprocal`). `managed_element_ref` keeps the links with that element at either end.\n\nPR-GUI-9.4: `reciprocal` keeps the reciprocal (`true`) or the one-sided (`false`) relations. With neither `limit` nor `offset` the answer is\n`{\"items\": [...]}`, every link, as it always was; with either, it is the standard page envelope `{items, total, limit, offset}` (`limit`\ndefaults to 100).\n\nPR-GUI-9.3: `region` and `site_cluster` keep the links with an element of that place at either end (an `EXTERNAL` or `AMBIGUOUS` link has no\nb-side element, so only its a-side counts).\n\nPR-SEC-10.9: a caller with a scope claim gets the links among the elements inside it. The elements outside are not part of its world, so a neighbour that is declared\non one of them is `EXTERNAL` for it (and `AMBIGUOUS` and `reciprocal` are worked out among its elements only): the answer never names an element it may not touch.\nMGT-2.6: the same for the elements its access rules do not let it read.",
         "operationId": "topology_links_topology_links_get",
         "parameters": [
           {
@@ -20826,6 +22757,102 @@
                 }
               ],
               "title": "Link Type"
+            }
+          },
+          {
+            "description": "`false`: only the relations the other side does not declare back.",
+            "in": "query",
+            "name": "reciprocal",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`false`: only the relations the other side does not declare back.",
+              "title": "Reciprocal"
+            }
+          },
+          {
+            "description": "Page size; given (or `offset`), the answer is the page envelope.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size; given (or `offset`), the answer is the page envelope.",
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2147483647,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           }
         ],
@@ -20940,6 +22967,181 @@
           }
         },
         "summary": "Topology Links"
+      }
+    },
+    "/topology/links/counts": {
+      "get": {
+        "description": "PR-GUI-9.4: how many declared neighbour relations there are, without the list: `{\"total\", \"notReciprocal\", \"external\", \"ambiguous\",\n\"intraElement\", \"interElement\"}`. `managed_element_ref` counts only the links with that element at either end; `region` and `site_cluster`\n(PR-GUI-9.3) only the links with an element of that place at either end. Counted in the caller's world, as `GET /topology/links` lists them\n(PR-SEC-10.9 scope claim, MGT-2.6 access rules).",
+        "operationId": "topology_link_counts_topology_links_counts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Element Ref"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Topology Link Counts"
       }
     },
     "/topology/relation": {

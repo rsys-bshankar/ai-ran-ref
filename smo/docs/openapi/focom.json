@@ -13193,6 +13193,134 @@
         "summary": "Monitor Resource"
       }
     },
+    "/resources/{resource_id}/utilisation": {
+      "get": {
+        "description": "PR-GUI-9.8b, a node's utilisation: `{\"resourceId\", \"cpuPercent\", \"memoryPercent\", \"at\"}` from the newest `CPU_UTILIZATION` and\n`MEMORY_UTILIZATION` performance records ingested for `resource_id` (percent, 0 to 100); `at` is the newer of the two collection times. Never 404:\nperformance records may name any resource string (a host, the cluster id), so an id with no record answers nulls.",
+        "operationId": "resource_utilisation_resources__resource_id__utilisation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Resource Utilisation"
+      }
+    },
     "/topology": {
       "get": {
         "description": "HISTORY.md \u00a75: the Blueprint names \"FOCOM's placement as\na TEIV data source\" as a confirmed integration point, but FOCOM had\nno typed entity/relationship model and no /topology-shaped endpoint\nat all \u2014 not even a stub. This exports FOCOM's real ResourceType/\nResourcePool/DeploymentManager/Resource rows in the wire shape the\nreference's own focom-to-teiv-adapter produces (entities keyed by\n\"<prefix>:<EntityType>\" with {id, attributes}; relationships keyed by\n\"<prefix>:<A>_<REL>_<B>\" with {id, aSide, bSide, sourceIds} \u2014 see\nEntityAndRelationshipModel.java / TeivIdBuilder.java).\n\nThe real adapter derives OCloudNamespace/NodeCluster entities from\nlive FocomProvisioningRequest/O2ims Kubernetes CRDs and pushes them\nover Kafka as CloudEvents \u2014 direct kubeconfig access, CRD reads, and\na message broker are all structurally out of scope for this\ndocker-run-based Phase 1 (same elision as the rest of this module).\nSo this exports FOCOM's own actual inventory instead, as a pull-based\nGET, using only the module's real foreign keys (resource -> type,\nresource -> pool, resource -> parent) rather than inventing\nrelationships this schema doesn't actually track.",
@@ -13308,6 +13436,134 @@
           }
         },
         "summary": "Export Topology"
+      }
+    },
+    "/utilisation": {
+      "get": {
+        "description": "PR-GUI-9.8b, the utilisation of many nodes in one read: `resource_ids` is a comma-separated list of up to 100 resource ids. Answers\n`{\"items\": [{\"resourceId\", \"cpuPercent\", \"memoryPercent\", \"at\"}]}`, one item per id in the order given (duplicates once), each from the newest\n`CPU_UTILIZATION` and `MEMORY_UTILIZATION` performance records of that resource; nulls where there is none. 422 for no id or more than 100.",
+        "operationId": "utilisation_batch_utilisation_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "resource_ids",
+            "required": true,
+            "schema": {
+              "title": "Resource Ids",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Utilisation Batch"
       }
     },
     "/version": {

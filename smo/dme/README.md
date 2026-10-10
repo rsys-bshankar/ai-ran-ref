@@ -9,7 +9,7 @@
 | Depends on (over R1) | RAN NF OAM (`POST /ran-nf-oam/config-jobs`, action path only); caller-registered callback URLs (producers, type subscribers, offer termination) |
 | Called by | rApps and the SDK `data` namespace; MDAF (checks `input_sources` against `GET /dme/data-jobs/{id}`); RAN NF OAM (registers PM types, ingests records into jobs); SA SMOS O1-CM handler (`POST /dme/actions`); rApp Management (producer deregistration); GUI BFF |
 | Database tables | `dme_producer`, `dme_type`, `dme_producer_type`, `dme_type_subscription`, `dme_delivery_schema`, `data_job`, `data_offer`, `data_record`, `dme_action_record` |
-| Unit tests | 85 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 112 passed (`tests/`, SQLite, standalone) |
 | Status | Done. `dme_delivery_schema` is defined but unused (see 2.8) |
 
 ## 1. High-level design (HLD)
@@ -120,7 +120,7 @@ Cross-module references are bare UUIDs or strings; there are none to other modul
 | `data_production_schema` (JSON) | JSON Schema a job's `productionJobDefinition` must satisfy |
 | `collection_spec` (JSON, null) | |
 | `source_domain` (null), `source_context` (JSON, null) | provenance; `source_domain` is `LIVE_RAN` or `DIGITAL_TWIN` |
-| `registered_by` (null) | `SEC-15.10`, revision `0036`: the invoker id the gateway vouched for when the type was first registered (the `producerId` of the request when the call did not come through the gateway). NULL for a type registered before the revision |
+| `registered_by` (null) | `SEC-15.10`, revision `0039`: the invoker id the gateway vouched for when the type was first registered (the `producerId` of the request when the call did not come through the gateway). NULL for a type registered before the revision |
 
 **`dme_producer_type`**: PK `(producer_id, dme_type_id)`; both FKs `ON DELETE CASCADE`.
 
@@ -141,6 +141,9 @@ Cross-module references are bare UUIDs or strings; there are none to other modul
 | `consumer_id` | rAppId, or `DME_FRAMEWORK` for a job the framework itself created against a producer |
 | `status` | set to `ACTIVE` on create; never changed afterwards |
 | `lifecycle_stage` (null) | one of `LIFECYCLE_STAGES` |
+| `expected_interval_seconds` (null) | how often the consumer expects a delivery (`expectedIntervalSeconds`, > 0, optional; `GUI-9.8`, revision `0037`) |
+| `last_delivery_at` (null) | when a producer last delivered a record for the job (`POST /data-jobs/{id}/records`); revision `0037` filled it from the newest `data_record` |
+| `late_after` (null) | when the job turns LATE: two intervals after `last_delivery_at`, or after the job was (re)declared before its first delivery; null without an interval. A column so the `late` filter is one comparison in SQL |
 
 **`data_offer`**: `offer_id` (PK), `dme_type_id` (FK cascade), `data_delivery_methods_offered` (array; JSON on SQLite), `data_delivery_method_committed` (the first offered method), `data_availability_notification_uri` (null), `data_offer_termination_notification_uri`.
 
@@ -198,11 +201,11 @@ All routes sit under `/dme`. Lists marked "paged" return `{items, total, limit, 
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/data-jobs` (202) | Create a job (`dataDeliveryMode, dmeTypeId, productionJobDefinition, dataDeliveryMethod, deliveryDetails, consumerId, lifecycleStage?`); pushes it to every producer of the type. Returns `{dataJobId}`. | 409 `DELIVERY_METHOD_NOT_OFFERED`; 422 `SCHEMA_VALIDATION_FAILED`; 422 `DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE` |
-| GET | `/data-jobs?dme_type_id=&consumer_id=` | Paged | |
+| POST | `/data-jobs` (202) | Create a job (`dataDeliveryMode, dmeTypeId, productionJobDefinition, dataDeliveryMethod, deliveryDetails, consumerId, lifecycleStage?, expectedIntervalSeconds?`); pushes it to every producer of the type. Returns `{dataJobId}`. A job view carries `expectedIntervalSeconds`, `lastDeliveryAt` and `late` (`GUI-9.8`: null without an interval; true once two intervals passed since the last delivery, or since the job was declared before any) | 409 `DELIVERY_METHOD_NOT_OFFERED`; 422 `SCHEMA_VALIDATION_FAILED`; 422 `DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE` |
+| GET | `/data-jobs?dme_type_id=&consumer_id=&late=` | Paged; `late=true` keeps the LATE jobs, `late=false` the on-time ones that declare an interval (a job without one matches neither) | |
 | GET | `/data-jobs/{id}` | | 404 `DATA_JOB_NOT_FOUND` |
 | GET | `/data-jobs/{id}/status` | `{dataJobId, status}` | 404 |
-| PUT | `/data-jobs/{id}` | Update definition, method, details, stage; re-validated; producers re-notified | 404; 400 `DATA_JOB_TARGET_IMMUTABLE`; plus the create errors |
+| PUT | `/data-jobs/{id}` | Update definition, method, details, stage, `expectedIntervalSeconds` (left out: none); re-validated; producers re-notified | 404; 400 `DATA_JOB_TARGET_IMMUTABLE`; plus the create errors |
 | DELETE | `/data-jobs/{id}` (204) | Terminate; stops the job at every producer. Idempotent. | |
 | DELETE | `/data-jobs?consumer_id=` (204) | Terminate every job one consumer owns | |
 
@@ -220,7 +223,7 @@ All routes sit under `/dme`. Lists marked "paged" return `{items, total, limit, 
 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
-| POST | `/data-jobs/{id}/records` (201) | `{payload}` → `{recordId}` | 404 `DATA_JOB_NOT_FOUND` |
+| POST | `/data-jobs/{id}/records` (201) | `{payload}` → `{recordId}`; sets the job's `lastDeliveryAt` (the delivery DME sees: the consumer pulls from here) | 404 `DATA_JOB_NOT_FOUND` |
 | GET | `/data-jobs/{id}/records` | Paged, newest first | 404 |
 
 **O1 action mediation**
@@ -301,7 +304,8 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Data records: ingest, fetch, limit, unknown job | 4 |
 | | Action mediation: forward and record, RAN NF OAM refusal surfaced, empty changes, unknown action, list filter, replayed `actionId` ignored | 6 |
 | | Health probe | 1 |
-| | Total | 106 |
+| `tests/test_delivery_health.py` | `GUI-9.8` delivery health: no interval means no verdict, LATE two intervals after the last delivery and on time again after the next, a job that never delivered turns LATE, PUT declares or drops the interval, the `late` list filter both ways, a non-positive interval is 422 | 6 |
+| | Total | 112 |
 
 ### 3.3 What is not covered here
 

@@ -436,10 +436,13 @@ class ApplyRequest(BaseModel):
 
 @router.get("/element-onboarding")
 def list_element_onboarding(request: Request, status: Literal["DISCOVERED", "NO_TEMPLATE", "TEMPLATE_SELECTED", "APPLYING", "ONBOARDED", "FAILED"] | None = None,
-                            software_check: Literal["NOT_CHECKED", "MATCH", "MISMATCH"] | None = None, limit: int = PageLimit, offset: int = PageOffset,
+                            software_check: Literal["NOT_CHECKED", "MATCH", "MISMATCH"] | None = None, region: str | None = scoping.RegionFilter,
+                            site_cluster: str | None = scoping.SiteClusterFilter, limit: int = PageLimit, offset: int = PageOffset,
                             db: Session = Depends(get_session)):
-    # Paged list of the onboarding rows of the elements inside the caller's scope (a list is filtered, not refused), optionally by `status` and `software_check`.
+    """MGT-14.5: the onboarding rows, narrowed by `status`, `software_check` and (PR-GUI-9.3) the `region` and `site_cluster` of the row's element.
+    A caller with a scope claim sees only the rows of the elements inside it."""
     stmt = scoping.scoped_to_elements(select(ElementOnboarding), scoping.request_scope(request), ElementOnboarding.managed_element_ref)
+    stmt = scoping.narrowed_to_place(stmt, ElementOnboarding.managed_element_ref, region, site_cluster)
     if status:
         stmt = stmt.where(ElementOnboarding.status == status)
     if software_check:
@@ -861,9 +864,17 @@ def create_software_campaign(body: CampaignRequest, request: Request, db: Sessio
 
 @router.get("/software-campaigns")
 def list_software_campaigns(request: Request, status: Literal["PENDING", "RUNNING", "HALTED", "COMPLETED", "ABORTED", "ROLLING_BACK", "ROLLED_BACK", "ROLLBACK_FAILED"] | None = None,
+                            region: str | None = scoping.RegionFilter, site_cluster: str | None = scoping.SiteClusterFilter,
                             limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
-    # Paged list (summary with name, version and creation time), optionally by `status`. A caller with a scope claim sees only the campaigns all of whose elements (jobs) are inside it.
+    """MGT-15.1: the campaigns, narrowed by `status`. PR-GUI-9.3: `region` and `site_cluster` keep a campaign when any of its elements (the `elements`
+    fixed at creation, which every wave's jobs are made from) is in that place; with `region` alone, also a campaign whose selector chose that region
+    (its elements may have moved since). A caller with a scope claim sees only the campaigns none of whose jobs is outside it (PR-SEC-10)."""
     stmt = select(SoftwareCampaign)
+    in_place = scoping.json_refs_in_place(db, SoftwareCampaign.elements, region, site_cluster)
+    if in_place is not None:
+        if region and not site_cluster:
+            in_place = in_place | (SoftwareCampaign.selector["region"].as_string() == region)
+        stmt = stmt.where(in_place)
     scope = scoping.request_scope(request)
     if scope is not None:
         outside = (select(SoftwareManagementJob.job_id).where(SoftwareManagementJob.campaign_id == SoftwareCampaign.campaign_id,

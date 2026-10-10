@@ -22,6 +22,8 @@ describe("buildQuery", () => {
   it("drops empty values and repeats arrays", () => {
     expect(buildQuery({ state: "", model_id: undefined, limit: 5, ok: true, ids: ["a", "b"] })).toBe("?limit=5&ok=true&ids=a&ids=b");
     expect(buildQuery({})).toBe("");
+    // an empty keyset cursor is meaningful (the first page), so it is kept
+    expect(buildQuery({ after: "", limit: 2 })).toBe("?after=&limit=2");
     expect(buildQuery()).toBe("");
   });
 });

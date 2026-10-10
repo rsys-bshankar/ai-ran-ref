@@ -9,7 +9,7 @@ real ICS API) and `docs/ARCHITECTURE.md` (DME).
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, ForeignKey, JSON, String, UniqueConstraint, Uuid
+from sqlalchemy import ARRAY, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -67,7 +67,7 @@ class DMEType(Base):
     source_domain: Mapped[str | None] = mapped_column(String)
     source_context: Mapped[dict | None] = mapped_column(JSON)
     # SEC-15.10: who registered the type first: the invoker id the gateway vouched for (an rApp's own id, or an SMO module's), else the `producerId` of the request when it did not
-    # come through the gateway. Only that caller (or an SMO module / the operator) may change the type's definition later. NULL on a row made before revision 0036: for those the
+    # come through the gateway. Only that caller (or an SMO module / the operator) may change the type's definition later. NULL on a row made before revision 0039: for those the
     # producers linked to the type stand in for it (`main._may_redefine_type`).
     registered_by: Mapped[str | None] = mapped_column(String)
 
@@ -138,6 +138,13 @@ class DataJob(Base):
     # Wave 3: which AI/ML lifecycle stage this job's data is for — drives
     # the Digital-Twin-excluded-from-inference eligibility check in main.py.
     lifecycle_stage: Mapped[str | None] = mapped_column(String)
+    # GUI-9.8 (revision 0037): delivery health. `expected_interval_seconds` is how often the consumer expects data (declared on the job, optional);
+    # `last_delivery_at` is when a producer last delivered a record for the job (POST /data-jobs/{id}/records; revision 0037 filled it from
+    # data_record); `late_after` is when the job turns LATE, two intervals after the last delivery (or after the job was declared, before the first
+    # one), kept as a column so `GET /data-jobs?late=` is a plain comparison in SQL. All null for a job that declares no interval.
+    expected_interval_seconds: Mapped[int | None] = mapped_column(Integer)
+    last_delivery_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    late_after: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class DataOffer(Base):

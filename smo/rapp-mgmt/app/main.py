@@ -5,14 +5,15 @@ SMO Design v1.3 section 3.5, extended by Onboarding/rApp Mgmt LLD sections
 and UpgradeInstance's auto-rollback made precise (upgrade.py).
 """
 
+import logging
 import uuid
 from contextlib import suppress
 from typing import Literal
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 
@@ -33,6 +34,7 @@ from smo_shared.correlation import apply_correlation_id
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.versioning import install_concurrency_handler
 from smo_shared.idempotency import idempotent
+from smo_shared.timeutil import as_utc
 
 from .models import RAppFaultReport, RAppInstance, RAppPerformanceReport
 from .provisioning import (DEPLOYABLE_PACKAGE_STATES, apply_approval_policy, apply_rapp_limits, onboarding_status, provision_instance, register_instance_invoker, register_sme_declarations,  # noqa: F401
@@ -42,6 +44,7 @@ from .upgrade import (current_instance_id, expire_overdue_upgrade, resolve_upgra
                       start_upgrade, version_history)
 
 app = FastAPI(title="rApp Management SMOS")
+log = logging.getLogger("rapp-mgmt")
 install_logging(app)  # structured JSON logs and one access-log line per request (PR-OBS-1)
 install_metrics(app)  # /metrics and request count/latency series (PR-OBS-2)
 register_query_gauge("smo_rapp_instances", "rApp instances, by lifecycle state (RUNNING are the active rApps).", ["state"],
@@ -263,13 +266,111 @@ def kill_instance(instance_id: uuid.UUID, body: KillRequest, db: Session = Depen
 def lift_instance_kill(instance_id: uuid.UUID, db: Session = Depends(get_session)):
     """AI-10.4: let the instance write again. Idempotent: lifting a switch that was not thrown is fine."""
     inst = _load_instance(db, instance_id)
+    _lift_kill_call(inst)
+    return {"instanceId": str(inst.instance_id), "killed": False}
+
+
+def _lift_kill_call(inst) -> None:
+    """Lifts the kill switch of one instance at RAN NF OAM (`DELETE /ran-nf-oam/rapp-kill/{oauthClientId}`); nothing to do for an instance without a
+    credential. A 404 (the switch was not thrown) counts as done. Raises 503 `ENDPOINT_UNREACHABLE` when RAN NF OAM cannot be told or refuses."""
     try:
         resp = R1Client().delete(f"/ran-nf-oam/rapp-kill/{inst.oauth_client_id}") if inst.oauth_client_id else None
     except httpx.HTTPError:
         resp = None
     if inst.oauth_client_id is not None and (resp is None or resp.status_code not in (204, 404)):
         raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="RAN NF OAM did not accept the change; nothing was changed")
-    return {"instanceId": str(inst.instance_id), "killed": False}
+
+
+# GUI-9.6: the page size used to read RAN NF OAM's list of stopped invokers (its maximum, smo_shared.pagination.MAX_LIMIT).
+_KILL_LIST_PAGE = 500
+
+
+def _stopped_invoker_ids() -> set[str]:
+    """Returns the invoker ids RAN NF OAM holds as stopped, read page by page from `GET /ran-nf-oam/rapp-kill`.
+
+    Raises 503 `ENDPOINT_UNREACHABLE` when any page cannot be read: a global stop or resume must not act on a partial picture, and a count that could
+    not be read is not reported as zero.
+    """
+    r1 = R1Client()
+    stopped: set[str] = set()
+    offset = 0
+    while True:
+        try:
+            resp = r1.get("/ran-nf-oam/rapp-kill", params={"limit": _KILL_LIST_PAGE, "offset": offset})
+        except httpx.HTTPError:
+            resp = None
+        if resp is None or resp.status_code != 200:
+            raise framework_error(FrameworkError.ENDPOINT_UNREACHABLE, detail="RAN NF OAM did not answer; the stopped rApps could not be read")
+        items = resp.json().get("items") or []
+        stopped.update(i["invokerId"] for i in items if i.get("invokerId"))
+        if len(items) < _KILL_LIST_PAGE:
+            return stopped
+        offset += _KILL_LIST_PAGE
+
+
+def _live_instances(db: Session) -> list[RAppInstance]:
+    """Returns every instance that can still write: not UNDEPLOYED and holding a credential (the switch keys on `oauth_client_id`), oldest first."""
+    stmt = (select(RAppInstance).where(RAppInstance.state != InstanceState.UNDEPLOYED, RAppInstance.oauth_client_id.is_not(None))
+            .order_by(RAppInstance.created_at, RAppInstance.instance_id))
+    return list(db.scalars(stmt))
+
+
+def _failure(inst: RAppInstance, exc: HTTPException) -> dict:
+    """The entry of the `failed` list for an instance whose switch could not be changed: its id and the problem's detail text."""
+    detail = exc.detail.get("detail") if isinstance(exc.detail, dict) else exc.detail
+    return {"instanceId": str(inst.instance_id), "error": str(detail)}
+
+
+@app.put("/kill-all")
+def kill_all_instances(body: KillRequest, db: Session = Depends(get_session)):
+    """GUI-9.6, the global stop: throw the kill switch (AI-10.4) of every instance that is not UNDEPLOYED, one instance at a time through the same call as
+    `PUT /instances/{id}/kill`. An instance already stopped is left as it is (its first stop, reason and author are kept) and counted in `alreadyStopped`.
+    Answers `{"stopped", "alreadyStopped", "failed": [{"instanceId", "error"}]}`; an instance RAN NF OAM did not accept is listed in `failed`, the others
+    stay stopped. 503 when RAN NF OAM's list of stopped rApps cannot be read: then nothing was changed."""
+    already = _stopped_invoker_ids()
+    stopped, already_stopped, failed = 0, 0, []
+    for inst in _live_instances(db):
+        if inst.oauth_client_id in already:
+            already_stopped += 1
+            continue
+        try:
+            _kill_call(inst, lambda inst=inst: R1Client().put(f"/ran-nf-oam/rapp-kill/{inst.oauth_client_id}",
+                                                              json={"requestedBy": body.requestedBy, "reason": body.reason}))
+        except HTTPException as exc:
+            failed.append(_failure(inst, exc))
+            continue
+        stopped += 1
+    log.warning("global stop by %s: %d stopped, %d already stopped, %d failed", body.requestedBy, stopped, already_stopped, len(failed))
+    return {"stopped": stopped, "alreadyStopped": already_stopped, "failed": failed}
+
+
+@app.delete("/kill-all")
+def resume_all_instances(db: Session = Depends(get_session)):
+    """GUI-9.6: lift the kill switch of every stopped instance that is not UNDEPLOYED (the per-instance `DELETE /instances/{id}/kill`, for each).
+    A stop of an invoker that is not one of this module's instances is not touched. Answers `{"resumed", "failed": [{"instanceId", "error"}]}`.
+    503 when RAN NF OAM's list of stopped rApps cannot be read: then nothing was changed."""
+    stopped_ids = _stopped_invoker_ids()
+    resumed, failed = 0, []
+    for inst in _live_instances(db):
+        if inst.oauth_client_id not in stopped_ids:
+            continue
+        try:
+            _lift_kill_call(inst)
+        except HTTPException as exc:
+            failed.append(_failure(inst, exc))
+            continue
+        resumed += 1
+    log.warning("global resume: %d resumed, %d failed", resumed, len(failed))
+    return {"resumed": resumed, "failed": failed}
+
+
+@app.get("/kill-all")
+def count_stopped_instances(db: Session = Depends(get_session)):
+    """GUI-9.6: how many instances that are not UNDEPLOYED are stopped now (`stopped`), out of how many (`instances`). 503 when RAN NF OAM cannot
+    answer: a count that could not be read is not reported as zero."""
+    stopped_ids = _stopped_invoker_ids()
+    live = _live_instances(db)
+    return {"stopped": sum(1 for i in live if i.oauth_client_id in stopped_ids), "instances": len(live)}
 
 
 @app.get("/instances/{instance_id}/safeguards")
@@ -623,15 +724,43 @@ def get_operator_api(instance_id: uuid.UUID, db: Session = Depends(get_session))
     return {"instanceId": str(inst.instance_id), "state": inst.state, "operatorApiBase": inst.operator_api_base if _serves(inst) else None}
 
 
+def _instances_in_region(db: Session, region: str, include_unscoped: bool):
+    """PR-GUI-9.3: the condition "this instance may act in `region`": its `authz_scope` (PR-SEC-10.3) lists `region` under `regions`, or, with
+    `include_unscoped`, it restricts no region (no claim at all, or a claim of tenants only: ADR 0005 leaves an axis it does not name unrestricted).
+
+    Computed in SQL so the page count stays exact. The JSON column is spelled per dialect: Postgres `json_array_elements_text(authz_scope -> 'regions')`
+    (a missing key is NULL, which expands to no rows), SQLite `json_each(authz_scope, '$.regions')`; `json_each` and the derived column list are not
+    portable to the other side, hence the branch."""
+    if db.get_bind().dialect.name == "postgresql":
+        regions_json = RAppInstance.authz_scope["regions"]                                # `->`: JSON, not the text of `->>`
+        items = func.json_array_elements_text(regions_json).table_valued("value").render_derived(name="scope_region")
+    else:
+        regions_json = func.json_extract(RAppInstance.authz_scope, "$.regions")
+        items = func.json_each(RAppInstance.authz_scope, "$.regions").table_valued("value")
+    listed = exists(select(items.c.value).where(items.c.value == region))
+    if not include_unscoped:
+        return listed
+    return or_(listed, RAppInstance.authz_scope.is_(None), regions_json.is_(None))
+
+
 @app.get("/instances")
-def list_instances(state: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
-                    db: Session = Depends(get_session)):
+def list_instances(state: str | None = None,
+                   region: str | None = Query(None, min_length=1, max_length=100,
+                                              description="Keep the instances whose `authzScope.regions` lists this region (ADR 0005)."),
+                   include_unscoped: bool = Query(True, description="With `region`: also keep the instances that restrict no region "
+                                                                    "(no `authzScope`, or one without `regions`), which may act anywhere."),
+                   limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    """The rApp instances, paged. `state` narrows. PR-GUI-9.3: `region` keeps the instances whose `authzScope.regions` lists it and, unless
+    `include_unscoped=false`, the instances that restrict no region (they may touch an element of any region); without `region`,
+    `include_unscoped` does nothing."""
     # lazy upgradeTimeoutSeconds enforcement (upgrade.py) for every upgrade in flight
     for old in list(db.scalars(select(RAppInstance).where(RAppInstance.state == InstanceState.UPGRADING))):
         _sweep_overdue_upgrade(db, old)
     stmt = select(RAppInstance)
     if state:
         stmt = stmt.where(RAppInstance.state == state)
+    if region:
+        stmt = stmt.where(_instances_in_region(db, region, include_unscoped))
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"instanceId": str(i.instance_id), "packageId": str(i.package_id), "state": i.state,
              "autonomyMode": i.autonomy_mode, "operatorApiBase": i.operator_api_base, "authzScope": i.authz_scope} for i in page["items"]]}
@@ -681,6 +810,57 @@ def list_performance_reports(instance_id: uuid.UUID, limit: int = PageLimit, off
     stmt = select(RAppPerformanceReport).where(RAppPerformanceReport.instance_id == instance_id).order_by(RAppPerformanceReport.reported_at.desc())
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [{"reportId": str(r.id), "metrics": r.metrics, "reportedAt": r.reported_at.isoformat()} for r in page["items"]]}
+
+
+# GUI-9.8: the most instances one batched latest-KPI read may name (a page of the GUI's rApps table).
+LATEST_PERFORMANCE_MAX_IDS = 50
+
+
+def _numeric_metrics(metrics: dict | None) -> dict:
+    """The top-level entries of a performance report whose value is a number (a bool is not one); nested objects, strings and lists are left out."""
+    return {k: v for k, v in (metrics or {}).items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+
+
+def _latest_view(instance_id: uuid.UUID, report: RAppPerformanceReport | None) -> dict:
+    """The latest-KPI answer for one instance: `at` (null) and `metrics` (`{}`) when it has reported nothing."""
+    if report is None:
+        return {"instanceId": str(instance_id), "at": None, "metrics": {}}
+    return {"instanceId": str(instance_id), "at": as_utc(report.reported_at).isoformat(), "metrics": _numeric_metrics(report.metrics)}
+
+
+def _latest_reports(db: Session, instance_ids: list[uuid.UUID]) -> dict[uuid.UUID, RAppPerformanceReport]:
+    """The newest performance report of each of `instance_ids`, in one query (the newest `reported_at` per instance, joined back to its row; the
+    index `ix_rapp_performance_report_instance_reported` serves both). Two reports with the same newest time: either one."""
+    if not instance_ids:
+        return {}
+    newest = (select(RAppPerformanceReport.instance_id, func.max(RAppPerformanceReport.reported_at).label("at"))
+              .where(RAppPerformanceReport.instance_id.in_(instance_ids)).group_by(RAppPerformanceReport.instance_id).subquery())
+    stmt = select(RAppPerformanceReport).join(newest, (RAppPerformanceReport.instance_id == newest.c.instance_id)
+                                              & (RAppPerformanceReport.reported_at == newest.c.at))
+    return {r.instance_id: r for r in db.scalars(stmt)}
+
+
+@app.get("/instances/performance/latest")
+def latest_performance_batch(ids: str, db: Session = Depends(get_session)):
+    """GUI-9.8, the headline KPI of many rApps in one read: `ids` is a comma-separated list of up to 50 instance ids. Answers `{"items": [{"instanceId",
+    "at", "metrics": {name: number}}]}`, one item per id in the order given (duplicates once), each the numeric metrics of that instance's newest
+    performance report; an id with no report (or no instance) has `at` null and `metrics` `{}`. 422 for more than 50 ids or one that is not a UUID."""
+    try:
+        wanted = list(dict.fromkeys(uuid.UUID(part.strip()) for part in ids.split(",") if part.strip()))
+    except ValueError:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="ids must be a comma-separated list of instance ids (UUIDs)") from None
+    if len(wanted) > LATEST_PERFORMANCE_MAX_IDS:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"at most {LATEST_PERFORMANCE_MAX_IDS} ids per call")
+    reports = _latest_reports(db, wanted)
+    return {"items": [_latest_view(i, reports.get(i)) for i in wanted]}
+
+
+@app.get("/instances/{instance_id}/performance/latest")
+def latest_performance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    """GUI-9.8, an rApp's headline KPI: `{"instanceId", "at", "metrics": {name: number}}`, the numeric metrics of the newest report it sent to
+    `POST /instances/{id}/performance` (non-numeric values left out). Never 404: `at` is null and `metrics` `{}` when there is no report (or no
+    such instance), so the GUI can ask for every row it shows."""
+    return _latest_view(instance_id, _latest_reports(db, [instance_id]).get(instance_id))
 
 
 @app.get("/instances/{instance_id}/faults")

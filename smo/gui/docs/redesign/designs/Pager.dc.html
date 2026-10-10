@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Table footer</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<nav aria-label="Pagination" style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--rail); font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); font-size: 13px;">
+  <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+    <span>Showing <strong class="num">{{from}}–{{to}}</strong> of <strong class="num">{{total}}</strong> {{noun}}</span>
+    <span style="color: var(--faint);">·</span>
+    <span style="color: var(--muted);">{{note}}</span>
+  </div>
+  <div style="display: flex; align-items: center; gap: 8px;">
+    <label style="display: flex; align-items: center; gap: 6px; color: var(--muted);">Rows <select class="input" style="width: 72px; min-height: 30px;"><option>25</option><option selected>50</option><option>100</option></select></label>
+    <button class="btn btn-sm btn-icon" aria-label="First page">«</button>
+    <button class="btn btn-sm btn-icon" aria-label="Previous page">‹</button>
+    <span class="mono" style="padding: 0 6px;">{{page}}</span>
+    <button class="btn btn-sm btn-icon" aria-label="Next page">›</button>
+    <button class="btn btn-sm btn-icon" aria-label="Last page">»</button>
+  </div>
+</nav>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"from":{"editor":"text","default":"1"},"to":{"editor":"text","default":"50"},"total":{"editor":"text","default":"12,480"},"noun":{"editor":"text","default":"rows"},"note":{"editor":"text","default":"sorted on the server"},"page":{"editor":"text","default":"1 / 250"},"$preview":{"width":1100,"height":56}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    return { from: p.from ?? '1', to: p.to ?? '50', total: p.total ?? '12,480', noun: p.noun ?? 'rows', note: p.note ?? 'sorted on the server', page: p.page ?? '1 / 250' };
+  }
+}
+</script>
+</body>
+</html>

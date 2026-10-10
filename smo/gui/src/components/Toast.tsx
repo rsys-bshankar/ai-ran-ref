@@ -1,9 +1,6 @@
-/**
- * The transient messages ("Pinned to the sidebar", "POST /x failed"): `ToastProvider` keeps the list and draws it in a polite live region (screen readers announce each
- * message), and `useToast().push` adds one. Used by the mutation hooks in `api/hooks.ts` and `api/rapps.ts` and by pages that call the BFF directly.
- */
-
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+/** The console's toasts: short messages in the corner (success 4 s, error 9 s, or until clicked), at most five at once. Each one's dismiss timer
+ * is tracked and cleared when the toast is dismissed early or the provider unmounts (GUI-10.10), so no timer fires into an unmounted tree. */
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 interface Toast { id: number; tone: "success" | "error" | "info"; text: string }
 interface ToastApi { push: (t: Omit<Toast, "id">) => void }
@@ -11,17 +8,28 @@ interface ToastApi { push: (t: Omit<Toast, "id">) => void }
 const ToastContext = createContext<ToastApi | null>(null);
 let nextId = 1;
 
-/**
- * Provides `useToast` to the app and draws the toasts. Keeps the newest five; a message goes away by itself after 4 s (9 s for an error, so it can be read) or when clicked.
- */
+/** How long a toast stays, by tone (ms). */
+export const TOAST_MS = { error: 9000, other: 4000 } as const;
+
+/** The provider and the toast stack it draws. */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const dismiss = useCallback((id: number) => setToasts((ts) => ts.filter((t) => t.id !== id)), []);
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const dismiss = useCallback((id: number) => {
+    const timer = timers.current.get(id);
+    if (timer !== undefined) clearTimeout(timer);
+    timers.current.delete(id);
+    setToasts((ts) => ts.filter((t) => t.id !== id));
+  }, []);
   const push = useCallback((t: Omit<Toast, "id">) => {
     const id = nextId++;
     setToasts((ts) => [...ts.slice(-4), { ...t, id }]);
-    setTimeout(() => dismiss(id), t.tone === "error" ? 9000 : 4000);
+    timers.current.set(id, setTimeout(() => dismiss(id), t.tone === "error" ? TOAST_MS.error : TOAST_MS.other));
   }, [dismiss]);
+  useEffect(() => {
+    const pending = timers.current;
+    return () => { pending.forEach((timer) => clearTimeout(timer)); pending.clear(); };
+  }, []);
   const api = useMemo(() => ({ push }), [push]);
   return (
     <ToastContext.Provider value={api}>
@@ -35,9 +43,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** Returns the toast API (`push`); throws when used outside `ToastProvider`. */
+/** The toasts of the nearest provider; throws outside one (a page always has one). */
 export function useToast(): ToastApi {
   const ctx = useContext(ToastContext);
   if (!ctx) throw new Error("useToast outside ToastProvider");
   return ctx;
+}
+
+/** The toasts, or null outside a provider (the session provider, which some tests mount on its own). */
+export function useOptionalToast(): ToastApi | null {
+  return useContext(ToastContext);
 }

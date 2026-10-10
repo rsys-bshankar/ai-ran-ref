@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dashboard — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="dashboard" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Overview" crumb="Dashboard" scope="eu-west · all clusters" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">Network overview · eu-west</div>
+          <h1 style="margin-top: 6px;">Good morning, admin</h1>
+          <p>4,112 DUs · 12,336 cells · 16 site clusters · 21 of 21 SMO modules healthy</p>
+        </div>
+        <div class="row wrap">
+          <span class="chip"><span class="dot d-ok"></span>Updated 3 s ago</span>
+          <div class="seg" role="group" aria-label="Time range"><button>1 h</button><button class="on">24 h</button><button>7 d</button></div>
+          <button class="btn">Export report</button>
+        </div>
+      </div>
+
+      <div class="grid g5">
+        <div class="kpi volt">
+          <span class="kpi-l">DUs healthy</span>
+          <span class="kpi-v">98.0<small>%</small></span>
+          <div class="meter"><span class="f-ok" style="width: 98%;"></span><span class="f-warn" style="width: 1.4%;"></span><span class="f-bad" style="width: 0.6%;"></span></div>
+          <span class="kpi-f">4,031 ok · 58 degraded · 23 down</span>
+        </div>
+        <a href="Alarms.dc.html" class="kpi hot" style="text-decoration: none; color: inherit;">
+          <span class="kpi-l">Open alarms</span>
+          <span class="kpi-v">1,284</span>
+          <div class="meter"><span class="f-cr" style="width: 3%;"></span><span class="f-mj" style="width: 14%;"></span><span class="f-mn" style="width: 38%;"></span><span class="f-wn" style="width: 45%;"></span></div>
+          <span class="kpi-f"><span class="t-bad">37 critical</span> · 402 unacknowledged</span>
+        </a>
+        <div class="kpi">
+          <span class="kpi-l">Autonomous actions · 24 h</span>
+          <span class="kpi-v">2,416</span>
+          <span class="kpi-f"><span class="badge b-ok">2,301 verified</span><span class="badge b-warn">71 reverted</span></span>
+        </div>
+        <a href="Approvals.dc.html" class="kpi" style="text-decoration: none; color: inherit;">
+          <span class="kpi-l">Awaiting approval</span>
+          <span class="kpi-v">18</span>
+          <span class="kpi-f"><span class="t-warn">4 lapse in under 10 min</span></span>
+        </a>
+        <div class="kpi">
+          <span class="kpi-l">Model guard breaches</span>
+          <span class="kpi-v">3 <small>/ 214 active</small></span>
+          <span class="kpi-f">retraining triggered on all 3</span>
+        </div>
+      </div>
+
+      <div class="grid g3">
+        <section class="card s2" aria-labelledby="map-h">
+          <div class="card-h">
+            <div><h2 id="map-h">Network health map</h2><span class="sub">16 site clusters in eu-west · tile size = cells · colour = worst DU state</span></div>
+            <div class="row"><div class="seg" role="group" aria-label="Colour by"><button class="on">Alarms</button><button>Load</button><button>Energy</button></div><a class="btn btn-sm" href="Topology.dc.html">Open topology</a></div>
+          </div>
+          <div class="row xs muted" style="gap: 6px;"><a href="#">All regions</a><span>›</span><button onClick="{{back}}" style="background: none; border: 0; padding: 0; font: inherit; color: var(--volt-text); cursor: pointer;">eu-west</button><sc-if value="{{inCluster}}" hint-placeholder-val="{{false}}"><span>›</span><strong style="color: var(--text);">{{cluster}}</strong><span>· {{clusterDus}} DUs · showing the 48 worst</span></sc-if><sc-if value="{{atRegion}}" hint-placeholder-val="{{true}}"><span>· click a cluster to open its DUs</span></sc-if></div>
+          <sc-if value="{{inCluster}}" hint-placeholder-val="{{false}}">
+            <div style="display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 4px;">
+              <sc-for list="{{dus}}" as="d" hint-placeholder-count="48"><a href="Element.dc.html" style="{{d.style}}" title="{{d.n}}"><span style="font: 600 9.5px 'JetBrains Mono', monospace; color: var(--text);">{{d.n}}</span></a></sc-for>
+            </div>
+            <div class="row between"><button class="btn btn-sm" onClick="{{back}}">‹ Back to eu-west</button><a class="small" href="Alarms.dc.html">Open all alarms in this cluster →</a></div>
+          </sc-if>
+          <sc-if value="{{atRegion}}" hint-placeholder-val="{{true}}">
+          <div style="display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-auto-rows: 64px; grid-auto-flow: dense; gap: 6px;">
+            <sc-for list="{{clusters}}" as="c" hint-placeholder-count="16">
+              <a href="#" style="{{c.style}}" aria-label="{{c.aria}}" onClick="{{c.go}}">
+                <span style="font: 600 12px 'JetBrains Mono', monospace; color: var(--text);">{{c.n}}</span>
+                <span style="font-size: 11px; color: var(--text-2);">{{c.du}} DUs</span>
+                <sc-if value="{{c.hasBad}}" hint-placeholder-val="{{false}}"><span style="{{c.badgeStyle}}">{{c.bad}}</span></sc-if>
+              </a>
+            </sc-for>
+          </div>
+          </sc-if>
+          <div class="legend"><span><i style="background: rgba(60,203,139,0.45);"></i>All DUs healthy</span><span><i style="background: var(--warn);"></i>Major / degraded</span><span><i style="background: var(--bad);"></i>Critical / DU down</span><span class="faint">Numbers on tiles = unhealthy DUs</span></div>
+        </section>
+
+        <section class="card" aria-labelledby="worst-h">
+          <div class="card-h"><div><h2 id="worst-h">Worst 10 DUs</h2><span class="sub">ranked on the server</span></div></div>
+          <div style="display: flex; flex-direction: column;">
+            <sc-for list="{{worst}}" as="w" hint-placeholder-count="10">
+              <a href="Element.dc.html" style="display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); text-decoration: none; color: inherit;">
+                <span class="mono xs faint">{{w.r}}</span>
+                <span style="display: flex; flex-direction: column; min-width: 0;"><strong class="mono small" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{w.du}}</strong><span class="xs muted">{{w.why}}</span></span>
+                <span class="{{w.cls}}">{{w.tag}}</span>
+              </a>
+            </sc-for>
+          </div>
+          <a class="small" href="Alarms.dc.html">+ 71 more unhealthy DUs →</a>
+        </section>
+      </div>
+
+      <div class="grid g3">
+        <section class="card" aria-labelledby="att-h">
+          <div class="card-h"><h2 id="att-h">Needs your attention</h2><span class="badge b-bad plain">62</span></div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div class="row between"><span class="eyebrow">Critical alarms</span><a class="xs" href="Alarms.dc.html">37 →</a></div>
+            <div class="callout bad" style="padding: 8px 12px;"><span class="small"><strong>LOS · 12 DUs in metro-a</strong> <span class="muted">· one fibre cut likely</span></span></div>
+            <div class="row between" style="margin-top: 6px;"><span class="eyebrow">Approvals</span><a class="xs" href="Approvals.dc.html">18 →</a></div>
+            <div class="callout warn" style="padding: 8px 12px;"><span class="small"><strong>Mobility Opt. · 14 similar CIO changes</strong> <span class="muted">· first lapses in 6 min</span></span></div>
+            <div class="row between" style="margin-top: 6px;"><span class="eyebrow">Model breaches</span><a class="xs" href="Aiml.dc.html">3 →</a></div>
+            <div class="callout" style="padding: 8px 12px;"><span class="small"><strong>coverage-model v3</strong> <span class="muted">· accuracy 0.82 under 0.85</span></span></div>
+            <div class="row between" style="margin-top: 6px;"><span class="eyebrow">Escalations</span><a class="xs" href="Kpis.dc.html">4 →</a></div>
+            <div class="callout" style="padding: 8px 12px;"><span class="small"><strong>RRC setup below floor · 3 clusters</strong></span></div>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="trend-h">
+          <div class="card-h"><div><h2 id="trend-h">Alarms raised · 24 h</h2><span class="sub">counted per hour on the server</span></div></div>
+          <svg width="100%" height="170" viewBox="0 0 360 170" preserveAspectRatio="none" role="img" aria-label="Stacked bars of alarms per hour, peak around 22:00">
+            <line class="gl" x1="28" y1="20" x2="360" y2="20"></line><line class="gl" x1="28" y1="80" x2="360" y2="80"></line><line x1="28" y1="140" x2="360" y2="140" class="ln-s"></line>
+            <text class="ax" x="0" y="24">240</text><text class="ax" x="0" y="84">120</text>
+            <sc-for list="{{bars}}" as="b" hint-placeholder-count="24">
+              <rect x="{{b.x}}" y="{{b.yw}}" width="10" height="{{b.hw}}" fill="#6cb2ff"></rect>
+              <rect x="{{b.x}}" y="{{b.yn}}" width="10" height="{{b.hn}}" fill="#f0c43c"></rect>
+              <rect x="{{b.x}}" y="{{b.ym}}" width="10" height="{{b.hm}}" fill="#ff8a3d"></rect>
+              <rect x="{{b.x}}" y="{{b.yc}}" width="10" height="{{b.hc}}" fill="#ff5d52"></rect>
+            </sc-for>
+            <text class="ax" x="30" y="162">04:00</text><text class="ax" x="180" y="162">16:00</text><text class="ax" x="330" y="162">now</text>
+          </svg>
+          <div class="legend"><span><i style="background: var(--bad);"></i>Crit</span><span><i style="background: var(--sev-major);"></i>Major</span><span><i style="background: var(--sev-minor);"></i>Minor</span><span><i style="background: var(--info);"></i>Warn</span></div>
+        </section>
+
+        <section class="card" aria-labelledby="auto-h">
+          <div class="card-h"><h2 id="auto-h">Autonomy · 24 h</h2><a class="small" href="Decisions.dc.html">All 2,416 →</a></div>
+          <div class="grid g3" style="gap: 6px;">
+            <div class="inset" style="padding: 8px; text-align: center;"><div class="num" style="font-size: 18px;">1,782</div><div class="xs muted">autonomous</div></div>
+            <div class="inset" style="padding: 8px; text-align: center;"><div class="num" style="font-size: 18px;">512</div><div class="xs muted">approved</div></div>
+            <div class="inset" style="padding: 8px; text-align: center;"><div class="num" style="font-size: 18px;">122</div><div class="xs muted">refused</div></div>
+          </div>
+          <div class="eyebrow">By rApp · top 5 of 487</div>
+          <sc-for list="{{byApp}}" as="a" hint-placeholder-count="5">
+            <div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px 44px; gap: 10px; align-items: center;">
+              <span class="small" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{a.n}}</span>
+              <div class="meter"><span class="f-volt" style="{{a.w}}"></span></div>
+              <span class="mono xs" style="text-align: right;">{{a.v}}</span>
+            </div>
+          </sc-for>
+        </section>
+      </div>
+
+      <div class="grid g3">
+        <section class="card s2" aria-labelledby="mod-h">
+          <div class="card-h">
+            <div><h2 id="mod-h">SMO platform health</h2><span class="sub">21 modules · replicas ready</span></div>
+            <span class="badge b-ok">21 / 21 up</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px;">
+            <sc-for list="{{modules}}" as="m" hint-placeholder-count="21">
+              <div class="inset" style="display: flex; align-items: center; gap: 8px; padding: 8px 10px;">
+                <span class="dot d-ok"></span>
+                <b class="mono" style="font-size: 11.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{m.n}}</b>
+                <span class="xs muted mono">{{m.r}}</span>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+        <section class="card" aria-labelledby="fleet-h">
+          <div class="card-h"><h2 id="fleet-h">Fleet</h2><span class="sub">counts by state</span></div>
+          <dl class="kv" style="grid-template-columns: minmax(0, 1fr) max-content max-content; align-items: center;">
+            <dt>rApp instances</dt><dd class="num">487</dd><dd><span class="badge b-ok">471</span> <span class="badge b-bad">6</span></dd>
+            <dt>rApp packages</dt><dd class="num">162</dd><dd><span class="badge b-ok">158</span> <span class="badge b-bad">4</span></dd>
+            <dt>AI/ML models</dt><dd class="num">508</dd><dd><span class="badge b-volt">214 active</span></dd>
+            <dt>NF deployments</dt><dd class="num">3,940</dd><dd><span class="badge b-ok">3,921</span> <span class="badge b-bad">19</span></dd>
+            <dt>O1 endpoints</dt><dd class="num">4,112</dd><dd><span class="badge b-ok">4,089</span> <span class="badge b-bad">23</span></dd>
+            <dt>Intents</dt><dd class="num">612</dd><dd><span class="badge b-ok">574</span> <span class="badge b-warn">38</span></dd>
+          </dl>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const raw = [['metro-a',812,15,'bad',2,2],['metro-b',640,4,'warn',2,1],['harbour',388,9,'warn',1,2],['airport',290,0,'ok',1,1],['north-ring',344,2,'warn',1,1],['old-town',201,0,'ok',1,1],['campus',176,0,'ok',1,1],['stadium',122,6,'bad',1,1],['east-ind',410,0,'ok',2,1],['river',266,1,'warn',1,1],['west-hills',150,0,'ok',1,1],['rail-hub',98,0,'ok',1,1],['south-pk',140,0,'ok',1,1],['coast',75,0,'ok',1,1],['lakeside',60,0,'ok',1,1],['rural-n',20,0,'ok',1,1]];
+    const bg = { ok: 'rgba(60,203,139,0.22);border:1px solid rgba(60,203,139,0.45);', warn: 'rgba(240,180,60,0.22);border:1px solid var(--warn);', bad: 'rgba(255,93,82,0.22);border:1px solid var(--bad);' };
+    const st = this.state || {};
+    const clusters = raw.map(([n, du, bad, s, cs, rs]) => ({
+      n, du, bad, hasBad: bad > 0, aria: n + ', ' + du + ' DUs, ' + bad + ' unhealthy',
+      go: (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState({ cluster: n, clusterDus: du, clusterBad: bad }); },
+      style: 'grid-column:span ' + cs + ';grid-row:span ' + rs + ';display:flex;flex-direction:column;justify-content:space-between;padding:8px 10px;border-radius:8px;text-decoration:none;position:relative;background:' + bg[s],
+      badgeStyle: 'position:absolute;top:8px;right:8px;font:700 11px/1 JetBrains Mono,monospace;padding:3px 6px;border-radius:999px;color:var(--on-sev);background:' + (s === 'bad' ? 'var(--bad)' : 'var(--warn)') + ';'
+    }));
+    const worst = [
+      ['du-03-metro-a', 'LOS on 3 cells · 4 critical', 'Crit', 'sev sev-cr'],
+      ['du-17-metro-a', 'LOS · 2 critical', 'Crit', 'sev sev-cr'],
+      ['du-09-stadium', 'DU unreachable 6 min', 'Down', 'sev sev-cr'],
+      ['du-221-harbour', 'Tx power · 5 major', 'Major', 'sev sev-mj'],
+      ['du-11-stadium', 'PRB 97% · congested', 'Major', 'sev sev-mj'],
+      ['du-40-metro-a', 'CPRI errors', 'Major', 'sev sev-mj'],
+      ['du-302-harbour', 'heartbeat late', 'Major', 'sev sev-mj'],
+      ['du-58-north-ring', 'RRC setup 91%', 'Minor', 'sev sev-mn'],
+      ['du-12-metro-b', 'temperature high', 'Minor', 'sev sev-mn'],
+      ['du-77-river', 'sync drift', 'Minor', 'sev sev-mn']
+    ].map(([du, why, tag, cls], i) => ({ r: i + 1, du, why, tag, cls }));
+    const data = [[1,8,30,40],[0,6,26,38],[0,5,24,34],[1,6,22,30],[0,7,25,36],[1,9,30,42],[2,12,36,50],[1,14,40,60],[2,16,44,62],[2,18,46,66],[1,15,42,58],[1,13,40,52],[0,12,36,50],[1,13,38,54],[2,15,42,58],[3,18,48,66],[3,22,56,74],[4,24,60,80],[3,22,58,76],[2,20,52,70],[3,24,58,78],[4,28,64,84],[5,30,68,88],[4,26,62,80]];
+    const k = 0.5, base = 140;
+    const bars = data.map((d, i) => { const [c, m, n, w] = d; const x = 30 + i * 13.6; const hw = w * k, hn = n * k, hm = m * k, hc = c * k;
+      return { x, hw, yw: base - hw, hn, yn: base - hw - hn, hm, ym: base - hw - hn - hm, hc, yc: base - hw - hn - hm - hc }; });
+    const byApp = [['Energy Saving (fleet)', 812], ['Traffic Steering', 604], ['Mobility Optimization', 431], ['Coverage Optimization', 209], ['Interference Mgmt', 98]].map(([n, v]) => ({ n, v, w: 'width:' + Math.round(v / 812 * 100) + '%' }));
+    const names = ['r1-termination','sme','dme','onboarding','rapp-mgmt','ran-nf-oam','a1-related','nfo','focom','aimgf','mlmr','mllf','ran-analytics','mdaf','intent-service','so-smos','sa-smos','energy-saving-rapp','mobility-optimization-rapp','coverage-optimization-rapp','traffic-steering-rapp'];
+    const modules = names.map((n, i) => ({ n, r: (i < 3 ? '3/3' : i < 9 ? '2/2' : '1/1') }));
+    const nb = st.clusterBad || 0;
+    const dus = [];
+    for (let i = 0; i < 48; i++) {
+      const s = i < Math.ceil(nb / 3) ? 'bad' : i < nb ? 'warn' : 'ok';
+      dus.push({ n: 'du-' + String(i * 7 + 3).padStart(3, '0'), style: 'display:grid;place-items:center;height:30px;border-radius:5px;text-decoration:none;background:' + (s === 'bad' ? 'rgba(255,93,82,0.35);border:1px solid var(--bad);' : s === 'warn' ? 'rgba(240,180,60,0.3);border:1px solid var(--warn);' : 'rgba(60,203,139,0.18);border:1px solid rgba(60,203,139,0.4);') });
+    }
+    return { P,  clusters, worst, bars, byApp, modules, dus, inCluster: !!st.cluster, atRegion: !st.cluster, cluster: st.cluster || '', clusterDus: st.clusterDus || 0, back: () => this.setState({ cluster: null }) };
+  }
+}
+</script>
+</body>
+</html>

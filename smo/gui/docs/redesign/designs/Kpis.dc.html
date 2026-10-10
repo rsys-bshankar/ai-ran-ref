@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>KPIs &amp; Assurance — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="kpis" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Network" crumb="KPIs &amp; Assurance" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">PM · MDAF · SA SMOS · MLMF</div>
+          <h1 style="margin-top: 6px;">KPIs &amp; Assurance</h1>
+          <p>Network performance, the monitors that watch it, and what was done when a threshold broke.</p>
+        </div>
+        <div class="row wrap"><select class="input" style="width: 200px;" aria-label="Scope"><option>All managed elements</option></select><div class="seg" role="group" aria-label="Range"><button>1 h</button><button class="on">24 h</button><button>7 d</button></div></div>
+      </div>
+
+      <div class="tabs" role="tablist"><sc-for list="{{tabs}}" as="t" hint-placeholder-count="7"><button class="{{t.cls}}" role="tab" aria-selected="{{t.sel}}" onClick="{{t.go}}">{{t.label}} <span class="n">{{t.n}}</span></button></sc-for></div>
+      <sc-if value="{{T.pm}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.pm}}" hint-size="100%,520px"></dc-import></sc-if>
+      <sc-if value="{{T.defs}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.defs}}" hint-size="100%,520px"></dc-import></sc-if>
+      <sc-if value="{{T.rapp}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.rapp}}" hint-size="100%,520px"></dc-import></sc-if>
+      <sc-if value="{{T.analytics}}" hint-placeholder-val="{{false}}">
+        <div class="grid g3" style="align-items: start;">
+          <section class="card s2">
+            <div class="card-h"><div><h2>Request an analysis</h2><span class="sub">MDAF · POST /mda-requests · TS 28.104</span></div></div>
+            <div class="grid g3">
+              <label class="field"><span>MDA function</span><select class="input"><option>mdaf-coverage-1 · RAN</option><option>mdaf-mobility-1 · RAN</option><option>mdaf-load-1 · RAN</option></select></label>
+              <label class="field"><span>Output</span><select class="input"><option>coverage-issue-analysis</option><option>load-prediction</option></select></label>
+              <label class="field"><span>Scope</span><input class="input mono" value="cluster=harbour"></label>
+              <label class="field"><span>Report kind</span><select class="input"><option>ANALYTICS</option><option>PREDICTION</option><option>DRIFT</option></select></label>
+              <label class="field"><span>Delivery</span><select class="input"><option>FILE</option><option>STREAMING</option><option>NOTIFICATION</option></select></label>
+              <label class="field"><span>Window</span><select class="input"><option>next 24 h</option><option>last 7 d</option></select></label>
+            </div>
+            <div class="row" style="justify-content: flex-end;"><button class="btn btn-primary" onClick="{{mdaGo}}">Request analysis</button></div>
+            <sc-if value="{{mdaSent}}" hint-placeholder-val="{{false}}"><div class="callout volt" style="padding: 10px 12px;"><span class="small">Request mda-req-0388 accepted · first report expected within 15 min · you'll find it below</span></div></sc-if>
+          </section>
+          <dc-import name="ListView" spec="{{S.mdaFns}}" hint-size="100%,360px"></dc-import>
+        </div>
+        <dc-import name="ListView" spec="{{S.mdaReqs}}" hint-size="100%,400px"></dc-import>
+        <dc-import name="ListView" spec="{{S.analytics}}" hint-size="100%,460px"></dc-import>
+      </sc-if>
+      <sc-if value="{{T.assurance}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.assurance}}" hint-size="100%,520px"></dc-import></sc-if>
+      <sc-if value="{{T.ocloud}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.ocloud}}" hint-size="100%,520px"></dc-import></sc-if>
+      <sc-if value="{{T.overview}}" hint-placeholder-val="{{true}}">
+
+      <div class="grid g5">
+        <sc-for list="{{kpis}}" as="k" hint-placeholder-count="5">
+          <div class="kpi">
+            <span class="kpi-l">{{k.l}}</span>
+            <div class="row between" style="align-items: flex-end;"><span class="kpi-v" style="font-size: 28px;">{{k.v}}</span><span class="{{k.dc}}">{{k.d}}</span></div>
+            <svg width="100%" height="34" viewBox="0 0 100 34" preserveAspectRatio="none" aria-hidden="true"><polyline points="{{k.pts}}" class="{{k.ln}}" vector-effect="non-scaling-stroke"></polyline></svg>
+          </div>
+        </sc-for>
+      </div>
+
+      <div class="grid g3">
+        <section class="card s2" aria-labelledby="tp-h">
+          <div class="card-h">
+            <div><h2 id="tp-h">Downlink throughput · 12,336 cells</h2><span class="sub">DRB.UEThpDl · spread across all cells in scope · 15 min · Mbps</span></div>
+            <div class="row"><div class="legend"><span><i style="background: var(--volt-soft);"></i>p10–p90</span><span><i style="background: var(--volt);"></i>median</span><span><i style="background: var(--bad);"></i>worst cluster</span></div><div class="seg" role="group" aria-label="Group"><button class="on">All</button><button>By cluster</button></div></div>
+          </div>
+          <svg width="100%" height="230" viewBox="0 0 1000 230" preserveAspectRatio="none" role="img" aria-label="Median throughput with a p10 to p90 band; metro-a drops at the end">
+            <line class="gl" x1="40" y1="20" x2="1000" y2="20"></line><line class="gl" x1="40" y1="80" x2="1000" y2="80"></line><line class="gl" x1="40" y1="140" x2="1000" y2="140"></line><line x1="40" y1="200" x2="1000" y2="200" class="ln-s"></line>
+            <text class="ax" x="0" y="24">300</text><text class="ax" x="0" y="84">200</text><text class="ax" x="0" y="144">100</text><text class="ax" x="12" y="204">0</text>
+            <path d="{{band}}" style="fill: var(--volt-soft)"></path>
+            <polyline points="{{med}}" class="ln-volt" vector-effect="non-scaling-stroke"></polyline>
+            <polyline points="{{worstLine}}" fill="none" stroke="#ff5d52" stroke-width="2" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"></polyline>
+            <rect x="930" y="20" width="70" height="180" fill="rgba(255,93,82,0.08)"></rect>
+            <text class="ax" x="934" y="36" style="fill: var(--bad);">metro-a LOS</text>
+          </svg>
+          <div class="row between xs faint mono" style="padding-left: 40px;"><span>04:00</span><span>10:00</span><span>16:00</span><span>22:00</span><span>now</span></div>
+        </section>
+        <section class="card" aria-labelledby="wc-h">
+          <div class="card-h"><div><h2 id="wc-h">Worst 10 cells</h2><span class="sub">ranked on the server · last 1 h</span></div><a class="small" href="#">Heatmap →</a></div>
+          <sc-for list="{{worstCells}}" as="w" hint-placeholder-count="10">
+            <div style="display: grid; grid-template-columns: minmax(0, 1fr) 90px 62px; gap: 10px; align-items: center;">
+              <span class="mono small" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{w.n}}</span>
+              <div class="meter"><span class="f-bad" style="{{w.w}}"></span></div>
+              <span class="mono xs" style="text-align: right;">{{w.v}}</span>
+            </div>
+          </sc-for>
+          <span class="xs muted">The heatmap (cell × hour) opens for up to 200 cells after you pick a cluster.</span>
+        </section>
+      </div>
+
+      <div class="grid g3">
+        <section class="card flush s2" aria-labelledby="mon-h">
+          <div class="card-h"><div><h2 id="mon-h">Assurance monitors · breaching first</h2><span class="sub">SA SMOS evaluates; SO SMOS remediates; escalates to you when it can't</span></div><div class="row"><span class="chip">Breaching or recent ×</span><button class="btn btn-sm">New monitor</button></div></div>
+          <div class="tbl-box"><table class="tbl">
+            <thead><tr><th>Monitor</th><th>Metric</th><th>Floor</th><th>Now</th><th>Remedial action</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td><span class="id">b625f16a</span></td><td class="small">RRC setup success · du-03</td><td class="mono">≥ 98%</td><td class="mono t-bad">91.4%</td><td class="small">CONFIG_CHANGE failed → escalated</td><td><span class="badge b-bad">ESCALATED</span></td></tr>
+              <tr><td><span class="id">a03c22e9</span></td><td class="small">PRB utilisation · du-04</td><td class="mono">≤ 85%</td><td class="mono t-warn">81%</td><td class="small">Traffic Steering offload (auto)</td><td><span class="badge b-ok">RESOLVED</span></td></tr>
+              <tr><td><span class="id">77e1b0c4</span></td><td class="small">O-Cloud node CPU · edge-01</td><td class="mono">≤ 80%</td><td class="mono">54%</td><td class="small">Scale NF deployment (NFO)</td><td><span class="badge b-ok">HEALTHY</span></td></tr>
+              <tr><td><span class="id">5d90aa13</span></td><td class="small">HO success · metro-a</td><td class="mono">≥ 99%</td><td class="mono">99.1%</td><td class="small">Mobility Optimization (assist)</td><td><span class="badge b-ok">HEALTHY</span></td></tr>
+            </tbody>
+          </table></div>
+          <dc-import name="Pager" from="1" to="4" total="27" noun="monitors" note="filter: breaching or recent · 1,940 in scope" page="1 / 7" hint-size="100%,56px"></dc-import>
+        </section>
+        <section class="card" aria-labelledby="esc-h">
+          <div class="card-h"><h2 id="esc-h">Escalated to you</h2><a class="small" href="#">4 →</a></div>
+          <div class="callout bad"><div style="display: flex; flex-direction: column; gap: 6px;"><strong class="small">RRC setup success below floor on du-03</strong><span class="xs muted">Automatic CONFIG_CHANGE didn't recover it. Correlates with the critical LOS alarm on cell-7.</span><div class="row"><a class="btn btn-sm" href="Alarms.dc.html">Open alarm</a><button class="btn btn-sm">Mark handled</button></div></div></div>
+          <div class="eyebrow">RAN Analytics reports</div>
+          <div class="inset" style="display: flex; flex-direction: column; gap: 4px;"><strong class="small">coverage-issue-analysis</strong><span class="xs muted">MDAF · 1 report · 3 cells flagged weak coverage</span></div>
+          <div class="inset" style="display: flex; flex-direction: column; gap: 4px;"><strong class="small">mobility-issue-analysis</strong><span class="xs muted">MDAF · 2 reports · late HO into cell-5</span></div>
+        </section>
+      </div>
+      </sc-if>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1400}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const sp = (a) => a.map((v, i) => (i * 100 / (a.length - 1)).toFixed(1) + ',' + (32 - v * 30).toFixed(1)).join(' ');
+    const kpis = [
+      { l: 'DL throughput p50', v: '182 Mbps', d: '▲ 4%', dc: 'xs t-ok', ln: 'ln-volt', pts: sp([.4,.45,.5,.6,.55,.7,.75,.7,.8,.78]) },
+      { l: 'PRB utilisation', v: '57%', d: '▲ 6 pts', dc: 'xs t-warn', ln: 'ln-warn', pts: sp([.3,.35,.4,.5,.55,.6,.58,.62,.65,.7]) },
+      { l: 'Handover success', v: '99.1%', d: '▲ 0.6', dc: 'xs t-ok', ln: 'ln-ok', pts: sp([.6,.62,.58,.7,.72,.75,.8,.82,.84,.86]) },
+      { l: 'RRC setup success', v: '98.3%', d: '▼ 0.9', dc: 'xs t-bad', ln: 'ln-info', pts: sp([.8,.82,.81,.83,.8,.79,.78,.7,.55,.4]) },
+      { l: 'Energy per GB', v: '0.41 kWh', d: '▼ 12%', dc: 'xs t-ok', ln: 'ln-ok', pts: sp([.8,.75,.72,.7,.6,.58,.55,.5,.45,.42]) }
+    ];
+    const mkLine = (base, amp, c, drop) => {
+      const pts = [];
+      for (let i = 0; i <= 48; i++) {
+        let v = base + amp * Math.sin((i / 48) * Math.PI * 2 - 1.6) + (i % 5) * 3;
+        if (drop && i > 45) v = v * 0.35;
+        pts.push((40 + i * 20).toFixed(0) + ',' + (200 - v * 0.6).toFixed(1));
+      }
+      return { p: pts.join(' '), c };
+    };
+    const series = (base, amp, drop) => { const a = []; for (let i = 0; i <= 48; i++) { let v = base + amp * Math.sin((i / 48) * Math.PI * 2 - 1.6) + (i % 5) * 2; if (drop && i > 45) v = v * 0.35; a.push(v); } return a; };
+    const pt = (v, i) => (40 + i * 20).toFixed(0) + ',' + (200 - v * 0.6).toFixed(1);
+    const m = series(180, 50), lo = series(80, 25), hi = series(270, 25), wl = series(160, 45, true);
+    const med = m.map(pt).join(' ');
+    const worstLine = wl.map(pt).join(' ');
+    const band = 'M' + hi.map(pt).join(' L') + ' L' + lo.slice().reverse().map((v, j) => pt(v, 48 - j)).join(' L') + ' Z';
+    const worstCells = [['du-03/cell-7', 0.4], ['du-03/cell-8', 1.1], ['du-17/cell-1', 1.6], ['du-40/cell-2', 2.2], ['du-11/cell-3', 3.9], ['du-221/cell-1', 4.8], ['du-09/cell-2', 5.5], ['du-302/cell-4', 6.1], ['du-58/cell-6', 7.0], ['du-12/cell-1', 7.4]]
+      .map(([n, v]) => ({ n, v: v + ' Mbps', w: 'width:' + Math.round(100 - v * 10) + '%' }));
+    const tab = (this.state && this.state.tab) || 'overview';
+    const defs = [['overview', 'Overview', 'eu-west'], ['pm', 'PM subscriptions', '48'], ['defs', 'KPI definitions', '36'], ['rapp', 'rApp performance', '487'], ['analytics', 'RAN Analytics', '14 types'], ['assurance', 'Assurance', '4 escalated'], ['ocloud', 'O-Cloud', '1,904 nodes']];
+    const tabs = defs.map(([k, label, n]) => ({ label, n, cls: k === tab ? 'tab on' : 'tab', sel: k === tab ? 'true' : 'false', go: () => this.setState({ tab: k }) }));
+    const T = {}; defs.forEach(([k]) => { T[k] = k === tab; });
+    const S = {
+      pm: { title: 'PM subscriptions', sub: 'which counters are collected, from where, how often', search: 'Search counter or element', chips: [], actions: ['New PM subscription'],
+        cols: ['Subscription', 'Scope', 'Counters', 'Granularity', 'Delivery', 'Southbound engine', 'State'],
+        rows: [['id:pm-01', 'm:eu-west / all DUs', 'DRB.UEThpDl, RRU.PrbUsedDl +12', '15 min', 'mu:file → DME', 'O1 VES / file', 'b:ok:ACTIVE'], ['id:pm-02', 'm:metro-a', 'HO.ExeSucc, HO.ExeFail +4', '5 min', 'mu:stream → DME', 'O1 stream', 'b:ok:ACTIVE'], ['id:pm-07', 'm:stadium', 'RRC.ConnEstabSucc +3', '1 min', 'mu:stream → DME', 'O1 stream', 'b:warn:LAGGING 4 min']],
+        total: '48', note: '', page: '1 / 10' },
+      defs: { title: 'KPI definitions', sub: 'formulas over counters, computed on a schedule', search: 'Search KPI', chips: [], actions: ['New KPI', 'Add the standard set'],
+        cols: ['KPI', 'Formula', 'Unit', 'Group by', 'Schedule', 'Last run', 'State'],
+        rows: [['a:#|dlThroughputP50', 'm:p50(DRB.UEThpDl)', 'Mbps', 'cell', 'every 15 min', 'mu:03:00', 'b:ok:OK'], ['a:#|hoSuccessRate', 'm:HO.ExeSucc / HO.ExeAtt', '%', 'cell', 'every 5 min', 'mu:03:05', 'b:ok:OK'], ['a:#|rrcSetupSuccess', 'm:RRC.ConnEstabSucc / Att', '%', 'element', 'every 1 min', 'mu:03:09', 'b:ok:OK'], ['a:#|energyPerGb', 'm:PEE.Energy / DRB.Vol', 'kWh/GB', 'sectorGroup', 'hourly', 'mu:03:00', 'b:ok:OK']],
+        total: '36', note: '', page: '1 / 8' },
+      rapp: { title: 'rApp performance', sub: 'what each rApp reports about itself', search: 'Search rApp or metric', chips: ['Last 1 h'], actions: [],
+        cols: ['rApp', 'Instance', 'Metric', 'Value', 'Reported'],
+        rows: [['a:RappDetail.dc.html|Energy Saving', 'id:2f2e6149', 'energySavedPct', 'm:18.4', 'mu:1 min ago'], ['a:RappDetail.dc.html|Mobility Optimization', 'id:d62fcb3e', 'hoSuccessRate', 'm:99.1', 'mu:2 min ago'], ['a:RappDetail.dc.html|Coverage Optimization', 'id:ebe8dbf1', 'weakCoveragePct', 'm:−6.2', 'mu:4 min ago'], ['a:RappDetail.dc.html|Traffic Steering', 'id:7ac1d903', 'congestedCells', 'm:1', 'mu:1 min ago']],
+        total: '487', note: 'one row per rApp, latest value', page: '1 / 98' },
+      analytics: { title: 'RAN Analytics reports', sub: 'MDAF · TS 28.104 MDA types', search: 'Search type or scope', chips: [], actions: ['Request analytics report'],
+        cols: ['Report', 'MDAType (TS 28.104)', 'Producer', 'Scope', 'Reported', 'Output'],
+        rows: [['id:mda-9012', 'coverage-issue-analysis', 'mdaf-coverage-1', 'm:harbour', 'mu:3 min ago', 'a:#|3 cells weak coverage · download'], ['id:mda-9011', 'mobility-issue-analysis', 'mdaf-mobility-1', 'm:metro-a', 'mu:6 min ago', 'late HO into cell-5'], ['id:mda-9008', 'load-prediction', 'mdaf-load-1', 'm:stadium', 'mu:11 min ago', 'peak at 21:30']],
+        total: '402 · 24 h', note: 'newest first', page: '1 / 81' },
+      mdaFns: { title: 'MDA functions', sub: 'what can be analysed', search: 'Search function', chips: [], actions: [], cols: ['Function', 'Domain', 'Capabilities'], rows: [['a:#|mdaf-coverage-1', 'b:info:RAN', 'coverage-issue-analysis'], ['a:#|mdaf-mobility-1', 'b:info:RAN', 'mobility-issue-analysis'], ['a:#|mdaf-load-1', 'b:info:RAN', 'load-prediction']], total: '6', page: '1 / 2' },
+      mdaReqs: { title: 'Analysis requests', sub: 'GET /mda-requests', search: 'Search request', chips: ['Mine'], actions: [], cols: ['Request', 'Function', 'Scope', 'Delivery', 'Requested by', 'State'], rows: [['id:mda-req-0387', 'mdaf-coverage-1', 'm:harbour', 'FILE', 'Coverage Opt.', 'b:ok:REPORTING'], ['id:mda-req-0380', 'mdaf-load-1', 'm:stadium', 'NOTIFICATION', 'operator1', 'b:ok:REPORTING'], ['id:mda-req-0371', 'mdaf-mobility-1', 'm:metro-a', 'STREAMING', 'Mobility Opt.', 'b:mute:STOPPED']], total: '41', page: '1 / 9' },
+      assurance: { title: 'Remedial actions (SA SMOS)', sub: 'what closed-loop assurance did, and what it escalated', search: 'Search monitor or action', chips: ['Last 24 h'], actions: [],
+        cols: ['Action', 'Monitor', 'Action type', 'Auto-executed', 'Outcome', 'Requested by'],
+        rows: [['id:ra-311', 'id:b625f16a', 'CONFIG_CHANGE', 'yes', 'b:bad:ESCALATED', 'sa-smos'], ['id:ra-310', 'id:a03c22e9', 'TRAFFIC_OFFLOAD', 'yes', 'b:ok:RESOLVED', 'sa-smos'], ['id:ra-306', 'id:77e1b0c4', 'SCALE_NF', 'yes', 'b:ok:RESOLVED', 'sa-smos'], ['id:ra-301', 'id:5d90aa13', 'CONFIG_CHANGE', 'no · approval', 'b:ok:RESOLVED', 'operator1']],
+        total: '27', note: 'last 24 h', page: '1 / 6' },
+      ocloud: { title: 'O-Cloud performance', sub: 'FOCOM telemetry per node and pool', search: 'Search node or pool', chips: ['Above 80%'], actions: [],
+        cols: ['Resource', 'Pool', 'Metric', 'Value', 'Granularity', 'Reported'],
+        rows: [['a:Infrastructure.dc.html|node ba46bb50', 'pool-gpu-1', 'cpuUtil', 'm:78%', '1 min', 'mu:now'], ['a:Infrastructure.dc.html|node 9f01aa2c', 'pool-cpu-1', 'memUtil', 'm:91%', '1 min', 'mu:now'], ['a:Infrastructure.dc.html|node 3ba9fc16', 'pool-gpu-1', 'gpuUtil', 'm:63%', '1 min', 'mu:now']],
+        total: '41', note: 'filter: above 80%', page: '1 / 9' }
+    };
+    return { P,  kpis, med, band, worstLine, worstCells, tabs, T, S, mdaSent: !!(this.state && this.state.mda), mdaGo: () => this.setState({ mda: true }) };
+  }
+}
+</script>
+</body>
+</html>

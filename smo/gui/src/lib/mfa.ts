@@ -2,7 +2,7 @@
  * One-time codes (PR-SEC-7): the parts of the sign-in's second step and of the Account security page that are not rendering: the challenge types, the code format checks,
  * and the wording for each failure.
  * The reason codes are the backend's (gui-bff/app/main.py); the page shows its own wording for each and never the server's text for an unknown one.
- * Used by `auth/AuthContext.tsx`, `pages/Login.tsx`, `main.tsx`, `components/LoginCodeStep.tsx` and `components/TotpEnrolment.tsx`; covered by `mfa.test.ts`.
+ * Used by `auth/AuthContext.tsx`, `main.tsx`, `components/LoginCodeStep.tsx`, `components/TotpEnrolment.tsx` and the login, security and admin pages under `pages/`; covered by `mfa.test.ts`.
  */
 
 import type { Me } from "../api/types";

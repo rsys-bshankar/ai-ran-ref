@@ -71,8 +71,8 @@ records. It has no port; run more than one if you like, a task still runs once p
 | [Go AI Runtime SDK](sdk-go/README.md) | Internal (thin client over R1) | `sdk-go/` | Go client for an rApp written in Go: SME token acquisition and renewal, retry with backoff, error mapping, helpers for `data`, `models`, `platform` and the rApp's own instance, plus an example rApp (`examples/hello-rapp`) | library |
 | [Java AI Runtime SDK](sdk-java/README.md) | Internal (thin client over R1) | `sdk-java/smo-sdk/` | Java 21 client for the R1 routes a rApp uses: SME token acquisition and refresh, invoker enrolment, retry and backoff, data / models / platform / instance clients; one example rApp (`sdk-java/examples/hello-rapp/`) | library |
 | [Shared library](shared/README.md) | Internal (implements the RFC 7807 / RFC 7662 conventions) | `shared/smo_shared/` | DB session, FSM base, errors, pagination, correlation ids, webhook helper, `R1Client` | library |
-| [GUI BFF](gui-bff/README.md) | Internal | `gui-bff/` | GUI users, roles, sessions, audit log; forwards allowed calls to R1 | none (reached via `gui` at `/api`) |
-| [GUI](gui/README.md) | Internal | `gui/` | React operator console behind nginx | host `3000` → `8080` |
+| [GUI BFF](gui-bff/README.md) | Internal | `gui-bff/` | GUI users, roles, sessions, audit log, per-user console preferences, cached summary counts; forwards allowed calls to R1 | none (reached via `gui` at `/api`) |
+| [GUI](gui/README.md) | Internal | `gui/` | React operator console behind nginx (the "Signal" design: dark and light themes, five accents; design hand-off in `gui/docs/redesign/`) | host `3000` → `8080` |
 
 ### Reference rApps
 

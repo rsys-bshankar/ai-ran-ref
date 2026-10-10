@@ -1,0 +1,13 @@
+/* Data & Exposure page styles (tokens only): the data-flow SVG — column headings, row boxes (the folded "+N other" row dimmed) and the bands,
+   whose stroke width is the job count. Imported by pages/data/index.tsx. */
+
+.flow-wrap { overflow-x: auto; }
+.flow-wrap svg { width: 100%; min-width: 640px; height: auto; display: block; }
+.flow-head { font: 600 11px var(--f-mono); letter-spacing: 0.12em; fill: var(--muted); }
+.flow-node rect { fill: var(--raised); stroke: var(--line); stroke-width: 1; }
+.flow-node.other rect { stroke-dasharray: 4 3; }
+.flow-node.other .flow-label { fill: var(--muted); }
+.flow-label { font: 500 12px var(--f-mono); fill: var(--text); }
+.flow-count { font: 600 12px var(--f-mono); fill: var(--volt-text); }
+.flow-band { fill: none; stroke: var(--volt); stroke-opacity: 0.35; stroke-linecap: round; }
+.flow-band:hover { stroke-opacity: 0.6; }

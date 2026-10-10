@@ -2570,21 +2570,49 @@
         "type": "object"
       },
       "TrainingProgressRequest": {
-        "description": "OI-5-aiml-trainingjob-steps: the execution runtime reports the step\nthe run has reached.",
+        "description": "OI-5-aiml-trainingjob-steps: the execution runtime reports the step\nthe run has reached and, optionally (GUI-9.8), the epoch it has reached\nout of how many. At least one of `step`, `epoch` and `totalEpochs`.",
         "properties": {
-          "step": {
-            "enum": [
-              "DATA_EXTRACTION",
-              "TRAINING",
-              "TRAINED_MODEL"
+          "epoch": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Step",
-            "type": "string"
+            "title": "Epoch"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "enum": [
+                  "DATA_EXTRACTION",
+                  "TRAINING",
+                  "TRAINED_MODEL"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "totalEpochs": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totalepochs"
           }
         },
-        "required": [
-          "step"
-        ],
         "title": "TrainingProgressRequest",
         "type": "object"
       },
@@ -14313,6 +14341,123 @@
         "summary": "List Model Lifecycles"
       }
     },
+    "/model-lifecycles/counts": {
+      "get": {
+        "description": "GUI-9.4/9.8, models by stage: `{\"groups\": [{\"state\", \"count\"}]}`, the number of lifecycle rows in each model lifecycle state (one SQL GROUP BY,\nlargest group first). A model MLMR knows that AIMgF has never acted on has no row here, so it is not counted (it is REGISTERED in truth, see\n`GET /model-lifecycles`).",
+        "operationId": "count_model_lifecycles_model_lifecycles_counts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Count Model Lifecycles"
+      }
+    },
     "/models/{model_id}/advance": {
       "post": {
         "description": "Fires the ModelLifecycle events that have no job behind them\n(`ADVANCEABLE_EVENTS`): the eight governance decisions\n(`GOVERNANCE_EVENTS` \u2014 SUBMIT_FOR_APPROVAL, APPROVE, REJECT, CERTIFY,\nPROMOTE, ROLLBACK and HISTORY.md OI-6.1's APPROVE_TRAINING/\nAPPROVE_VALIDATION), which require `decidedBy` and write a\nCertificationRecord, plus DEPRECATE/RETIRE, which aren't governance\ndecisions in docs/ARCHITECTURE.md's AIMgF sense and need no decider.\n\nJob-driven events (CREATE_*/..._COMPLETE/..._FAILED) are refused with\n422 SCHEMA_VALIDATION_FAILED naming the job route that fires them, as\nis an unknown event \u2014 so the OI-6.1 approval gates can't be bypassed\nand no stage moves without its job row (OI-2-governance-bypass).\n\nRETIRE also terminates the model's serving runtime, through the same\npath as `POST /models/{id}/runtime/terminate` (NFO teardown,\nRuntimeLifecycle REQUEST_TERMINATION/TERMINATION_COMPLETE), when one\nis deployed. DEPRECATE leaves a live runtime serving (call flow 26).",
@@ -16813,7 +16958,7 @@
     },
     "/training-jobs/{training_job_id}/progress": {
       "post": {
-        "description": "OI-5-aiml-trainingjob-steps: the run's execution runtime (the NFO\ndeployment `_start_training` created) reports the step it has reached \u2014\nDATA_EXTRACTION, then TRAINING, then TRAINED_MODEL. Forward only:\nrepeating the current step is a no-op, going back is refused. Only an\nIN_PROGRESS run makes progress (a SUSPENDED one is paused; an ended one\nis history), 409 otherwise. Completion stays `POST .../complete`: this\nreports where the run is, not how it ended.",
+        "description": "OI-5-aiml-trainingjob-steps: the run's execution runtime (the NFO\ndeployment `_start_training` created) reports the step it has reached \u2014\nDATA_EXTRACTION, then TRAINING, then TRAINED_MODEL. Forward only:\nrepeating the current step is a no-op, going back is refused. Only an\nIN_PROGRESS run makes progress (a SUSPENDED one is paused; an ended one\nis history), 409 otherwise. Completion stays `POST .../complete`: this\nreports where the run is, not how it ended. GUI-9.8: `epoch` and\n`totalEpochs` (either, or both, with or without `step`) record how far\nthe run is; every training job answer then carries them with\n`etaSeconds`, (now - startedAt) / epoch x (totalEpochs - epoch) while\nthe run is IN_PROGRESS. 422 for an epoch beyond the total.",
         "operationId": "report_training_progress_training_jobs__training_job_id__progress_post",
         "parameters": [
           {

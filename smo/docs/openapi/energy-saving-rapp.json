@@ -246,6 +246,73 @@
         "summary": "Get Instance"
       }
     },
+    "/instances/{instance_id}/cell-states": {
+      "get": {
+        "description": "GUI-9.8b, each managed cell's state transitions over the last `hours` (1 to 168, default 24), optionally for one `cell_id` (404 when the\ninstance does not manage it). Answers `{instanceId, since, until, truncated, transitions, points, cells}`:\n\n  * `transitions`, newest first: `{transitionId, cellId, at, fromState, toState, o1Value, decision, reason, outcome, executionId, observedAt}`,\n    one per change of state (SERVING / PRE_SLEEP / SLEEP) settled in the window;\n  * `points`, oldest first, for a chart with one series per cell: `{cellId, t, state, level}` (level 2 serving, 1 pre-sleep, 0 sleep), the\n    state at `since`, two points at each change (before and after, the same `t`) and the state at `until`;\n  * `cells`: `{cellId, state, transitions}`, the current state and the number of changes in the window.\n\nDerived from the decision audit trail (see above). At most CELL_STATE_MAX_ROWS rows are read; past that the oldest are left out, `truncated` is\ntrue and `since` moves up to the oldest row kept.",
+        "operationId": "cell_state_history_instances__instance_id__cell_states_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "maximum": 168,
+              "minimum": 1,
+              "title": "Hours",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cell_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cell Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cell State History"
+      }
+    },
     "/instances/{instance_id}/cells": {
       "get": {
         "operationId": "list_cells_instances__instance_id__cells_get",

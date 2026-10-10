@@ -1,0 +1,6 @@
+/* Approvals page styles (pages/approvals): queue cards and the countdown; tokens only. */
+.approvals-queue { gap: 10px; }
+.approvals-card { display: flex; flex-direction: column; gap: 6px; }
+.approvals-card.on { border-color: var(--volt-line); box-shadow: inset 3px 0 0 var(--volt-line); }
+.approvals-clock { font-family: var(--f-display); font-variant-numeric: tabular-nums; font-size: 1.5rem; }
+.approvals-head { gap: 10px; }

@@ -515,6 +515,76 @@ def test_the_dashboard_of_a_cell_without_decisions_has_no_latest_decision(client
     assert client.get(f"/instances/{instance_id}/dashboard").json()["cells"][0]["latestDecision"] is None
 
 
+# ---------------------------------------------------------------- cell-state history (GUI-9.8b)
+
+def _age_decisions(hours: float) -> None:
+    """Moves every stored decision row `hours` into the past (created and settled), through the test's own session."""
+    session = next(app.dependency_overrides[get_session]())
+    for d in session.query(main.EnergySavingDecision).all():
+        d.created_at -= datetime.timedelta(hours=hours)
+        d.updated_at -= datetime.timedelta(hours=hours)
+    session.commit()
+    session.close()
+
+
+def test_the_cell_state_history_lists_each_change_and_steps_the_chart(client, platform, r1):
+    """A sleep then a wake are two transitions, newest first, each naming the decision that made it; the chart points start at the state before the
+    window, step at each change (before and after at the same time) and end at the current state; a pass that changes nothing adds nothing."""
+    instance_id = _asleep(client, platform, r1, "AUTONOMOUS")
+    client.post(f"/instances/{instance_id}/evaluate", headers={"X-Correlation-ID": "wake-1"})
+    platform.records["INFERENCE"], platform.prediction = BUSY, {"pmPredictedValue": 30.0}
+    client.post(f"/instances/{instance_id}/evaluate")                      # still busy: NO_CHANGE, no transition
+    body = client.get(f"/instances/{instance_id}/cell-states").json()
+    assert body["instanceId"] == instance_id and body["truncated"] is False
+    moves = [(t["fromState"], t["toState"], t["decision"]) for t in body["transitions"]]
+    assert moves == [("SLEEP", "SERVING", "UNLOCK"), ("SERVING", "SLEEP", "LOCK")]
+    assert body["transitions"][0]["executionId"] == "wake-1" and body["transitions"][0]["o1Value"] == "UNLOCKED"
+    assert [p["level"] for p in body["points"]] == [2, 2, 0, 0, 2, 2]
+    assert body["points"][0]["t"] == body["since"] and body["points"][-1]["t"] == body["until"]
+    assert body["points"][1]["t"] == body["points"][2]["t"] == body["transitions"][1]["at"]
+    assert body["cells"] == [{"cellId": CELL, "state": "SERVING", "transitions": 2}]
+
+
+def test_a_change_before_the_window_sets_the_starting_state_but_is_not_listed(client, platform, r1):
+    """Changes settled 48 hours ago are outside a 24-hour window: no transition, and the chart is flat at the state they left (SLEEP); a 72-hour
+    window lists them again."""
+    instance_id = _asleep(client, platform, r1, "AUTONOMOUS")
+    _age_decisions(48)
+    body = client.get(f"/instances/{instance_id}/cell-states", params={"hours": 24}).json()
+    assert body["transitions"] == [] and [p["state"] for p in body["points"]] == ["SLEEP", "SLEEP"]
+    assert len(client.get(f"/instances/{instance_id}/cell-states", params={"hours": 72}).json()["transitions"]) == 1
+
+
+def test_a_cell_without_decisions_is_flat_at_serving(client, platform, r1):
+    """A started instance with no decision yet: no transitions, and the cell is SERVING from `since` to `until`."""
+    instance_id = _start(client, r1)
+    body = client.get(f"/instances/{instance_id}/cell-states").json()
+    assert body["transitions"] == [] and [(p["state"], p["level"]) for p in body["points"]] == [("SERVING", 2), ("SERVING", 2)]
+
+
+def test_the_cell_state_history_filters_and_validates(client, platform, r1):
+    """`cell_id` narrows the answer to that cell and is 404 for a cell the instance does not manage; `hours` must be 1 to 168; an instance that
+    was never started is 404."""
+    instance_id = _asleep(client, platform, r1, "AUTONOMOUS")
+    assert [c["cellId"] for c in client.get(f"/instances/{instance_id}/cell-states", params={"cell_id": CELL}).json()["cells"]] == [CELL]
+    resp = client.get(f"/instances/{instance_id}/cell-states", params={"cell_id": "nope"})
+    assert (resp.status_code, resp.json()["detail"]["title"]) == (404, "CELL_NOT_MANAGED")
+    for hours in (0, 169):
+        assert client.get(f"/instances/{instance_id}/cell-states", params={"hours": hours}).status_code == 422
+    assert client.get(f"/instances/{uuid.uuid4()}/cell-states").status_code == 404
+
+
+def test_past_the_row_bound_the_oldest_changes_are_left_out_and_flagged(client, platform, r1, monkeypatch):
+    """With a bound of one row only the newest change is listed, `truncated` is true, `since` moves up to it, and its `fromState` is still the state
+    the earlier (left-out) row settled."""
+    instance_id = _asleep(client, platform, r1, "AUTONOMOUS")
+    client.post(f"/instances/{instance_id}/evaluate")                      # the wake
+    monkeypatch.setattr(main, "CELL_STATE_MAX_ROWS", 1)
+    body = client.get(f"/instances/{instance_id}/cell-states").json()
+    assert body["truncated"] is True and [(t["fromState"], t["toState"]) for t in body["transitions"]] == [("SLEEP", "SERVING")]
+    assert body["since"] == body["transitions"][0]["at"]
+
+
 # ---------------------------------------------------------------- the Digital Twin producer
 
 def test_the_sim_producer_registers_publishes_and_answers_dme_callbacks(client, platform):

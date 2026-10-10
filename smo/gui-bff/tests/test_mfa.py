@@ -257,7 +257,7 @@ def test_enrolment_is_refused_without_a_key(db, clock):
     client = session(app, "viewer")
     resp = client.post("/api/me/totp/begin")
     assert resp.status_code == 503 and resp.json()["title"] == "TOTP_UNAVAILABLE"
-    assert client.get("/api/me/totp").json() == {"available": False, "enrolled": False, "pending": False, "recoveryCodesLeft": 0}
+    assert client.get("/api/me/totp").json() == {"available": False, "enrolled": False, "pending": False, "recoveryCodesLeft": 0, "recoveryCodes": []}
 
 
 def test_a_secret_is_not_active_until_a_first_valid_code(app, db, clock):
@@ -267,7 +267,7 @@ def test_a_secret_is_not_active_until_a_first_valid_code(app, db, clock):
     begun = client.post("/api/me/totp/begin").json()
     assert begun["account"] == "viewer" and begun["issuer"] == "SMO Operator Console"
     assert begun["otpauthUri"].startswith("otpauth://totp/") and f"secret={begun['secret']}" in begun["otpauthUri"]
-    assert client.get("/api/me/totp").json() == {"available": True, "enrolled": False, "pending": True, "recoveryCodesLeft": 0}
+    assert client.get("/api/me/totp").json() == {"available": True, "enrolled": False, "pending": True, "recoveryCodesLeft": 0, "recoveryCodes": []}
     # still pending: a password alone signs in
     _, resp = password_login(app, "viewer")
     assert resp.status_code == 200 and "mfaRequired" not in resp.json()
@@ -278,7 +278,8 @@ def test_a_secret_is_not_active_until_a_first_valid_code(app, db, clock):
     assert ok.status_code == 200
     body = ok.json()
     assert len(body["recoveryCodes"]) == 10 and body["recoveryCodesLeft"] == 10
-    assert client.get("/api/me/totp").json() == {"available": True, "enrolled": True, "pending": False, "recoveryCodesLeft": 10}
+    assert client.get("/api/me/totp").json() == {"available": True, "enrolled": True, "pending": False, "recoveryCodesLeft": 10,
+                                                "recoveryCodes": [{"slot": i, "used": False, "usedAt": None} for i in range(1, 11)]}
     assert client.get("/api/me").json()["totpEnrolled"] is True
 
 
@@ -531,6 +532,20 @@ def test_a_recovery_code_signs_in_once_and_says_how_many_are_left(app, db, clock
     client.headers["X-CSRF-Token"] = done.json()["csrfToken"]
     assert client.get("/api/me/totp").json()["recoveryCodesLeft"] == 8
     assert secret
+
+
+def test_the_status_says_which_recovery_code_slots_are_used_and_never_a_code(app, clock):
+    """GUI-9.8: `recoveryCodes` lists slots 1..10 in the order the codes were shown, the spent one marked with its time; no code or hash is in it."""
+    _, codes = enrol(app, clock, "operator")
+    client, resp = password_login(app, "operator")
+    done = client.post("/api/login/totp", json={"challenge": resp.json()["challenge"], "code": codes[2]})
+    assert done.status_code == 200
+    client.headers["X-CSRF-Token"] = done.json()["csrfToken"]
+    status = client.get("/api/me/totp")
+    slots = status.json()["recoveryCodes"]
+    assert [s["slot"] for s in slots] == list(range(1, 11)) and [s["used"] for s in slots] == [False, False, True] + [False] * 7
+    assert slots[2]["usedAt"] and all(s["usedAt"] is None for i, s in enumerate(slots) if i != 2)
+    assert not any(c.replace("-", "") in status.text.replace("-", "") for c in codes)
 
 
 def test_a_wrong_recovery_code_counts_as_a_failure(app, clock):

@@ -1,0 +1,12 @@
+/* Software page (pages/software): the wave strip of a campaign and the campaign picker list. Tokens only (styles.css); no hex colours. */
+
+.sw-waves { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; }
+.sw-wave { display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: var(--r-sm); background: var(--raised); border: 1px solid var(--line); border-top: 3px solid var(--line-strong); font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.sw-wave.done { border-top-color: var(--ok); }
+.sw-wave.running { border-top-color: var(--volt); }
+.sw-wave.failed, .sw-wave.gate-failed { border-top-color: var(--bad); }
+.sw-wave.rolled-back { border-top-color: var(--warn); }
+.sw-wave.on { box-shadow: inset 0 0 0 1px var(--volt-line); }
+.sw-wave .xs { color: var(--muted); }
+.sw-insets { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.sw-insets .num { font-size: 1.25rem; }

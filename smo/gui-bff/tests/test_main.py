@@ -679,6 +679,31 @@ def test_audit_endpoint_lists_newest_first_and_filters(app):
     assert {e["action"] for e in admin.get("/api/admin/audit", params={"action": "LOGIN"}).json()["items"]} == {"LOGIN"}
 
 
+def _written_audit_actions() -> set[str]:
+    """The action names the BFF's code writes: the first argument of every `audit(...)` call in app/ that is a string literal."""
+    import ast
+    from pathlib import Path
+    found: set[str] = set()
+    for source in (Path(__file__).resolve().parent.parent / "app").glob("*.py"):
+        for node in ast.walk(ast.parse(source.read_text())):
+            name = node.func.id if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) else (
+                node.func.attr if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) else None)
+            if (name in ("audit", "_audit") and node.args
+                    and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str)):
+                found.add(node.args[0].value)
+    return found
+
+
+def test_the_served_audit_actions_are_exactly_the_ones_the_code_writes(app):
+    """GUI-10.4: `GET /api/admin/audit/actions` feeds the console's action filter; it fails here when an `audit(...)` call writes an action the
+    list lacks, or the list keeps one nothing writes any more. Admin only."""
+    from app.main import AUDIT_ACTIONS
+    assert set(AUDIT_ACTIONS) == _written_audit_actions()
+    body = login(app, "admin").get("/api/admin/audit/actions").json()
+    assert body["actions"] == sorted(AUDIT_ACTIONS)
+    assert login(app, "operator").get("/api/admin/audit/actions").status_code == 403
+
+
 def test_permissions_endpoint_exposes_the_rbac_table(app):
     """`/api/permissions` returns the caller's role and the rule table the SPA evaluates."""
     body = login(app, "viewer").get("/api/permissions").json()
@@ -718,3 +743,92 @@ def test_a_list_read_through_the_proxy_decides_the_same_with_total_false():
     from app.rbac import Role, decide
     for role in (Role.VIEWER, Role.OPERATOR, Role.ADMIN):
         assert decide("GET", "/aimgf/models", {"limit": ["5"], "total": ["false"]}, role).allowed
+
+
+# ---------------------------------------------------------------- sign-in history, last active, audit paging and export (GUI-9.5, GUI-9.8)
+
+def test_my_sign_ins_are_mine_only_newest_first(app):
+    """`GET /api/me/sign-ins` lists the caller's own sign-ins, failures and sign-outs, never another user's, and never the other audit rows."""
+    TestClient(app).post("/api/login", json={"username": "viewer", "password": "wrong-one"})
+    login(app, "operator")
+    viewer = login(app, "viewer")
+    viewer.post("/api/me/password", json={"currentPassword": PASSWORDS["viewer"], "newPassword": "viewer-pass-2"})   # audited, not a sign-in
+    rows = viewer.get("/api/me/sign-ins").json()
+    assert [r["action"] for r in rows] == ["LOGIN", "LOGIN_FAILED"]
+    assert set(rows[0]) == {"at", "action", "detail"} and rows[0]["at"].endswith("+00:00")
+    assert len(viewer.get("/api/me/sign-ins", params={"limit": 1}).json()) == 1
+
+
+def test_the_user_list_says_when_each_user_was_last_active_and_signed_in(app):
+    """`lastActiveAt` is the user's newest audit row and `lastSignInAt` the newest sign-in, from one grouped read; null for a user never seen."""
+    admin = login(app, "admin")
+    admin.post("/api/admin/users", json={"username": "fresh", "password": "long-enough", "role": "viewer"})
+    viewer = login(app, "viewer")
+    viewer.post("/api/smo/aimgf/training-jobs", json={})        # refused (DENIED) for a viewer: audited, so it is activity
+    users = {u["username"]: u for u in admin.get("/api/admin/users").json()}
+    assert users["fresh"]["lastActiveAt"] is None and users["fresh"]["lastSignInAt"] is None
+    assert users["viewer"]["lastSignInAt"] and users["viewer"]["lastActiveAt"] >= users["viewer"]["lastSignInAt"]
+    assert users["operator"]["lastActiveAt"] is None
+
+
+def test_audit_keyset_paging_walks_the_log_without_offsets(app):
+    """`after_id` returns rows below that id, newest first, and `nextAfterId` chains the pages until a short page ends the walk."""
+    admin = login(app, "admin")
+    for i in range(5):
+        admin.post("/api/admin/users", json={"username": f"k{i}", "password": "long-enough", "role": "viewer"})
+    everything = [e["id"] for e in admin.get("/api/admin/audit", params={"limit": 500}).json()["items"]]
+    walked, after = [], None
+    while True:
+        page = admin.get("/api/admin/audit", params={"limit": 2, "total": "false", **({"after_id": after} if after else {})}).json()
+        walked += [e["id"] for e in page["items"]]
+        after = page["nextAfterId"]
+        if after is None:
+            break
+    assert walked == everything and everything == sorted(everything, reverse=True)
+
+
+def test_audit_since_and_until_bound_the_rows_by_time(app, db):
+    """`since` is inclusive and `until` exclusive; a time without a zone is UTC."""
+    import datetime
+    with db.session() as s:
+        s.add_all([AuditEntry(action="OLD", at=datetime.datetime(2020, 1, 1, tzinfo=datetime.UTC)),
+                   AuditEntry(action="MID", at=datetime.datetime(2020, 6, 1, tzinfo=datetime.UTC))])
+        s.commit()
+    admin = login(app, "admin")
+    actions = lambda **p: [e["action"] for e in admin.get("/api/admin/audit", params=p).json()["items"]]  # noqa: E731
+    assert actions(until="2020-06-01T00:00:00Z") == ["OLD"]
+    assert actions(since="2020-06-01T00:00:00", until="2021-01-01T00:00:00+00:00") == ["MID"]
+    assert "OLD" not in actions(since="2020-02-01T00:00:00Z")
+
+
+def test_the_audit_csv_export_is_admin_only_streamed_and_safe_to_open(app, db, monkeypatch):
+    """An attachment with a header row and every matching row (read in batches), a formula-looking name defused, and the export itself audited."""
+    import csv as csv_module
+    import io
+    from app import main as main_module
+    monkeypatch.setattr(main_module, "AUDIT_CSV_BATCH", 2)
+    TestClient(app).post("/api/login", json={"username": "=HYPERLINK(1)", "password": "x"})
+    assert login(app, "operator").get("/api/admin/audit.csv").status_code == 403
+    admin = login(app, "admin")
+    resp = admin.get("/api/admin/audit.csv")
+    assert resp.status_code == 200 and resp.headers["content-type"].startswith("text/csv")
+    assert resp.headers["content-disposition"].startswith('attachment; filename="smo-gui-audit-')
+    rows = list(csv_module.reader(io.StringIO(resp.text)))
+    assert rows[0] == ["id", "at", "username", "role", "action", "method", "path", "statusCode", "detail"]
+    assert len(rows) - 1 == len(audit_rows(db)) and "'=HYPERLINK(1)" in [r[2] for r in rows[1:]]
+    ids = [int(r[0]) for r in rows[1:]]
+    assert ids == sorted(ids, reverse=True) and len(set(ids)) == len(ids)
+    assert audit_rows(db, "AUDIT_EXPORTED")[-1].username == "admin"
+    only_logins = list(csv_module.reader(io.StringIO(admin.get("/api/admin/audit.csv", params={"action": "LOGIN"}).text)))[1:]
+    assert only_logins and {r[4] for r in only_logins} == {"LOGIN"}
+
+
+def test_the_audit_csv_export_stops_at_its_row_limit(app, monkeypatch):
+    """The export never runs past AUDIT_CSV_MAX_ROWS rows, whatever the log holds."""
+    from app import main as main_module
+    monkeypatch.setattr(main_module, "AUDIT_CSV_MAX_ROWS", 3)
+    monkeypatch.setattr(main_module, "AUDIT_CSV_BATCH", 2)
+    admin = login(app, "admin")
+    for i in range(4):
+        admin.post("/api/admin/users", json={"username": f"m{i}", "password": "long-enough", "role": "viewer"})
+    assert len(admin.get("/api/admin/audit.csv").text.strip().splitlines()) == 1 + 3

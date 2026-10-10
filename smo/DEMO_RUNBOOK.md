@@ -471,9 +471,28 @@ print(r.status_code, r.json())
 "
 ```
 
-This returns `[]` in a fresh stack. There is no `POST /performance` route:
-O-Cloud performance metrics would arrive via O2ims collection, which this
-build does not include.
+This returns `[]` in a fresh stack: FOCOM collects nothing, records are
+ingested (`POST /performance/ingest`, an O2-IMS
+`PerformanceMeasurementRecord`). Play the O-Cloud's collector for the node
+utilisation the console shows (PR-GUI-9.8b, the convention is in
+`focom/README.md` 1.2): a `CPU_UTILIZATION` and a `MEMORY_UTILIZATION`
+record, each a percentage, for the Phase 1 cluster:
+
+```bash
+docker compose exec r1-termination python3 -c "
+import httpx
+for name, value in (('CPU_UTILIZATION', 63.5), ('MEMORY_UTILIZATION', 41.0)):
+    r = httpx.post('http://focom:8000/performance/ingest', json={
+        'resourceId': 'phase1-degenerate-cluster', 'performanceMeasurementDefinitionId': name, 'measurementValue': value})
+    print(r.status_code, r.json())
+r = httpx.get('http://focom:8000/resources/phase1-degenerate-cluster/utilisation')
+print(r.status_code, r.json())
+"
+```
+
+The read answers `cpuPercent` 63.5 and `memoryPercent` 41.0 with the
+collection time; `GET /focom/utilisation?resource_ids=a,b` reads up to 100
+nodes at once (nulls for a node nothing reported).
 
 ## 10. Intent Service automation (optional) — register, address, dispatch, retract
 
