@@ -1,3 +1,11 @@
+"""The tables of rApp Management: the rApp instance, its upgrade/rollback version history and the fault and performance reports an instance sent.
+
+Written by `main.py`, `provisioning.py` and `upgrade.py` (the routes, the provisioning and teardown calls, the upgrade choreography) and migrated by
+`migrations/` (the ORM models must match it: `scripts/check_migration_matches_models.py`). References to other modules' tables (the package, its usage
+registration) are bare UUID columns, not ORM foreign keys, because this module runs in its own process (`tests_integration/test_module_isolation.py`).
+The lifecycle rules for `RAppInstance.state` are in `statemachine.py`, not here.
+"""
+
 import datetime
 import uuid
 
@@ -9,6 +17,11 @@ from smo_shared.versioning import Versioned
 
 
 class RAppInstance(Versioned, Base):
+    """One deployed (or deploying) rApp: the package it runs, its lifecycle `state`, the NFO deployment that carries it (`workload_ref`), the identity it was given at SME
+    (`oauth_client_id`, None once revoked) and the settings fixed at creation (autonomy mode, region scope, approval policy, authorisation scope).
+    An upgrade uses two rows at once, linked by `pending_upgrade_instance_id` on the old one; `Versioned` adds the version column that makes a stale write fail.
+    The row is kept in UNDEPLOYED after a terminate and removed only by the separate delete.
+    """
     __tablename__ = "rapp_instance"
 
     instance_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -104,6 +117,8 @@ class RAppInstanceVersion(Base):
 
 
 class RAppFaultReport(Base):
+    """One fault an rApp instance reported (`severity` free text; `critical` also crashes the instance). Deleted with the instance (ON DELETE CASCADE, and explicitly by the delete route).
+    """
     __tablename__ = "rapp_fault_report"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -116,6 +131,8 @@ class RAppFaultReport(Base):
 
 
 class RAppPerformanceReport(Base):
+    """One metrics object an rApp instance reported, with the time it arrived so the newest can be listed first. Deleted with the instance (ON DELETE CASCADE, and explicitly by the delete route).
+    """
     __tablename__ = "rapp_performance_report"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

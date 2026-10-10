@@ -15,6 +15,8 @@ from app.statemachine import InstanceState
 
 
 def test_instances_are_counted_by_state_with_every_state_present():
+    """The `smo_rapp_instances` gauge counts instances by state (RUNNING are the active rApps) and reports every state, with zero for the ones that have no row.
+    """
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     if "application_package" not in Base.metadata.tables:
         Table("application_package", Base.metadata, Column("package_id", UuidType, primary_key=True))

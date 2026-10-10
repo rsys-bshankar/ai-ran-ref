@@ -96,12 +96,18 @@ def _derive(key: str, purpose: bytes) -> bytes:
 
 
 def encrypt_secret(key: str, username: str, secret_b32: str) -> str:
+    """The envelope (`v1:` plus base64 of nonce and AES-256-GCM ciphertext) that stores `secret_b32` at rest. A fresh random nonce is used for every call, and `username` is the
+    authenticated associated data, so the ciphertext only decrypts for the same user. Raises TotpKeyError when `key` is empty.
+    """
     nonce = secrets.token_bytes(12)
     sealed = AESGCM(_derive(key, b"secret")).encrypt(nonce, secret_b32.encode(), username.encode())
     return _ENVELOPE + base64.urlsafe_b64encode(nonce + sealed).decode()
 
 
 def decrypt_secret(key: str, username: str, stored: str) -> str:
+    """The base32 secret inside `stored` for `username`. Raises TotpKeyError, one error for every cause, when `key` is empty, the envelope is not `v1:`, or the
+    ciphertext does not authenticate: a wrong key, a changed row, or a row copied from another user.
+    """
     try:
         if not stored.startswith(_ENVELOPE):
             raise ValueError("unknown format")
@@ -114,6 +120,9 @@ def decrypt_secret(key: str, username: str, stored: str) -> str:
 # ---------------------------------------------------------------- recovery codes
 
 def new_recovery_codes(count: int = RECOVERY_CODE_COUNT) -> list[str]:
+    """`count` fresh recovery codes in the form `xxxx-xxxx-xxxx-xxxx`, from a cryptographically secure source and an alphabet without look-alike characters. Only their keyed
+    hashes (`hash_recovery_code`) are ever stored; the codes are shown to the user once.
+    """
     codes = []
     for _ in range(count):
         raw = "".join(secrets.choice(_RECOVERY_ALPHABET) for _ in range(_RECOVERY_CHARS))
@@ -126,6 +135,9 @@ def normalise_recovery_code(code: str) -> str:
 
 
 def looks_like_recovery_code(code: str) -> bool:
+    """True when `code`, ignoring case, dashes and spaces, has the shape of a recovery code (16 characters of its alphabet). Used only to choose which check to run;
+    it says nothing about whether the code is valid.
+    """
     plain = normalise_recovery_code(code)
     return len(plain) == _RECOVERY_CHARS and all(c in _RECOVERY_ALPHABET for c in plain)
 

@@ -47,6 +47,7 @@ def keys():
 
 
 def settings(**over) -> Settings:
+    """`Settings` for an HS256 BFF with the usual test users and secret; `over` changes any field."""
     base = dict(r1_url=R1, jwt_secret=SECRET, cookie_secure=False, admin_password=PASSWORDS["admin"], operator_password=PASSWORDS["operator"],
                 viewer_password=PASSWORDS["viewer"])
     base.update(over)
@@ -59,12 +60,15 @@ def asym_settings(keys, algorithm, *, previous=(), **over) -> Settings:
 
 
 def start(cfg, db=None, smo=None):
+    """Seeds the users and builds the BFF app for `cfg` on `db` (a new in-memory database by default) with the fake SMO behind the gateway.
+    """
     db = db or Database("sqlite://")
     seed_users(db, cfg)
     return create_app(cfg, db=db, gateway=R1Gateway(R1, db, transport=httpx.MockTransport((smo or FakeSmo()).handler)))
 
 
 def sign_in(app, username="viewer") -> TestClient:
+    """Signs `username` in by password and returns a client holding the session cookie, with the CSRF header set."""
     client = TestClient(app)
     resp = client.post("/api/login", json={"username": username, "password": PASSWORDS[username]})
     assert resp.status_code == 200, resp.text
@@ -73,11 +77,14 @@ def sign_in(app, username="viewer") -> TestClient:
 
 
 def header_of(token: str) -> dict:
+    """The decoded JOSE header of a compact JWT, read without verifying it."""
     segment = token.split(".")[0]
     return json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)))
 
 
 def forged(header: dict, claims: dict, signature: bytes = b"x") -> str:
+    """Builds a compact token from any `header` and `claims` and an arbitrary `signature`, for the cases where the test must send something no signer would issue.
+    """
     def b64(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
     return f"{b64(json.dumps(header).encode())}.{b64(json.dumps(claims).encode())}.{b64(signature)}"
@@ -86,6 +93,8 @@ def forged(header: dict, claims: dict, signature: bytes = b"x") -> str:
 # ---------------------------------------------------------------- HS256 is the default and does not change
 
 def test_the_default_is_hs256_with_the_header_the_release_before_issued():
+    """With no setting the algorithm is HS256 and the token header is exactly `{alg, typ}` with no `kid`, as the previous release issued it.
+    """
     cfg = settings()
     assert cfg.jwt_algorithm == "HS256" and cfg.jwt_private_key == "" and cfg.jwt_previous_keys == []
     client = sign_in(start(cfg))
@@ -93,6 +102,7 @@ def test_the_default_is_hs256_with_the_header_the_release_before_issued():
 
 
 def test_a_session_issued_before_the_upgrade_still_works_under_the_default():
+    """A session token made the way the previous release made it is still accepted after the upgrade, so users stay signed in."""
     old = issue_jwt({"sub": "viewer", "ver": 0, "csrf": "c", "jti": "j"}, SECRET, 3600)     # what the previous release's issue_session signed
     client = TestClient(start(settings()))
     client.cookies.set(SESSION_COOKIE, old)
@@ -100,12 +110,15 @@ def test_a_session_issued_before_the_upgrade_still_works_under_the_default():
 
 
 def test_hs256_publishes_an_empty_key_set_and_never_the_secret():
+    """Under HS256 the JWKS route answers an empty key list and nothing of the secret."""
     resp = TestClient(start(settings())).get("/.well-known/jwks.json")
     assert resp.status_code == 200 and resp.json() == {"keys": []}
     assert SECRET not in resp.text
 
 
 def test_hs256_signer_follows_a_secret_replaced_after_the_app_is_built():
+    """The HS256 signer reads the secret on each call, so the key adopted from the database at start-up applies and tokens made with the earlier value stop verifying.
+    """
     cfg = settings()
     signer = build_signer(cfg)
     assert isinstance(signer, HmacSigner)
@@ -117,6 +130,8 @@ def test_hs256_signer_follows_a_secret_replaced_after_the_app_is_built():
 
 # ---------------------------------------------------------------- RS256 and ES256
 
+# The test runs once for RS256 and once for ES256, so both asymmetric algorithms meet the same rule.
+# For each: the session and Bearer tokens carry the algorithm and a `kid`, work, and are revoked by logout.
 @pytest.mark.parametrize("algorithm", ["RS256", "ES256"])
 def test_login_me_bearer_and_logout_work_with_each_algorithm(keys, algorithm):
     app = start(asym_settings(keys, algorithm))
@@ -136,6 +151,8 @@ def test_login_me_bearer_and_logout_work_with_each_algorithm(keys, algorithm):
     assert stale.get("/api/me").status_code == 401          # the revocation list still works (jti)
 
 
+# The test runs once for RS256 and once for ES256, so both asymmetric algorithms meet the same rule.
+# A standard JWT library verifies the session token with the key from the JWKS route.
 @pytest.mark.parametrize("algorithm", ["RS256", "ES256"])
 def test_the_token_is_a_standard_jwt_that_verifies_against_the_published_key(keys, algorithm):
     app = start(asym_settings(keys, algorithm))
@@ -146,6 +163,8 @@ def test_the_token_is_a_standard_jwt_that_verifies_against_the_published_key(key
     assert claims["sub"] == "viewer" and claims["jti"] and claims["csrf"]
 
 
+# The test runs once for RS256 and once for ES256, so both asymmetric algorithms meet the same rule.
+# The one-time-code sign-in works with an asymmetric session key, and the login challenge stays an HS256 token that is not accepted as a session.
 @pytest.mark.parametrize("algorithm", ["RS256", "ES256"])
 def test_mfa_sign_in_works_with_each_algorithm_and_the_challenge_is_not_a_session(keys, algorithm, monkeypatch):
     real = time.time
@@ -171,6 +190,8 @@ def test_mfa_sign_in_works_with_each_algorithm_and_the_challenge_is_not_a_sessio
 
 # ---------------------------------------------------------------- what a verifier refuses
 
+# The test runs once for RS256 and once for ES256, so both asymmetric algorithms meet the same rule.
+# Tokens with `alg` none, a stripped signature, the other asymmetric algorithm or any HMAC algorithm are refused before a key is used.
 @pytest.mark.parametrize("algorithm", ["RS256", "ES256"])
 def test_alg_none_and_a_wrong_algorithm_are_refused(keys, algorithm):
     signer = build_signer(asym_settings(keys, algorithm))
@@ -186,6 +207,8 @@ def test_alg_none_and_a_wrong_algorithm_are_refused(keys, algorithm):
         assert signer.decode(forged({"alg": alg, "typ": "JWT", "kid": signer.kid}, claims)) is None
 
 
+# The test runs once for RS256 and once for ES256, so both asymmetric algorithms meet the same rule.
+# The classic confusion attack: an HS256 token keyed with the published public key, in several encodings, is refused by the signer and by the app.
 @pytest.mark.parametrize("algorithm", ["RS256", "ES256"])
 def test_algorithm_confusion_an_hs256_token_signed_with_the_public_key_is_refused(keys, algorithm):
     signer = build_signer(asym_settings(keys, algorithm))
@@ -207,6 +230,8 @@ def test_algorithm_confusion_an_hs256_token_signed_with_the_public_key_is_refuse
     assert TestClient(app).get("/api/me", headers={"Authorization": f"Bearer {hs256_with(SECRET.encode(), {'alg': 'HS256', 'typ': 'JWT'})}"}).status_code == 401
 
 
+# The test runs once for RS256 and once for ES256, so both asymmetric algorithms meet the same rule.
+# A token with no `kid`, an unknown or non-string `kid`, or a known `kid` signed by another key is refused.
 @pytest.mark.parametrize("algorithm", ["RS256", "ES256"])
 def test_unknown_missing_or_odd_kid_and_a_foreign_key_are_refused(keys, algorithm):
     signer = build_signer(asym_settings(keys, algorithm))
@@ -220,6 +245,8 @@ def test_unknown_missing_or_odd_kid_and_a_foreign_key_are_refused(keys, algorith
     assert signer.decode(jwt.encode(claims, mine, algorithm=algorithm, headers={"kid": signer.kid}))["sub"] == "viewer"
 
 
+# The test runs once for RS256 and once for ES256, so both asymmetric algorithms meet the same rule.
+# Expired tokens, ones without an integer `exp` and malformed strings give None, never an exception; `iat` in the future is tolerated so a replica with a fast clock does not refuse another's session.
 @pytest.mark.parametrize("algorithm", ["RS256", "ES256"])
 def test_expired_and_malformed_tokens_are_refused_without_raising(keys, algorithm):
     signer = build_signer(asym_settings(keys, algorithm))
@@ -249,6 +276,8 @@ def test_a_token_that_carries_its_own_key_is_not_trusted(keys):
 # ---------------------------------------------------------------- switching algorithm
 
 def test_switching_from_hs256_to_a_key_pair_ends_existing_sessions_and_a_new_login_works(keys):
+    """Changing from HS256 to a key pair ends the existing sessions, although the shared secret is unchanged, and a new sign-in works.
+    """
     db = Database("sqlite://")
     old = sign_in(start(settings(), db))
     assert old.get("/api/me").status_code == 200
@@ -260,6 +289,7 @@ def test_switching_from_hs256_to_a_key_pair_ends_existing_sessions_and_a_new_log
 
 
 def test_switching_back_to_hs256_ends_sessions_of_the_key_pair_too(keys):
+    """Changing back from a key pair to HS256 ends the key pair's sessions too."""
     db = Database("sqlite://")
     pair = sign_in(start(asym_settings(keys, "ES256"), db))
     back = TestClient(start(settings(), db))
@@ -269,6 +299,8 @@ def test_switching_back_to_hs256_ends_sessions_of_the_key_pair_too(keys):
 
 # ---------------------------------------------------------------- rotation (SEC-5.2)
 
+# The test runs once for RS256 and once for ES256, so both asymmetric algorithms meet the same rule.
+# After a rotation a session signed with the old key still verifies while its public key is listed (and the JWKS publishes both), and stops when the key is removed.
 @pytest.mark.parametrize("algorithm", ["RS256", "ES256"])
 def test_a_token_signed_with_the_old_key_verifies_while_the_old_public_key_is_listed(keys, algorithm):
     db = Database("sqlite://")
@@ -297,6 +329,7 @@ def test_a_token_signed_with_the_old_key_verifies_while_the_old_public_key_is_li
 
 
 def test_a_previous_key_is_published_and_verifies_but_never_signs(keys):
+    """A previous key is published and verifies tokens, but new tokens are always signed with the current key."""
     old_key, new_key_ = keys["ES256"]
     signer = AsymmetricSigner("ES256", pem_private(new_key_), [("old", pem_private(old_key))])           # even a private previous key is used to verify only
     assert header_of(signer.issue({"sub": "a"}, 60))["kid"] == signer.kid
@@ -307,6 +340,7 @@ def test_a_previous_key_is_published_and_verifies_but_never_signs(keys):
 
 
 def test_the_same_key_listed_twice_or_as_the_current_one_is_published_once(keys):
+    """A key listed twice, or the current key repeated among the previous ones, appears once in the key set."""
     key = keys["RS256"][0]
     signer = AsymmetricSigner("RS256", pem_private(key), [("a", pem_public(key)), ("b", pem_public(keys["RS256"][1])), ("c", pem_public(keys["RS256"][1]))])
     assert len(signer.jwks()["keys"]) == 2
@@ -314,6 +348,8 @@ def test_the_same_key_listed_twice_or_as_the_current_one_is_published_once(keys)
 
 # ---------------------------------------------------------------- JWKS (SEC-5.3)
 
+# The test runs once for RS256 and once for ES256, so both asymmetric algorithms meet the same rule.
+# The JWKS route needs no session, is cacheable JSON, and publishes only public members (no private key parameters).
 @pytest.mark.parametrize("algorithm", ["RS256", "ES256"])
 def test_the_jwks_route_is_open_json_with_public_members_only(keys, algorithm):
     app = start(asym_settings(keys, algorithm, previous=[pem_public(keys[algorithm][1])]))
@@ -346,6 +382,8 @@ def test_the_jwks_kid_is_the_rfc7638_thumbprint(keys):
 
 
 def test_the_jwks_route_is_the_only_new_route_that_answers_without_a_session():
+    """Probing every parameterless GET route without a session shows that only the JWKS route and the sign-in, OIDC start and OpenAPI routes answer without one, so a new open route must be a deliberate change here.
+    """
     app = start(settings())
     anonymous = TestClient(app)
     assert anonymous.get("/.well-known/jwks.json").status_code == 200
@@ -363,6 +401,8 @@ def test_the_jwks_route_is_the_only_new_route_that_answers_without_a_session():
 # ---------------------------------------------------------------- configuration
 
 def test_settings_read_the_environment(monkeypatch, tmp_path, keys):
+    """`Settings` reads the algorithm, the private key file and the previous key files, tolerates spaces and empty entries, and names the variable when a file cannot be read or the algorithm is unknown.
+    """
     private = tmp_path / "private.pem"
     private.write_text(pem_private(keys["ES256"][0]))
     previous = tmp_path / "previous.pem"
@@ -387,6 +427,7 @@ def test_settings_read_the_environment(monkeypatch, tmp_path, keys):
 
 
 def test_unset_environment_is_the_old_behaviour(monkeypatch):
+    """With none of the signing variables set the settings are HS256 with no key files."""
     for name in ("GUI_JWT_ALGORITHM", "GUI_JWT_PRIVATE_KEY_FILE", "GUI_JWT_PREVIOUS_KEY_FILES"):
         monkeypatch.delenv(name, raising=False)
     cfg = Settings()
@@ -394,6 +435,8 @@ def test_unset_environment_is_the_old_behaviour(monkeypatch):
 
 
 def test_start_up_refuses_a_combination_that_would_be_silently_wrong(keys):
+    """`build_signer` raises ValueError for each unsafe or contradictory combination: missing key, key files under HS256, unknown algorithm, wrong key type, weak RSA, wrong curve, unreadable or encrypted keys, and a public key where a private one is needed.
+    """
     pem = pem_private(keys["RS256"][0])
     with pytest.raises(ValueError, match="needs GUI_JWT_PRIVATE_KEY_FILE"):
         build_signer(settings(jwt_algorithm="RS256"))
@@ -427,6 +470,7 @@ def test_start_up_refuses_a_combination_that_would_be_silently_wrong(keys):
 
 
 def test_the_error_never_contains_the_key(keys):
+    """A rejected key's error text never contains the key material."""
     pem = pem_private(keys["ES256"][0])
     body = "".join(pem.splitlines()[1:-1])
     with pytest.raises(ValueError) as caught:
