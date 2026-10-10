@@ -27,7 +27,7 @@ export function SequenceLanes({ steps }: { steps: FlowStep[] }) {
   const height = HEAD + steps.length * ROW + 16;
   const x = (a: string) => lanes.indexOf(a) * COL + COL / 2;
   return (
-    <div className="lanes" data-section="flows.lanes">
+    <div className="lanes" data-section="flows.lanes" tabIndex={0} aria-label="Sequence diagram (scrolls sideways)">
       <svg viewBox={`0 0 ${width} ${height}`} style={{ minWidth: width }} role="img" aria-label={`Sequence: ${steps.map((s, i) => `${i + 1}. ${s.actor}: ${s.title} (${s.status})`).join("; ")}`}>
         {lanes.map((a) => (
           <g key={a}>

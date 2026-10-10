@@ -38,7 +38,7 @@ function GroupTile({ g, kind, onOpen }: { g: HealthGroup; kind: string; onOpen?:
   );
   const cls = `tile ${toneOf(g.worstSeverity)}`;
   return onOpen
-    ? <button type="button" className={cls} onClick={onOpen} aria-label={`Open ${kind} ${label}`}>{body}</button>
+    ? <button type="button" className={cls} onClick={onOpen} title={`Open ${kind} ${label}`}>{body}</button>
     : <div className={cls} title={`Elements without a ${kind} cannot be listed by ${kind}`}>{body}</div>;
 }
 

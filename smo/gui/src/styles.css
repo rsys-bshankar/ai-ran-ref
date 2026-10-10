@@ -29,7 +29,7 @@
   --ok: #3ccb8b;    --ok-soft: rgba(60, 203, 139, 0.14);
   --warn: #f0b43c;  --warn-soft: rgba(240, 180, 60, 0.14);
   --bad: #ff5d52;   --bad-soft: rgba(255, 93, 82, 0.14);
-  --info: #6cb2ff;  --info-soft: rgba(108, 178, 255, 0.14);
+  --info: #7cbcff;  --info-soft: rgba(108, 178, 255, 0.14);   /* #6cb2ff in the hand-off: 4.48:1 as badge text on a selected row's highlight */
   --bad-ink: #ff8a80;          /* red text on its own soft fill: --bad itself is 4.45:1 there on a raised surface, this is ≥ 5.3:1 */
 
   --sev-critical: #ff5d52;
@@ -111,6 +111,7 @@ html, body, #root { height: 100%; }
 body { margin: 0; background: var(--ground); color: var(--text); font: 0.875rem/1.5 var(--f-body); }
 a { color: var(--volt-text); text-decoration: none; }
 a:hover { text-decoration: underline; }
+p a, li a:not(.btn):not(.nav), .muted a, .small a, dd a { text-decoration: underline; text-underline-offset: 2px; }   /* a link inside running text must not differ by colour alone (WCAG 1.4.1, axe link-in-text-block) */
 code, pre { font-family: var(--f-mono); font-size: 0.78rem; }
 h1, h2, h3, h4 { margin: 0; font-family: var(--f-display); font-weight: 600; letter-spacing: -0.01em; }
 h1 { font-size: 1.875rem; line-height: 1.1; }
@@ -419,7 +420,8 @@ kbd { font: 0.69rem var(--f-mono); padding: 2px 6px; border: 1px solid var(--lin
 .tl-i.fail .tl-n, .tl-failed .tl-icon { background: var(--bad); border-color: var(--bad); color: var(--on-sev); }
 .tl-i.warn .tl-n, .tl-warn .tl-icon { background: var(--warn); border-color: var(--warn); color: var(--on-sev); }
 .tl-i.warn::before { background: var(--warn); }
-.tl-i.block, .tl-blocked { opacity: 0.55; }
+.tl-i.block .tl-n, .tl-blocked .tl-icon { opacity: 0.55; }   /* a step not reached yet: its marker is dimmed, its text keeps full contrast (opacity on the text fell to 2.4:1) */
+.tl-i.block .tl-b, .tl-blocked .tl-main { color: var(--muted); }
 .tl-b, .tl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding-top: 2px; }
 .tl-current .tl-main > .row strong { color: var(--volt-text); }
 .tl-detail { color: var(--muted); }

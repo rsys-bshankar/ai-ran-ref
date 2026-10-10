@@ -252,6 +252,9 @@ state after it.
 | [Account locked](docs/screenshots/generic/login-locked.png) | After 5 failed attempts the name is locked for 5 minutes; the message does not say whether the user exists |
 | [Dashboard](docs/screenshots/pages/dashboard.png) | Network health, open alarms by severity, autonomous actions, approvals and model guard breaches; the region health map, worst elements and what needs attention |
 | [Dashboard, light theme](docs/screenshots/pages/dashboard-light.png) | The same page in the light theme |
+| [Dashboard, scoped](docs/screenshots/pages/dashboard-scoped.png) | Scope eu-west (top bar): health score, alarms, attention and fleet counts for that region; the boxes the scope cannot narrow say "network-wide" |
+| [Alarms, scoped](docs/screenshots/pages/alarms-scoped.png) | Region eu-west, site cluster metro-a: the severity tiles and the table count only that cluster's elements |
+| [Exports](docs/screenshots/pages/exports.png) | Background CSV exports (Decisions, audit log): state, rows, size, kept until, Download and Delete |
 | [Search (⌘K)](docs/screenshots/generic/search.png) | The top bar's search: page jumps plus the elements, rApps, alarms, models and decisions matching "gnb" |
 | [Change password](docs/screenshots/generic/change-password-dialog.png) | Any signed-in user, from the sidebar's user card |
 | [Preferences](docs/screenshots/pages/preferences.png) | Theme, accent, text size and display defaults (start page, rows per page, time zone…), kept by the BFF per user |

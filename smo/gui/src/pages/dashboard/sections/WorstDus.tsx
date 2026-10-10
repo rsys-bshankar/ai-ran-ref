@@ -24,8 +24,8 @@ export function WorstDus() {
               </span>
               {w.critical > 0 && <span className="sev sev-cr" title="open critical alarms">{formatCount(w.critical)}</span>}
               {w.major > 0 && <span className="sev sev-mj" title="open major alarms">{formatCount(w.major)}</span>}
-              <Link className="small" to={`/alarms?me=${encodeURIComponent(w.managedElementRef)}`} aria-label={`${w.openAlarms} open alarms on ${w.managedElementRef}`}>
-                {formatCount(w.openAlarms)} open
+              <Link className="small" to={`/alarms?me=${encodeURIComponent(w.managedElementRef)}`}>
+                {formatCount(w.openAlarms)} open<span className="sr-only"> alarms on {w.managedElementRef}</span>
               </Link>
             </li>
           ))}
