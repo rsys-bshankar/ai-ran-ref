@@ -279,6 +279,7 @@ def _kept(db_session_factory):
 
 
 def test_approvals_and_decision_records_are_kept_unless_a_retention_is_set(db_session_factory, monkeypatch):
+    """Neither purge task deletes anything while its retention setting is unset, 0 or not a number, so an upgrade cannot lose rows."""
     _approvals_and_records(db_session_factory)
     monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
     tasks.purge_approvals()
@@ -292,6 +293,8 @@ def test_approvals_and_decision_records_are_kept_unless_a_retention_is_set(db_se
 
 
 def test_only_decided_approvals_older_than_the_retention_go_and_a_waiting_one_stays(db_session_factory, monkeypatch):
+    """With a retention set, `purge_approvals` removes the old decided requests (approved, expired) and keeps a PENDING one however old it is.
+    Recent decided requests and every decision record are left alone."""
     _approvals_and_records(db_session_factory)
     monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
     monkeypatch.setenv("SMO_RETENTION_APPROVALS_DAYS", "30")
@@ -301,6 +304,7 @@ def test_only_decided_approvals_older_than_the_retention_go_and_a_waiting_one_st
 
 
 def test_only_chained_decision_records_older_than_the_retention_go_and_the_audit_chain_is_untouched(db_session_factory, monkeypatch):
+    """`purge_decision_records` removes only old records already in the audit chain, keeps an old unchained one, and leaves `audit_log` and its verification intact."""
     from smo_shared import audit
     _approvals_and_records(db_session_factory)
     monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
@@ -318,6 +322,7 @@ def test_only_chained_decision_records_older_than_the_retention_go_and_the_audit
 
 
 def test_a_purged_record_is_a_404_and_the_rest_of_the_list_is_unchanged(client, db_session_factory, monkeypatch):
+    """After both purges the deleted decision record and approval answer 404 over the API, and the kept ones are still returned with 200."""
     _approvals_and_records(db_session_factory)
     monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)
     monkeypatch.setenv("SMO_RETENTION_DECISION_RECORDS_DAYS", "30")
@@ -331,6 +336,7 @@ def test_a_purged_record_is_a_404_and_the_rest_of_the_list_is_unchanged(client, 
 
 
 def test_a_table_with_retention_off_reports_its_rows_for_these_two_as_well(db_session_factory, monkeypatch):
+    """A purge task whose retention is off sets `smo_retention_off_rows` for its table, and one whose retention is on does not."""
     from prometheus_client import REGISTRY
     _approvals_and_records(db_session_factory)
     monkeypatch.setattr(tasks, "SessionLocal", db_session_factory)

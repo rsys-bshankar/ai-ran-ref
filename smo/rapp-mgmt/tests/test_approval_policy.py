@@ -114,6 +114,7 @@ def _echoing_put(monkeypatch, calls, echo=True):
 
 
 def test_a_policy_asking_for_two_approvals_is_stored_pushed_and_returned_with_the_number(client, monkeypatch):
+    """A `requiredApprovals: 2` policy is stored with the instance, pushed to RAN NF OAM with the number when bootstrap completes, and returned unchanged."""
     calls = _wire(monkeypatch, None)
     _echoing_put(monkeypatch, calls)
     created = _create(client, policy=TWO).json()
@@ -124,6 +125,7 @@ def test_a_policy_asking_for_two_approvals_is_stored_pushed_and_returned_with_th
 
 
 def test_asking_for_one_approval_explicitly_is_the_policy_it_was_before_the_field_existed(client, monkeypatch):
+    """`requiredApprovals: 1` is dropped: the stored policy and the pushed body have no such key, as for a policy written before the field."""
     calls = _wire(monkeypatch, None)
     created = _create(client, policy={**POLICY, "requiredApprovals": 1}).json()
     assert client.get(f"/instances/{created['instanceId']}").json()["approvalPolicy"] == POLICY       # no requiredApprovals key: stored and shown as before
@@ -131,6 +133,7 @@ def test_asking_for_one_approval_explicitly_is_the_policy_it_was_before_the_fiel
     assert _policy_calls(calls)[0][1] == {"requestedBy": "rapp-mgmt", **POLICY}
 
 
+# Each `number` is not the integer 1 or 2 (0, 3, the string "2", null, a float): creating the instance answers 422.
 @pytest.mark.parametrize("number", [0, 3, "2", None, 1.5])
 def test_the_number_of_approvals_is_one_or_two(client, monkeypatch, number):
     _wire(monkeypatch, None)
@@ -148,6 +151,7 @@ def test_a_ran_nf_oam_that_does_not_know_two_approvals_keeps_the_instance_from_r
 
 
 def test_two_approvals_are_refused_for_a_mode_in_which_no_one_decides(client, monkeypatch):
+    """Creating an AUTONOMOUS instance with a two-approval policy answers 422 APPROVAL_POLICY_NEEDS_ASSIST."""
     _wire(monkeypatch, None)
     resp = _create(client, mode="AUTONOMOUS", policy=TWO)
     assert resp.status_code == 422 and resp.json()["detail"]["title"] == "APPROVAL_POLICY_NEEDS_ASSIST"

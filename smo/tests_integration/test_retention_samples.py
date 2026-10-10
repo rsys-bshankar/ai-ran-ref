@@ -60,6 +60,7 @@ def test_the_production_sample_sets_every_days_setting_of_the_document_to_the_pr
 
 
 def test_a_setting_with_no_proposal_is_in_the_chart_and_compose_at_zero_and_in_no_sample_that_would_delete_anything():
+    """Each setting kept by default is 0 in the chart, absent from the production sample and the GitOps prod overlay, and written as `# NAME=0` in `.env.example` and defaulting to 0 in compose."""
     for variable in KEPT:
         assert DEFAULTS["modules"]["ran-nf-oam-worker"]["env"][variable] == "0", variable
         assert variable not in _env(PRODUCTION, "ran-nf-oam-worker") and variable not in _env(GITOPS_PROD, "ran-nf-oam-worker"), variable

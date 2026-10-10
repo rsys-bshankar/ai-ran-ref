@@ -506,6 +506,7 @@ export function describeApprovalPolicy(policy: { timeoutSeconds: number; onTimeo
 /** `twoApprovals` is only present when two different people must approve: a form for the usual single approval is what it was. */
 export interface ApprovalPolicyForm { minutes: string; onTimeout: "EXPIRE" | "REJECT"; twoApprovals?: true }
 
+/** The dialog's starting values from the stored policy: minutes and the timeout action; 60 minutes and EXPIRE when there is no policy; `twoApprovals` only when the policy asks for two. */
 export function approvalPolicyForm(policy: { timeoutSeconds: number; onTimeout: "EXPIRE" | "REJECT"; requiredApprovals?: number } | null | undefined): ApprovalPolicyForm {
   if (!policy) return { minutes: "60", onTimeout: "EXPIRE" };
   const form: ApprovalPolicyForm = { minutes: String(Math.round(policy.timeoutSeconds / 60)), onTimeout: policy.onTimeout };

@@ -57,6 +57,7 @@ describe("holding an rApp's changes for approval (AI-11.4)", () => {
     expect(put.body).toEqual({ timeoutSeconds: 1800, onTimeout: "REJECT" });          // who set it is pinned by the BFF
   });
 
+  // The policy dialog defaults to one approval and sends `requiredApprovals: 2` only when two is chosen, so a policy left at one sends no such key.
   it("lets an admin ask for two different people to approve, and sends nothing extra when it is left at one", async () => {
     const calls = bff("admin");
     await open();
@@ -81,6 +82,7 @@ describe("holding an rApp's changes for approval (AI-11.4)", () => {
     expect(second.find((c) => c.method === "PUT")!.body).toEqual({ timeoutSeconds: 3600, onTimeout: "EXPIRE" });       // no requiredApprovals key
   });
 
+  // A policy with `requiredApprovals: 2` is described as needing two different people, and its dialog opens with two selected.
   it("shows a policy that asks for two approvals, and opens its dialog with two selected", async () => {
     bff("admin", { invokerId: INVOKER, timeoutSeconds: 3600, onTimeout: "EXPIRE", requiredApprovals: 2, setBy: "admin", updatedAt: "2026-10-09T00:00:00Z" });
     const view = await open();

@@ -29,6 +29,10 @@ def no_inline_sending(monkeypatch):
 
 
 def _hold(client, required=2, invoker="es-client", **policy):
+    """PUT the approval policy of an rApp (requestedBy `admin`) and return the stored policy.
+    
+    `required` is sent as `requiredApprovals` (default 2); None leaves the field out, which replaces any earlier policy with one that does not say.
+    Extra keyword arguments become further policy fields (for example `timeoutSeconds`). Asserts a 200."""
     body = {"requestedBy": "admin", **policy}
     if required is not None:
         body["requiredApprovals"] = required
@@ -38,6 +42,9 @@ def _hold(client, required=2, invoker="es-client", **policy):
 
 
 def _park(client, value=25):
+    """Make an rApp (`es-client`) write two cells' `txPower` so that the write is parked, and return the new request's approval id.
+    
+    Asserts a 202 with status PENDING_APPROVAL; an approval policy must already hold the rApp's writes."""
     changes = [{"managedElementRef": ref, "attributeChanges": {"txPower": value}} for ref in ELEMENTS[:2]]
     resp = client.post("/config-jobs", headers=ES, json={"requestedBy": "es-rapp", "scope": "cell", "changes": changes,
                                                           "decision": {"rationale": "low load", "modelVersion": "es 1.0"}})
@@ -70,6 +77,7 @@ def _jobs(fleet):
 # ---- the policy
 
 def test_a_policy_can_ask_for_two_approvals_and_one_is_the_default_and_reads_as_before(client):
+    """A policy stores and returns `requiredApprovals: 2`; a policy that omits it, or says 1, has no such key in what it returns."""
     assert _hold(client, required=2)["requiredApprovals"] == 2
     assert client.get("/rapp-approval-policy/es-client").json()["requiredApprovals"] == 2
     again = _hold(client, required=None)                                                 # replaced by a policy that does not say
@@ -77,6 +85,7 @@ def test_a_policy_can_ask_for_two_approvals_and_one_is_the_default_and_reads_as_
     assert "requiredApprovals" not in _hold(client, required=1)
 
 
+# Each `number` is not 1 or 2 (0, 3, -1, a string, null, a float): the policy route answers 422 and stores no policy.
 @pytest.mark.parametrize("number", [0, 3, -1, "two", None, 1.5])
 def test_the_number_of_approvals_is_one_or_two(client, number):
     resp = client.put("/rapp-approval-policy/es-client", json={"requestedBy": "admin", "requiredApprovals": number})
@@ -85,6 +94,7 @@ def test_the_number_of_approvals_is_one_or_two(client, number):
 
 
 def test_an_rapp_cannot_set_its_own_policy_to_one_approval(client):
+    """An rApp calling the policy route itself gets 403, so it cannot lower its own two-approval policy, and the stored policy still needs 2."""
     _hold(client)
     resp = client.put("/rapp-approval-policy/es-client", headers=ES, json={"requestedBy": "es-rapp", "requiredApprovals": 1})
     assert resp.status_code == 403
@@ -94,12 +104,14 @@ def test_an_rapp_cannot_set_its_own_policy_to_one_approval(client):
 # ---- the request keeps what it needs
 
 def test_a_parked_request_says_how_many_approvals_it_needs_and_that_none_are_given(client, fleet):
+    """A request parked under a two-approval policy reads PENDING with `requiredApprovals` 2 and an empty `approvals` list."""
     _hold(client)
     view = _view(client, _park(client))
     assert view["status"] == "PENDING" and view["requiredApprovals"] == 2 and view["approvals"] == []
 
 
 def test_a_request_under_the_default_policy_needs_one_and_reads_as_before(client, fleet):
+    """Under a policy with no count, a request needs one approval, one approval writes the job, and the decision record has no approvers list."""
     _hold(client, required=None)
     approval_id = _park(client)
     assert _view(client, approval_id)["requiredApprovals"] == 1 and _view(client, approval_id)["approvals"] == []
@@ -110,6 +122,7 @@ def test_a_request_under_the_default_policy_needs_one_and_reads_as_before(client
 
 
 def test_changing_the_policy_does_not_change_what_a_waiting_request_needs(client, fleet):
+    """A waiting request keeps the approval count of the policy it was parked under, whatever the policy is changed to afterwards."""
     _hold(client, required=2)
     needs_two = _park(client)
     _hold(client, required=None)
@@ -122,6 +135,7 @@ def test_changing_the_policy_does_not_change_what_a_waiting_request_needs(client
 # ---- the first approval keeps the request waiting
 
 def test_the_first_approval_is_recorded_and_writes_nothing(client, fleet):
+    """The first of two approvals is stored and shown but leaves the request PENDING with no job, no write to the elements and no decision record."""
     _hold(client)
     approval_id = _park(client)
     resp = _approve(client, approval_id, ALICE, reason="looks right")
@@ -136,6 +150,7 @@ def test_the_first_approval_is_recorded_and_writes_nothing(client, fleet):
 
 
 def test_the_same_person_cannot_give_both_approvals(client, fleet):
+    """The same person, however the name is cased or padded, gets 409 APPROVAL_ALREADY_GIVEN on a second approval and the request stays PENDING with one approval."""
     _hold(client)
     approval_id = _park(client)
     _approve(client, approval_id, ALICE)
@@ -147,6 +162,7 @@ def test_the_same_person_cannot_give_both_approvals(client, fleet):
 
 
 def test_the_requesters_own_approval_never_counts_and_a_refused_try_changes_nothing(client, fleet):
+    """The requester's name, however cased or padded, gets 403 APPROVAL_SELF_DECISION as first or second approver, the rApp's own invoker id also gets 403, and a refusal records nothing."""
     _hold(client)
     approval_id = _park(client)
     for who in ("es-rapp", "es-client", "ES-RAPP", " Es-Client "):
@@ -162,6 +178,7 @@ def test_the_requesters_own_approval_never_counts_and_a_refused_try_changes_noth
 
 
 def test_an_rapp_cannot_approve_even_a_first_approval(client, fleet):
+    """An rApp-role caller gets 403 when it approves, and no approval is recorded."""
     _hold(client)
     approval_id = _park(client)
     resp = client.post(f"/rapp-approvals/{approval_id}/approve", headers=ES, json={"decidedBy": ALICE})
@@ -171,6 +188,7 @@ def test_an_rapp_cannot_approve_even_a_first_approval(client, fleet):
 # ---- the second approval makes the job
 
 def test_a_second_person_approving_makes_the_job_from_the_request(client, fleet):
+    """The second, different approver turns the request APPROVED, writes the parked change, makes one job and is shown as the decider; a third approval gets 409."""
     _hold(client)
     approval_id = _park(client, value=31)
     _approve(client, approval_id, ALICE, reason="first")
@@ -184,6 +202,7 @@ def test_a_second_person_approving_makes_the_job_from_the_request(client, fleet)
 
 
 def test_the_decision_record_names_both_approvers_and_still_verifies_in_the_chain(client, fleet):
+    """The decision record lists both approvers, is in the audit chain, and its hash covers `approvers`, so removing one gives an integrity MISMATCH."""
     _hold(client)
     approval_id = _park(client)
     _approve(client, approval_id, ALICE)
@@ -203,6 +222,7 @@ def test_the_decision_record_names_both_approvers_and_still_verifies_in_the_chai
 
 
 def test_a_record_that_needed_one_approval_hashes_exactly_as_before_the_field_existed():
+    """`approvers` enters the decision hash only when it is not None, so a one-approval record keeps the hash it had before the field existed."""
     rec = RAppDecisionRecord(decision_id=uuid.UUID(int=1), occurred_at=datetime.datetime(2026, 10, 1, tzinfo=datetime.UTC), invoker_id="i", requested_by="r",
                              disposition="DIRECT", managed_elements=["ME-1"], change_count=1, approvers=None)
     with_empty = RAppDecisionRecord(decision_id=rec.decision_id, occurred_at=rec.occurred_at, invoker_id="i", requested_by="r", disposition="DIRECT",
@@ -215,6 +235,7 @@ def test_a_record_that_needed_one_approval_hashes_exactly_as_before_the_field_ex
 # ---- the ways a two-person request ends
 
 def test_one_rejection_ends_the_request_whoever_has_approved(client, fleet):
+    """One rejection closes a request that already has an approval as REJECTED, writes nothing, keeps who approved on the record, and a later approval gets 409."""
     _hold(client)
     approval_id = _park(client)
     _approve(client, approval_id, ALICE)
@@ -227,6 +248,7 @@ def test_one_rejection_ends_the_request_whoever_has_approved(client, fleet):
 
 
 def test_a_person_who_approved_may_reject_instead(client, fleet):
+    """Someone who has already approved a two-approval request may still reject it."""
     _hold(client)
     approval_id = _park(client)
     _approve(client, approval_id, ALICE)
@@ -234,12 +256,14 @@ def test_a_person_who_approved_may_reject_instead(client, fleet):
 
 
 def test_the_requester_cannot_reject_either(client, fleet):
+    """The requester gets 403 when it rejects its own request."""
     _hold(client)
     approval_id = _park(client)
     assert _reject(client, approval_id, "ES-RAPP").status_code == 403
 
 
 def test_a_request_with_one_approval_lapses_and_the_approval_does_not_count(client, fleet):
+    """Past its deadline a request with one approval answers a second approval with 409 EXPIRED, writes nothing, and the record is EXPIRED with the one approver kept."""
     _hold(client, timeoutSeconds=60)
     approval_id = _park(client)
     _approve(client, approval_id, ALICE)
@@ -256,6 +280,7 @@ def test_a_request_with_one_approval_lapses_and_the_approval_does_not_count(clie
 
 
 def test_a_request_nobody_touched_lapses_with_an_empty_list_of_approvers(client, fleet):
+    """`expire-due` lapses a past-deadline request nobody approved, and its decision record has an empty `approvers` list rather than None."""
     _hold(client, timeoutSeconds=60)
     approval_id = _park(client)
     with fleet["db"]() as db:
@@ -266,6 +291,7 @@ def test_a_request_nobody_touched_lapses_with_an_empty_list_of_approvers(client,
 
 
 def test_a_safeguard_that_refuses_at_the_second_approval_closes_the_request_with_both_approvals_kept(client, fleet):
+    """A kill switch set between the approvals makes the second approval answer 403 and closes the request REFUSED (RAPP_KILLED) with both approvals kept and nothing written."""
     _hold(client)
     approval_id = _park(client)
     _approve(client, approval_id, ALICE)
@@ -296,6 +322,7 @@ def _events(fleet):
 
 
 def test_the_notice_says_how_many_approvals_a_two_person_request_needs_and_is_unchanged_for_one(client, fleet):
+    """The RAPP_APPROVAL_REQUESTED notice carries `requiredApprovals` and `approvalsGiven` only for a two-approval request; a one-approval notice has neither key."""
     client.post("/approval-subscriptions", json={"callbackUri": WATCHER})
     _hold(client, required=None)
     _park(client)
@@ -308,6 +335,7 @@ def test_the_notice_says_how_many_approvals_a_two_person_request_needs_and_is_un
 
 
 def test_a_lapse_notice_says_how_many_approvals_were_given(client, fleet):
+    """The RAPP_APPROVAL_LAPSED notice reports `requiredApprovals` 2 and `approvalsGiven` 1 for a request that lapsed after one approval."""
     client.post("/approval-subscriptions", json={"callbackUri": WATCHER})
     _hold(client, timeoutSeconds=60)
     approval_id = _park(client)
@@ -323,6 +351,7 @@ def test_a_lapse_notice_says_how_many_approvals_were_given(client, fleet):
 # ---- the list
 
 def test_the_list_shows_the_approvals_so_far(client, fleet):
+    """The approvals list shows each pending request's approvals so far and its `requiredApprovals`."""
     _hold(client)
     first, second = _park(client), _park(client)
     _approve(client, first, ALICE)

@@ -137,6 +137,7 @@ describe("one decision", () => {
     expect(second.container.textContent).toContain("A person (or the timeout policy) rejected it");
   });
 
+  // A decision record with two approvers shows both in the list row and under "Approvers (two were needed)" on the record, while one without the field shows its single approver as before.
   it("names both approvers of a decision that needed two, in the list and on the record", async () => {
     const two = record({ approvedBy: "smo-gui:bob", approvers: ["smo-gui:alice", "smo-gui:bob"] });
     bff({

@@ -81,6 +81,11 @@ def purge_pm_files() -> None:
 
 
 def purge_approvals() -> None:
+    """Delete rApp action approvals that were decided more than `SMO_RETENTION_APPROVALS_DAYS` ago; a request still waiting is never deleted.
+    
+    Reads the setting through `retention_days` (unset, 0 or not a number keep everything). With a retention set it calls `smo_shared.retention.purge`
+    on `RAppActionApproval.decided_at` restricted to rows whose status is not PENDING. It then calls `report_retention_off`, which reports only when retention is off: it sets the
+    `smo_retention_off_rows` gauge and logs the daily warning. Opens its own session; the purge commits there. Run hourly by the worker as `purge-approvals`."""
     days = retention_days("SMO_RETENTION_APPROVALS_DAYS")
     with SessionLocal() as db:
         if days > 0:
@@ -90,6 +95,11 @@ def purge_approvals() -> None:
 
 
 def purge_decision_records() -> None:
+    """Delete rApp decision records made more than `SMO_RETENTION_DECISION_RECORDS_DAYS` ago and already written to the audit chain.
+    
+    Reads the setting through `retention_days` (unset, 0 or not a number keep everything). With a retention set it calls `smo_shared.retention.purge`
+    on `RAppDecisionRecord.occurred_at` restricted to rows with `audit_seq` set, so a record the chain has not yet taken stays; the `audit_log` rows are never
+    touched. It then calls `report_retention_off` for `rapp_decision_record`, which reports only when retention is off. Opens its own session. Run hourly as `purge-decision-records`."""
     days = retention_days("SMO_RETENTION_DECISION_RECORDS_DAYS")
     with SessionLocal() as db:
         if days > 0:

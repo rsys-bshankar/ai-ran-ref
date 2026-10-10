@@ -309,6 +309,7 @@ describe("approvals and decision records (AI-11, AI-13)", () => {
 });
 
 describe("two-person approval", () => {
+  // A policy asking for two approvals is described, loaded into the form and sent with `requiredApprovals: 2`, while a policy for one gives the same text, form and body as before.
   it("describes, builds and sends a policy for two approvals, and leaves the usual one exactly as it was", () => {
     expect(describeApprovalPolicy({ timeoutSeconds: 3600, onTimeout: "EXPIRE", requiredApprovals: 2 })).toBe("Held for approval · two different people must approve · lapses after 1 h (expires)");
     expect(describeApprovalPolicy({ timeoutSeconds: 3600, onTimeout: "EXPIRE", requiredApprovals: 1 })).toBe("Held for approval · lapses after 1 h (expires)");
@@ -318,6 +319,7 @@ describe("two-person approval", () => {
     expect(approvalPolicyPayload({ minutes: "30", onTimeout: "REJECT" })).toEqual({ ok: true, body: { timeoutSeconds: 1800, onTimeout: "REJECT" } });
   });
 
+  // `approvalProgress` returns "n of 2 approvals" for a request needing two, and null when it needs one or says nothing.
   it("says how far a waiting request is, only when it needs more than one approval", () => {
     expect(approvalProgress({ requiredApprovals: 2, approvals: [{ by: "a" }] })).toBe("1 of 2 approvals");
     expect(approvalProgress({ requiredApprovals: 2 })).toBe("0 of 2 approvals");
@@ -325,6 +327,7 @@ describe("two-person approval", () => {
     expect(approvalProgress({})).toBeNull();
   });
 
+  // `decidedByText` lists the approvers in order followed by the rejecter or the timeout, and shows the plain decider or a dash when no list applies.
   it("names the people behind a decision: the approvers in order, then whoever rejected it or the timeout", () => {
     expect(decidedByText({ decidedBy: "smo-gui:bob" })).toBe("smo-gui:bob");
     expect(decidedByText({ decidedBy: null })).toBe("—");

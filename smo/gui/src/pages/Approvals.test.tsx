@@ -154,6 +154,7 @@ describe("the approval inbox", () => {
 describe("two-person approval (opt-in; a request that needs one approval looks as before)", () => {
   const vote = (by: string, reason: string | null = null) => ({ by, at: new Date().toISOString(), reason });
 
+  // The inbox row of a two-approval request shows its progress, and a request needing one, or from a RAN NF OAM that sends neither field, shows "one needed".
   it("shows how many approvals a waiting request has and needs, and nothing extra for a single approval", async () => {
     bff("operator", {
       "GET /smo/ran-nf-oam/rapp-approvals": { items: [approval({ approvalId: "two-1", requiredApprovals: 2, approvals: [vote("smo-gui:bob")] }), approval({ approvalId: "one-1", requiredApprovals: 1, approvals: [] }), approval({ approvalId: "old-1" })], limit: 100, offset: 0, hasMore: false },
@@ -166,6 +167,7 @@ describe("two-person approval (opt-in; a request that needs one approval looks a
     expect(rows[2]).toContain("one needed");                              // a RAN NF OAM that predates the field sends neither key
   });
 
+  // The drawer lists the approvals so far; the first of two approvals is sent with a null reason and the page says another person must approve, not that the change is written.
   it("lists the approvals so far in the drawer and sends the first of two approvals without claiming the change is written", async () => {
     const calls = bff("operator", {
       [`GET /smo/ran-nf-oam/rapp-approvals/${AID}`]: { body: detail({ requiredApprovals: 2, approvals: [] }) },
@@ -185,6 +187,7 @@ describe("two-person approval (opt-in; a request that needs one approval looks a
     expect(document.body.textContent).not.toContain("Approved: the change is being written");
   });
 
+  // Someone who already approved sees the approval and its reason, has the Approve button disabled and a notice, and can still press Reject.
   it("shows who has approved and does not offer the same person a second approval (they may still reject)", async () => {
     bff("operator", { [`GET /smo/ran-nf-oam/rapp-approvals/${AID}`]: { body: detail({ requiredApprovals: 2, approvals: [vote("smo-gui:Ana", "fine by me")] }) } });   // the signed-in user is ana
     await open();
@@ -201,6 +204,7 @@ describe("two-person approval (opt-in; a request that needs one approval looks a
     expect((byText(drawer, "button", "Reject") as HTMLButtonElement).disabled).toBe(false);
   });
 
+  // The drawer tells the second approver theirs is the last one needed, and after they approve the page says the change is being written.
   it("tells a second person that theirs is the last approval and says the change is written when they send it", async () => {
     const calls = bff("operator", {
       [`GET /smo/ran-nf-oam/rapp-approvals/${AID}`]: { body: detail({ requiredApprovals: 2, approvals: [vote("smo-gui:bob")] }) },
@@ -218,6 +222,7 @@ describe("two-person approval (opt-in; a request that needs one approval looks a
     expect(document.body.textContent).toContain("Approved: the change is being written");
   });
 
+  // The Decided tab shows both approvers of a two-approval request in its row.
   it("names both approvers in the decided list", async () => {
     bff("operator", {
       "GET /smo/ran-nf-oam/rapp-approvals": { items: [approval({ status: "APPROVED", decidedBy: "smo-gui:ana", requiredApprovals: 2, approvals: [vote("smo-gui:bob"), vote("smo-gui:ana")] })], limit: 100, offset: 0, hasMore: false },

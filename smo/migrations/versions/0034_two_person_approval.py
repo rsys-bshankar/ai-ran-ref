@@ -24,6 +24,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add the approval-count columns and their 1-to-2 CHECK constraints, and the two nullable JSON columns, idempotently.
+    
+    Statements, by purpose: `required_approvals` (NOT NULL DEFAULT 1) and its CHECK on `rapp_approval_policy`; the same pair on `rapp_action_approval`;
+    `rapp_action_approval.approvals` (JSON, the approvals given so far); `rapp_decision_record.approvers` (JSON, who approved). Each ADD COLUMN uses
+    IF NOT EXISTS and each CHECK is dropped before it is added, so running it again is harmless. No existing row is rewritten beyond the default of 1."""
     op.execute("ALTER TABLE ran_nf_oam.rapp_approval_policy ADD COLUMN IF NOT EXISTS required_approvals INTEGER NOT NULL DEFAULT 1")
     op.execute("ALTER TABLE ran_nf_oam.rapp_approval_policy DROP CONSTRAINT IF EXISTS rapp_approval_policy_required_approvals_check")
     op.execute("ALTER TABLE ran_nf_oam.rapp_approval_policy ADD CONSTRAINT rapp_approval_policy_required_approvals_check CHECK (required_approvals BETWEEN 1 AND 2)")
@@ -35,6 +40,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove, in reverse order, the columns and CHECK constraints that `upgrade()` added.
+    
+    Drops `rapp_decision_record.approvers`, then `rapp_action_approval.approvals`, then the CHECK and `required_approvals` on `rapp_action_approval`, then the same
+    pair on `rapp_approval_policy`, each with IF EXISTS. It is lossy: the approval counts, the approvals given and the recorded approvers are deleted with
+    their columns."""
     op.execute("ALTER TABLE ran_nf_oam.rapp_decision_record DROP COLUMN IF EXISTS approvers")
     op.execute("ALTER TABLE ran_nf_oam.rapp_action_approval DROP COLUMN IF EXISTS approvals")
     op.execute("ALTER TABLE ran_nf_oam.rapp_action_approval DROP CONSTRAINT IF EXISTS rapp_action_approval_required_approvals_check")
