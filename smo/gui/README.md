@@ -337,6 +337,7 @@ Each table: the page's tabs first, then the lifecycle screens for that module.
 | Screen | What it shows |
 |---|---|
 | [Approvals](docs/screenshots/pages/approvals.png) | rApp changes waiting for a person, with the lapse countdown, and the decided ones |
+| [Approvals → two people](docs/screenshots/pages/approvals-two-person.png) | A request whose rApp's policy asks two different people: "1 of 2 approvals" on its card, who approved so far, and the decision box saying the next approval is the last one needed (`PR-AI-11` follow-up) |
 | [Decisions](docs/screenshots/pages/decisions.png) | Why each rApp change was made: filters, tiles and the decision records, with the chain inputs → model → config job → approval |
 | [Safeguards](docs/screenshots/pages/safeguards.png) | Stop all rApp writes, per-rApp limits, refusals and watchers |
 
