@@ -28,7 +28,7 @@ export function SequenceLanes({ steps }: { steps: FlowStep[] }) {
   const x = (a: string) => lanes.indexOf(a) * COL + COL / 2;
   return (
     <div className="lanes" data-section="flows.lanes">
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Sequence: ${steps.map((s, i) => `${i + 1}. ${s.actor}: ${s.title} (${s.status})`).join("; ")}`}>
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ minWidth: width }} role="img" aria-label={`Sequence: ${steps.map((s, i) => `${i + 1}. ${s.actor}: ${s.title} (${s.status})`).join("; ")}`}>
         {lanes.map((a) => (
           <g key={a}>
             <rect className="lane-head" x={x(a) - COL / 2 + 6} y={4} width={COL - 12} height={28} rx={6} />

@@ -570,7 +570,7 @@ button.sev-count:hover, button.sev-count.active { border-color: var(--text); }
 .flow-progress .bar span.ok { background: var(--ok); }
 .flow-progress .bar span.bad { background: var(--bad); }
 .lanes { overflow-x: auto; }
-.lanes svg { min-width: 560px; width: 100%; height: auto; }
+.lanes svg { min-width: 560px; width: 100%; height: auto; }   /* the section also sets its natural width as min-width: a flow with many actors scrolls sideways instead of shrinking its labels */
 .lane-head { fill: var(--raised); stroke: var(--line-strong); }
 .lane-name { fill: var(--text); font: 600 0.69rem var(--f-mono); }
 .lane-line { stroke: var(--line); stroke-dasharray: 3 4; }
