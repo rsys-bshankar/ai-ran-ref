@@ -1,0 +1,4 @@
+/* Alarms page styles (pages/alarms): only what the shared classes in styles.css do not cover; tokens only. */
+.alarms-sev-tag { min-width: 0; padding: 2px 6px; }
+.alarms-filters input { max-width: 160px; }
+.alarms-delta { color: var(--muted); font-family: var(--f-mono); font-size: 0.75rem; }
