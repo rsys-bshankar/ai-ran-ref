@@ -493,6 +493,12 @@ Done: packages, rApp instances and intents by state, the outbox backlog and its 
 | OBS-7.3 | Entries: O1 write failures, adaptor unreachable (the latter is partly `SmoOutboundCallsFailing`) | Same | OBS-4.3 |
 | OBS-7.6 | Entry: backup and restore | Same | DB-6.4 |
 
+#### PR-OBS-3.9 — Tempo 3 (open)
+
+| Step | What | Done when | Needs |
+|---|---|---|---|
+| OBS-3.9 | Move the `tracing` profile and the chart's `observability.tempo` from Tempo 2.8.2 to 3.x. Tempo 3 removed the scalable single binary, replaced the ingester and compactor with block-builders, live-stores and a backend scheduler, and needs a Kafka-compatible ingest path (and refuses legacy flat overrides). The shipped `tempo.yaml` is a single binary on local disk, so the move means adding a Kafka-compatible broker (for example Redpanda) to compose and the chart and rewriting the config; Dependabot's bump to 3.1.0 failed the "Tracing and logging profiles" job for that reason, and the other three observability images (Grafana 13.2.3, Loki 3.7.8, Fluent Bit 5.1.3) are already bumped. Until then Dependabot ignores Tempo major versions | The `tracing` profile and the chart run Tempo 3.x with its ingest path, and the job is green | Decision: whether a lab trace store should carry a broker |
+
 #### PR-OBS-8 — Self-monitoring (all steps done: `HISTORY.md` PR-OBS-8)
 
 ### 5.6 Packaging, migrations and release (`PR-OPS`)
