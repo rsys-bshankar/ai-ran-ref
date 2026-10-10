@@ -80,6 +80,8 @@ ALARMS = {**{f"alarms.{s}": Count("/ran-nf-oam/alarms", (("severity", s),)) for 
           "alarms.unacked": Count("/ran-nf-oam/alarms", (("ack_state", "UNACKNOWLEDGED"),)),
           "alarms.mtta": Count("/ran-nf-oam/alarms/stats", (("window_hours", "24"),), field="mttaSeconds")}
 APPROVALS = {"approvals.PENDING": Count("/ran-nf-oam/rapp-approvals", (("status", "PENDING"),))}
+# GUI-7.3: the models whose next step is a governance decision (AIMgF's `awaiting_decision` filter), the Approvals inbox's second kind of request
+MODEL_GATES = {"modelGates.waiting": Count("/aimgf/model-lifecycles", (("awaiting_decision", "true"),))}
 INSTANCES = _states("/rapp-mgmt/instances", "state", ("DEPLOYING", "RUNNING", "UPGRADING", "UNDEPLOYED", "FAULTED"), "instances")
 STOPPED = {"rappsStopped": Count("/rapp-mgmt/kill-all", field="stopped")}     # GUI-9.6: how many rApps have their writes stopped
 PACKAGES = _states("/onboarding/packages", "state", ("ONBOARDING", "AVAILABLE", "PRIMED", "DEPRECATED", "FAILED"), "packages")
@@ -98,19 +100,19 @@ ELEMENTS = {"elements.total": Count("/ran-nf-oam/managed-entities")}
 
 # The counts each page asks for, by the page's name in the URL. "nav" is the sidebar's badges, asked on every page, so it is kept small.
 PAGES: dict[str, dict[str, Count]] = {
-    "nav": {"alarms.critical": ALARMS["alarms.critical"], "alarms.major": ALARMS["alarms.major"], **APPROVALS,
+    "nav": {"alarms.critical": ALARMS["alarms.critical"], "alarms.major": ALARMS["alarms.major"], **APPROVALS, **MODEL_GATES,
             "configJobs.HALTED": CONFIG_JOBS["configJobs.HALTED"], "campaigns.HALTED": CAMPAIGNS["campaigns.HALTED"]},
     "dashboard": {**ALARMS, **APPROVALS, **INSTANCES, **PACKAGES, **DEPLOYMENTS, **INTENTS, **DECISIONS_24H, **ESCALATIONS, **BREACHES, **MODELS,
                   **ELEMENTS, **STOPPED},
     "alarms": ALARMS,
     "rapps": {**INSTANCES, **PACKAGES, **STOPPED},
-    "approvals": APPROVALS,
+    "approvals": {**APPROVALS, **MODEL_GATES},
     "decisions": DECISIONS_24H,
     "infrastructure": {**DEPLOYMENTS, **ELEMENTS},
     "configuration": CONFIG_JOBS,
     "software": CAMPAIGNS,
     "intents": INTENTS,
-    "aiml": {**MODELS, **BREACHES},
+    "aiml": {**MODELS, **BREACHES, **MODEL_GATES},
 }
 
 

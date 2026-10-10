@@ -1,8 +1,10 @@
 /** The AI/ML page (route /aiml, BRIEF §4 AI/ML, handoff `Aiml.dc.html`, SCALE.md "AI/ML"): model registration → training → validation →
  * certification → deployment → inference, per `docs/call-flows/02-aiml-model-train-to-inference.md`. Layout only: the tabs (kept in the URL hash,
  * pre-redesign ids still work) and the sections each tab places; every section owns its data through `data/queries.ts`, and only the visible
- * tab's sections mount, so only its calls run. Sections and budgets: README.md. `Mlmf` is also the KPIs page's "Model KPIs (MLMF)" tab. */
+ * tab's sections mount, so only its calls run. Sections and budgets: README.md. `Mlmf` is also the KPIs page's "Model KPIs (MLMF)" tab; `ModelActions` and
+ * `useModelNames` are also the Approvals inbox's model gates (GUI-7.3). */
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { Can, PageHeader, Tabs, useHashTab } from "../../components/ui";
 import { count } from "../../data/summary";
@@ -29,6 +31,7 @@ import { ScopeNote } from "../../kit/ScopeNote";
 
 export { Mlmf } from "./sections/Mlmf";
 export { useModelNames } from "./data/queries";
+export { ModelActions } from "./sections/ModelActions";        // GUI-7.3: the Approvals inbox decides model gates with the same buttons
 
 const TABS = ["models", "training", "inference", "features", "groups", "mlmf", "registry"] as const;
 
@@ -71,10 +74,12 @@ export function Aiml() {
   );
 }
 
-/** The Models tab: the board (or the table) across the top, the selected model's sections beside the two side cards. */
+/** The Models tab: the board (or the table) across the top, the selected model's sections beside the two side cards. `?model=<id>` in the address
+ * (the Approvals inbox's model gates link here, GUI-7.3) opens that model first. */
 function ModelsTab({ onTraining }: { onTraining: () => void }) {
   const [view, setView] = useState<"board" | "table">("board");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [params] = useSearchParams();
+  const [selected, setSelected] = useState<string | null>(() => params.get("model"));
   const viewSwitch = <Segmented label="View" value={view} onChange={setView} options={[{ id: "board", label: "Board" }, { id: "table", label: "Table" }]} />;
   return (
     <div className="stack">

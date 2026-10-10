@@ -70,6 +70,7 @@ export const LIST_PATHS: Record<string, string[]> = {
   decisions24h: ["/ran-nf-oam/decision-records"],
   escalations: ["/sa-smos/remedial-actions"],
   mlmfBreaches: ["/aimgf/mlmf/reports"],
+  modelGates: ["/aimgf/model-lifecycles"],
   models: ["/mlmr/models"],
   trainingJobs: ["/aimgf/training-jobs"],
   elements: ["/ran-nf-oam/managed-entities"],

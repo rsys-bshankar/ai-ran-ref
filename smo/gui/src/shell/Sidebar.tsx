@@ -13,10 +13,17 @@ import { useAuth } from "../auth/AuthContext";
 import { roleAtLeast } from "../auth/rbac";
 import { KEYS } from "../data/keys";
 import { useScope, withScopeSearch } from "../data/scope";
-import { sum, useSummary } from "../data/summary";
+import { count, sum, useSummary, type Summary } from "../data/summary";
 import { Icon } from "../kit/icons";
 import { formatCount } from "../kit/Kpi";
-import { NAV_GROUPS } from "./nav";
+import { NAV_GROUPS, type NavBadge } from "./nav";
+
+/** A badge's number (`nav.ts` NavBadge): the sum of its `keys` (null when one is unknown), plus each of its `extra` counts that is known. */
+export function badgeCount(summary: Summary | undefined, badge: NavBadge): number | null {
+  const base = sum(summary, badge.keys);
+  if (base === null) return null;
+  return (badge.extra ?? []).reduce((total, key) => total + (count(summary, key) ?? 0), base);
+}
 
 /** The rApps the user pinned (at most 5, kept by the GUI backend), listed under the one "rApps" entry. */
 export function PinnedRapps() {
@@ -74,7 +81,7 @@ export function Sidebar({ onChangePassword }: { onChangePassword: () => void }) 
             <div className="eyebrow">{g.title}</div>
             <ul>
               {items.map((n) => {
-                const n_ = n.badge ? sum(nav.data, n.badge.keys) : null;
+                const n_ = n.badge ? badgeCount(nav.data, n.badge) : null;
                 return (
                   <li key={n.to}>
                     <NavLink to={{ pathname: n.to, search }} end={n.to === "/"} className={({ isActive }) => (isActive ? "nav active" : "nav")}>

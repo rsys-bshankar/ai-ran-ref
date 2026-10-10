@@ -1,6 +1,6 @@
 # AI/ML
 
-Route: `/aiml`    Design: handoff `Aiml.dc.html` (BRIEF §4 AI/ML, §4e features 7 and 8; SCALE.md "AI/ML")
+Route: `/aiml`    Design: handoff `Aiml.dc.html` (BRIEF §4 AI/ML, §4e features 7 and 8; SCALE.md "AI/ML"). `?model=<id>` opens that model on the Models tab (the Approvals inbox links here, GUI-7.3)
 
 Model registration → training → validation → certification → deployment → inference
 (`docs/call-flows/02-aiml-model-train-to-inference.md`). Tabs (URL hash): `models` (default), `training`, `inference`, `features`,

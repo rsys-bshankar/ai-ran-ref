@@ -14202,6 +14202,24 @@
             }
           },
           {
+            "description": "GUI-7.3: `true` keeps the models whose next step is a governance decision (the Approvals inbox's model gates), `false` the others.",
+            "in": "query",
+            "name": "awaiting_decision",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "GUI-7.3: `true` keeps the models whose next step is a governance decision (the Approvals inbox's model gates), `false` the others.",
+              "title": "Awaiting Decision"
+            }
+          },
+          {
             "description": "Max rows to return (1-500).",
             "in": "query",
             "name": "limit",

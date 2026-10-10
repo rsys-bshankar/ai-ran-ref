@@ -1,4 +1,5 @@
-/** The role-gated lifecycle buttons of one model, shared by the model table, the detail panel and the runtime box: the next ModelLifecycle
+/** The role-gated lifecycle buttons of one model, shared by the model table, the detail panel, the runtime box and (GUI-7.3) the Approvals
+ * inbox's model gates: the next ModelLifecycle
  * step (`lib/domain.ts` modelActions: request a job, complete it through its job route, or `advance` a governance event) and the RuntimeLifecycle
  * actions. Every button is an `ActionButton`, so it renders only when the BFF's permission table lets the role make that exact call. */
 import type { Model, ModelLifecycle } from "../../../api/types";
@@ -15,7 +16,7 @@ export const REGISTERED_LIFECYCLE: ModelLifecycle = {
 };
 
 /** The model-lifecycle buttons legal from the model's state. DEPRECATE and RETIRE are terminal and ask first. */
-export function ModelActions({ model, lifecycle }: { model: Model; lifecycle: ModelLifecycle }) {
+export function ModelActions({ model, lifecycle }: { model: Pick<Model, "modelId">; lifecycle: ModelLifecycle }) {
   const base = aimgfModel(model.modelId);
   return (
     <div className="row gap end">

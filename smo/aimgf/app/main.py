@@ -33,9 +33,9 @@ from typing import Any, Literal
 
 # Kept for the tests that patch `app.main.httpx.post` to capture webhook sends (ruff.toml explains why this import is not an unused-import finding).
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -1267,8 +1267,23 @@ def get_model_lifecycle(model_id: uuid.UUID, db: Session = Depends(get_session))
     return _lifecycle_view(lifecycle)
 
 
+# GUI-7.3: the states whose next step is an operator's governance decision. TRAINED and VALIDATED wait for one only until their gate flag is set
+# (OI-6.1: APPROVE_TRAINING / APPROVE_VALIDATION set it, and the next step is then the operator's request, not a decision).
+_DECISION_STATES = (ModelLifecycleState.EMULATED, ModelLifecycleState.PENDING_APPROVAL, ModelLifecycleState.APPROVED)
+
+
+def _awaiting_decision():
+    """The SQL condition of a lifecycle waiting for a governance decision: approve training, approve validation, submit, approve or reject, certify."""
+    return or_(ModelLifecycle.model_lifecycle_state.in_([str(s) for s in _DECISION_STATES]),
+               and_(ModelLifecycle.model_lifecycle_state == str(ModelLifecycleState.TRAINED), ModelLifecycle.training_approved.is_(False)),
+               and_(ModelLifecycle.model_lifecycle_state == str(ModelLifecycleState.VALIDATED), ModelLifecycle.validation_approved.is_(False)))
+
+
 @app.get("/model-lifecycles")
-def list_model_lifecycles(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+def list_model_lifecycles(limit: int = PageLimit, offset: int = PageOffset,
+                          awaiting_decision: bool | None = Query(None, description="GUI-7.3: `true` keeps the models whose next step is a governance "
+                                                                 "decision (the Approvals inbox's model gates), `false` the others."),
+                          db: Session = Depends(get_session)):
     """(GUI) Every model AIMgF has ever been asked to act on — the Models
     table's own State/Node-groups columns would otherwise be an
     N-model-lifecycle-fetches-per-page-load problem. A model MLMR knows
@@ -1280,8 +1295,11 @@ def list_model_lifecycles(limit: int = PageLimit, offset: int = PageOffset, db: 
     picture" use case fetches a large enough page rather than assuming
     an unbounded response.
     """
-    # Route notes: paginated; reads only this module's table (no MLMR call), so a model AIMgF has never touched is absent.
-    page = paginate(db, select(ModelLifecycle), limit, offset)
+    # Route notes: paginated; reads only this module's table (no MLMR call), so a model AIMgF has never touched is absent. GUI-7.3: `awaiting_decision`.
+    stmt = select(ModelLifecycle)
+    if awaiting_decision is not None:
+        stmt = stmt.where(_awaiting_decision() if awaiting_decision else not_(_awaiting_decision()))
+    page = paginate(db, stmt, limit, offset)
     return {**page, "items": [_lifecycle_view(l) for l in page["items"]]}
 
 

@@ -12,6 +12,10 @@ import { diffLines } from "../../../kit/Diff";
 export const APPROVALS = "/ran-nf-oam/rapp-approvals";
 /** Decision records (AI-13), to link a decided request to its record. */
 export const DECISION_RECORDS = "/ran-nf-oam/decision-records";
+/** GUI-7.3: AIMgF's model lifecycles; with `awaiting_decision=true`, the models a person must decide on (the inbox's model gates). */
+export const MODEL_GATES = "/aimgf/model-lifecycles";
+/** The query of the model gates tab. */
+export const MODEL_GATES_QUERY = { awaiting_decision: true } as const;
 /** Approvals lapse within minutes: the queue and the open request refresh every 5 s. */
 export const APPROVALS_POLL = 5_000;
 /** The statuses a request ends in (the Decided tab's filter). */
