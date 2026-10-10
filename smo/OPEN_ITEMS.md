@@ -177,7 +177,7 @@ and HA much later).
 | Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
 | AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
 | rApp ecosystem | `PR-RAPP` | RAPP-1 signing (done) · RAPP-2 sandbox (RAPP-2.2 open) · RAPP-3 conformance pack (done) · RAPP-4 Java and Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
-| GUI | `PR-GUI` | GUI-1 live updates (1.5 left) · GUI-2 alarm console (2.3-2.5 left) · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n (6.3-6.4 left) · GUI-7 approval inbox · GUI-9/10 console redesign (done) |
+| GUI | `PR-GUI` | GUI-1 live updates (1.5 left) · GUI-2 alarm console (2.3-2.4 left) · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n (6.3-6.4 left) · GUI-7 approval inbox · GUI-9/10 console redesign (done) |
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
 
@@ -1202,13 +1202,12 @@ GUI-1.1 to 1.4 are done by the console redesign (`HISTORY.md` "PR-GUI-1, 2 and 6
 
 #### PR-GUI-2 — Alarm console
 
-GUI-2.1 and 2.2 are done by the console redesign (same `HISTORY.md` entry). What remains:
+GUI-2.1 and 2.2 are done by the console redesign (same `HISTORY.md` entry), GUI-2.5 by the alarm export (`HISTORY.md` GUI-2.5). What remains:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | GUI-2.3 | Comments panel | Component test | MGT-8.3 |
 | GUI-2.4 | History tab | Component test | MGT-8.2 |
-| GUI-2.5 | CSV export | File content test | – |
 
 #### PR-GUI-3 — Topology view
 

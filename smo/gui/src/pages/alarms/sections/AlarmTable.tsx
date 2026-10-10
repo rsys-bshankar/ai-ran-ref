@@ -3,12 +3,17 @@
  * `/alarms?me=X`), managed function, ack state, probable cause, and "show cleared" (otherwise `open_only=true`). "Group by" switches to the
  * server's group counts (`/alarms/counts`) under the same filters; a group row opens a table narrowed to it. When the summary's alarm total
  * rises above what the operator last looked at, a bar says "N new alarms — show"; "show" returns to the first page. A row click selects it for
- * the detail panel. */
+ * the detail panel. "Export…" (operator, GUI-2.5) writes every alarm the filters and the scope select to a CSV export job (`data/exports.ts`). */
 import { useCallback, useEffect, useState } from "react";
 
 import type { Query } from "../../../api/client";
 import type { Alarm } from "../../../api/types";
+import { useAuth } from "../../../auth/AuthContext";
+import { roleAtLeast } from "../../../auth/rbac";
+import { ExportJobButton } from "../../../components/ExportJobButton";
 import { Card, DataTable, SeverityChip, StateBadge } from "../../../components/ui";
+import { alarmsExport } from "../../../data/exports";
+import { useScope } from "../../../data/scope";
 import { count } from "../../../data/summary";
 import { Callout } from "../../../kit/Callout";
 import { KeysetTable } from "../../../kit/KeysetTable";
@@ -39,6 +44,10 @@ export function AlarmTable({ severity, onSeverity, initialElement, selectedId, o
   const [reset, setReset] = useState(0);
   useEffect(() => { setMe(initialElement); }, [initialElement]);
   const filters = ranAlarmFilters({ severity, managedElement: me, managedFunction: mf, ackState: ack, probableCause: cause, showCleared });
+  // GUI-2.5: an operator exports what the filters select (the BFF refuses a viewer; the button is not offered to one)
+  const { me: user } = useAuth();
+  const scope = useScope();
+  const canExport = !!user && roleAtLeast(user.role, "operator");
 
   // the "N new" bar: the summary total when the operator last looked, and how far it has risen since
   const total = count(useAlarmSummary().data, "alarms.total");
@@ -63,6 +72,7 @@ export function AlarmTable({ severity, onSeverity, initialElement, selectedId, o
         <select value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupByKey | "")} aria-label="Group by">
           <option value="">No grouping</option>{GROUP_BY.map((g) => <option key={g.key} value={g.key}>Group by {g.label.toLowerCase()}</option>)}
         </select>
+        {canExport && <ExportJobButton what="alarms" request={alarmsExport(filters, scope)} />}
       </div>}>
       {fresh > 0 && (
         <div role="status" className="alarms-new">

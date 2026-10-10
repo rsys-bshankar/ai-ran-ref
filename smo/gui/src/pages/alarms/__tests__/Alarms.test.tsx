@@ -149,6 +149,26 @@ describe("the alarm page", () => {
     expect(ranAlarmFilters({ severity: "", managedElement: "", managedFunction: "", probableCause: " LOS " }).probable_cause).toBe("LOS");
   });
 
+  // GUI-2.5: an operator's Export… starts an alarms export job with the table's filters (open only, ack state); a viewer is not offered one.
+  it("exports what the filters select as an alarms job, for an operator only", async () => {
+    const calls = bff("operator", { "POST /exports": { status: 202, body: { id: "j-1", kind: "alarms", state: "QUEUED", params: {} } } });
+    const { container } = await open();
+    await settle();
+    await choose(container, "Ack state", "UNACKNOWLEDGED");
+    await click(byText(container, "button", "Export…")!);
+    const dialog = document.querySelector("[role=dialog]") as HTMLElement;
+    expect(dialog.textContent).toContain("Open alarms only");
+    await click(byText(dialog, "button", "Start export")!);
+    await settle();
+    expect(calls.find((c) => c.method === "POST" && c.path === "/exports")!.body).toEqual({ kind: "alarms", since: "1970-01-01T00:00:00.000Z", ackState: "UNACKNOWLEDGED", openOnly: true });
+    expect(document.querySelector("[role=dialog]")?.textContent).toContain("queued");
+    cleanup();
+    bff("viewer");
+    const viewer = await open();
+    await settle();
+    expect(byText(viewer.container, "button", "Export…")).toBeFalsy();
+  });
+
   // Pins down: Next asks the page after the previous answer's cursor; Previous goes back to the first page without a new cursor.
   it("pages by keyset cursor", async () => {
     const calls = bff();

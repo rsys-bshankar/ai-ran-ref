@@ -6,8 +6,11 @@ import { useState } from "react";
 
 import { useAuth } from "../../../auth/AuthContext";
 import { Card, DataTable, StateBadge } from "../../../components/ui";
-import { formatBytes, isRunning, useDeleteExport, useExports, type ExportJob } from "../../../data/exports";
+import { formatBytes, isRunning, useDeleteExport, useExports, type ExportJob, type ExportKind } from "../../../data/exports";
 import { formatTime } from "../../../lib/domain";
+
+/** What each kind of job holds, as the list names it. */
+const KIND_LABEL: Record<ExportKind, string> = { decisions: "Decision records", alarms: "Alarms", audit: "Audit log" };
 
 /** The filters a job was made with, as "rApp=…, region=…" (the time span is its own column). */
 export function filtersOf(job: Pick<ExportJob, "params">): string {
@@ -37,8 +40,8 @@ export function ExportList() {
     <Card section="exports.list" title="Your exports" sub={running ? `${running} running · refreshing every 2 s` : "newest first"}
       actions={admin && <input placeholder="All users" aria-label="Filter by user" value={user} onChange={(e) => setUser(e.target.value)} />}>
       <DataTable<ExportJob> rows={items} loading={jobs.isLoading} error={jobs.error} rowKey={(j) => j.id}
-        empty="No export yet. Use “Export…” on Decisions or the Admin audit log." columns={[
-          { header: "What", render: (j) => <><strong>{j.kind === "decisions" ? "Decision records" : "Audit log"}</strong><div className="muted small">{spanOf(j)}</div></> },
+        empty="No export yet. Use “Export…” on Decisions, Alarms or the Admin audit log." columns={[
+          { header: "What", render: (j) => <><strong>{KIND_LABEL[j.kind]}</strong><div className="muted small">{spanOf(j)}</div></> },
           { header: "Filters", render: (j) => <span className="small">{filtersOf(j) || <span className="muted">none</span>}</span> },
           { header: "Requested", render: (j) => <><span className="small">{formatTime(j.createdAt)}</span>{admin && <div className="muted small">{j.username}</div>}</> },
           { header: "State", render: (j) => <><StateBadge state={j.state} />{j.error && <div className="small t-warn">{j.error}</div>}</> },
