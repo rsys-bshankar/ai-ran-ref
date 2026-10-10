@@ -53,7 +53,7 @@ Theme: rApps that could be handed to another party. Core (1 to 3) first, then th
 | 4 | rApp SDK in two more languages | `RAPP-4` (Java and Go, decided): a Java SDK and a Go SDK built from `docs/openapi/` (the Java one: hand-written clients held to the specs by a contract test, `HISTORY.md` PR-RAPP-4 Java) with token acquisition and refresh, one example rApp in each, and a CI build for each | Python SDK stays. Each example runs against the stack |
 | 5 | Life-cycle flows (stretch) | `MGT-14` zero-touch onboarding (templates, discovery triggers a template, status FSM); `MGT-15` software campaigns (waves with a health gate, rollback, report) | The wave machinery is `MGT-5`, done. **Built** (`HISTORY.md` PR-MGT-14, PR-MGT-15): the API, the migration (`0033`) and the tests; opt in, nothing changes for an existing user. The GUI tabs, the notices of a failed onboarding, a halted campaign and a failed rollback, a job timeout and a rollback in reverse wave order are built too (`HISTORY.md` PR-MGT-14.6; migration `0035`). **Open:** a real software-management exchange with the element (`MGT-15.8`, needs a vendor decision), the KPI gate (`MGT-15.9`, after `MGT-11`), template placeholders and scope (`MGT-14.8`) and the smaller follow-ups `MGT-14.6a`, `14.7a`, `15.6a` |
 | 6 | Spec and stub realism (stretch) | `MGT-2` MSAC beyond writes; `SB-7` VES event receiver; `SB-10` first vendor profile on the O1 stub | **Built** (`HISTORY.md` PR-SB-7, PR-SB-10, PR-MGT-2): the VES listener (off until it has a password, which the chart can take from a Secret), MSAC reach (off until `RAN_NF_OAM_MSAC_REACH`), and a vendor profile mechanism with a first profile that is **a stand-in, not a real vendor**. **Open:** `SB-7.6` (needs `MSG-3.4`), the first real vendor profile (`SB-10.5`), and the parts of `MGT-2` named under PR-MGT-2 |
-| 7 | Carry-overs from 0.6.0 | `GUI-8.7` compose browser check; `SEC-5.4` load test and the cache default (`SEC-5.5`); `SEC-2.4` Postgres `verify-full` | Closed here rather than carried into 1.0.0. **Built** (`HISTORY.md` PR-SEC-2.4, PR-SEC-5.4b, PR-GUI-8c): `SEC-2.4` (the compose overlay `docker-compose.pgtls.yml` and the chart's `postgres.tls`; proved against a real Postgres here, the containers and pods by new CI jobs), `SEC-5.4` (measured: the cache cuts SME's introspections by 99 % in the local run, the compose lane `smo-load.yml` repeats it), `GUI-8.7` (`scripts/gui_rapp_pages_e2e.py`, run here against the built GUI, the real backend and the real services; the compose job is CI's). **Open, the owner's:** `SEC-5.5`, the default of the cache (recommendation: 30 s, not applied) |
+| 7 | Carry-overs from 0.6.0 | `GUI-8.7` compose browser check; `SEC-5.4` load test and the cache default (`SEC-5.5`); `SEC-2.4` Postgres `verify-full` | Closed here rather than carried into 1.0.0. **Built** (`HISTORY.md` PR-SEC-2.4, PR-SEC-5.4b, PR-GUI-8c): `SEC-2.4` (the compose overlay `docker-compose.pgtls.yml` and the chart's `postgres.tls`; proved against a real Postgres here, the containers and pods by new CI jobs), `SEC-5.4` (measured: the cache cuts SME's introspections by 99 % in the local run, the compose lane `smo-load.yml` repeats it), `GUI-8.7` (`scripts/gui_rapp_pages_e2e.py`, run here against the built GUI, the real backend and the real services; the compose job is CI's). **Decided by the owner:** `SEC-5.5`, the default of the cache, 30 s (`HISTORY.md` PR-SEC-5.5) |
 
 Not in 0.7.0: the 72 hour soak, the real-size disaster-recovery drill, a hard node loss, a network partition, PgBouncer failover, zones and the external penetration test (they need a host we control and are criteria for 1.0.0); northbound adaptors (`NB-1` to `NB-7`); the developer portal (`RAPP-5`); streaming PM (`SB-8`). Customer-driven requests: none yet.
 
@@ -177,7 +177,7 @@ and HA much later).
 | Northbound | `PR-NB` | NB-1 alarm forwarding · NB-2 inventory export · NB-3 TS 28.532 facade · NB-4 slicing · NB-5 TM Forum · NB-6 ONAP · NB-7 federation |
 | AI/ML | `PR-AI` | AI-1 executor protocol · AI-2 K8s training executor · AI-3 MLflow bridge · AI-4 serving adaptor · AI-5 feature store · AI-6 data sink · AI-7 drift · AI-8 weighted triggers · AI-9 runtime gate · AI-10 action safeguards · AI-11 approvals · AI-12 shadow mode · AI-13 decision audit |
 | rApp ecosystem | `PR-RAPP` | RAPP-1 signing (done) · RAPP-2 sandbox (RAPP-2.2 open) · RAPP-3 conformance pack (done) · RAPP-4 Java and Go SDK · RAPP-5 portal · RAPP-6 metering · RAPP-7 new-rApp recipe |
-| GUI | `PR-GUI` | GUI-1 live updates · GUI-2 alarm console · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n · GUI-7 approval inbox · GUI-9/10 console redesign (done) |
+| GUI | `PR-GUI` | GUI-1 live updates (1.5 left) · GUI-2 alarm console (2.3-2.5 left) · GUI-3 topology · GUI-4 KPI dashboards · GUI-5 scoped views · GUI-6 a11y/i18n (6.3-6.4 left) · GUI-7 approval inbox · GUI-9/10 console redesign (done) |
 | Standards / compliance | `PR-STD` | STD-1 close §3 items · STD-2 spec currency · STD-3 O-RAN test plan · STD-4 privacy · STD-5 assurance mapping · STD-6 residency |
 | Quality | `PR-QA` | QA-1 load · QA-2 contract tests · QA-3 failure injection · QA-4 upgrade test · QA-5 soak · QA-6 authz matrix · QA-7 coverage · QA-8 simulator lane |
 
@@ -359,11 +359,11 @@ Nothing open. Left for a deployment rather than this build: Postgres TLS on a re
 
 #### PR-SEC-5 — Signing keys and token caching
 
-SEC-5.1 to 5.4 are done (`HISTORY.md`, PR-SEC-5 and PR-SEC-5.4b). What remains:
+SEC-5.1 to 5.4 are done, and the cache default of SEC-5.5 is decided (`HISTORY.md`, PR-SEC-5, PR-SEC-5.4b and PR-SEC-5.5). What remains:
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| SEC-5.5 | **Decided by the owner (release 0.8.0): 30 seconds**, set in `docker-compose.yml` and the chart's `values.yaml` (the code's own default stays 0, so a deployment that sets nothing outside those two stays as before). Measured: SME answered 98.4 introspections per 100 calls without the cache and 0.9 with it (`docs/PERFORMANCE.md`). The cost is the one the owner accepted: a revoked or re-scoped token is honoured for up to 30 s longer on every gateway replica but the one that carried the change. Open: a revocation broadcast between replicas, if that window must be zero | Done: the decision is recorded in `HISTORY.md` PR-SEC-5.5 | SEC-5.4 (done) |
+| SEC-5.5 | A revocation broadcast between gateway replicas, so a revoked or re-scoped token stops at once everywhere. The cache default itself is decided (30 s, `HISTORY.md` PR-SEC-5.5): until then a change is honoured for up to 30 s longer on every replica but the one that carried it | Revocation seen by every replica within one request | Only if that window must be zero |
 | SEC-5.6 | A browser sign-in and a render of the chart with `gui.jwtKeySecretRef` set, on a real cluster or in CI with `helm` | Sign-in works under ES256 on a cluster; the pod has the key at `/run/gui-jwt` | A cluster |
 
 #### PR-SEC-6 — OIDC login for the GUI
@@ -852,13 +852,12 @@ No steps open.
 
 #### PR-MGT-8 — Alarm lifecycle depth
 
-Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`); an unknown alarm is a 404 and `new_state` must be `ACKNOWLEDGED` or `UNACKNOWLEDGED` (`MGT-8.1`, `HISTORY.md` §10).
+Ack and clear exist (`PATCH /alarms/{id}/ack`, `/clear`); an unknown alarm is a 404 and `new_state` must be `ACKNOWLEDGED` or `UNACKNOWLEDGED` (`MGT-8.1`, `HISTORY.md` §10). The list filters of MGT-8.4 are built (`HISTORY.md` "PR-GUI-1, 2 and 6 steps closed by the redesign").
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
 | MGT-8.2 | `alarm_history` table: every ack, clear and severity change | Migration; row per change | – |
 | MGT-8.3 | Comments: add and list | Route tests | – |
-| MGT-8.4 | List filters: severity, state, time range, element | Route tests | – |
 | MGT-8.5 | Repeat raise of the same `source_alarm_id`: update count and time instead of a new row (confirm today's behaviour first) **(verify)** | Test | – |
 | MGT-8.6 | Aging policy: auto-clear after N hours without a repeat | One run per interval | – |
 | MGT-8.7 | Suppression windows per element (planned work) | Alarm in a window is flagged | MGT-8.2 |
@@ -1194,25 +1193,26 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 
 #### PR-GUI-1 — Live updates
 
+GUI-1.1 to 1.4 are done by the console redesign (`HISTORY.md` "PR-GUI-1, 2 and 6 steps closed by the redesign"). What remains:
+
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| GUI-1.1 | SSE endpoint on the BFF, polling the source server-side and sending diffs | Client receives a change | – |
-| GUI-1.2 | Client hook with reconnect | Test | GUI-1.1 |
-| GUI-1.3 | Alarms page uses it | Alarm appears without reload | GUI-1.2 |
-| GUI-1.4 | Instance and deployment state use it | Same | GUI-1.2 |
 | GUI-1.5 | Source switches to the event bus | Same behaviour | GUI-1.1, MSG-3.5 |
 
 #### PR-GUI-2 — Alarm console
 
+GUI-2.1 and 2.2 are done by the console redesign (same `HISTORY.md` entry). What remains:
+
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| GUI-2.1 | List with filters | Component test | MGT-8.4 |
-| GUI-2.2 | Ack and clear actions with `rbac.py` rules | Role test | – |
 | GUI-2.3 | Comments panel | Component test | MGT-8.3 |
 | GUI-2.4 | History tab | Component test | MGT-8.2 |
-| GUI-2.5 | CSV export | File content test | GUI-2.1 |
+| GUI-2.5 | CSV export | File content test | – |
 
 #### PR-GUI-3 — Topology view
+
+Not built as written. The redesign's Topology page draws the **neighbour relations** declared in cell guards (a graph, problem relations, counts, a
+drill to the element), not the containment tree, and shows no alarm overlay (`gui/src/pages/topology/README.md`, "Known limits").
 
 | Step | What | Done when | Needs |
 |---|---|---|---|
@@ -1238,10 +1238,10 @@ the README tables. Each rApp is one piece of work per bullet, in that order.
 
 #### PR-GUI-6 — Accessibility and localization
 
+GUI-6.1 and 6.2 are done by the console redesign (same `HISTORY.md` entry). What remains:
+
 | Step | What | Done when | Needs |
 |---|---|---|---|
-| GUI-6.1 | Automated accessibility check in the GUI tests | Runs in CI | – |
-| GUI-6.2 | Fix findings per page | Zero serious findings | GUI-6.1 |
 | GUI-6.3 | i18n library scaffold | One page translated | – |
 | GUI-6.4 | Extract strings page by page | Per page: no literals | GUI-6.3 |
 

@@ -116,6 +116,20 @@ describe("Software page", () => {
     expect(posts[0].body).toMatchObject({ dryRun: true, name: "upgrade", selector: { vendorName: "vendor-a" } });
     expect(posts[1].body).toEqual({ name: "upgrade", onGateFailure: "halt", rollbackOrder: "reverse", selector: { vendorName: "vendor-a" }, wavePauseSeconds: 0, gateMaxNewAlarms: 0 });
   });
+
+  // A form nobody has touched shows no error (its Dry run is off and says why on hover); the first problem appears once a field changed.
+  it("waits for the operator before it names the form's first problem", async () => {
+    window.location.hash = "#new";
+    const { container } = await open("operator");
+    await settle();
+    const form = container.querySelector("[data-section='software.new']")!;
+    expect(form.querySelector("[role=alert]")).toBeNull();
+    const dryRun = byText(form, "button", "Dry run") as HTMLButtonElement;
+    expect(dryRun.disabled).toBe(true);
+    expect(dryRun.title).toBe("Give the campaign a name");
+    await type(form.querySelectorAll("input")[0] as HTMLInputElement, "upgrade");
+    expect(form.querySelector("[role=alert]")?.textContent).toBe("Select by at least one of vendor, region, entity type, tenant");
+  });
 });
 
 describe("campaign rules", () => {
@@ -136,5 +150,43 @@ describe("campaign rules", () => {
       { action: "continue", force: true }, { action: "halt", force: false }, { action: "rollback", force: false }, { action: "abort", force: false }]);
     expect(campaignActions({ status: "COMPLETED", haltedReason: null, nextWaveAt: null }).map((a) => a.action)).toEqual(["rollback"]);
     expect(campaignActions({ status: "ROLLED_BACK", haltedReason: null, nextWaveAt: null })).toEqual([]);
+  });
+
+  // Table of every campaign state (and halted reason) with the actions offered, the rules RAN NF OAM's state machine accepts (ported from the
+  // former lib/lifecycle.ts table when the two copies became one): nothing for a campaign that has not started or is rolling back or rolled back.
+  it.each<[string, string | null, string[]]>([
+    ["PENDING", null, []],
+    ["RUNNING", null, ["halt"]],
+    ["HALTED", "GATE_FAILED", ["continue", "rollback", "abort"]],
+    ["HALTED", "OPERATOR_HALT", ["continue", "rollback", "abort"]],
+    ["HALTED", "WAVE_PAUSE", ["continue", "halt", "rollback", "abort"]],
+    ["COMPLETED", null, ["rollback"]],
+    ["ABORTED", null, ["rollback"]],
+    ["ROLLING_BACK", null, []],
+    ["ROLLED_BACK", null, []],
+    ["ROLLBACK_FAILED", null, ["rollback"]],
+  ])("%s (%s) offers %j", (status, reason, actions) => {
+    expect(campaignActions({ status: status as never, haltedReason: reason, nextWaveAt: null }).map((a) => a.action)).toEqual(actions);
+  });
+
+  // Table of invalid campaign forms (fields changed from a valid named-elements form, fragment of the message): each is refused before any call
+  // with a message naming the field or the limit, the limits being RAN NF OAM's own (lifecycle.py `CampaignRequest`).
+  it.each<[Partial<typeof EMPTY_FORM>, string]>([
+    [{ name: " " }, "name"],
+    [{ name: "x".repeat(201) }, "at most 200"],
+    [{ softwareVersion: "v".repeat(101) }, "at most 100"],
+    [{ elements: "" }, "at least one managed element"],
+    [{ elements: Array.from({ length: 5001 }, (_, i) => `ME-${i}`).join(",") }, "at most 5000 elements"],
+    [{ mode: "selector" }, "at least one of vendor"],
+    [{ waveSize: "0" }, "Wave size"],
+    [{ waveSize: "1.5" }, "whole number"],
+    [{ wavePauseSeconds: "-1" }, "Pause between waves"],
+    [{ gateMaxNewAlarms: "x" }, "Max new alarms"],
+    [{ jobTimeoutSeconds: "0" }, "Job timeout"],
+    [{ jobTimeoutSeconds: String(8 * 86400) }, "Job timeout must be at most"],
+  ])("refuses %j", (over, fragment) => {
+    const r = campaignBody({ ...EMPTY_FORM, name: "r3", mode: "list", elements: "ME-1, ME-2", ...over });
+    expect(r.ok).toBe(false);
+    expect(r.ok ? "" : r.error).toContain(fragment);
   });
 });

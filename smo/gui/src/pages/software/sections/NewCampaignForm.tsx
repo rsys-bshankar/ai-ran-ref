@@ -23,6 +23,8 @@ export function NewCampaignForm({ onStarted }: { onStarted: (id: string) => void
   const dry = useSmoAction();
   const start = useSmoAction();
   const built = campaignBody(f);
+  // the form's first problem is shown once the operator has changed something: a form nobody has touched yet is not an error
+  const touched = f !== EMPTY_FORM;
   const key = built.ok ? JSON.stringify(built.body) : "";
   const fresh = preview !== null && preview.key === key;
   const set = (patch: Partial<CampaignForm>) => setF({ ...f, ...patch });
@@ -63,15 +65,15 @@ export function NewCampaignForm({ onStarted }: { onStarted: (id: string) => void
           </div>
           <div className="grid g4">
             {input("jobTimeoutSeconds", "Job timeout, seconds", "Blank: wait for every job however long. A job still running then is failed, and the gate sees it")}
-            <Field label="A rollback undoes">
+            <Field label="A rollback undoes" hint="Last wave first: each earlier wave is reverted once the later one has ended">
               <select value={f.rollbackOrder} onChange={(e) => set({ rollbackOrder: e.target.value as "all" | "reverse" })}>
-                <option value="reverse">The last wave first, then each earlier wave</option><option value="all">Every wave at once</option>
+                <option value="reverse">Last wave first</option><option value="all">Every wave at once</option>
               </select>
             </Field>
           </div>
-          {!built.ok && <div className="error-box" role="alert">{built.error}</div>}
+          {touched && !built.ok && <div className="error-box" role="alert">{built.error}</div>}
           <div className="row end">
-            <button type="button" className="btn" disabled={!built.ok || dry.isPending}
+            <button type="button" className="btn" disabled={!built.ok || dry.isPending} title={built.ok ? undefined : built.error}
               onClick={() => built.ok && dry.mutate({ method: "POST", path: CAMPAIGNS_PATH, json: { ...built.body, dryRun: true } },
                 { onSuccess: (d) => setPreview({ key, plan: d as CampaignDryRun }) })}>
               {dry.isPending ? "…" : "Dry run"}
