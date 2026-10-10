@@ -65,13 +65,14 @@ def gateway(monkeypatch):
 INTERNAL_ONLY_CALLS = [("PUT", "/ran-nf-oam/rapp-limits/x"), ("DELETE", "/ran-nf-oam/rapp-limits/x"), ("PUT", "/ran-nf-oam/kpi-definitions/k"),
                        ("DELETE", "/ran-nf-oam/kpi-definitions/k"), ("POST", "/ran-nf-oam/config-history/purge"), ("PUT", "/ran-nf-oam/rapp-kill/x"),
                        ("DELETE", "/ran-nf-oam/rapp-kill/x"), ("GET", "/ran-nf-oam/rapp-kill"), ("PUT", "/rapp-mgmt/instances/i/kill"),
-                       ("DELETE", "/rapp-mgmt/instances/i/kill"), ("POST", "/ran-nf-oam/kpi-definitions/standard"), ("POST", "/ran-nf-oam/kpis/k/publish"), ("GET", "/ran-nf-oam/safeguard-refusals"), ("GET", "/ran-nf-oam/safeguard-subscriptions"),
+                       ("DELETE", "/rapp-mgmt/instances/i/kill"), ("PUT", "/rapp-mgmt/kill-all"), ("DELETE", "/rapp-mgmt/kill-all"), ("GET", "/rapp-mgmt/kill-all"),
+                       ("POST", "/ran-nf-oam/kpi-definitions/standard"), ("POST", "/ran-nf-oam/kpis/k/publish"), ("GET", "/ran-nf-oam/safeguard-refusals"), ("GET", "/ran-nf-oam/safeguard-subscriptions"),
                        ("POST", "/ran-nf-oam/safeguard-subscriptions"), ("DELETE", "/ran-nf-oam/safeguard-subscriptions/s"),
                        # AI-11 / AI-13: who decides, who must be asked, and the lists that name other rApps' actions
                        ("PUT", "/ran-nf-oam/rapp-approval-policy/x"), ("DELETE", "/ran-nf-oam/rapp-approval-policy/x"), ("POST", "/ran-nf-oam/rapp-approvals/a/approve"),
                        ("POST", "/ran-nf-oam/rapp-approvals/a/reject"), ("POST", "/ran-nf-oam/rapp-approvals/expire-due"), ("GET", "/ran-nf-oam/rapp-approvals"),
                        ("GET", "/ran-nf-oam/approval-subscriptions"), ("POST", "/ran-nf-oam/approval-subscriptions"), ("DELETE", "/ran-nf-oam/approval-subscriptions/s"),
-                       ("GET", "/ran-nf-oam/decision-records"),
+                       ("GET", "/ran-nf-oam/decision-records"), ("GET", "/ran-nf-oam/decision-records/export.csv"),
                        # MGT-14.7 / MGT-15.6: where the platform calls when an onboarding fails or a campaign halts
                        ("GET", "/ran-nf-oam/lifecycle-subscriptions"), ("POST", "/ran-nf-oam/lifecycle-subscriptions"), ("DELETE", "/ran-nf-oam/lifecycle-subscriptions/s"),
                        # SEC-10: the scope of a caller and of a target is set by the platform

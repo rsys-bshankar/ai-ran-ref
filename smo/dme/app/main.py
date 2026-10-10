@@ -13,7 +13,7 @@ import httpx
 import jsonschema
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -29,6 +29,7 @@ from smo_shared.pagination import PageLimit, PageOffset, paginate, paginate_list
 from smo_shared import scope as authz_scope
 from smo_shared.outbox import enqueue
 from smo_shared.webhook import get_webhook
+from smo_shared.timeutil import as_utc
 
 from .models import (
     DELIVERY_METHODS, LIFECYCLE_STAGES, SOURCE_DOMAINS, DataJob, DataOffer, DataRecord, DmeActionRecord,
@@ -77,6 +78,8 @@ class DataJobRequest(BaseModel):
     deliveryDetails: dict = {}
     consumerId: str
     lifecycleStage: str | None = None  # TRAINING | TESTING | EMULATION | INFERENCE | CLOSED_LOOP_FEEDBACK
+    # GUI-9.8: how often, in seconds, the consumer expects a delivery. Optional; with it the job reports `late` once no record arrived for two intervals.
+    expectedIntervalSeconds: int | None = Field(default=None, gt=0)
 
 
 # The body of a data record: an arbitrary JSON object, stored as it is for the job.
@@ -414,7 +417,9 @@ def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
         consumer_id=body.consumerId,
         status="ACTIVE",
         lifecycle_stage=body.lifecycleStage,
+        expected_interval_seconds=body.expectedIntervalSeconds,
     )
+    _set_late_after(job)
     db.add(job)
     db.flush()  # the job's id, for the producers' payloads
     dme_type = db.get(DMEType, body.dmeTypeId)
@@ -460,6 +465,8 @@ def update_data_job(data_job_id: uuid.UUID, body: DataJobRequest, db: Session = 
     job.data_delivery_method = body.dataDeliveryMethod
     job.delivery_details = body.deliveryDetails
     job.lifecycle_stage = body.lifecycleStage
+    job.expected_interval_seconds = body.expectedIntervalSeconds
+    _set_late_after(job)
     dme_type = db.get(DMEType, job.dme_type_id)
     if dme_type is not None:
         # ICS re-runs startInfoSubscriptionJob on every PUT, new or
@@ -609,8 +616,24 @@ def _stop_job_at_producers(db: Session, dme_type: DMEType, data_job_id: uuid.UUI
         enqueue(db, f"{producer.job_callback_url}/{data_job_id}", {}, method="DELETE")
 
 
+def _now() -> datetime.datetime:
+    """The current time, timezone-aware UTC (one place, so a test can move it)."""
+    return datetime.datetime.now(datetime.UTC)
+
+
+def _set_late_after(job: DataJob) -> None:
+    """GUI-9.8: sets when the job turns LATE: two declared intervals after its last delivery or, before the first one, after now (the job was just
+    declared or redeclared). None when the job declares no interval. Two intervals, not one, so one delivery that is a little late is not an alarm."""
+    if job.expected_interval_seconds is None:
+        job.late_after = None
+        return
+    since = as_utc(job.last_delivery_at) if job.last_delivery_at is not None else _now()
+    job.late_after = since + datetime.timedelta(seconds=2 * job.expected_interval_seconds)
+
+
 def _job_view(j: DataJob) -> dict:
-    """One data job as the JSON the routes return (ids as strings, an empty object for an absent definition or details)."""
+    """The wire form of a data job. GUI-9.8 keys: `expectedIntervalSeconds`, `lastDeliveryAt` (null until a producer delivered a record) and `late`
+    (null when no interval is declared; else whether two intervals passed since the last delivery, or since the job was declared before any)."""
     return {
         "dataJobId": str(j.data_job_id),
         "dataDeliveryMode": j.data_delivery_mode,
@@ -621,6 +644,9 @@ def _job_view(j: DataJob) -> dict:
         "consumerId": j.consumer_id,
         "status": j.status,
         "lifecycleStage": j.lifecycle_stage,
+        "expectedIntervalSeconds": j.expected_interval_seconds,
+        "lastDeliveryAt": as_utc(j.last_delivery_at).isoformat() if j.last_delivery_at else None,
+        "late": None if j.late_after is None else as_utc(j.late_after) < _now(),
     }
 
 
@@ -690,14 +716,18 @@ def _producer_is_healthy(callback_url: str) -> bool:
 # (call flow 01).
 
 @app.get("/data-jobs")
-def list_data_jobs(dme_type_id: uuid.UUID | None = None, consumer_id: str | None = None, limit: int = PageLimit,
-                    offset: int = PageOffset, db: Session = Depends(get_session)):
-    # The data jobs as a page, optionally only those of one type or one consumer. Read only.
+def list_data_jobs(dme_type_id: uuid.UUID | None = None, consumer_id: str | None = None, late: bool | None = None, limit: int = PageLimit,
+                   offset: int = PageOffset, db: Session = Depends(get_session)):
+    """The data jobs, paginated, optionally of one type and one consumer. GUI-9.8: `late=true` keeps the jobs that are LATE (no delivery for two of
+    their declared intervals), `late=false` the jobs that declare an interval and are on time; a job that declares none matches neither."""
     stmt = select(DataJob)
     if dme_type_id:
         stmt = stmt.where(DataJob.dme_type_id == dme_type_id)
     if consumer_id:
         stmt = stmt.where(DataJob.consumer_id == consumer_id)
+    if late is not None:
+        # `late_after` is kept by `_set_late_after`, so LATE is one comparison with now (no per-row interval arithmetic in SQL)
+        stmt = stmt.where(DataJob.late_after < _now()) if late else stmt.where(DataJob.late_after >= _now())
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [_job_view(j) for j in page["items"]]}
 
@@ -728,6 +758,8 @@ def ingest_data_record(data_job_id: uuid.UUID, body: DataRecordRequest, db: Sess
         raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
     record = DataRecord(data_job_id=data_job_id, payload=body.payload)
     db.add(record)
+    job.last_delivery_at = _now()                # GUI-9.8: the delivery the job's `late` is measured from
+    _set_late_after(job)
     db.commit()
     return {"recordId": str(record.record_id)}
 

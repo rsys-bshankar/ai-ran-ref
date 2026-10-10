@@ -1,0 +1,19 @@
+/* Infrastructure page styles (tokens only): the topology level tiles, coloured by health with the word on the tile too, the legend swatches,
+   the inventory level picker's group labels and the service-order cards. Imported by pages/infrastructure/index.tsx. */
+
+.topo-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.topo-tile { cursor: pointer; gap: 6px; padding: 10px; border-left-width: 4px; }
+.topo-tile .topo-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.topo-tile.h-ok { border-left-color: var(--ok); }
+.topo-tile.h-warn { border-left-color: var(--warn); background: linear-gradient(0deg, var(--warn-soft), var(--warn-soft)), var(--raised); }
+.topo-tile.h-bad { border-left-color: var(--bad); background: linear-gradient(0deg, var(--bad-soft), var(--bad-soft)), var(--raised); }
+.topo-tile.h-unknown { border-left-color: var(--line-strong); }
+.topo-tile.on { outline: 2px solid var(--volt); outline-offset: 1px; }
+.legend i.h-ok { background: var(--ok); }
+.legend i.h-warn { background: var(--warn); }
+.legend i.h-bad { background: var(--bad); }
+.legend i.h-unknown { background: var(--line-strong); }
+
+.inv-group { min-width: 150px; }
+
+.order-card { display: flex; flex-direction: column; gap: 10px; }

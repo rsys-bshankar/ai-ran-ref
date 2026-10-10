@@ -185,6 +185,18 @@
             "title": "Dmetypeid",
             "type": "string"
           },
+          "expectedIntervalSeconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedintervalseconds"
+          },
           "lifecycleStage": {
             "anyOf": [
               {
@@ -1045,6 +1057,7 @@
         "summary": "Terminate Data Jobs For Consumer"
       },
       "get": {
+        "description": "The data jobs, paginated, optionally of one type and one consumer. GUI-9.8: `late=true` keeps the jobs that are LATE (no delivery for two of\ntheir declared intervals), `late=false` the jobs that declare an interval and are on time; a job that declares none matches neither.",
         "operationId": "list_data_jobs_data_jobs_get",
         "parameters": [
           {
@@ -1078,6 +1091,22 @@
                 }
               ],
               "title": "Consumer Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "late",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Late"
             }
           },
           {

@@ -11,6 +11,7 @@ The browser never learns the rApp's address (only whether one is registered) and
 gateway resolves the instance's registered `operatorApiBase`. The permission of a call comes from the declaration (`operator_ui.decide`): a read needs viewer, a
 change operator, an undeclared route is refused whatever the role, a `readOnly` rApp allows no change. Declarations and the package index are kept for a
 short time in this process (they are immutable per package id, and an upgrade is a new package id), so a page does not cost three upstream calls per refresh.
+The same directory, filtered by text, is what the typeahead (app/search.py) searches: `install` keeps it on `app.state.rapp_search`.
 """
 
 import json
@@ -183,6 +184,19 @@ def install(app: FastAPI, *, current_session: Callable, audit: Callable, problem
             rows = [r for r in rows if r["pinned"] == pinned]
         rows.sort(key=lambda r: (str(r["name"] or "~").lower(), str(r["version"] or ""), str(r["instanceId"])))
         return {"items": rows[offset:offset + limit], "total": len(rows), "limit": limit, "offset": offset, "owners": owners, "states": states}
+
+    async def search_directory(text: str) -> list[dict]:
+        """The directory rows whose name, version, vendor, instance id or package id contain `text` (case-insensitive), in the directory's order.
+        Used by the typeahead (app/search.py, `app.state.rapp_search`); pins are not marked. Raises `UpstreamFailure` when the SMO cannot be asked."""
+        instances = await read_all("/rapp-mgmt/instances")
+        index = await packages(wanted={str(i.get("packageId")) for i in instances})
+        needle = text.strip().lower()
+        rows = [view(i, index.get(str(i.get("packageId"))), set()) for i in instances]
+        rows = [r for r in rows if any(needle in str(r[k] or "").lower() for k in ("name", "version", "vendor", "instanceId", "packageId"))]
+        rows.sort(key=lambda r: (str(r["name"] or "~").lower(), str(r["version"] or ""), str(r["instanceId"])))
+        return rows
+
+    app.state.rapp_search = search_directory
 
     # ------------------------------------------------------------ one rApp
 

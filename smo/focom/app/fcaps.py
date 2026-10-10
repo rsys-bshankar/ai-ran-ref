@@ -1,7 +1,7 @@
 """O2-IMS fault and performance routes: AlarmEventRecord and AlarmSubscription, PerformanceMeasurementRecord, Job and Subscription (SA-FOCOM-6).
 
-What it is: the routes `/alarms`, `/alarm-subscriptions`, `/performance`, `/performance-jobs` and `/performance-subscriptions`, mounted by `main.py`
-through `router`. Design record: `focom/README.md` (1.2, 2.4, 2.8). The domain is infrastructure (O-Cloud host, node, cluster health); RAN-function
+What it is: the routes `/alarms`, `/alarm-subscriptions`, `/performance`, `/performance-jobs` and `/performance-subscriptions`, and the node
+utilisation reads `/resources/{id}/utilisation` and `/utilisation` (PR-GUI-9.8b, built on performance records), mounted by `main.py` through `router`. Design record: `focom/README.md` (1.2, 2.4, 2.8). The domain is infrastructure (O-Cloud host, node, cluster health); RAN-function
 alarms and PM belong to RAN NF OAM.
 
 `/alarms`, `/alarms/ingest` and `/performance` keep their old routes and fields (`resourceRef`, `severity`, `metricName`, `value`: the GUI reads them)
@@ -28,7 +28,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
@@ -298,6 +298,8 @@ def ingest_performance_record(body: PerformanceIngestBody, db: Session = Depends
         if job.state != "ACTIVE":
             raise _invalid(f"performance measurement job {job.job_id} is {job.state}")
         job.status = "RUNNING"
+    if body.performanceMeasurementDefinitionId in UTILISATION_MEASUREMENTS:
+        _check_utilisation_value(body.performanceMeasurementDefinitionId, body.measurementValue)
     scalar_value = body.measurementValue if isinstance(body.measurementValue, (int, float)) else None
     record = OCloudPerformanceMetric(resource_ref=body.resourceId, metric_name=body.performanceMeasurementDefinitionId,
                                      value=float(scalar_value) if scalar_value is not None else None,
@@ -308,6 +310,78 @@ def ingest_performance_record(body: PerformanceIngestBody, db: Session = Depends
     notified = _report(db, record, job)  # outbox rows for the matching subscriptions, committed with the record
     db.commit()
     return {**_metric_view(record), "notified": notified}
+
+
+# ---------------------------------------------------------------- node utilisation (PR-GUI-9.8b)
+#
+# The measurement convention (focom/README.md 1.2 and 2.4): a node's utilisation is two ordinary performance records, ingested through
+# POST /performance/ingest, whose performanceMeasurementDefinitionId is one of the keys below and whose measurementValue is a number from 0 to 100
+# (percent) for one resourceId. O2-IMS leaves measurement identifiers to the resource type's performance dictionary (ResourceType.performanceDictionaryId,
+# PerformanceMeasurementRecord.performanceMeasurementDefinitionId); the spec names no normative CPU or memory identifier, so these are this build's
+# dictionary entries.
+
+CPU_UTILIZATION = "CPU_UTILIZATION"
+MEMORY_UTILIZATION = "MEMORY_UTILIZATION"
+UTILISATION_MEASUREMENTS = {CPU_UTILIZATION: "cpuPercent", MEMORY_UTILIZATION: "memoryPercent"}  # definition id -> field of the utilisation answer
+UTILISATION_MAX_IDS = 100
+
+
+def _check_utilisation_value(definition_id: str, value: Any) -> None:
+    """Raises 422 unless `value` is a number from 0 to 100: the convention for the two utilisation measurements (an object value is refused)."""
+    if not isinstance(value, (int, float)) or not 0 <= value <= 100:
+        raise _invalid(f"{definition_id} is a percentage: measurementValue must be a number from 0 to 100")
+
+
+def _newest_utilisation(db: Session, resource_ids: list[str]) -> dict[str, dict]:
+    """The newest scalar, non-suspect CPU and memory record of each of `resource_ids`, in one query: `{resourceId: {definitionId: record}}`.
+
+    The newest `collected_at` per (resource, measurement) is joined back to its row; the index `ix_ocloud_performance_metric_resource_metric_collected`
+    serves both. Two records with the same newest time: either one. A suspect record (`isSuspect`) or one without a scalar value is not counted.
+    """
+    if not resource_ids:
+        return {}
+    M = OCloudPerformanceMetric
+    counted = (M.resource_ref.in_(resource_ids), M.metric_name.in_(tuple(UTILISATION_MEASUREMENTS)), M.value.is_not(None), M.is_suspect.is_(False))
+    newest = (select(M.resource_ref, M.metric_name, func.max(M.collected_at).label("at")).where(*counted)
+              .group_by(M.resource_ref, M.metric_name).subquery())
+    stmt = select(M).where(*counted).join(newest, (M.resource_ref == newest.c.resource_ref) & (M.metric_name == newest.c.metric_name)
+                                          & (M.collected_at == newest.c.at))
+    found: dict[str, dict] = {}
+    for record in db.scalars(stmt):
+        found.setdefault(record.resource_ref, {})[record.metric_name] = record
+    return found
+
+
+def _utilisation_view(resource_id: str, records: dict) -> dict:
+    """The utilisation answer of one resource: `cpuPercent` and `memoryPercent` (null when no record), and `at`, the newer of their collection times."""
+    times = [r.collected_at for r in records.values()]
+    out: dict[str, Any] = {"resourceId": resource_id}
+    for definition_id, field in UTILISATION_MEASUREMENTS.items():
+        out[field] = records[definition_id].value if definition_id in records else None
+    out["at"] = _iso(max(times)) if times else None  # both from the same query, so both naive (SQLite) or both aware (Postgres)
+    return out
+
+
+@router.get("/utilisation")
+def utilisation_batch(resource_ids: str, db: Session = Depends(get_session)):
+    """PR-GUI-9.8b, the utilisation of many nodes in one read: `resource_ids` is a comma-separated list of up to 100 resource ids. Answers
+    `{"items": [{"resourceId", "cpuPercent", "memoryPercent", "at"}]}`, one item per id in the order given (duplicates once), each from the newest
+    `CPU_UTILIZATION` and `MEMORY_UTILIZATION` performance records of that resource; nulls where there is none. 422 for no id or more than 100."""
+    wanted = list(dict.fromkeys(part.strip() for part in resource_ids.split(",") if part.strip()))
+    if not wanted:
+        raise _invalid("resource_ids must name at least one resource id")
+    if len(wanted) > UTILISATION_MAX_IDS:
+        raise _invalid(f"at most {UTILISATION_MAX_IDS} resource ids per call")
+    found = _newest_utilisation(db, wanted)
+    return {"items": [_utilisation_view(r, found.get(r, {})) for r in wanted]}
+
+
+@router.get("/resources/{resource_id}/utilisation")
+def resource_utilisation(resource_id: str, db: Session = Depends(get_session)):
+    """PR-GUI-9.8b, a node's utilisation: `{"resourceId", "cpuPercent", "memoryPercent", "at"}` from the newest `CPU_UTILIZATION` and
+    `MEMORY_UTILIZATION` performance records ingested for `resource_id` (percent, 0 to 100); `at` is the newer of the two collection times. Never 404:
+    performance records may name any resource string (a host, the cluster id), so an id with no record answers nulls."""
+    return _utilisation_view(resource_id, _newest_utilisation(db, [resource_id]).get(resource_id, {}))
 
 
 # PerformanceSubscriptionCriteria field -> the one AttributeValuePair key it supports

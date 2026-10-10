@@ -1,5 +1,5 @@
 /**
- * The one-time code (TOTP) set-up of the signed-in local account, shown on the Account security page (`pages/Security.tsx`): begin (the BFF returns the secret and the otpauth link, there is
+ * The one-time code (TOTP) set-up of the signed-in local account, shown on the Account security page (`pages/security/sections/Authenticator.tsx`): begin (the BFF returns the secret and the otpauth link, there is
  * no QR code), confirm with a code from the app, then the recovery codes (`RecoveryCodes`), which are shown only once and held in this component's state until the user confirms they saved them.
  * Also shows how many recovery codes are left and generates new ones (which needs a current code). For an identity-provider user there is nothing to set up and it says so.
  * It talks to /api/me/totp/*; the wording of the errors is the backend's `detail`/`title`.

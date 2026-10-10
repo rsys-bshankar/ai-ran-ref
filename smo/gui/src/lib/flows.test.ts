@@ -1,12 +1,14 @@
 /**
- * Unit tests of the journey evaluators in `flows.ts`: the list of tracked flows, `settle`, and the step statuses of each flow for representative entity states. No DOM.
+ * Unit tests of the journey evaluators in `flows.ts`: the catalogue of tracked flows, `settle`, and the step statuses of each flow for representative entity states. No DOM.
  * Run: `cd gui && npx vitest run src/lib/flows.test.ts`.
  */
 
 import { describe, expect, it } from "vitest";
 
-import type { ConfigJob, Instance, Model, ModelLifecycle, NfDeployment, O1Endpoint, Package, ServiceOrder } from "../api/types";
-import { FLOWS, flow01, flow02, flow03, flow06, flow07, flow09, flow10, progress, settle, type FlowStep } from "./flows";
+import type { ConfigJob, Instance, Model, ModelLifecycle, NfDeployment, O1Endpoint, OCloudResource, Package, ServiceOrder, SwmJob } from "../api/types";
+import {
+  FLOWS, flow01, flow02, flow02Phases, flow03, flow06, flow07, flow09, flow10, flow15, flow16, flow19, progress, settle, toStepState, type FlowStep,
+} from "./flows";
 
 const statuses = (steps: FlowStep[]) => steps.map((s) => s.status);
 
@@ -29,10 +31,10 @@ const lifecycle = (modelLifecycleState: string, runtimeLifecycleState = "NOT_DEP
   trainingApproved: false, validationApproved: false,
 });
 
-describe("the ten documented flows", () => {
-  // The tracked flows are those of the call-flow documents (01 to 10 without 05), in order, and each points at the document that starts with its number.
+describe("the documented flows in scope", () => {
+  // the catalogue holds every generic flow of BRIEF §4c, in order, each pointing at its call-flow doc
   it("are all tracked, in order", () => {
-    expect(FLOWS.map((f) => f.id)).toEqual(["01", "02", "03", "04", "06", "07", "08", "09", "10"]);
+    expect(FLOWS.map((f) => f.id)).toEqual(["01", "02", "03", "04", "06", "07", "08", "09", "10", "15", "16", "19"]);
     expect(FLOWS.every((f) => f.doc.startsWith(f.id + "-") && f.doc.endsWith(".md"))).toBe(true);
   });
 });
@@ -164,5 +166,90 @@ describe("flow 10 — SO multi-step", () => {
       { stepType: "TRAINING", targetModule: "AI_ML_WORKFLOW", status: "FAILED", error: "422" },
       { stepType: "DEPLOY", targetModule: "NFO", status: "PENDING" }] };
     expect(statuses(flow10(order))).toEqual(["done", "done", "failed", "blocked"]);
+  });
+});
+
+describe("toStepState", () => {
+  // every flow status maps onto the kit's step states the boards draw
+  it("maps each status", () => {
+    expect((["done", "current", "todo", "failed", "blocked", "warn"] as const).map(toStepState)).toEqual(["done", "now", "todo", "fail", "block", "warn"]);
+  });
+});
+
+describe("flow 02 with its phases (17, 26)", () => {
+  // the base steps keep their statuses and gain a phase; the end-of-life steps stay todo (none current) while the model serves
+  it("tags Build & certify and Serve, and leaves the end of life idle for a serving model", () => {
+    const steps = flow02Phases(model(), lifecycle("PROMOTED", "ACTIVE", ["g"]), [], [], [], []);
+    expect(steps.find((s) => s.id === "register")?.phase).toBe("Build & certify");
+    expect(steps.find((s) => s.id === "deploy")?.phase).toBe("Serve");
+    expect(steps.find((s) => s.id === "scale")).toMatchObject({ phase: "Serve", status: "todo" });
+    const eol = steps.filter((s) => s.phase === "End of life");
+    expect(eol.map((s) => s.id)).toEqual(["rollback", "deprecate", "terminate", "retire"]);
+    expect(eol.every((s) => s.status === "todo")).toBe(true);
+    expect(statuses(steps).filter((s) => s === "current")).toHaveLength(1);
+  });
+  // a deprecated model walks the end of life: deprecate done, terminate next
+  it("follows the end of life once the model is deprecated", () => {
+    const steps = flow02Phases(model(), lifecycle("DEPRECATED", "ACTIVE", ["g"]), [], [], [], []);
+    expect(steps.find((s) => s.id === "deprecate")?.status).toBe("done");
+    expect(steps.find((s) => s.id === "terminate")?.status).toBe("current");
+    expect(steps.find((s) => s.id === "retire")?.status).toBe("todo");
+  });
+  // a runtime being scaled reads as a warning on the scale step
+  it("shows a scaling runtime", () => {
+    expect(flow02Phases(model(), lifecycle("PROMOTED", "SCALING", ["g"]), [], [], [], []).find((s) => s.id === "scale")?.status).toBe("warn");
+  });
+});
+
+describe("flow 15 — NFO workload", () => {
+  const dep = (state: string, extra: Partial<NfDeployment> = {}): NfDeployment =>
+    ({ nfDeploymentId: "nf1", name: "w", state, clusterId: "c1", nfDeploymentDescriptorId: "d1234567", workloadRef: null, requiredResourceTypeId: null, abnormalReason: null, ...extra });
+  // a running deployment is instantiated, and Terminate is the next step
+  it("a RUNNING deployment waits at terminate", () => {
+    expect(statuses(flow15(dep("RUNNING"), []))).toEqual(["done", "done", "done", "done", "done", "current", "todo"]);
+  });
+  // ABNORMAL is a warning, so Heal stays the current, actionable step
+  it("an ABNORMAL deployment is healed next", () => {
+    const steps = flow15(dep("ABNORMAL", { abnormalReason: "OOMKilled" }), []);
+    expect(steps[3]).toMatchObject({ status: "warn", detail: "ABNORMAL: OOMKilled" });
+    expect(steps[4].status).toBe("current");
+  });
+  // scale and heal operations are counted from the LCM operations
+  it("counts the scale operations", () => {
+    expect(flow15(dep("RUNNING"), [{ operationId: "o", operationType: "SCALE", status: "COMPLETED" }])[2].detail).toBe("1 scale operation(s)");
+  });
+  // an async terminate rests in TERMINATING until the deployment manager reports
+  it("an async terminate awaits the DMS", () => {
+    expect(flow15(dep("TERMINATING"), [])[5].status).toBe("warn");
+    expect(statuses(flow15(undefined, []))).toEqual(["current"]);
+  });
+});
+
+describe("flow 16 — FOCOM resource", () => {
+  const res: OCloudResource = { resourceId: "r1", resourceTypeId: "gpu", resourcePoolId: "pool-1", parentId: null, description: null, globalAssetId: null };
+  const sub = (resourceTypeId: string | null) => ({ subscriptionId: "s", callback: "http://x", consumerSubscriptionId: null, resourceTypeId });
+  // a matching subscription makes the CREATE notification done; deprovision is next
+  it("notifies a matching subscription", () => {
+    expect(statuses(flow16(res, [sub(null)]))).toEqual(["done", "done", "done", "current"]);
+  });
+  // no matching subscription: nobody was notified, shown as a warning
+  it("warns when no subscription matches", () => {
+    const steps = flow16(res, [sub("cpu")]);
+    expect(steps[0].status).toBe("warn");
+    expect(steps[2]).toMatchObject({ status: "warn", detail: "no subscription matches — nobody was notified" });
+  });
+});
+
+describe("flow 19 — software job", () => {
+  const job = (phase: string, status: string): SwmJob => ({ jobId: "j", managedElementRef: "ME-1", ruInstanceId: null, phase, status });
+  // the phase field says where an IN_PROGRESS job is
+  it("walks the three phases", () => {
+    expect(statuses(flow19(job("DOWNLOAD", "IN_PROGRESS")))).toEqual(["done", "current", "todo", "todo"]);
+    expect(statuses(flow19(job("ACTIVATE", "IN_PROGRESS")))).toEqual(["done", "done", "done", "current"]);
+    expect(progress(flow19(job("ACTIVATE", "COMPLETED"))).complete).toBe(true);
+  });
+  // FAILED freezes the phase that failed; later phases are blocked
+  it("marks the frozen phase failed", () => {
+    expect(statuses(flow19(job("INSTALL", "FAILED")))).toEqual(["done", "done", "failed", "blocked"]);
   });
 });

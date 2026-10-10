@@ -1,10 +1,12 @@
 /**
- * The entry point of the single-page app: creates the query client, mounts the providers (react-query, toasts, the session, the router) and declares every route. `/login` is the only route outside `RequireAuth`; all the others render inside `Layout`
- * and need a signed-in user, and `/admin` additionally needs the admin role. An unknown path goes to the dashboard. The Onboarding and Campaigns pages are not routes: they are tabs of the Infrastructure page, and the rApp directory is a tab of the rApps page.
+ * The entry point of the single-page app: creates the query client, mounts the providers (react-query, toasts, the session, the router) and declares every route. `/login` is the only route outside `RequireAuth`; all the others render inside the shell's `Layout`
+ * and need a signed-in user, `/exports` the operator role and `/admin` the admin role. An unknown path goes to the dashboard (or the start page chosen in Preferences). Every page but the
+ * Dashboard and the sign-in is a lazily loaded chunk under `pages/<page>/`. Element onboarding (templates, elements, failure notices) is the Onboarding tab of `/configuration`, software
+ * campaigns are `/software`, and the rApp directory is a tab of the rApps page.
  * The route guards decide what to show; the BFF checks every call again.
  */
 
-import { StrictMode, type ReactNode } from "react";
+import { lazy, StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
@@ -13,25 +15,46 @@ import { ApiError } from "./api/client";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { roleAtLeast, type Role } from "./auth/rbac";
 import { mustEnrol } from "./lib/mfa";
-import { Layout } from "./components/Layout";
+import { Layout } from "./shell/Layout";
+import { ThemeProvider, usePreferences } from "./shell/ThemeProvider";
 import { ToastProvider } from "./components/Toast";
-import { Admin } from "./pages/Admin";
-import { Aiml } from "./pages/Aiml";
-import { Approvals } from "./pages/Approvals";
-import { Alarms } from "./pages/Alarms";
-import { Dashboard } from "./pages/Dashboard";
-import { DecisionDetail, Decisions } from "./pages/Decisions";
-import { Data } from "./pages/Data";
-import { Flows } from "./pages/Flows";
-import { Infrastructure } from "./pages/Infrastructure";
-import { Kpis } from "./pages/Kpis";
-import { Login } from "./pages/Login";
-import { Policy } from "./pages/Policy";
-import { Rapps } from "./pages/Rapps";
-import { RappDetail } from "./pages/RappDetail";
-import { Safeguards } from "./pages/Safeguards";
-import { Security } from "./pages/Security";
+import { Dashboard } from "./pages/dashboard";
+import { Login } from "./pages/login";
+// Self-hosted fonts (the CSP allows fonts from 'self' only): IBM Plex Sans for text, Space Grotesk for headings and numbers, JetBrains Mono for ids.
+import "@fontsource/ibm-plex-sans/latin-400.css";
+import "@fontsource/ibm-plex-sans/latin-500.css";
+import "@fontsource/ibm-plex-sans/latin-600.css";
+import "@fontsource/space-grotesk/latin-500.css";
+import "@fontsource/space-grotesk/latin-600.css";
+import "@fontsource/space-grotesk/latin-700.css";
+import "@fontsource/jetbrains-mono/latin-400.css";
+import "@fontsource/jetbrains-mono/latin-600.css";
+import "@fontsource/jetbrains-mono/latin-700.css";
 import "./styles.css";
+
+// Every page but the Dashboard and the sign-in is its own chunk, loaded when first opened: the shell and the first page paint from a small
+// bundle (SCALE.md §0, "shell painted ≤ 300 ms"); the Dashboard and Login stay in it because one of them is always the first page.
+const Admin = lazy(() => import("./pages/admin").then((m) => ({ default: m.Admin })));
+const Aiml = lazy(() => import("./pages/aiml").then((m) => ({ default: m.Aiml })));
+const Approvals = lazy(() => import("./pages/approvals").then((m) => ({ default: m.Approvals })));
+const Alarms = lazy(() => import("./pages/alarms").then((m) => ({ default: m.Alarms })));
+const Data = lazy(() => import("./pages/data").then((m) => ({ default: m.Data })));
+const Flows = lazy(() => import("./pages/flows").then((m) => ({ default: m.Flows })));
+const Infrastructure = lazy(() => import("./pages/infrastructure").then((m) => ({ default: m.Infrastructure })));
+const Kpis = lazy(() => import("./pages/kpis").then((m) => ({ default: m.Kpis })));
+const Policy = lazy(() => import("./pages/intents").then((m) => ({ default: m.Policy })));
+const Rapps = lazy(() => import("./pages/rapps").then((m) => ({ default: m.Rapps })));
+const RappDetail = lazy(() => import("./pages/rapp-detail").then((m) => ({ default: m.RappDetail })));
+const Safeguards = lazy(() => import("./pages/safeguards").then((m) => ({ default: m.Safeguards })));
+const Security = lazy(() => import("./pages/security").then((m) => ({ default: m.Security })));
+const Preferences = lazy(() => import("./pages/preferences").then((m) => ({ default: m.Preferences })));
+const Topology = lazy(() => import("./pages/topology").then((m) => ({ default: m.Topology })));
+const Configuration = lazy(() => import("./pages/configuration").then((m) => ({ default: m.Configuration })));
+const Software = lazy(() => import("./pages/software").then((m) => ({ default: m.Software })));
+const ElementDetail = lazy(() => import("./pages/element").then((m) => ({ default: m.ElementDetail })));
+const Decisions = lazy(() => import("./pages/decisions").then((m) => ({ default: m.Decisions })));
+const Exports = lazy(() => import("./pages/exports").then((m) => ({ default: m.Exports })));
+const DecisionDetail = lazy(() => import("./pages/decisions").then((m) => ({ default: m.DecisionDetail })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -43,6 +66,14 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+/** The index route: the Dashboard, or the start page the user chose in Preferences (only on a fresh visit to "/", never a redirect loop). */
+function Home() {
+  const { prefs } = usePreferences();
+  const location = useLocation();
+  const fresh = !(location.state as { stay?: boolean } | null)?.stay && location.key === "default";
+  return fresh && prefs.startPage !== "/" ? <Navigate to={prefs.startPage} replace /> : <Dashboard />;
+}
 
 /**
  * Route guard. Waits for the session to load, sends a signed-out visitor to /login (remembering where they were going), sends a local admin who must still enrol a one-time code to /security (PR-SEC-7.8; the backend refuses every other route until then),
@@ -64,12 +95,14 @@ createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
         <AuthProvider>
+          <ThemeProvider>
           <BrowserRouter>
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route element={<RequireAuth><Layout /></RequireAuth>}>
-                <Route index element={<Dashboard />} />
+                <Route index element={<Home />} />
                 <Route path="flows" element={<Flows />} />
+                <Route path="flows/:flowId" element={<Flows />} />
                 <Route path="rapps" element={<Rapps />} />
                 <Route path="rapps/:instanceId" element={<RappDetail />} />
                 <Route path="safeguards" element={<Safeguards />} />
@@ -82,12 +115,19 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="policy" element={<Policy />} />
                 <Route path="infrastructure" element={<Infrastructure />} />
                 <Route path="data" element={<Data />} />
+                <Route path="topology" element={<Topology />} />
+                <Route path="configuration" element={<Configuration />} />
+                <Route path="software" element={<Software />} />
+                <Route path="elements/:me" element={<ElementDetail />} />
+                <Route path="preferences" element={<Preferences />} />
                 <Route path="security" element={<Security />} />
+                <Route path="exports" element={<RequireAuth minRole="operator"><Exports /></RequireAuth>} />
                 <Route path="admin" element={<RequireAuth minRole="admin"><Admin /></RequireAuth>} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </BrowserRouter>
+          </ThemeProvider>
         </AuthProvider>
       </ToastProvider>
     </QueryClientProvider>

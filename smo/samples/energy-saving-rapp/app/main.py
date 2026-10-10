@@ -41,7 +41,7 @@ import json
 import uuid
 from typing import cast
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -724,6 +724,103 @@ def dashboard(instance_id: uuid.UUID, points: int = 48, db: Session = Depends(ge
                       "latestDecision": _decision_view(latest) if latest else None})
     db.commit()
     return {"instance": _instance_view(inst), "cells": cells}
+
+
+# ---------------------------------------------------------------- cell-state history (PR-GUI-9.8b)
+#
+# Derived from the audit trail, not a table of its own: every change of a cell's state is settled in a decision row's `final_state` (an evaluation
+# pass, the follow-up of an ASSIST dispatch, an operator override), and a cell with a pending dispatch gets no newer row until it is settled. So a
+# cell's rows in `created_at` order, read for their `final_state`, are its state history; the time of a change is the row's `updated_at` (when the
+# final state was settled, wall clock), and `observedAt` beside it is the PRB sample's own (simulation) time.
+
+CELL_STATE_LEVEL = {engine.SLEEP: 0, engine.PRE_SLEEP: 1, engine.SERVING: 2}   # the chart's y: 2 serving, 1 pre-sleep, 0 sleep
+CELL_STATE_MAX_HOURS = 168
+CELL_STATE_MAX_ROWS = 2000      # decision rows read for one answer; past it the oldest are left out and `truncated` is true
+CELL_STATE_LOOKBACK = 50        # rows read per cell to find its state before the window
+
+
+def _settled_at(d: EnergySavingDecision) -> datetime.datetime:
+    """When a decision row's final state was settled (its `updated_at`, falling back to `created_at`), as an aware UTC datetime."""
+    return as_utc(d.updated_at or d.created_at)
+
+
+def _state_before(db: Session, inst: EnergySavingInstance, cell: str, created_before: datetime.datetime | None,
+                  settled_before: datetime.datetime) -> str | None:
+    """The state a cell was in before the window: the `final_state` of its newest settled row created before `created_before` (when the window's rows
+    of the cell start there) or settled before `settled_before`. SERVING (a cell's first state) when it has no such row at all; None when none of
+    the last CELL_STATE_LOOKBACK rows recorded a state."""
+    stmt = select(EnergySavingDecision).where(EnergySavingDecision.instance_id == inst.instance_id, EnergySavingDecision.cell_id == cell)
+    stmt = stmt.where(EnergySavingDecision.created_at < created_before) if created_before is not None \
+        else stmt.where(EnergySavingDecision.updated_at < settled_before)
+    rows = db.scalars(stmt.order_by(EnergySavingDecision.created_at.desc()).limit(CELL_STATE_LOOKBACK)).all()
+    if not rows:
+        return engine.SERVING
+    return next(((d.final_state or {}).get("state") for d in rows if (d.final_state or {}).get("state")), None)
+
+
+@app.get("/instances/{instance_id}/cell-states")
+def cell_state_history(instance_id: uuid.UUID, hours: int = Query(24, ge=1, le=CELL_STATE_MAX_HOURS), cell_id: str | None = None,
+                       db: Session = Depends(get_session)):
+    """GUI-9.8b, each managed cell's state transitions over the last `hours` (1 to 168, default 24), optionally for one `cell_id` (404 when the
+    instance does not manage it). Answers `{instanceId, since, until, truncated, transitions, points, cells}`:
+
+      * `transitions`, newest first: `{transitionId, cellId, at, fromState, toState, o1Value, decision, reason, outcome, executionId, observedAt}`,
+        one per change of state (SERVING / PRE_SLEEP / SLEEP) settled in the window;
+      * `points`, oldest first, for a chart with one series per cell: `{cellId, t, state, level}` (level 2 serving, 1 pre-sleep, 0 sleep), the
+        state at `since`, two points at each change (before and after, the same `t`) and the state at `until`;
+      * `cells`: `{cellId, state, transitions}`, the current state and the number of changes in the window.
+
+    Derived from the decision audit trail (see above). At most CELL_STATE_MAX_ROWS rows are read; past that the oldest are left out, `truncated` is
+    true and `since` moves up to the oldest row kept."""
+    inst = _instance(db, instance_id)
+    if cell_id is not None and cell_id not in inst.cells:
+        raise RappError(404, "CELL_NOT_MANAGED", f"cell {cell_id} is not managed by instance {instance_id}")
+    cells = [cell_id] if cell_id is not None else list(inst.cells)
+    current = _cells(db, inst)
+    until = datetime.datetime.now(datetime.UTC)
+    since = until - datetime.timedelta(hours=hours)
+    stmt = (select(EnergySavingDecision).where(EnergySavingDecision.instance_id == inst.instance_id, EnergySavingDecision.cell_id.in_(cells),
+                                               EnergySavingDecision.updated_at >= since)
+            .order_by(EnergySavingDecision.created_at.desc()).limit(CELL_STATE_MAX_ROWS + 1))
+    rows = list(db.scalars(stmt))
+    truncated = len(rows) > CELL_STATE_MAX_ROWS
+    rows = list(reversed(rows[:CELL_STATE_MAX_ROWS]))
+    if truncated and rows:
+        since = min(_settled_at(d) for d in rows)
+    by_cell: dict[str, list[EnergySavingDecision]] = {c: [] for c in cells}
+    for d in rows:
+        by_cell[d.cell_id].append(d)
+
+    transitions: list[dict] = []
+    points: list[tuple[datetime.datetime, int, dict]] = []
+    summary = []
+    for order, cell in enumerate(cells):
+        mine = by_cell[cell]
+        state = _state_before(db, inst, cell, as_utc(mine[0].created_at) if mine else None, since)
+        if state in CELL_STATE_LEVEL:
+            points.append((since, order, {"cellId": cell, "t": since.isoformat(), "state": state, "level": CELL_STATE_LEVEL[state]}))
+        changes = 0
+        for d in mine:
+            to = (d.final_state or {}).get("state")
+            if not to or to == state:
+                continue
+            at = _settled_at(d)
+            transitions.append({"transitionId": str(d.decision_id), "cellId": cell, "at": at.isoformat(), "fromState": state, "toState": to,
+                                "o1Value": (d.final_state or {}).get("o1"), "decision": d.decision, "reason": d.reason, "outcome": d.outcome,
+                                "executionId": d.execution_id, "observedAt": as_utc(d.observed_at).isoformat() if d.observed_at else None})
+            for value in (state, to):
+                if value in CELL_STATE_LEVEL:
+                    points.append((at, order, {"cellId": cell, "t": at.isoformat(), "state": value, "level": CELL_STATE_LEVEL[value]}))
+            state, changes = to, changes + 1
+        now_state = state or current[cell].state
+        if now_state in CELL_STATE_LEVEL:
+            points.append((until, order, {"cellId": cell, "t": until.isoformat(), "state": now_state, "level": CELL_STATE_LEVEL[now_state]}))
+        summary.append({"cellId": cell, "state": current[cell].state, "transitions": changes})
+    db.commit()  # `_cells` may have added the row of a cell that never had one
+    points.sort(key=lambda p: p[0])  # stable: a cell's before/after pair at one change keeps its order
+    transitions.sort(key=lambda t: t["at"], reverse=True)
+    return {"instanceId": str(inst.instance_id), "since": since.isoformat(), "until": until.isoformat(), "truncated": truncated,
+            "transitions": transitions, "points": [p for _, _, p in points], "cells": summary}
 
 
 # ---------------------------------------------------------------- Digital Twin producer (W10-05)

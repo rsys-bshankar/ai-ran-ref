@@ -124,7 +124,8 @@ class Handler(BaseHTTPRequestHandler):
         """Answers one request. The package and `/_calls` routes are not logged; every other request is appended to `RAPP.calls` (with the invoker id and the user
             header the platform forwarded) before it is answered, so the check sees the calls that were refused with 404 too.
 
-            The operator routes are `GET /instances/<id>`, `/dashboard`, `/decisions`, `POST .../evaluate` and `.../reconcile`, and `POST`/`DELETE .../cells/<cell>/override`;
+            The operator routes are `GET /instances/<id>`, `/dashboard`, `/decisions`, `/cell-states` (chart points for both cells and no change, so the
+            changes table is empty and no other table gains a row naming a cell), `POST .../evaluate` and `.../reconcile`, and `POST`/`DELETE .../cells/<cell>/override`;
             the override is kept in memory so the next read shows it. Anything else is `404 {"title": "not found"}`.
         """
         url = urlsplit(self.path)
@@ -152,6 +153,11 @@ class Handler(BaseHTTPRequestHandler):
                 cell = (query.get("cell_id") or ["101"])[0]
                 return self._json({"items": [{"observedAt": f"2026-01-01T00:{m:02d}:00Z", "prb": 40 + m, "decision": "KEEP_ON", "reason": f"cell {cell}", "outcome": "VERIFIED",
                                               "executionId": f"exec-{cell}-{m}"} for m in range(3)]})
+            if method == "GET" and rest == "/cell-states":
+                ends = ("2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z")
+                return self._json({"instanceId": match.group(1), "since": ends[0], "until": ends[1], "truncated": False, "transitions": [],
+                                   "points": [{"cellId": c, "t": t, "state": "SERVING", "level": 2} for t in ends for c in ("101", "102")],
+                                   "cells": [{"cellId": c, "state": "SERVING", "transitions": 0} for c in ("101", "102")]})
             if method == "POST" and rest in ("/evaluate", "/reconcile"):
                 return self._json({"ok": True})
             override = re.fullmatch(r"/cells/([^/]+)/override", rest)

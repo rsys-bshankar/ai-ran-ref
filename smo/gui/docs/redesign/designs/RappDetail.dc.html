@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Energy Saving rApp — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="rapps" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="rApps" crumb="Energy Saving" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph" style="align-items: center;">
+        <div class="row" style="gap: 16px;">
+          <span style="width: 56px; height: 56px; border-radius: 14px; display: grid; place-items: center; background: var(--volt-soft); color: var(--volt-text);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 3v9M7 6a7 7 0 1010 0"></path></svg></span>
+          <div>
+            <div class="row wrap"><h1>Energy Saving</h1><span class="{{stateCls}}">{{stateTxt}}</span><span class="badge b-volt plain">{{modeTxt}}</span></div>
+            <p class="row wrap" style="gap: 8px;"><span class="mono">energy-saving-rapp 1.2.0</span><span>·</span><span class="id">2f2e6149</span><span>·</span><span>owner ran-energy-team</span><span>·</span><span>running 3 d</span></p>
+          </div>
+        </div>
+        <div class="row wrap">
+          <div class="seg" role="group" aria-label="Autonomy mode"><button class="{{m0}}" onClick="{{setShadow}}">Shadow</button><button class="{{m1}}" onClick="{{setAssist}}">Assist</button><button class="{{m2}}" onClick="{{setAuto}}">Autonomous</button></div>
+          <button class="btn" onClick="{{togglePin}}">{{pinLabel}}</button>
+          <button class="btn btn-danger" onClick="{{askStop}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>{{stopLabel}}</button>
+        </div>
+      </div>
+
+      <div class="grid g4">
+        <div class="kpi volt"><span class="kpi-l">Energy saved · 24 h</span><span class="kpi-v">18.4<small>%</small></span><span class="kpi-f"><span class="t-ok">▲ 2.1</span> vs 7-day average</span></div>
+        <div class="kpi"><span class="kpi-l">Cells asleep now</span><span class="kpi-v">812 <small>/ 2,436</small></span><span class="kpi-f">metro-a · 812 DUs in scope</span></div>
+        <div class="kpi"><span class="kpi-l">Neighbour PRB peak</span><span class="kpi-v">71<small>%</small></span><span class="kpi-f">wake threshold 80%</span></div>
+        <div class="kpi"><span class="kpi-l">Verify success</span><span class="kpi-v">98.4<small>%</small></span><span class="kpi-f"><span class="t-warn">13 of 812 jobs rolled back</span></span></div>
+      </div>
+
+      <div class="grid g2">
+        <section class="card" aria-labelledby="cs-h">
+          <div class="card-h">
+            <div><h2 id="cs-h">Cells by state · 24 h</h2><span class="sub">2,436 cells in scope · counted per 15 min on the server</span></div>
+            <div class="legend"><span><i style="background: var(--ok);"></i>SERVING</span><span><i style="background: var(--warn);"></i>PRE_SLEEP</span><span><i style="background: var(--info);"></i>SLEEP</span><span><i style="background: var(--line-strong);"></i>LOCK</span></div>
+          </div>
+          <svg width="100%" height="200" viewBox="0 0 600 200" preserveAspectRatio="none" role="img" aria-label="Stacked area: cells asleep peak overnight at about 900 of 2,436">
+            <path d="M0 200 L0 0 L600 0 L600 200 Z" fill="#3ccb8b" opacity="0.55"></path>
+            <path d="{{sleep}}" fill="#6cb2ff"></path>
+            <path d="{{pre}}" fill="#f0b43c"></path>
+            <path d="M0 200 L0 196 L600 196 L600 200 Z" fill="#364352"></path>
+          </svg>
+          <div class="row between xs faint mono"><span>04:00</span><span>10:00</span><span>16:00</span><span>22:00</span><span>now</span></div>
+        </section>
+        <section class="card flush" aria-labelledby="cl-h">
+          <div class="card-h"><div><h2 id="cl-h">Cells in scope</h2><span class="sub">pick up to 20 to compare their timelines</span></div><label class="search" style="width: 220px;"><input aria-label="Find a cell" placeholder="Find cell or DU"></label></div>
+          <div class="tbl-box"><table class="tbl">
+            <thead><tr><th style="width: 36px;"></th><th>Cell</th><th>State now</th><th>Asleep · 24 h</th><th class="r">PRB</th></tr></thead>
+            <tbody>
+              <sc-for list="{{cells}}" as="c" hint-placeholder-count="5">
+                <tr><td><input type="checkbox" aria-label="Compare cell"></td><td class="mono small">{{c.n}}</td><td><span class="{{c.sc}}">{{c.st}}</span></td><td><div class="row"><div class="meter" style="width: 80px;"><span class="f-info" style="{{c.w}}"></span></div><span class="xs muted">{{c.h}}</span></div></td><td class="r mono">{{c.prb}}</td></tr>
+              </sc-for>
+            </tbody>
+          </table></div>
+          <dc-import name="Pager" from="1" to="5" total="2,436" noun="cells" note="sorted by sleep time" page="1 / 488" hint-size="100%,56px"></dc-import>
+        </section>
+      </div>
+
+      <div class="grid g3">
+        <section class="card flush s2" aria-labelledby="dec-h">
+          <div class="card-h"><div><h2 id="dec-h">Recent decisions</h2><span class="sub">latest 5 of 812 today</span></div><a class="small" href="Decisions.dc.html">All, filtered to this rApp →</a></div>
+          <div class="tbl-box">
+            <table class="tbl">
+              <thead><tr><th>When</th><th>Action</th><th>Cells</th><th>Why</th><th>Outcome</th></tr></thead>
+              <tbody>
+                <tr><td class="mono muted">03:08</td><td><span class="badge b-info plain">SLEEP</span></td><td class="mono">du-02/cell-2, cell-3</td><td class="small">PRB 9% for 30 min; neighbours absorb at 64%</td><td><span class="badge b-ok">VERIFIED</span></td></tr>
+                <tr><td class="mono muted">23:40</td><td><span class="badge b-info plain">SLEEP</span></td><td class="mono">du-05/cell-1, cell-2</td><td class="small">Night profile; load under 10%</td><td><span class="badge b-ok">VERIFIED</span></td></tr>
+                <tr><td class="mono muted">19:12</td><td><span class="badge b-ok plain">UNLOCK</span></td><td class="mono">du-02/cell-3</td><td class="small">Neighbour PRB crossed 80%</td><td><span class="badge b-ok">EXECUTED</span></td></tr>
+                <tr><td class="mono muted">14:55</td><td><span class="badge b-info plain">SLEEP</span></td><td class="mono">du-01/cell-2</td><td class="small">Midday dip predicted by load model v4</td><td><span class="badge b-bad">VERIFY_FAILED</span></td></tr>
+                <tr><td class="mono muted">14:56</td><td><span class="badge b-warn plain">REVERT</span></td><td class="mono">du-01/cell-2</td><td class="small">Throughput dropped 7% on neighbour</td><td><span class="badge b-warn">ROLLED BACK</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="sg-h">
+          <div class="card-h"><h2 id="sg-h">Safeguards</h2><a class="small" href="Safeguards.dc.html">Edit →</a></div>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div><div class="row between small"><span class="muted">Config jobs this hour</span><span class="mono">3 / 10</span></div><div class="meter" style="margin-top: 6px;"><span class="f-volt" style="width: 30%;"></span></div></div>
+            <div><div class="row between small"><span class="muted">Managed elements per job</span><span class="mono">max 2</span></div><div class="meter" style="margin-top: 6px;"><span class="f-info" style="width: 100%;"></span></div></div>
+            <div><div class="row between small"><span class="muted">Change per write</span><span class="mono">max 25%</span></div><div class="meter" style="margin-top: 6px;"><span class="f-info" style="width: 60%;"></span></div></div>
+            <div class="callout" style="padding: 10px 12px;"><span class="badge b-mute plain">0</span><span class="small muted">refusals in the last 24 h</span></div>
+          </div>
+        </section>
+      </div>
+
+      <section class="card" aria-labelledby="lf-h">
+        <div class="card-h">
+          <div><h2 id="lf-h">Lifecycle flows for this rApp</h2><span class="sub">every journey this rApp, its package and its model take · each step proved by live state</span></div>
+          <div class="row"><button class="btn btn-sm">Upgrade to 1.3.0</button><a class="btn btn-sm" href="Flow07.dc.html">Open in Lifecycle flows</a></div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <sc-for list="{{lcFlows}}" as="f" hint-placeholder-count="4">
+            <div style="display: grid; grid-template-columns: 250px minmax(0, 1fr) 150px; gap: 16px; align-items: center; padding: 12px 14px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line);">
+              <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0;"><a href="{{f.href}}" class="row" style="gap: 8px; text-decoration: none; color: var(--text);"><span class="id">{{f.n}}</span><strong class="small">{{f.t}} →</strong></a><span class="xs muted">{{f.subj}}</span></div>
+              <div class="steps" style="flex-wrap: nowrap; overflow-x: auto;">
+                <sc-for list="{{f.steps}}" as="s" hint-placeholder-count="5"><span class="{{s.c}}" title="{{s.d}}"><i></i>{{s.l}}</span></sc-for>
+              </div>
+              <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;"><span class="{{f.bc}}">{{f.b}}</span><span class="xs muted">{{f.when}}</span></div>
+            </div>
+          </sc-for>
+        </div>
+        <div class="eyebrow">Lifecycle history</div>
+        <div class="tbl-box"><table class="tbl">
+          <thead><tr><th>When</th><th>Flow</th><th>Step</th><th>By</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td class="mono xs muted">yest. 21:04</td><td class="small">07 · instance</td><td class="small">Recover after DME delivery fault</td><td class="small">rapp-mgmt (auto)</td><td><span class="badge b-ok">RECOVERED</span></td></tr>
+            <tr><td class="mono xs muted">yest. 20:51</td><td class="small">07 · instance</td><td class="small">Report fault · minor</td><td class="small">rApp</td><td><span class="badge b-warn">FAULTED</span></td></tr>
+            <tr><td class="mono xs muted">3 d ago</td><td class="small">01 · onboarding</td><td class="small">bootstrap-complete</td><td class="small">rApp → R1</td><td><span class="badge b-ok">RUNNING</span></td></tr>
+            <tr><td class="mono xs muted">3 d ago</td><td class="small">06 · package</td><td class="small">Prime 1.2.0</td><td class="small">operator1</td><td><span class="badge b-ok">PRIMED</span></td></tr>
+          </tbody>
+        </table></div>
+        <dc-import name="Pager" from="1" to="4" total="38" noun="lifecycle events" note="newest first" page="1 / 10" hint-size="100%,56px"></dc-import>
+      </section>
+
+      <div class="grid g3">
+        <section class="card" aria-labelledby="lc-h">
+          <div class="card-h"><h2 id="lc-h">Instance state now</h2></div>
+          <ol class="tl" style="list-style: none; margin: 0; padding: 0;">
+            <li class="tl-i done"><span class="tl-n">✓</span><div class="tl-b"><strong class="small">Instantiated</strong><span class="xs muted">NFO · phase1-degenerate-cluster</span></div></li>
+            <li class="tl-i done"><span class="tl-n">✓</span><div class="tl-b"><strong class="small">Bootstrapped</strong><span class="xs muted">R1 · SME + DME registered</span></div></li>
+            <li class="tl-i now"><span class="tl-n">●</span><div class="tl-b"><strong class="small">Running</strong><span class="xs muted">last heartbeat 4 s ago</span></div></li>
+          </ol>
+        </section>
+        <section class="card" aria-labelledby="kp-h">
+          <div class="card-h"><h2 id="kp-h">KPIs reported</h2><span class="sub">rApp performance reports</span></div>
+          <svg width="100%" height="120" viewBox="0 0 320 120" preserveAspectRatio="none" role="img" aria-label="Energy saved per hour, rising">
+            <line class="gl" x1="0" y1="20" x2="320" y2="20"></line><line class="gl" x1="0" y1="60" x2="320" y2="60"></line><line class="gl" x1="0" y1="100" x2="320" y2="100"></line>
+            <path class="ar-volt" d="M0 92 L40 88 L80 80 L120 84 L160 64 L200 58 L240 46 L280 40 L320 34 L320 110 L0 110 Z"></path>
+            <polyline class="ln-volt" points="0,92 40,88 80,80 120,84 160,64 200,58 240,46 280,40 320,34"></polyline>
+          </svg>
+          <div class="row between small"><span class="muted">requestsServed</span><strong class="num">42</strong></div>
+        </section>
+        <section class="card" aria-labelledby="fl-h">
+          <div class="card-h"><h2 id="fl-h">Faults</h2><span class="badge b-ok">None open</span></div>
+          <div class="callout"><span class="sev sev-mn" style="min-width: 0;">Minor</span><div style="display: flex; flex-direction: column; gap: 2px;"><strong class="small">DME delivery late (PM counters)</strong><span class="xs muted">Cleared 21:04 · recovered by itself</span></div></div>
+          <button class="btn btn-sm" style="align-self: flex-start;">Report fault (test)</button>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+<sc-if value="{{stopOpen}}" hint-placeholder-val="{{false}}">
+  <div style="position: fixed; inset: 0; background: var(--scrim); display: flex; justify-content: center; align-items: flex-start; padding-top: 140px; z-index: 30; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text);">
+    <div role="dialog" aria-modal="true" aria-labelledby="stop-h" class="card" style="width: min(520px, 92vw); gap: 14px; border-color: rgba(255,93,82,0.5);">
+      <h2 id="stop-h">Stop Energy Saving?</h2>
+      <p class="small muted">Every write from this rApp is refused until you resume it. 812 cells stay in their current state. 2 pending config jobs are cancelled. The rApp keeps running and reporting.</p>
+      <label class="field"><span>Reason (recorded in the audit log)</span><input class="input" placeholder="e.g. investigating neighbour throughput drop"></label>
+      <div class="row" style="justify-content: flex-end;"><button class="btn" onClick="{{cancelStop}}">Cancel</button><button class="btn btn-danger" onClick="{{confirmStop}}">Stop writes</button></div>
+    </div>
+  </div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2080}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const C = { S: 'var(--ok)', P: 'var(--warn)', Z: 'var(--info)', L: 'var(--line-strong)' };
+    const N = { S: 'SERVING', P: 'PRE_SLEEP', Z: 'SLEEP', L: 'LOCK' };
+    const lane = (cell, parts) => ({ cell, segs: parts.map(([k, w]) => ({ t: N[k], style: 'flex:' + w + ' 1 0;background:' + C[k] + ';' })) });
+    const lanes = [
+      lane('du-01/cell-1', [['S', 24]]),
+      lane('du-01/cell-2', [['S', 10], ['P', 1], ['Z', 1], ['S', 12]]),
+      lane('du-02/cell-2', [['Z', 5], ['S', 14], ['P', 1], ['Z', 4]]),
+      lane('du-02/cell-3', [['Z', 5], ['S', 10], ['P', 1], ['Z', 3], ['S', 3], ['P', 0.5], ['Z', 1.5]]),
+      lane('du-05/cell-1', [['Z', 6], ['S', 13], ['P', 1], ['Z', 4]]),
+      lane('du-05/cell-2', [['Z', 6], ['S', 12], ['L', 2], ['Z', 4]])
+    ];
+    const sl = [36,38,36,30,22,12,6,4,3,3,4,5,6,8,12,18,24,30,34,36,38,37,36,36];
+    const pr = [2,2,1,2,3,2,1,1,1,1,1,1,1,1,2,3,3,2,2,2,1,1,1,1];
+    const x = (i) => (i * 600 / 23).toFixed(1);
+    const sleep = 'M0 196 ' + sl.map((v, i) => 'L' + x(i) + ' ' + (196 - v * 2.2).toFixed(1)).join(' ') + ' L600 196 Z';
+    const pre = 'M0 ' + (196 - sl[0] * 2.2) + ' ' + sl.map((v, i) => 'L' + x(i) + ' ' + (196 - (v + pr[i]) * 2.2).toFixed(1)).join(' ') + ' ' + sl.slice().reverse().map((v, j) => 'L' + x(23 - j) + ' ' + (196 - v * 2.2).toFixed(1)).join(' ') + ' Z';
+    const cells = [['du-02/cell-2', 'SLEEP', 'badge b-info', 62], ['du-02/cell-3', 'SLEEP', 'badge b-info', 58], ['du-05/cell-1', 'SLEEP', 'badge b-info', 54], ['du-118/cell-4', 'PRE_SLEEP', 'badge b-warn', 41], ['du-07/cell-9', 'SERVING', 'badge b-ok', 38]]
+      .map(([n, st, sc, h], i) => ({ n, st, sc, h: Math.round(h * 0.24 * 10) / 10 + ' h', w: 'width:' + h + '%', prb: [9, 11, 7, 14, 33][i] + '%' }));
+    const st = (labels, nowIdx, failIdx) => labels.map((l, i) => ({ l, d: l, c: i < nowIdx ? 'step done' : i === nowIdx ? 'step now' : 'step' }));
+    const lcFlows = [
+      { n: '01', t: 'Onboarding → running', subj: 'instance 2f2e6149', steps: st(['Onboard', 'Validate', 'Descriptor', 'Create', 'Instantiate', 'Bootstrap', 'Running'], 6), b: 'Complete', bc: 'badge b-ok', when: '3 days ago' },
+      { n: '06', t: 'Package lifecycle', subj: 'energy-saving-rapp 1.2.0', steps: st(['Onboard', 'Available', 'Primed', 'In use', 'Deprecate', 'Delete'], 3), b: 'In use', bc: 'badge b-info', when: '1.3.0 available' },
+      { n: '07', t: 'Instance lifecycle', subj: 'instance 2f2e6149', steps: st(['Report', 'Fault', 'Recover', 'Upgrade', 'Terminate'], 3), b: 'Upgrade ready', bc: 'badge b-warn', when: 'last fault recovered yest.' },
+      { n: '02', t: 'Its AI/ML model', subj: 'load-model v4', steps: st(['Register', 'Train', 'Validate', 'Certify', 'Deploy', 'Active', 'Monitor'], 6), b: 'Monitoring', bc: 'badge b-ok', when: 'accuracy 0.93 ≥ 0.85' }
+    ];
+    lcFlows.forEach((f) => { f.href = f.n === '01' ? 'Flows.dc.html' : 'Flow' + f.n + '.dc.html'; });
+    const s = this.state || {};
+    const mode = s.mode === undefined ? 2 : s.mode;
+    const stopped = !!s.stopped;
+    return { P,  lanes, sleep, pre, cells, lcFlows,
+      m0: mode === 0 ? 'on' : '', m1: mode === 1 ? 'on' : '', m2: mode === 2 ? 'on' : '', modeTxt: ['Shadow', 'Assist', 'Autonomous'][mode],
+      setShadow: () => this.setState({ mode: 0 }), setAssist: () => this.setState({ mode: 1 }), setAuto: () => this.setState({ mode: 2 }),
+      pinLabel: s.pinned === false ? 'Pin to sidebar' : 'Pinned ★', togglePin: () => this.setState({ pinned: s.pinned === false }),
+      stateTxt: stopped ? 'Stopped' : 'Running', stateCls: stopped ? 'badge b-bad' : 'badge b-ok', stopLabel: stopped ? 'Resume writes' : 'Stop rApp',
+      stopOpen: !!s.ask, askStop: () => (stopped ? this.setState({ stopped: false }) : this.setState({ ask: true })), cancelStop: () => this.setState({ ask: false }), confirmStop: () => this.setState({ ask: false, stopped: true }) };
+  }
+}
+</script>
+</body>
+</html>

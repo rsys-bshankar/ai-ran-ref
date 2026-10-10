@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lifecycle flows — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="flows" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Lifecycle flows" crumb="{{crumb}}" scope="eu-west · all clusters" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">End-to-end journeys · smo/docs/call-flows</div>
+          <h1 style="margin-top: 6px;">Lifecycle flows</h1>
+          <p>Pick a journey. The fleet view shows where every subject is; pick one subject to follow it step by step, each step proved by live SMO state.</p>
+        </div>
+        <div class="row"><span class="badge b-ok">6 healthy</span><span class="badge b-warn">2 need attention</span><span class="badge b-bad">1 has failures</span></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start;">
+        <nav aria-label="Flows" style="display: flex; flex-direction: column; gap: 8px;">
+          <sc-for list="{{flows}}" as="f" hint-placeholder-count="9">
+            <a href="{{f.href}}" style="{{f.style}}">
+              <span style="{{f.numStyle}}">{{f.n}}</span>
+              <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;">
+                <strong style="font-size: 13px; line-height: 1.35; color: var(--text);">{{f.t}}</strong>
+                <span class="row" style="gap: 6px;"><span class="{{f.bc}}">{{f.b}}</span><span class="xs muted">{{f.sub}}</span></span>
+              </span>
+            </a>
+          </sc-for>
+          <div class="callout" style="padding: 10px 12px;"><span class="xs muted">Generic lifecycle flows only. 17 and 26 are part of 02. No flow 05 exists. Sample-rApp closed loops (22–25) and explanatory flows (12–14, 18, 20, 27) are left out on purpose.</span></div>
+        </nav>
+
+        <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
+          <section class="card">
+            <div class="card-h" style="align-items: flex-start;">
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <span class="eyebrow">Flow {{cur.n}} · {{cur.doc}}</span>
+                <h2 style="font-size: 21px;">{{cur.t}}</h2>
+              </div>
+              <a class="btn btn-sm" href="#">Call-flow doc</a>
+            </div>
+            <div class="row wrap" style="gap: 6px;"><span class="xs muted">Modules</span><sc-for list="{{cur.modules}}" as="m" hint-placeholder-count="4"><span class="id">{{m}}</span></sc-for></div>
+          </section>
+
+          <section class="card" aria-labelledby="fun-h">
+            <div class="card-h">
+              <div><h2 id="fun-h">Fleet funnel · {{cur.total}}</h2><span class="sub">where every {{cur.subj}} in scope is right now · click a step to page through the ones stuck there</span></div>
+              <div class="seg" role="group" aria-label="View"><button class="on">Fleet</button><button>One {{cur.subj}}</button></div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px;">
+              <sc-for list="{{cur.funnel}}" as="s" hint-placeholder-count="6">
+                <a href="#" style="{{s.box}}">
+                  <span class="xs muted" style="min-height: 32px;">{{s.t}}</span>
+                  <span class="num" style="font-size: 20px;">{{s.n}}</span>
+                  <span class="meter" style="height: 5px;"><span class="f-volt" style="{{s.w}}"></span></span>
+                  <span class="{{s.sc}}">{{s.stuck}}</span>
+                </a>
+              </sc-for>
+            </div>
+            <div class="{{cur.calloutCls}}" style="padding: 10px 12px;"><span class="small">{{cur.callout}}</span><a class="small" href="#" style="margin-left: auto; white-space: nowrap;">Open them →</a></div>
+          </section>
+
+          <section class="card">
+            <div class="card-h">
+              <div><h2>One {{cur.subj}}</h2><span class="sub">follow a single subject through every step</span></div>
+              <label class="search" style="width: 340px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4"></path></svg><input aria-label="Find a subject" value="{{cur.value}}"><span class="xs faint">search</span></label>
+            </div>
+            <div class="row" style="gap: 14px;">
+              <div class="meter" style="flex: 1; height: 8px;"><span class="{{cur.pf}}" style="{{cur.pw}}"></span></div>
+              <span class="mono">{{cur.done}} / {{cur.count}} steps</span>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="seq-h">
+            <div class="card-h"><h2 id="seq-h">Sequence</h2><span class="sub">who calls whom, in order · dashed = waiting · red = failed</span></div>
+            <div style="overflow-x: auto;">
+              <div style="{{cur.laneBox}}">
+                <div style="{{cur.laneGrid}}">
+                  <sc-for list="{{cur.actors}}" as="a" hint-placeholder-count="6">
+                    <div style="display: flex; flex-direction: column; align-items: center;">
+                      <div style="padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--raised); font: 600 11.5px 'JetBrains Mono', monospace; white-space: nowrap; text-align: center;">{{a}}</div>
+                      <div style="flex: 1; width: 0; border-left: 1px dashed var(--line-strong);"></div>
+                    </div>
+                  </sc-for>
+                </div>
+                <sc-for list="{{cur.msgs}}" as="m" hint-placeholder-count="6">
+                  <div style="{{m.box}}">
+                    <span style="{{m.label}}">{{m.n}} · {{m.t}}</span>
+                    <span style="{{m.line}}"></span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="steps-h">
+            <div class="card-h"><h2 id="steps-h">Steps</h2><span class="sub">proved by live state · lib/flows.ts</span></div>
+            <ol class="tl" style="list-style: none; margin: 0; padding: 0;">
+              <sc-for list="{{cur.steps}}" as="s" hint-placeholder-count="6">
+                <li class="{{s.cls}}"><span class="tl-n">{{s.icon}}</span><div class="tl-b"><sc-if value="{{s.hasPhase}}" hint-placeholder-val="{{false}}"><span class="eyebrow" style="color: var(--volt-text); padding-bottom: 2px;">Phase · {{s.phase}}</span></sc-if><div class="row between wrap"><strong class="small">{{s.title}}</strong><span class="xs muted">{{s.actor}}</span></div><span class="{{s.dcls}}">{{s.detail}}</span></div></li>
+              </sc-for>
+            </ol>
+            <div class="row wrap" style="gap: 8px; padding-top: 4px; border-top: 1px solid var(--line);">
+              <span class="xs muted" style="padding-top: 10px;">Actions for this step</span>
+              <sc-for list="{{cur.actions}}" as="x" hint-placeholder-count="3"><button class="btn btn-sm" style="margin-top: 8px;">{{x}}</button></sc-for>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"flow":{"editor":"enum","options":["01","02","03","04","06","07","08","09","10","15","16","19"],"default":"01"},"$preview":{"width":1440,"height":1640}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const id = this.props.flow ?? '01';
+    // step: [title, actor, status d|n|w|f|t|b, detail]; msg: [label, fromIdx, toIdx, status d|n|f]; funnel: [label, count, stuck, tone ok|warn|bad]
+    const F = {
+      '01': { t: 'rApp onboarding → running instance', doc: '01-rapp-onboarding-to-deployment.md', subj: 'package', total: '412 packages', value: 'energy-saving-rapp 1.2.0', health: ['warn', '18 waiting'],
+        modules: ['onboarding', 'rapp-mgmt', 'nfo', 'focom', 'sme', 'dme'],
+        actors: ['Operator', 'Onboarding', 'rApp Mgmt', 'NFO', 'FOCOM', 'rApp · R1'],
+        steps: [['OnboardPackage(location)', 'Operator → Onboarding', 'd', 'package energy-saving-rapp 1.2.0'], ['Fetch CSAR, TOSCA.meta, signature → AVAILABLE', 'Onboarding', 'd', 'state PRIMED · signature verified'], ['NFO CreateDescriptor (NFDeploymentDescriptor)', 'Onboarding → NFO', 'd', ''], ['CreateInstance(packageId, config)', 'Operator → rApp Mgmt', 'd', 'instance 2f2e6149'], ['NFO Instantiate (cluster via FOCOM inventory)', 'rApp Mgmt → NFO → FOCOM', 'd', 'deployment es-rapp-0: RUNNING on edge-metro-a'], ['R1 bootstrap, SME/DME registration, bootstrap-complete', 'rApp container → R1 → rApp Mgmt', 'n', 'waiting for the rApp to call bootstrap-complete']],
+        msgs: [['OnboardPackage', 0, 1, 'd'], ['CreateDescriptor', 1, 3, 'd'], ['CreateInstance', 0, 2, 'd'], ['Instantiate', 2, 3, 'd'], ['cluster lookup', 3, 4, 'd'], ['bootstrap-complete', 5, 2, 'n']],
+        funnel: [['Onboard', 412, 0, 'ok'], ['Validate → AVAILABLE', 408, 4, 'bad'], ['NFO descriptor', 404, 0, 'ok'], ['Create instance', 399, 5, 'warn'], ['Instantiate', 389, 9, 'bad'], ['Bootstrap complete', 371, 18, 'warn']],
+        callout: ['bad', '9 packages failed at Instantiate · all on edge-07 (FOCOM: pool full)'], actions: ['Mark bootstrapped'] },
+      '02': { t: 'AI/ML model: register → train → certify → serve → retire', doc: '02 + 17 (runtime) + 26 (governance & end of life)', subj: 'model', total: '508 models', value: 'coverage-model v3', health: ['warn', '3 under floor'],
+        modules: ['mlmr', 'aimgf', 'mllf', 'nfo', 'dme'],
+        actors: ['Producer', 'MLMR', 'MLTF · MLVF', 'MLEF', 'AIMgF', 'MLLF · NFO', 'MLMF'],
+        steps: [['RegisterModel(modelType, version)', 'Producer → AI/ML', 'd', 'coverage v3', 'Build & certify'], ['RequestTraining → TRAINING', 'Producer → AI/ML (MLTF)', 'd', '2 training job(s)'], ['training-jobs/{id}/complete → TRAINED → RequestValidation → VALIDATED', 'MLVF', 'd', ''], ['RequestEmulation → EMULATING → EMULATED', 'MLEF', 'd', ''], ['governance: submit → approve → certify → CERTIFIED', 'AIMgF', 'd', 'decided by admin-1 · 4 certification records'], ['advance(PROMOTE) → PROMOTED', 'Admin → AIMgF', 'd', 'decided by admin-1'],
+          ['runtime/deploy → DEPLOYED (AIMgF → NFO CreateDescriptor + Instantiate)', 'Producer → AIMgF → NFO', 'd', 'nfDeployment coverage-model-v3-rt', 'Serve'], ['RequestModelDeployment(nodeGroups) → node groups cleared', 'Producer → MLLF → AIMgF', 'd', 'edge-metro-a/gpu-l40'], ['runtime/activate → ACTIVE', 'AIMgF', 'd', ''], ['RequestInference → COMPLETED (result via DME)', 'Consumer → MLEF', 'd', '1,920 job(s) in 24 h'], ['SubscribePerformanceMonitoring(guardKpiFloor)', 'Producer → MLMF', 'd', '1 subscription · floor 0.85'], ['ReportPerformance → breachedFloor → retrain', 'Producer → MLMF', 'w', '40 report(s), 3 under the floor (retrain triggered)'], ['runtime/scale → SCALING → ACTIVE (NFO scale)', 'Producer → AIMgF → NFO', 't', 'when inference load grows'],
+          ['advance(ROLLBACK) PROMOTED → CERTIFIED (regression found)', 'Admin → AIMgF', 't', 'the runtime keeps serving · retrain from here', 'End of life'], ['advance(DEPRECATE) → DEPRECATED', 'Admin → AIMgF', 't', 'no new deployments'], ['runtime/terminate → TERMINATED (NFO delete)', 'Producer → AIMgF → NFO', 't', ''], ['advance(RETIRE) → RETIRED', 'Admin → AIMgF', 't', 'kept for audit · governance history stays']],
+        msgs: [['RegisterModel', 0, 1, 'd'], ['RequestTraining', 0, 2, 'd'], ['RequestEmulation', 2, 3, 'd'], ['certify · promote', 3, 4, 'd'], ['runtime/deploy → Instantiate', 4, 5, 'd'], ['runtime/activate', 0, 4, 'd'], ['ReportPerformance', 0, 6, 'd'], ['breachedFloor → retrain', 6, 2, 'n'], ['runtime/scale', 4, 5, 't'], ['deprecate · terminate · retire', 4, 5, 't']],
+        funnel: [['Registered', 508, 0, 'ok'], ['Trained', 447, 14, 'warn'], ['Certified', 330, 6, 'warn'], ['Promoted', 288, 0, 'ok'], ['Serving (active)', 214, 0, 'ok'], ['Under floor', 3, 3, 'bad'], ['Deprecated', 31, 0, 'ok'], ['Retired', 120, 0, 'ok']],
+        callout: ['warn', '3 active models are under their guard KPI floor · retraining was requested for each'], actions: ['Request inference', 'Report performance', 'Retrain', 'Scale runtime', 'Roll back', 'Deprecate', 'Retire'] },
+      '15': { t: 'NFO workload: instantiate → scale → heal → terminate', doc: '15-nfo-workload-lifecycle.md', subj: 'NF deployment', total: '3,940 deployments', value: 'qoe-rapp-2 · edge-stadium', health: ['bad', '19 abnormal'],
+        modules: ['nfo', 'focom'],
+        actors: ['Caller (rApp Mgmt · AIMgF · SO SMOS)', 'NFO', 'FOCOM', 'Deployment manager (O2 DMS)'],
+        steps: [['CreateDescriptor(packageId?, workloadTemplate)', 'Caller → NFO', 'd', 'nfd-9e40'], ['Instantiate → FOCOM inventory lookup → INSTANTIATING → RUNNING', 'Caller → NFO → FOCOM', 'd', 'placed on edge-stadium / pool-cpu-1'], ['Scale → UPDATING → RUNNING', 'Caller → NFO', 'd', 'yesterday 18:10'], ['Runtime failure reported → ABNORMAL', 'DMS → NFO', 'f', 'crash loop · abnormalReason: OOMKilled'], ['Heal → RUNNING', 'Operator → NFO', 'n', 'heal requested 03:04'], ['Terminate → TERMINATING → DELETING (DMS UNINSTALL_COMPLETE)', 'Caller → NFO ← DMS', 't', 'sync, or async with ?async_uninstall=true'], ['DMS DELETE_COMPLETE → DELETED (descriptor free again)', 'DMS → NFO', 't', '']],
+        msgs: [['CreateDescriptor', 0, 1, 'd'], ['Instantiate', 0, 1, 'd'], ['GET /inventory', 1, 2, 'd'], ['Scale', 0, 1, 'd'], ['runtime failure', 3, 1, 'f'], ['Heal', 0, 1, 'n'], ['Terminate · dms-notifications', 3, 1, 't']],
+        funnel: [['Descriptors', 3961, 0, 'ok'], ['Running', 3921, 0, 'ok'], ['Updating', 12, 0, 'ok'], ['Abnormal', 19, 19, 'bad'], ['Terminating', 6, 2, 'warn'], ['Deleted · 24 h', 14, 0, 'ok']],
+        callout: ['bad', '19 deployments ABNORMAL · 11 on edge-stadium (OOMKilled) · Heal or Terminate'], actions: ['Scale', 'Heal', 'Terminate', 'Terminate (async)', 'Show LCM operations'] },
+      '16': { t: 'FOCOM resource & inventory: subscribe → provision → notify → deprovision', doc: '16-focom-resource-inventory-lifecycle.md', subj: 'O-Cloud resource', total: '1,904 resources', value: 'node 3ba9fc16 · pool-gpu-1', health: ['warn', '3 not notified'],
+        modules: ['focom', 'nfo'],
+        actors: ['Operator · SO SMOS', 'FOCOM', 'Resource pool', 'NFO (subscriber)'],
+        steps: [['Subscribe to inventory (callback, resourceTypeId?)', 'NFO → FOCOM', 'd', '14 subscriptions'], ['Provision resource (resourceTypeId, description, tags)', 'Operator → FOCOM', 'd', 'gpu-l40 in pool-gpu-1'], ['CREATE notified to matching subscriptions (best effort)', 'FOCOM → NFO', 'd', 'delivered 02:11'], ['Resource in use by deployments', 'NFO', 'n', '9 workloads placed'], ['Deprovision → DELETE notified', 'Operator → FOCOM → NFO', 't', 'idempotent: a second delete is still "deprovisioned"']],
+        msgs: [['POST /inventory/subscriptions', 3, 1, 'd'], ['POST /resources/provision', 0, 1, 'd'], ['create in pool', 1, 2, 'd'], ['CREATE callback', 1, 3, 'd'], ['DELETE /resources/{id}', 0, 1, 't'], ['DELETE callback', 1, 3, 't']],
+        funnel: [['Subscriptions', 14, 0, 'ok'], ['Provisioned', 1904, 0, 'ok'], ['Notified', 1901, 3, 'warn'], ['In use', 1640, 0, 'ok'], ['Idle', 264, 0, 'ok'], ['Deprovisioned · 24 h', 8, 0, 'ok']],
+        callout: ['warn', '3 CREATE notifications were not delivered to nfo · callbacks are best effort with no retry'], actions: ['Provision resource', 'Deprovision', 'New inventory subscription'] },
+      '19': { t: 'RAN software job: download → install → activate', doc: '19-software-management-job-lifecycle.md', subj: 'software job', total: '312 jobs · 24 h', value: 'du-221-harbour · 24.3.1', health: ['bad', '12 failed'],
+        modules: ['ran-nf-oam'],
+        actors: ['Operator', 'RAN NF OAM', 'O1 Adaptor', 'Managed element'],
+        steps: [['Create software job (managedElementRef, ruInstanceId?) → IN_PROGRESS · DOWNLOAD', 'Operator → RAN NF OAM', 'd', 'image 24.3.1 · job sw-4410'], ['software-download → DOWNLOAD_OK → phase INSTALL', 'RAN NF OAM → O1 Adaptor → ME', 'd', '418 MB in 3 min'], ['software-install → INSTALL_OK → phase ACTIVATE', 'RAN NF OAM → O1 Adaptor → ME', 'n', 'installing on slot B'], ['software-activate → ACTIVATE_OK → COMPLETED', 'RAN NF OAM → O1 Adaptor → ME', 't', 'NE restarts on the new slot'], ['Any PHASE_FAILED → FAILED (frozen at that phase)', 'ME → RAN NF OAM', 't', 'retry starts a new job from DOWNLOAD']],
+        msgs: [['POST /software-management-jobs', 0, 1, 'd'], ['software-download', 1, 2, 'd'], ['NETCONF RPC', 2, 3, 'd'], ['download-event OK', 3, 1, 'd'], ['software-install', 1, 3, 'n'], ['software-activate', 1, 3, 't']],
+        funnel: [['Jobs · 24 h', 312, 0, 'ok'], ['Downloading', 22, 0, 'ok'], ['Installing', 18, 0, 'ok'], ['Activating', 9, 0, 'ok'], ['Completed', 251, 0, 'ok'], ['Failed', 12, 12, 'bad']],
+        callout: ['bad', '12 jobs FAILED · 9 at INSTALL on the same vendor profile · each is frozen at the phase that failed'], actions: ['New software job', 'Retry from DOWNLOAD', 'Open the 12 failed'] },
+      '03': { t: 'Configuration write, schema-checked, fleet-aware', doc: '03-config-write-with-schema-check.md', subj: 'config job', total: '2,904 jobs · 24 h', value: 'job 81aa…  CIO +2 dB × 340', health: ['warn', '21 partial'],
+        modules: ['ran-nf-oam'],
+        actors: ['rApp · Operator', 'RAN NF OAM', 'MSAC · schema', 'O1 Adaptor', 'Managed element'],
+        steps: [['O1 adaptors register in the MnS Registry NRM', 'O1 Adaptor → RAN NF OAM', 'd', '4,112 endpoint(s)'], ['Registry tracks endpoint health (heartbeats)', 'RAN NF OAM', 'w', '4,089 healthy · 23 late'], ['WriteConfigurationChanges(scope, changes[])', 'rApp/Operator → RAN NF OAM', 'd', 'job 81aa · 340 changes'], ['MSAC gate + schema check → PROCESSING', 'RAN NF OAM', 'd', ''], ['Per-ME NETCONF <edit-config> (sub-changes)', 'RAN NF OAM → O1 Adaptor', 'w', '337 applied · 3 REJECTED (du-302: value out of range)'], ['Aggregate job status', 'RAN NF OAM', 'w', 'PARTIAL_SUCCESS']],
+        msgs: [['register + heartbeat', 3, 1, 'd'], ['WriteConfigurationChanges', 0, 1, 'd'], ['MSAC + schema', 1, 2, 'd'], ['edit-config × 340', 1, 3, 'd'], ['apply', 3, 4, 'd'], ['3 rejected', 4, 3, 'f'], ['job status', 1, 0, 'd']],
+        funnel: [['Submitted', 2904, 0, 'ok'], ['Passed schema', 2898, 6, 'bad'], ['Dispatched', 2898, 0, 'ok'], ['Applied', 2871, 0, 'ok'], ['Partial', 21, 21, 'warn'], ['Failed', 6, 6, 'bad']],
+        callout: ['warn', '21 partial jobs · 18 rejections are on the same vendor profile (value range)'], actions: ['Open config job', 'Dry run', 'Roll back'] },
+      '04': { t: 'Closed-loop assurance: monitor → decide → remediate → escalate', doc: '04-closed-loop-assurance.md', subj: 'assurance monitor', total: '1,940 monitors', value: 'b625f16a · RRC setup du-03', health: ['bad', '4 escalated'],
+        modules: ['so-smos', 'sa-smos', 'mdaf', 'ran-nf-oam', 'nfo'],
+        actors: ['SA SMOS', 'MDAF · MLMF', 'SO SMOS', 'RAN NF OAM · NFO', 'Operator'],
+        steps: [['RegisterAssuranceMonitor(target, thresholds)', 'SA SMOS', 'd', 'RRC setup ≥ 98% on du-03'], ['MDAF / MLMF reports arrive', 'RAN Analytics / MLMF → SA SMOS', 'd', '96 report(s) in 24 h'], ['EvaluateThresholds → ExecuteRemedialAction', 'SA SMOS → RAN NF OAM / NFO / AI/ML', 'w', 'CONFIG_CHANGE applied, KPI did not recover'], ['EscalateToOperator (when remediation can’t resolve)', 'SA SMOS → Operator', 'w', 'escalated 03:06 · waiting for an operator']],
+        msgs: [['reports', 1, 0, 'd'], ['EvaluateThresholds', 0, 0, 'd'], ['ExecuteRemedialAction', 0, 3, 'd'], ['KPI still low', 1, 0, 'd'], ['EscalateToOperator', 0, 4, 'n']],
+        funnel: [['Monitors', 1940, 0, 'ok'], ['Receiving input', 1862, 78, 'warn'], ['Breaching', 27, 27, 'warn'], ['Remediated', 23, 0, 'ok'], ['Escalated', 4, 4, 'bad']],
+        callout: ['bad', '4 escalations are waiting for an operator · 3 correlate with the metro-a LOS alarms'], actions: ['Escalate to operator', 'Mark handled'] },
+      '06': { t: 'Package lifecycle: onboard → prime → deprecate → delete', doc: '06-package-lifecycle.md', subj: 'package', total: '162 packages', value: 'coverage-optimization-rapp 1.0.3', health: ['ok', 'healthy'],
+        modules: ['onboarding', 'rapp-mgmt'],
+        actors: ['Operator', 'Onboarding', 'rApp Mgmt'],
+        steps: [['OnboardPackage → AVAILABLE or FAILED', 'Onboarding', 'd', 'state AVAILABLE'], ['Prime (optional): AVAILABLE → PRIMED', 'Operator → Onboarding', 'd', ''], ['Deprecate (AVAILABLE → DEPRECATED)', 'Operator → Onboarding', 'd', 'replaced by 1.0.4'], ['Cascade-delete guard: no active usage registrations', 'Onboarding', 'n', '2 active usages: instances 2b7f6a55, 0c11a7e2'], ['DeletePackage → DELETING', 'Operator → Onboarding', 'b', 'blocked until usages are released']],
+        msgs: [['OnboardPackage', 0, 1, 'd'], ['Prime', 0, 1, 'd'], ['usage registered', 2, 1, 'd'], ['Deprecate', 0, 1, 'd'], ['DeletePackage', 0, 1, 'n']],
+        funnel: [['Onboarded', 162, 4, 'bad'], ['Primed', 140, 0, 'ok'], ['Deprecated', 12, 0, 'ok'], ['Delete blocked', 3, 3, 'warn'], ['Deleting', 2, 0, 'ok']],
+        callout: ['warn', '3 deprecated packages can’t be deleted yet · their instances must be terminated first'], actions: ['Deprecate', 'Register test usage', 'Delete package'] },
+      '07': { t: 'rApp instance lifecycle: report → fault → recover → upgrade → terminate', doc: '07-rapp-instance-lifecycle.md', subj: 'rApp instance', total: '487 instances', value: 'Traffic Steering · 7ac1d903', health: ['bad', '6 faulted'],
+        modules: ['rapp-mgmt'],
+        actors: ['rApp container', 'R1', 'rApp Mgmt', 'Operator', 'NFO · Onboarding'],
+        steps: [['Instance RUNNING (call flow 01)', 'rApp Mgmt', 'd', 'state UPGRADING'], ['ReportPerformance(metrics) — no state change', 'rApp container → R1 → rApp Mgmt', 'd', '96 report(s)'], ['ReportFault(non-critical) — recorded only', 'rApp container → rApp Mgmt', 'd', '2 fault(s)'], ['ReportFault(critical) → FAULTED (CRASH)', 'rApp container → rApp Mgmt', 'd', 'crash yesterday 21:40'], ['RECOVER → DEPLOYING → re-bootstrap → RUNNING', 'Operator → rApp Mgmt', 'd', 'recovered 21:52'], ['Upgrade (optional): UPGRADING → commit or roll back', 'Operator → rApp Mgmt', 'n', '1.0.3 → 1.1.0 · swapping'], ['Terminate → UNDEPLOYED (NFO terminate, usage/stop)', 'Operator → rApp Mgmt → NFO, Onboarding', 't', '']],
+        msgs: [['ReportPerformance', 0, 1, 'd'], ['forward', 1, 2, 'd'], ['ReportFault(critical)', 0, 2, 'd'], ['RECOVER', 3, 2, 'd'], ['redeploy', 2, 4, 'd'], ['Upgrade', 3, 2, 'n']],
+        funnel: [['Running', 471, 0, 'ok'], ['Reporting perf', 480, 7, 'warn'], ['Minor faults · 24 h', 41, 0, 'ok'], ['Faulted now', 6, 6, 'bad'], ['Recovering', 5, 0, 'ok'], ['Upgrading', 10, 0, 'ok'], ['Terminated · 24 h', 3, 0, 'ok']],
+        callout: ['bad', '6 instances FAULTED · 4 crashed after the same image 1.0.3'], actions: ['Report minor fault', 'Report critical fault', 'Recover', 'Mark re-bootstrapped', 'Upgrade', 'Terminate'] },
+      '08': { t: 'RAN Analytics: producer → report → subscriber query', doc: '08-ran-analytics-data-production.md', subj: 'analytics type', total: '14 analytics types', value: 'coverage-issue-analysis', health: ['ok', 'healthy'],
+        modules: ['ran-analytics', 'mdaf', 'sme'],
+        actors: ['Producer', 'RAN Analytics', 'MDAF', 'Consumer', 'SME'],
+        steps: [['RegisterAnalyticsProducer(type, dmeInputTypes)', 'Producer → RAN Analytics', 'd', 'mdaf-coverage-1'], ['SubscribeAnalytics(type, notificationDestination?)', 'Consumer → RAN Analytics', 'd', '3 subscriber(s)'], ['PublishAnalyticsReport → best-effort push', 'Producer → RAN Analytics → Consumer', 'd', '402 report(s) in 24 h'], ['QueryAnalyticsReport (pull)', 'Consumer → RAN Analytics', 'n', 'Coverage Optimization last pulled 4 min ago']],
+        msgs: [['service discovery', 3, 4, 'd'], ['RegisterAnalyticsProducer', 0, 1, 'd'], ['SubscribeAnalytics', 3, 1, 'd'], ['PublishAnalyticsReport', 2, 1, 'd'], ['push', 1, 3, 'd'], ['QueryAnalyticsReport', 3, 1, 'n']],
+        funnel: [['Types', 14, 0, 'ok'], ['With producer', 12, 2, 'warn'], ['Subscribed', 11, 0, 'ok'], ['Publishing', 11, 0, 'ok'], ['Queried · 24 h', 9, 0, 'ok']],
+        callout: ['warn', '2 analytics types have no producer registered · subscribers to them get nothing'], actions: ['Publish report', 'Subscribe (poll)'] },
+      '09': { t: 'Intent registration → fulfilment reporting → admin state', doc: '09-intent-service-intent-flow.md', subj: 'intent', total: '612 intents', value: 'int-311 · stadium, no congestion', health: ['warn', '23 unfulfilled'],
+        modules: ['intent-service'],
+        actors: ['RMIO', 'Intent Service', 'RMIH', 'SO · SA SMOS'],
+        steps: [['RegisterIntentHandlingFunction (framework-internal only)', 'SO/SA SMOS → Intent Service', 'd', 'rmih-ran-01'], ['CreateIntent(expectations, rmihId)', 'RMIO → Intent Service', 'd', 'priority 1, RMIO noc-ui, RMIH rmih-ran-01'], ['Named RMIH notified (consumer-side selection)', 'Intent Service → RMIH', 'd', ''], ['PublishIntentReport(fulfilment, conflicts)', 'RMIH → Intent Service', 'w', '74% fulfilled · conflict with int-019'], ['UpdateIntentAdminState (RMIO only)', 'RMIO → Intent Service', 't', 'state ACTIVATED']],
+        msgs: [['RegisterIntentHandlingFunction', 3, 1, 'd'], ['CreateIntent', 0, 1, 'd'], ['notify', 1, 2, 'd'], ['work', 2, 3, 'd'], ['PublishIntentReport', 2, 1, 'd'], ['report', 1, 0, 'n']],
+        funnel: [['Created', 612, 0, 'ok'], ['Dispatched', 612, 0, 'ok'], ['Reporting', 589, 23, 'warn'], ['Fulfilled ≥ 80%', 551, 23, 'bad'], ['Deactivated', 38, 0, 'ok']],
+        callout: ['warn', '7 intents are in conflict · the higher priority wins until an operator decides'], actions: ['Publish fulfilment report (as so-smos)', 'Deactivate'] },
+      '10': { t: 'SO SMOS multi-step order: INFRA → TRAINING → DEPLOY', doc: '10-so-smos-multi-step-infra-training-deploy.md', subj: 'service order', total: '27 orders', value: 'so-27 · coverage v4 rollout', health: ['bad', '2 failed'],
+        modules: ['so-smos', 'focom', 'aimgf', 'nfo'],
+        actors: ['Operator', 'SO SMOS', 'FOCOM', 'AIMgF', 'NFO'],
+        steps: [['SubmitServiceOrder(scope, steps[])', 'Operator → SO SMOS', 'd', 'scope eu-west / 4 clusters'], ['INFRA → focom', 'SO SMOS dispatch', 'd', 'COMPLETED · 8 GPU nodes'], ['TRAINING → aimgf', 'SO SMOS dispatch', 'n', 'IN_PROGRESS · epoch 29 / 50'], ['DEPLOY → nfo', 'SO SMOS dispatch', 't', '']],
+        msgs: [['SubmitServiceOrder', 0, 1, 'd'], ['INFRA', 1, 2, 'd'], ['completed', 2, 1, 'd'], ['TRAINING', 1, 3, 'n']],
+        funnel: [['Submitted', 27, 0, 'ok'], ['INFRA done', 25, 0, 'ok'], ['TRAINING done', 22, 2, 'bad'], ['DEPLOY done', 20, 0, 'ok'], ['In progress', 5, 0, 'ok']],
+        callout: ['bad', 'so-21 failed at TRAINING · later steps were never attempted (fail-fast, no compensation)'], actions: ['Cancel pending steps'] }
+    };
+    const order = ['01', '02', '03', '04', '06', '07', '08', '09', '10', '15', '16', '19'];
+    const tone = { ok: ['badge b-ok', 'healthy'], warn: ['badge b-warn', ''], bad: ['badge b-bad', ''] };
+    const flows = order.map((k) => {
+      const f = F[k], on = k === id;
+      return {
+        n: k, t: f.t, href: k === '01' ? 'Flows.dc.html' : 'Flow' + k + '.dc.html',
+        bc: tone[f.health[0]][0], b: f.health[1], sub: f.total,
+        style: 'display:flex;gap:12px;align-items:flex-start;padding:12px;border-radius:10px;text-decoration:none;border:1px solid ' + (on ? 'var(--volt);background:var(--volt-soft);' : 'var(--line);background:var(--surface);'),
+        numStyle: 'flex:none;width:30px;height:30px;border-radius:7px;display:grid;place-items:center;font:700 12px JetBrains Mono,monospace;' + (on ? 'background:var(--volt);color:var(--volt-ink);' : 'background:var(--raised);color:var(--muted);border:1px solid var(--line-strong);')
+      };
+    });
+    const f = F[id];
+    const nA = f.actors.length;
+    const col = (i) => (i + 0.5) / nA * 100;
+    const color = { d: 'var(--ok)', n: 'var(--volt)', f: 'var(--bad)', t: 'var(--line-strong)' };
+    const msgs = f.msgs.map(([t, from, to, s], i) => {
+      const self = from === to;
+      const a = self ? col(from) : Math.min(col(from), col(to)), b = self ? col(from) + 100 / nA * 0.6 : Math.max(col(from), col(to));
+      const c = color[s], dir = to >= from ? 'right' : 'left';
+      return { n: i + 1, t,
+        box: 'position:absolute;left:' + a + '%;width:' + (b - a) + '%;top:' + (70 + i * 50) + 'px;display:flex;flex-direction:column;gap:4px;',
+        label: 'font:500 11px JetBrains Mono,monospace;color:' + (s === 'd' ? 'var(--text-2)' : c) + ';text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px;',
+        line: 'display:block;height:2px;' + (s === 'n' ? 'background:repeating-linear-gradient(90deg,' + c + ' 0 6px,transparent 6px 10px);' : 'background:' + c + ';') + 'box-shadow:' + (dir === 'right' ? '4px' : '-4px') + ' 0 0 -1px ' + c + ';' };
+    });
+    const S = { d: ['tl-i done', '✓', 'xs muted'], n: ['tl-i now', '●', 'xs t-volt'], w: ['tl-i warn', '!', 'xs t-warn'], f: ['tl-i fail', '✕', 'xs t-bad'], t: ['tl-i', '', 'xs muted'], b: ['tl-i block', '', 'xs muted'] };
+    const steps = f.steps.map(([title, actor, s, detail, phase], i) => ({ title, actor, detail, phase: phase || '', hasPhase: !!phase, cls: S[s][0], icon: S[s][1] || String(i + 1), dcls: S[s][2] }));
+    const done = f.steps.filter((s) => s[2] === 'd' || s[2] === 'w').length;
+    const top = f.funnel[0][1];
+    const funnel = f.funnel.map(([t, n, stuck, s]) => ({
+      t, n: n.toLocaleString('en-US'), w: 'width:' + Math.max(3, Math.round(n / top * 100)) + '%',
+      stuck: stuck ? stuck.toLocaleString('en-US') + (s === 'bad' ? ' failed' : ' waiting') : 'none stuck',
+      sc: stuck ? (s === 'bad' ? 'badge b-bad' : 'badge b-warn') : 'badge b-mute plain',
+      box: 'display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:10px;text-decoration:none;color:inherit;background:var(--raised);border:1px solid ' + (s === 'bad' && stuck ? 'rgba(255,93,82,0.5)' : 'var(--line)') + ';'
+    }));
+    const failed = f.steps.some((s) => s[2] === 'f');
+    const cur = {
+      n: id, t: f.t, doc: f.doc, subj: f.subj, total: f.total, value: f.value, modules: f.modules, actors: f.actors, msgs, steps, funnel, actions: f.actions,
+      callout: f.callout[1], calloutCls: 'callout ' + f.callout[0],
+      done, count: f.steps.length, pf: failed ? 'f-bad' : 'f-volt', pw: 'width:' + Math.round(done / f.steps.length * 100) + '%',
+      laneBox: 'position:relative;min-width:' + Math.max(760, nA * 130) + 'px;height:' + (90 + f.msgs.length * 50) + 'px;',
+      laneGrid: 'position:absolute;inset:0;display:grid;grid-template-columns:repeat(' + nA + ',minmax(0,1fr));'
+    };
+    return { P,  flows, cur, crumb: 'Flow ' + id };
+  }
+}
+</script>
+</body>
+</html>

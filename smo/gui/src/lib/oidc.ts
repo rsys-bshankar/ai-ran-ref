@@ -1,7 +1,7 @@
 /**
  * OIDC sign-in (PR-SEC-6): what the sign-in page shows for the reason code the backend puts on /login?oidc_error=<code>, and where the single-sign-on button points.
  * The codes are the backend's (gui-bff/app/oidc.py, REASONS); the page never shows text from the identity provider, only its own wording for a code it knows.
- * Used by `pages/Login.tsx`; covered by `oidc.test.ts`.
+ * Used by the sign-in page (`pages/login/sections/SignInForm.tsx`, `pages/login/data/queries.ts`); covered by `oidc.test.ts`.
  */
 
 /**

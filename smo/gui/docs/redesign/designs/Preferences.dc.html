@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Preferences — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="prefs" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Account" crumb="Preferences" scope="eu-west · all clusters" hint-size="100%,64px"></dc-import>
+    <main class="page" style="max-width: 1180px;">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">Signed in as admin</div>
+          <h1 style="margin-top: 6px;">Preferences</h1>
+          <p>How the console looks and behaves for you. Saved to your account, so it follows you to any browser and applies on every page.</p>
+        </div>
+        <div class="row"><button class="btn" onClick="{{reset}}">Reset to defaults</button><button class="btn btn-primary" onClick="{{save}}">Save preferences</button></div>
+      </div>
+
+      <sc-if value="{{saved}}" hint-placeholder-val="{{false}}">
+        <div class="callout volt"><span class="small"><strong>Saved.</strong> Every page now opens in {{summary}}. You can change this here at any time.</span></div>
+      </sc-if>
+      <sc-if value="{{dirty}}" hint-placeholder-val="{{false}}">
+        <div class="callout warn"><span class="small">You're previewing changes that aren't saved yet. Other pages still use your saved preferences.</span></div>
+      </sc-if>
+
+      <div class="grid g3" style="align-items: start;">
+        <div class="s2" style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
+          <section class="card" aria-labelledby="th-h">
+            <div class="card-h"><div><h2 id="th-h">Theme</h2><span class="sub">dark suits a control room; light suits bright offices</span></div></div>
+            <div class="grid g3" style="gap: 10px;" role="radiogroup" aria-label="Theme">
+              <sc-for list="{{themes}}" as="t" hint-placeholder-count="3">
+                <button role="radio" aria-checked="{{t.on}}" onClick="{{t.go}}" style="{{t.box}}">
+                  <span style="{{t.prev}}"><span style="{{t.bar}}"></span><span style="{{t.bar2}}"></span><span style="{{t.acc}}"></span></span>
+                  <span class="row between" style="width: 100%;"><strong class="small">{{t.label}}</strong><span class="{{t.badge}}">{{t.tick}}</span></span>
+                  <span class="xs muted" style="text-align: left;">{{t.note}}</span>
+                </button>
+              </sc-for>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="ac-h">
+            <div class="card-h"><div><h2 id="ac-h">Accent colour</h2><span class="sub">buttons, the active page, selections and links</span></div></div>
+            <div class="row wrap" style="gap: 10px;" role="radiogroup" aria-label="Accent colour">
+              <sc-for list="{{accents}}" as="a" hint-placeholder-count="5">
+                <button role="radio" aria-checked="{{a.on}}" onClick="{{a.go}}" style="{{a.box}}">
+                  <span style="{{a.sw}}"></span>
+                  <span style="display: flex; flex-direction: column; align-items: flex-start; gap: 2px;"><strong class="small">{{a.label}}</strong><span class="xs muted">{{a.note}}</span></span>
+                </button>
+              </sc-for>
+            </div>
+            <span class="xs muted">Status colours (critical, major, ok…) never change with the accent, and every status also shows a word, so a red accent can't be confused with a critical alarm.</span>
+          </section>
+
+          <section class="card" aria-labelledby="fs-h">
+            <div class="card-h"><div><h2 id="fs-h">Text size</h2><span class="sub">scales text and spacing together, on every page</span></div></div>
+            <div class="seg" role="radiogroup" aria-label="Text size" style="align-self: flex-start;">
+              <sc-for list="{{sizes}}" as="z" hint-placeholder-count="4"><button role="radio" aria-checked="{{z.on}}" class="{{z.cls}}" onClick="{{z.go}}">{{z.label}}</button></sc-for>
+            </div>
+            <div class="inset" style="display: flex; flex-direction: column; gap: 4px;"><span class="small">Loss of signal on 12 DUs in metro-a</span><span class="xs muted">The quick check: can you read this line comfortably from where you sit?</span></div>
+          </section>
+
+          <section class="card" aria-labelledby="df-h">
+            <div class="card-h"><div><h2 id="df-h">Display defaults</h2><span class="sub">used whenever a page opens</span></div></div>
+            <div class="grid g2">
+              <label class="field"><span>Start page after sign-in</span><select class="input"><option>Dashboard</option><option>Alarms</option><option>Approvals</option><option>rApps</option></select></label>
+              <label class="field"><span>Rows per page in tables</span><select class="input"><option>25</option><option selected>50</option><option>100</option></select></label>
+              <label class="field"><span>Time zone</span><select class="input"><option>Browser (Asia/Kolkata)</option><option>UTC</option><option>Network local (Europe/Berlin)</option></select></label>
+              <label class="field"><span>Time format</span><select class="input"><option>24-hour (14:05)</option><option>12-hour (2:05 PM)</option></select></label>
+            </div>
+            <label class="row small"><input type="checkbox"> Reduce motion (no animated charts or transitions)</label>
+            <label class="row small"><input type="checkbox" checked> Play a sound for new critical alarms</label>
+          </section>
+        </div>
+
+        <section class="card" aria-labelledby="pv-h" style="position: sticky; top: 16px;">
+          <div class="card-h"><h2 id="pv-h">Preview</h2><span class="badge b-volt plain">live</span></div>
+          <div class="kpi volt"><span class="kpi-l">DUs healthy</span><span class="kpi-v">98.0<small>%</small></span><div class="meter"><span class="f-volt" style="width: 98%;"></span></div></div>
+          <div class="row wrap" style="gap: 6px;"><span class="sev sev-cr" style="min-width: 0;">Critical</span><span class="sev sev-mj" style="min-width: 0;">Major</span><span class="badge b-ok">Running</span><span class="badge b-warn">Pending</span><span class="badge b-volt">Autonomous</span></div>
+          <div class="tabs"><button class="tab on">Instances</button><button class="tab">Packages</button></div>
+          <div class="callout volt" style="padding: 10px 12px;"><span class="small">Mobility Opt. · 14 similar changes <a href="#">Review →</a></span></div>
+          <div class="row"><button class="btn btn-primary btn-sm">Approve</button><button class="btn btn-sm">Open</button><button class="btn btn-danger btn-sm">Stop</button></div>
+          <svg width="100%" height="64" viewBox="0 0 300 64" preserveAspectRatio="none" aria-hidden="true"><path class="ar-volt" d="M0 50 L50 44 L100 46 L150 30 L200 34 L250 20 L300 16 L300 64 L0 64 Z"></path><polyline class="ln-volt" points="0,50 50,44 100,46 150,30 200,34 250,20 300,16"></polyline></svg>
+          <span class="xs muted">Stored with your user in the GUI backend. This browser keeps a copy so pages open in your theme straight away.</span>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1320}}'>
+class Component extends DCLogic {
+  renderVals() {
+    let stored = {};
+    try { stored = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {}
+    const def = { theme: 'dark', accent: 'volt', size: 'm' };
+    const st = this.state || {};
+    const cur = Object.assign({}, def, stored, st.draft || {});
+    const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+    const zooms = { s: '0.9', m: '1', l: '1.12', xl: '1.25' };
+    const P = { theme: cur.theme === 'system' ? sys : cur.theme, accent: cur.accent, zoom: zooms[cur.size] || '1' };
+    const set = (k, v) => () => this.setState({ draft: Object.assign({}, st.draft || {}, { [k]: v }), saved: false });
+    const sel = (on) => 'display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:12px;border-radius:12px;cursor:pointer;font:inherit;color:var(--text);background:var(--raised);border:' + (on ? '2px solid var(--volt)' : '1px solid var(--line)') + ';';
+    const mini = (g, s, b) => ({ prev: 'display:flex;flex-direction:column;gap:6px;width:100%;height:64px;padding:8px;border-radius:8px;background:' + g + ';border:1px solid ' + b + ';', bar: 'display:block;height:10px;width:70%;border-radius:3px;background:' + s + ';', bar2: 'display:block;height:10px;width:45%;border-radius:3px;background:' + s + ';', acc: 'display:block;height:10px;width:28%;border-radius:3px;background:var(--volt);' });
+    const themes = [
+      Object.assign({ k: 'dark', label: 'Dark', note: 'Default. Easier on the eyes in dim rooms.' }, mini('#0b0f14', '#1a222c', '#26303c')),
+      Object.assign({ k: 'light', label: 'Light', note: 'High legibility in bright rooms.' }, mini('#f3f5f8', '#dde3ea', '#c3ccd7')),
+      Object.assign({ k: 'system', label: 'Match my system', note: 'Follows your computer’s setting · now ' + sys + '.' }, mini('linear-gradient(90deg,#0b0f14 50%,#f3f5f8 50%)', '#7f8b99', '#7f8b99'))
+    ].map((t) => Object.assign(t, { on: cur.theme === t.k ? 'true' : 'false', box: sel(cur.theme === t.k), badge: cur.theme === t.k ? 'badge b-volt plain' : '', tick: cur.theme === t.k ? 'Selected' : '', go: set('theme', t.k) }));
+    const accents = [['volt', 'Signal lime', 'default', '#c8f051'], ['blue', 'Ocean blue', 'calm, common', '#4c9bf5'], ['teal', 'Teal', 'soft contrast', '#2dd4bf'], ['amber', 'Amber', 'warm', '#fbbf24'], ['radisys', 'Radisys red', 'brand colour', '#df1f4e']]
+      .map(([k, label, note, hex]) => ({ k, label, note, on: cur.accent === k ? 'true' : 'false', go: set('accent', k),
+        box: 'display:flex;align-items:center;gap:10px;padding:10px 14px 10px 10px;border-radius:12px;cursor:pointer;font:inherit;color:var(--text);background:var(--raised);border:' + (cur.accent === k ? '2px solid var(--volt)' : '1px solid var(--line)') + ';',
+        sw: 'display:block;width:32px;height:32px;border-radius:50%;background:' + hex + ';box-shadow:' + (cur.accent === k ? '0 0 0 3px var(--surface),0 0 0 5px ' + hex : 'none') + ';' }));
+    const sizes = [['s', 'Small · 90%'], ['m', 'Default · 100%'], ['l', 'Large · 112%'], ['xl', 'Extra large · 125%']].map(([k, label]) => ({ label, on: cur.size === k ? 'true' : 'false', cls: cur.size === k ? 'on' : '', go: set('size', k) }));
+    const dirty = !!st.draft && JSON.stringify(Object.assign({}, def, stored)) !== JSON.stringify(cur);
+    const names = { dark: 'the dark theme', light: 'the light theme', system: 'your system theme' };
+    const an = { volt: 'Signal lime', blue: 'Ocean blue', teal: 'Teal', amber: 'Amber', radisys: 'Radisys red' };
+    const sn = { s: 'small', m: 'default', l: 'large', xl: 'extra large' };
+    return { P, themes, accents, sizes, dirty, saved: !!st.saved,
+      summary: names[cur.theme] + ', ' + an[cur.accent] + ' accent, ' + sn[cur.size] + ' text',
+      save: () => { try { localStorage.setItem('smo.prefs', JSON.stringify(cur)); } catch (e) {} this.setState({ draft: null, saved: true }); },
+      reset: () => this.setState({ draft: Object.assign({}, def), saved: false }) };
+  }
+}
+</script>
+</body>
+</html>

@@ -41,6 +41,8 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/ran-nf-oam", ("PUT", "DELETE"), r"^/rapp-kill/[^/]+$"),
         ("/ran-nf-oam", ("GET",), r"^/rapp-kill$"),
         ("/rapp-mgmt", ("PUT", "DELETE"), r"^/instances/[^/]+/kill$"),
+        # GUI-9.6: the global stop of every rApp, its lift, and how many are stopped
+        ("/rapp-mgmt", ("PUT", "DELETE", "GET"), r"^/kill-all$"),
         # MGT-11.6/11.7: seeding the standard KPIs, and pushing results to DME (the reads stay open)
         ("/ran-nf-oam", ("POST",), r"^/kpi-definitions/standard$"),
         ("/ran-nf-oam", ("POST",), r"^/kpis/[^/]+/publish$"),
@@ -57,8 +59,8 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/ran-nf-oam", ("GET", "POST", "DELETE"), r"^/approval-subscriptions(/[^/]+)?$"),
         # MGT-14.7, MGT-15.6: who is told when an onboarding fails or a campaign halts (a destination the platform will call)
         ("/ran-nf-oam", ("GET", "POST", "DELETE"), r"^/lifecycle-subscriptions(/[^/]+)?$"),
-        # AI-13: the record of why rApps acted
-        ("/ran-nf-oam", ("GET",), r"^/decision-records$"),
+        # AI-13: the record of why rApps acted, and (GUI-9.5) its CSV export, which holds the same rows
+        ("/ran-nf-oam", ("GET",), r"^/decision-records(/export\.csv)?$"),
         # SEC-10: what a caller (or a target) is scoped to is set by the platform, never by an rApp
         ("/sme", ("PUT",), r"^/invoker-registrations/[^/]+/authz-scope$"),
         ("/ran-nf-oam", ("PUT",), r"^/managed-entities/[^/]+/scope$"),

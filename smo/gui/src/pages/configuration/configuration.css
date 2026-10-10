@@ -1,0 +1,9 @@
+/* Configuration page (pages/configuration): the wave strip of a staged config job. Tokens only (styles.css); no hex colours. */
+
+.cfg-waves { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; }
+.cfg-wave { display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: var(--r-sm); background: var(--raised); border: 1px solid var(--line); border-top: 3px solid var(--line-strong); }
+.cfg-wave.applied { border-top-color: var(--ok); }
+.cfg-wave.running { border-top-color: var(--volt); }
+.cfg-wave.rejected { border-top-color: var(--bad); }
+.cfg-wave.reverted { border-top-color: var(--warn); }
+.cfg-wave.skipped .small, .cfg-wave.waiting .small { color: var(--muted); }
