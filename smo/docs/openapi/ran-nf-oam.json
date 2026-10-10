@@ -1620,6 +1620,29 @@
         "title": "SelectRequest",
         "type": "object"
       },
+      "SiteClusterBody": {
+        "additionalProperties": false,
+        "description": "The site cluster of an element (`null` clears it). Same alphabet as a region: 1 to 100 letters, digits and `. _ : / @ + -`.",
+        "properties": {
+          "siteCluster": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sitecluster"
+          }
+        },
+        "required": [
+          "siteCluster"
+        ],
+        "title": "SiteClusterBody",
+        "type": "object"
+      },
       "TemplateChange": {
         "additionalProperties": false,
         "description": "One change of a template: the element is the new element's own, so there is no `managedElementRef`.",
@@ -2153,9 +2176,41 @@
   "paths": {
     "/alarms": {
       "get": {
-        "description": "`severity` filter (GUI pass) \u2014 the alarm console filters by ME and\nby perceivedSeverity; `severity=cleared` isolates the cleared history.\n`managed_function_ref` (W10-alarm-cellref) narrows to the alarms raised\non one managed function, e.g. a cell's `NRCellDU=101`.\n\nPR-SEC-10.6: a caller with a scope claim sees only the alarms of the elements inside it (the list is filtered, never refused: naming an element outside\nthe scope in `managed_element_ref` gives an empty page, the same as an element with no alarms).",
+        "description": "`severity` filter (GUI pass) \u2014 the alarm console filters by ME and\nby perceivedSeverity; `severity=cleared` isolates the cleared history.\n`managed_function_ref` (W10-alarm-cellref) narrows to the alarms raised\non one managed function, e.g. a cell's `NRCellDU=101`.\n\nPR-GUI-9.4/9.5: `ack_state`, `open_only` (no cleared alarms), `probable_cause`, `since`/`until` (raisedAt, inclusive/exclusive) and `region` (the\nmanaged element's) narrow further. `after` switches to keyset paging in the console order: severity (critical first), raisedAt newest first, alarmId;\nthe answer is then `{items, limit, nextCursor, hasMore}` (`nextCursor` null on the last page). Without `after` the answer and its order are unchanged.\n\nPR-SEC-10.6: a caller with a scope claim sees only the alarms of the elements inside it (the list is filtered, never refused: naming an element outside\nthe scope in `managed_element_ref` gives an empty page, the same as an element with no alarms).",
         "operationId": "query_alarms_alarms_get",
         "parameters": [
+          {
+            "description": "Keyset paging: the `nextCursor` of the previous page; an empty value asks for the first page. When given, the answer is `{items, limit, nextCursor, hasMore}` and `offset` and `total` are not used.",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keyset paging: the `nextCursor` of the previous page; an empty value asks for the first page. When given, the answer is `{items, limit, nextCursor, hasMore}` and `offset` and `total` are not used.",
+              "title": "After"
+            }
+          },
+          {
+            "description": "Rows to skip before the first one returned.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Rows to skip before the first one returned.",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
           {
             "in": "query",
             "name": "managed_element_ref",
@@ -2205,17 +2260,107 @@
             }
           },
           {
-            "description": "Rows to skip before the first one returned.",
             "in": "query",
-            "name": "offset",
+            "name": "ack_state",
             "required": false,
             "schema": {
-              "default": 0,
-              "description": "Rows to skip before the first one returned.",
-              "maximum": 2147483647,
-              "minimum": 0,
-              "title": "Offset",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "enum": [
+                    "ACKNOWLEDGED",
+                    "UNACKNOWLEDGED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ack State"
+            }
+          },
+          {
+            "description": "Leave cleared alarms out.",
+            "in": "query",
+            "name": "open_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Leave cleared alarms out.",
+              "title": "Open Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "probable_cause",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Probable Cause"
+            }
+          },
+          {
+            "description": "raisedAt at or after this time.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "raisedAt at or after this time.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "raisedAt before this time.",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "raisedAt before this time.",
+              "title": "Until"
+            }
+          },
+          {
+            "description": "The region of the alarm's managed element (ADR 0005).",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The region of the alarm's managed element (ADR 0005).",
+              "title": "Region"
             }
           },
           {
@@ -2356,6 +2501,294 @@
           }
         },
         "summary": "Query Alarms"
+      }
+    },
+    "/alarms/counts": {
+      "get": {
+        "description": "PR-GUI-9.4: how many alarms there are per `group_by`, with the filters of `GET /alarms`, counted in SQL: `{\"groupBy\", \"groups\": [{\"key\", \"count\"}]}`.\n\n`severity`, `ack_state`: every value present. `probable_cause`, `managed_element_ref`, `region` (the element's region): the top 50 groups by count\n(then by key); a NULL cause or region is the key `null`. `hour`: the last 24 hourly buckets of raisedAt, oldest first, every hour present (count 0\nwhen none), keys `2026-10-10T08:00:00Z` (UTC), each with `bySeverity` `{critical, major, minor, warning}` (a cleared or indeterminate alarm counts\nin `count` only). Filtered to the caller's scope claim like the list.",
+        "operationId": "count_alarms_alarms_counts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": true,
+            "schema": {
+              "enum": [
+                "severity",
+                "ack_state",
+                "probable_cause",
+                "managed_element_ref",
+                "region",
+                "hour"
+              ],
+              "title": "Group By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Element Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "managed_function_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Function Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ack_state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "ACKNOWLEDGED",
+                    "UNACKNOWLEDGED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ack State"
+            }
+          },
+          {
+            "description": "Leave cleared alarms out.",
+            "in": "query",
+            "name": "open_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Leave cleared alarms out.",
+              "title": "Open Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "probable_cause",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Probable Cause"
+            }
+          },
+          {
+            "description": "raisedAt at or after this time.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "raisedAt at or after this time.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "raisedAt before this time.",
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "raisedAt before this time.",
+              "title": "Until"
+            }
+          },
+          {
+            "description": "The region of the alarm's managed element (ADR 0005).",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The region of the alarm's managed element (ADR 0005).",
+              "title": "Region"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Count Alarms"
       }
     },
     "/alarms/ingest": {
@@ -2622,6 +3055,153 @@
           }
         },
         "summary": "Ingest Alarm"
+      }
+    },
+    "/alarms/stats": {
+      "get": {
+        "description": "PR-GUI-9.8: `{\"windowHours\", \"mttaSeconds\", \"acked\", \"open\"}`. `mttaSeconds`: the mean time to acknowledge, the mean of ackTime - raisedAt over\nthe alarms acknowledged within the last `window_hours` (null when none was); `acked`: how many those are; `open`: the alarms not cleared now\n(whatever their age). `region` narrows to the elements of one region; filtered to the caller's scope claim. An alarm acknowledged before the\nack time was recorded (revision 0034) has none and is not counted.",
+        "operationId": "alarm_stats_alarms_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window_hours",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "maximum": 744,
+              "minimum": 1,
+              "title": "Window Hours",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Alarm Stats"
       }
     },
     "/alarms/{alarm_id}/ack": {
@@ -2925,6 +3505,147 @@
           }
         },
         "summary": "Clear Alarm"
+      }
+    },
+    "/alarms/{alarm_id}/correlated": {
+      "get": {
+        "description": "PR-GUI-9.8 (PR-MGT-9): the alarms that probably belong with this one, by a stated heuristic rather than a root-cause analysis: the other alarms\non the same managed element raised within `window_seconds` before or after it (cleared ones included), oldest first, at most 200.\n`{\"alarmId\", \"rule\": \"same-element-within-window\", \"windowSeconds\", \"items\", \"truncated\"}`. 404 `ALARM_NOT_FOUND` for an unknown alarm or one\noutside the caller's scope claim.",
+        "operationId": "correlated_alarms_alarms__alarm_id__correlated_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alarm_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alarm Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window_seconds",
+            "required": false,
+            "schema": {
+              "default": 60,
+              "maximum": 3600,
+              "minimum": 1,
+              "title": "Window Seconds",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Correlated Alarms"
       }
     },
     "/approval-subscriptions": {
@@ -5492,7 +6213,7 @@
     },
     "/decision-records": {
       "get": {
-        "description": "AI-13.3: why rApps acted, newest first: one record per config job an rApp made (and per approval that ended with none). Narrow by rApp (`invoker_id`),\n`job_id`, `approval_id`, `disposition`, `model_version` and the time (`since` inclusive, `until` exclusive). `?total=false` skips the count. Names other rApps'\nactions: internal-only at R1 (an rApp reads a record by id).",
+        "description": "AI-13.3: why rApps acted, newest first: one record per config job an rApp made (and per approval that ended with none). Narrow by rApp (`invoker_id`),\n`job_id`, `approval_id`, `disposition`, `model_version` and the time (`since` inclusive, `until` exclusive). `?total=false` skips the count. Names other rApps'\nactions: internal-only at R1 (an rApp reads a record by id). PR-GUI-9.5: `after` pages by keyset in the same order (occurredAt newest first, decisionId):\nthe answer is then `{items, limit, nextCursor, hasMore}`.",
         "operationId": "list_decision_records_decision_records_get",
         "parameters": [
           {
@@ -5617,6 +6338,24 @@
                 }
               ],
               "title": "Until"
+            }
+          },
+          {
+            "description": "Keyset paging: the `nextCursor` of the previous page; an empty value asks for the first page. When given, the answer is `{items, limit, nextCursor, hasMore}` and `offset` and `total` are not used.",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keyset paging: the `nextCursor` of the previous page; an empty value asks for the first page. When given, the answer is `{items, limit, nextCursor, hasMore}` and `offset` and `total` are not used.",
+              "title": "After"
             }
           },
           {
@@ -5771,6 +6510,190 @@
           }
         },
         "summary": "List Decision Records"
+      }
+    },
+    "/decision-records/export.csv": {
+      "get": {
+        "description": "PR-GUI-9.5: the decision records of a time span as a streamed CSV file (`Content-Disposition: attachment`), oldest first, one header row then one\nrow per record (the fields of `GET /decision-records`; `managedElements` joined by `;`). `since` (inclusive) is required, `until` (exclusive)\ndefaults to now, and the span is at most 31 days (422 otherwise); at most 1,000,000 rows. `invoker_id` and `disposition` narrow it. Internal-only\nat R1, like the list.",
+        "operationId": "export_decision_records_decision_records_export_csv_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "Since",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          },
+          {
+            "in": "query",
+            "name": "invoker_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Invoker Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "disposition",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "DIRECT",
+                    "APPROVED",
+                    "ROLLBACK",
+                    "REJECTED",
+                    "EXPIRED",
+                    "REFUSED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Disposition"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {}
+            },
+            "description": "The records as CSV"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Export Decision Records"
       }
     },
     "/decision-records/{decision_id}": {
@@ -9571,7 +10494,7 @@
     },
     "/managed-entities": {
       "get": {
-        "description": "The registered managed elements. `region` and `tenant` narrow the list (PR-SEC-10.2). A caller with a scope claim sees only the elements inside it\n(PR-SEC-10.6: the list is filtered, never refused).",
+        "description": "The registered managed elements. `region` and `tenant` narrow the list (PR-SEC-10.2), and `site_cluster` (PR-GUI-9.8). `search` (PR-GUI-9.2)\nkeeps the elements whose managed element ref or managed function ref contains it, ignoring case. A caller with a scope claim sees only the elements\ninside it (PR-SEC-10.6: the list is filtered, never refused).",
         "operationId": "list_managed_entities_managed_entities_get",
         "parameters": [
           {
@@ -9620,6 +10543,40 @@
                 }
               ],
               "title": "Tenant"
+            }
+          },
+          {
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Site Cluster"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
             }
           },
           {
@@ -9774,6 +10731,302 @@
           }
         },
         "summary": "List Managed Entities"
+      }
+    },
+    "/managed-entities/health": {
+      "get": {
+        "description": "PR-GUI-9.8: the health map. `{\"groups\": [{\"key\", \"elements\", \"unhealthy\", \"worstSeverity\"}], \"healthScore\"}`, one group per `group_by` value\n(`region` or `site_cluster`; elements without one are the group `null`), ordered by unhealthy count then key. Unhealthy: an element with an open\ncritical or major alarm. worstSeverity: the worst graded severity of an open alarm in the group, or null. healthScore: 100 x (elements - unhealthy)\n/ elements over all the groups, one decimal, null when there are no elements. `region` narrows to one region; the caller's scope claim applies.",
+        "operationId": "fleet_health_managed_entities_health_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "default": "region",
+              "enum": [
+                "region",
+                "site_cluster"
+              ],
+              "title": "Group By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Fleet Health"
+      }
+    },
+    "/managed-entities/worst": {
+      "get": {
+        "description": "PR-GUI-9.8: the elements with open alarms, worst first: `[{managedElementRef, region, siteCluster, critical, major, openAlarms}]` ranked by open\ncritical alarms, then open major, then all open alarms (then the reference), in one SQL query. An element with no open alarm is not listed.\n`region` narrows to one region; the caller's scope claim applies.",
+        "operationId": "worst_elements_managed_entities_worst_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Worst Elements"
       }
     },
     "/managed-entities/{managed_element_ref}": {
@@ -10918,6 +12171,144 @@
           }
         },
         "summary": "Set Managed Entity Scope"
+      }
+    },
+    "/managed-entities/{managed_element_ref}/site-cluster": {
+      "put": {
+        "description": "PR-GUI-9.8: set (or with `null` clear) the site cluster of a managed element \u2192 `{managedElementRef, siteCluster}`. Commits. 404\n`MANAGED_ENTITY_NOT_FOUND` for an unknown element; 422 for a value outside the alphabet. An admin's call in the GUI backend.",
+        "operationId": "set_site_cluster_managed_entities__managed_element_ref__site_cluster_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "managed_element_ref",
+            "required": true,
+            "schema": {
+              "title": "Managed Element Ref",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteClusterBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Set Site Cluster"
       }
     },
     "/managed-objects/{dn}": {
@@ -20309,7 +21700,7 @@
     },
     "/topology/links": {
       "get": {
-        "description": "PR-MGT-10.2: the neighbour relations declared in the cell guards, each with its link type (`topology.py`): both cells on one element\n(`INTRA_ELEMENT`), on different elements (`INTER_ELEMENT`), a cell id several elements claim (`AMBIGUOUS`) or none does (`EXTERNAL`), and whether\nthe other side declares the relation back (`reciprocal`). `managed_element_ref` keeps the links with that element at either end.",
+        "description": "PR-MGT-10.2: the neighbour relations declared in the cell guards, each with its link type (`topology.py`): both cells on one element\n(`INTRA_ELEMENT`), on different elements (`INTER_ELEMENT`), a cell id several elements claim (`AMBIGUOUS`) or none does (`EXTERNAL`), and whether\nthe other side declares the relation back (`reciprocal`). `managed_element_ref` keeps the links with that element at either end.\n\nPR-GUI-9.4: `reciprocal` keeps the reciprocal (`true`) or the one-sided (`false`) relations. With neither `limit` nor `offset` the answer is\n`{\"items\": [...]}`, every link, as it always was; with either, it is the standard page envelope `{items, total, limit, offset}` (`limit`\ndefaults to 100).",
         "operationId": "topology_links_topology_links_get",
         "parameters": [
           {
@@ -20348,6 +21739,62 @@
                 }
               ],
               "title": "Link Type"
+            }
+          },
+          {
+            "description": "`false`: only the relations the other side does not declare back.",
+            "in": "query",
+            "name": "reciprocal",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`false`: only the relations the other side does not declare back.",
+              "title": "Reciprocal"
+            }
+          },
+          {
+            "description": "Page size; given (or `offset`), the answer is the page envelope.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size; given (or `offset`), the answer is the page envelope.",
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2147483647,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
             }
           }
         ],
@@ -20462,6 +21909,141 @@
           }
         },
         "summary": "Topology Links"
+      }
+    },
+    "/topology/links/counts": {
+      "get": {
+        "description": "PR-GUI-9.4: how many declared neighbour relations there are, without the list: `{\"total\", \"notReciprocal\", \"external\", \"ambiguous\",\n\"intraElement\", \"interElement\"}`. `managed_element_ref` counts only the links with that element at either end.",
+        "operationId": "topology_link_counts_topology_links_counts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Element Ref"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Topology Link Counts"
       }
     },
     "/topology/relation": {

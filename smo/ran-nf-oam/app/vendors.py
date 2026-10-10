@@ -37,9 +37,9 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from smo_shared.db import get_session
@@ -432,14 +432,16 @@ def _me_view(db: Session, me: ManagedEntity) -> dict:
             "entityType": me.entity_type, "vendorName": me.vendor_name, "o1Protocol": me.o1_protocol,
             "o1AdaptorEndpointId": str(me.o1_adaptor_endpoint_id) if me.o1_adaptor_endpoint_id else None,
             "supportedServices": effective_services(db, me), "conformanceMode": cap.conformance_mode if cap else None,
-            "cellGuards": me.cell_guards or {}, "region": me.region, "tenant": me.tenant}
+            "cellGuards": me.cell_guards or {}, "region": me.region, "tenant": me.tenant, "siteCluster": me.site_cluster}
 
 
 @router.get("/managed-entities")
 def list_managed_entities(request: Request, vendor_name: str | None = None, region: str | None = None, tenant: str | None = None,
+                          site_cluster: str | None = None, search: str | None = Query(None, min_length=1, max_length=200),
                           limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
-    """The registered managed elements. `region` and `tenant` narrow the list (PR-SEC-10.2). A caller with a scope claim sees only the elements inside it
-    (PR-SEC-10.6: the list is filtered, never refused)."""
+    """The registered managed elements. `region` and `tenant` narrow the list (PR-SEC-10.2), and `site_cluster` (PR-GUI-9.8). `search` (PR-GUI-9.2)
+    keeps the elements whose managed element ref or managed function ref contains it, ignoring case. A caller with a scope claim sees only the elements
+    inside it (PR-SEC-10.6: the list is filtered, never refused)."""
     stmt = scoping.scoped_to_elements(select(ManagedEntity), scoping.request_scope(request), ManagedEntity.managed_element_ref).order_by(ManagedEntity.managed_element_ref)
     if region:
         stmt = stmt.where(ManagedEntity.region == region)
@@ -447,6 +449,13 @@ def list_managed_entities(request: Request, vendor_name: str | None = None, regi
         stmt = stmt.where(ManagedEntity.tenant == tenant)
     if vendor_name:
         stmt = stmt.where(ManagedEntity.vendor_name == vendor_name)
+    if site_cluster:
+        stmt = stmt.where(ManagedEntity.site_cluster == site_cluster)
+    if search:
+        # autoescape: a `%` or `_` the caller typed is a character to find, not a wildcard
+        needle = search.lower()
+        stmt = stmt.where(func.lower(ManagedEntity.managed_element_ref).contains(needle, autoescape=True)
+                          | func.lower(func.coalesce(ManagedEntity.managed_function_ref, "")).contains(needle, autoescape=True))
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [_me_view(db, me) for me in page["items"]]}
 
