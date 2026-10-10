@@ -12,7 +12,7 @@ import time
 
 from typing import cast
 
-from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, case, create_engine, delete, event, false, func, inspect, select, text, update
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Uuid, case, create_engine, delete, event, false, func, inspect, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -187,6 +187,41 @@ class UserPreference(Base):
     username: Mapped[str] = mapped_column(String, primary_key=True)
     value: Mapped[str] = mapped_column(String, nullable=False)          # JSON text
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+class ExportJob(Base):
+    """An asynchronous CSV export (GUI-9.5b, app/exports.py): who asked (`username`), what (`kind` `decisions` or `audit`, and the filters in
+    `params`), where it is (`state` QUEUED, RUNNING, DONE, FAILED; EXPIRED is shown for a job past `expires_at` and such rows are purged on the
+    next create), how much it wrote (`rows`, `bytes`) and why it failed (`error`). In the database, not in a process, so every instance on a
+    shared GUI_DATABASE_URL lists it and serves its file. `runner_id` is the process that runs it and `heartbeat_at` the last time that process
+    showed it was alive: a QUEUED or RUNNING job whose heartbeat is stale is an orphan (its instance stopped) and is marked FAILED "interrupted"
+    when read. A new table, made by `create_all`."""
+    __tablename__ = "gui_export_job"
+    __table_args__ = (Index("ix_gui_export_job_username_created", "username", "created_at"),)
+
+    id: Mapped[object] = mapped_column(Uuid, primary_key=True)
+    username: Mapped[str] = mapped_column(String, nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    params: Mapped[dict] = mapped_column(JSON, nullable=False)
+    state: Mapped[str] = mapped_column(String, nullable=False, default="QUEUED")
+    rows: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    runner_id: Mapped[str | None] = mapped_column(String)
+    heartbeat_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ExportChunk(Base):
+    """One piece of an export's CSV file, in order (`seq` from 0), at most 1 MiB (`exports.CHUNK_BYTES`). The file is the chunks concatenated;
+    a chunk may end inside a row. Deleted with its job."""
+    __tablename__ = "gui_export_chunk"
+
+    job_id: Mapped[object] = mapped_column(Uuid, ForeignKey("gui_export_job.id", ondelete="CASCADE"), primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
 
 
 class Database:

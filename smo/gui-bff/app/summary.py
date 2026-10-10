@@ -15,16 +15,27 @@ A count that needs data no module serves today (a network health score) is delib
 
 The same cached computation feeds the event stream (app/events.py): `install` keeps it on `app.state.summary_page`, so a page pushed to fifty
 open streams and asked by fifty tiles is still one fan-out per `CACHE_SECONDS`.
+
+GUI-9.3, the scope picker: `?region=` and `?site_cluster=` narrow every count whose module list accepts them (`SCOPED_PATHS`, the paths and which of
+the two parameters each takes); the other counts stay network-wide and are named in the answer's `unscoped`. The cache key is the page and the scope,
+so each scope is its own shared entry (at most `MAX_CACHE_ENTRIES` entries, the oldest dropped first). A scope value is checked against `SCOPE_RE`
+before it reaches a module or a cache key.
+
+GUI-9.8b, "Needs your attention": `GET /api/summary/attention` is the Dashboard's four short lists in one call (`ATTENTION`): each group is one
+call to its module for the newest `limit` rows with the filter of the matching count, which answers the rows and their `total` together. The rows are
+trimmed to the fields the GUI shows. Cached and shared the same way (`app.state.summary_attention`, also fed to the event stream as the topic
+`summary:attention`). This route is declared before `/api/summary/{page}`, so "attention" is never read as a page name.
 """
 
 import asyncio
 import datetime
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 
 import httpx
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Query
 
 from .rbac import decide
 from .smo_client import SmoAuthError
@@ -33,6 +44,12 @@ log = logging.getLogger("smo-gui-bff")
 
 CACHE_SECONDS = 5.0
 COUNT_TIMEOUT_SECONDS = 5.0
+# One entry per (page or "attention", scope): bounded, because the scope is chosen by the caller. Past this the oldest entries are dropped.
+MAX_CACHE_ENTRIES = 256
+# A region or site-cluster name as RAN NF OAM stores it (ADR 0005). Checked before it is sent to a module or used in a cache key or an event topic.
+SCOPE_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+ATTENTION_DEFAULT_LIMIT = 3
+ATTENTION_MAX_LIMIT = 10
 
 
 @dataclass(frozen=True)
@@ -93,6 +110,67 @@ PAGES: dict[str, dict[str, Count]] = {
 }
 
 
+# GUI-9.3: the module lists that accept the scope filters (RAN NF OAM's `managed_entity.region` / `.site_cluster`, ADR 0005), and which of the two
+# each accepts. Every other count is network-wide whatever the scope (named in the answer's `unscoped`). rApp Management's instances have a region
+# (the instance's authorised regions, plus the unscoped instances) but no site cluster. A module build without the filter ignores the parameter, so
+# its count is then network-wide without saying so: these paths assume the modules of the same release.
+SCOPE_BOTH = ("region", "site_cluster")
+SCOPED_PATHS: dict[str, tuple[str, ...]] = {
+    "/ran-nf-oam/alarms": SCOPE_BOTH,
+    "/ran-nf-oam/alarms/stats": SCOPE_BOTH,
+    "/ran-nf-oam/rapp-approvals": SCOPE_BOTH,
+    "/ran-nf-oam/config-jobs": SCOPE_BOTH,
+    "/ran-nf-oam/software-campaigns": SCOPE_BOTH,
+    "/ran-nf-oam/decision-records": SCOPE_BOTH,
+    "/ran-nf-oam/managed-entities": SCOPE_BOTH,
+    "/rapp-mgmt/instances": ("region",),
+}
+
+
+@dataclass(frozen=True)
+class AttentionGroup:
+    """One group of "Needs your attention": the newest rows of `path` filtered by `params`, each trimmed to `fields` (the ones the GUI shows)."""
+    type: str
+    path: str
+    params: tuple[tuple[str, str], ...]
+    fields: tuple[str, ...]
+
+
+# The groups in the order the Dashboard shows them; each filter is the one of the summary count of the same name (alarms.critical,
+# approvals.PENDING, mlmfBreaches.total, escalations.total), so a group's `total` equals that count.
+ATTENTION = (
+    AttentionGroup("critical-alarms", "/ran-nf-oam/alarms", (("severity", "critical"),),
+                   ("alarmId", "managedElementRef", "managedFunctionRef", "severity", "ackState", "specificProblem", "probableCause", "alarmType",
+                    "raisedAt")),
+    AttentionGroup("approvals", "/ran-nf-oam/rapp-approvals", (("status", "PENDING"),),
+                   ("approvalId", "invokerId", "status", "changeCount", "managedElements", "createdAt", "expiresAt")),
+    AttentionGroup("mlmf-breaches", "/aimgf/mlmf/reports", (("breached_only", "true"),), ("reportId", "subscriptionId", "breachedFloor", "reportedAt")),
+    AttentionGroup("escalations", "/sa-smos/remedial-actions", (("outcome", "ESCALATED"),), ("actionId", "monitorId", "actionType", "outcome", "autoExecuted")),
+)
+
+
+def valid_scope(value: str | None) -> bool:
+    """Whether `value` is an absent scope (None) or a name `SCOPE_RE` accepts."""
+    return value is None or bool(SCOPE_RE.match(value))
+
+
+def scope_params(path: str, region: str | None, site_cluster: str | None) -> list[tuple[str, str]]:
+    """The scope parameters `path` accepts (`SCOPED_PATHS`) with their values; empty when there is no scope or the path takes none."""
+    accepted = SCOPED_PATHS.get(path, ())
+    return [(k, v) for k, v in (("region", region), ("site_cluster", site_cluster)) if v is not None and k in accepted]
+
+
+def scope_view(region: str | None, site_cluster: str | None) -> dict | None:
+    """The `scope` member of an answer: null when unscoped, else `{region, siteCluster}`."""
+    return None if region is None and site_cluster is None else {"region": region, "siteCluster": site_cluster}
+
+
+def _narrowed(path: str, region: str | None, site_cluster: str | None) -> bool:
+    """Whether every part of the scope asked for narrows `path` (a path that takes only the region is not narrowed by a site cluster)."""
+    accepted = SCOPED_PATHS.get(path, ())
+    return (region is None or "region" in accepted) and (site_cluster is None or "site_cluster" in accepted)
+
+
 @dataclass
 class _Cached:
     at: float
@@ -100,21 +178,24 @@ class _Cached:
 
 
 def page_allowed(page: str, role) -> bool:
-    """Whether `role` may read every count of `page` (each is a GET through the permission table). Every role may today; checked anyway, so a
-    future rule that narrows a read also narrows its count, here and on the event stream."""
-    return all(decide("GET", c.path, {}, role).allowed for c in PAGES[page].values())
+    """Whether `role` may read every count of `page` (each is a GET through the permission table), or every list of "attention". Every role may
+    today; checked anyway, so a future rule that narrows a read also narrows its count, here and on the event stream."""
+    paths = [g.path for g in ATTENTION] if page == "attention" else [c.path for c in PAGES[page].values()]
+    return all(decide("GET", p, {}, role).allowed for p in paths)
 
 
 def install(app: FastAPI, *, current_session, problem) -> None:
-    """Add `GET /api/summary/{page}` to `app`, and keep the cached computation on `app.state.summary_page` (an async function of the page name)
-    for the event stream. `problem` is main.py's RFC 7807 answer builder (an unknown page is a 404)."""
-    cache: dict[str, _Cached] = {}
-    locks: dict[str, asyncio.Lock] = {}
+    """Add `GET /api/summary/attention` and `GET /api/summary/{page}` to `app`, and keep the cached computations on `app.state.summary_page` (an
+    async function of the page name and the optional scope) and `app.state.summary_attention` (of the scope and the group size) for the event
+    stream. `problem` is main.py's RFC 7807 answer builder (an unknown page is a 404, a malformed scope a 400)."""
+    cache: dict[tuple, _Cached] = {}
+    locks: dict[tuple, asyncio.Lock] = {}
 
-    async def count(name: str, spec: Count) -> tuple[str, int | float | None, bool]:
-        """(`name`, the value, whether the module answered). The value is None when the module could not be asked or answered without one (then
-        `answered` is false), or when a `field` count's module answered null (then it is true). Never raises."""
-        params = [*spec.params] if spec.field else [*spec.params, ("limit", "1")]
+    async def count(name: str, spec: Count, scope: list[tuple[str, str]]) -> tuple[str, int | float | None, bool]:
+        """(`name`, the value, whether the module answered). `scope` is the scope parameters this count's path accepts. The value is None when
+        the module could not be asked or answered without one (then `answered` is false), or when a `field` count's module answered null (then it
+        is true). Never raises."""
+        params = [*spec.params, *scope] if spec.field else [*spec.params, *scope, ("limit", "1")]
         if spec.since_hours is not None:
             since = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=spec.since_hours)
             params.append(("since", since.strftime("%Y-%m-%dT%H:%M:%SZ")))
@@ -135,36 +216,121 @@ def install(app: FastAPI, *, current_session, problem) -> None:
         total = body.get("total")
         return (name, total, True) if isinstance(total, int) and not isinstance(total, bool) else (name, None, False)
 
-    async def compute(page: str) -> dict:
-        """Ask every count of `page` in parallel; the body the route answers."""
-        names = list(PAGES[page])
-        results = await asyncio.gather(*(count(n, PAGES[page][n]) for n in names))
+    async def compute(page: str, region: str | None, site_cluster: str | None) -> dict:
+        """Ask every count of `page` in parallel, narrowed by the scope where its path accepts it; the body the route answers."""
+        specs = PAGES[page]
+        names = list(specs)
+        results = await asyncio.gather(*(count(n, specs[n], scope_params(specs[n].path, region, site_cluster)) for n in names))
+        scoped = region is not None or site_cluster is not None
         return {"page": page, "computedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "counts": {n: v for n, v, _ in results},
-                "partial": sorted({PAGES[page][n].path.split("/")[1] for n, _, answered in results if not answered})}
+                "partial": sorted({specs[n].path.split("/")[1] for n, _, answered in results if not answered}),
+                "scope": scope_view(region, site_cluster),
+                "unscoped": sorted(n for n in names if not _narrowed(specs[n].path, region, site_cluster)) if scoped else []}
 
-    async def page_counts(page: str) -> dict:
-        """The body of `page` (a key of `PAGES`), at most `CACHE_SECONDS` old: from the cache, or computed once for every caller waiting on it."""
-        hit = cache.get(page)
+    async def group(spec: AttentionGroup, limit: int, region: str | None, site_cluster: str | None) -> tuple[dict, bool]:
+        """One attention group and whether its module answered: `{type, total, items}`, the newest `limit` rows trimmed to `spec.fields`.
+        A module that failed or answered something that is not a page gives `total` null and no items. Never raises."""
+        params = [*spec.params, *scope_params(spec.path, region, site_cluster), ("limit", str(limit))]
+        try:
+            resp = await app.state.gateway.request("GET", spec.path, params=params, timeout=COUNT_TIMEOUT_SECONDS)
+            body = resp.json() if resp.status_code == 200 else None
+        except (SmoAuthError, httpx.HTTPError, ValueError) as exc:
+            log.warning("attention group %s (%s) failed: %r", spec.type, spec.path, exc)
+            body = None
+        items = body.get("items") if isinstance(body, dict) else None
+        total = body.get("total") if isinstance(body, dict) else None
+        if not isinstance(items, list) or not isinstance(total, int) or isinstance(total, bool):
+            return {"type": spec.type, "total": None, "items": []}, False
+        trimmed = [{f: row.get(f) for f in spec.fields} for row in items[:limit] if isinstance(row, dict)]
+        return {"type": spec.type, "total": total, "items": trimmed}, True
+
+    async def compute_attention(limit: int, region: str | None, site_cluster: str | None) -> dict:
+        """Ask every attention group in parallel; the body `GET /api/summary/attention` answers."""
+        results = await asyncio.gather(*(group(g, limit, region, site_cluster) for g in ATTENTION))
+        scoped = region is not None or site_cluster is not None
+        return {"page": "attention", "computedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "groups": [g for g, _ in results],
+                "partial": sorted({spec.path.split("/")[1] for spec, (_, answered) in zip(ATTENTION, results) if not answered}),
+                "scope": scope_view(region, site_cluster),
+                "unscoped": [g.type for g in ATTENTION if not _narrowed(g.path, region, site_cluster)] if scoped else []}
+
+    def remember(key: tuple, body: dict) -> None:
+        """Keep `body` under `key`; past `MAX_CACHE_ENTRIES` drop the expired entries, then the oldest, with their idle locks."""
+        cache[key] = _Cached(time.monotonic(), body)
+        if len(cache) <= MAX_CACHE_ENTRIES:
+            return
+        now = time.monotonic()
+        for k in [k for k, v in cache.items() if now - v.at >= CACHE_SECONDS]:
+            cache.pop(k, None)
+        while len(cache) > MAX_CACHE_ENTRIES:
+            cache.pop(min(cache, key=lambda k: cache[k].at))
+        for k in [k for k, lock in locks.items() if k not in cache and not lock.locked()]:
+            locks.pop(k, None)
+
+    async def cached(key: tuple, make) -> dict:
+        """The body under `key`, at most `CACHE_SECONDS` old: from the cache, or made once (`await make()`) for every caller waiting on it."""
+        hit = cache.get(key)
         if hit and time.monotonic() - hit.at < CACHE_SECONDS:
             return hit.body
-        # One computation per page at a time: fifty operators opening the Dashboard together cost one fan-out, not fifty.
-        lock = locks.setdefault(page, asyncio.Lock())
+        # One computation per key at a time: fifty operators opening the Dashboard together cost one fan-out, not fifty.
+        lock = locks.setdefault(key, asyncio.Lock())
         async with lock:
-            hit = cache.get(page)
+            hit = cache.get(key)
             if hit and time.monotonic() - hit.at < CACHE_SECONDS:
                 return hit.body
-            body = await compute(page)
-            cache[page] = _Cached(time.monotonic(), body)
+            body = await make()
+            remember(key, body)
             return body
 
+    async def page_counts(page: str, region: str | None = None, site_cluster: str | None = None) -> dict:
+        """The body of `page` (a key of `PAGES`) in the scope (both None: the whole network), at most `CACHE_SECONDS` old. The scope must
+        already be checked (`valid_scope`)."""
+        return await cached((page, region, site_cluster), lambda: compute(page, region, site_cluster))
+
+    async def attention(region: str | None = None, site_cluster: str | None = None, limit: int = ATTENTION_DEFAULT_LIMIT) -> dict:
+        """The attention groups in the scope, `limit` rows each, at most `CACHE_SECONDS` old. The scope must already be checked."""
+        return await cached(("attention", region, site_cluster, limit), lambda: compute_attention(limit, region, site_cluster))
+
+    page_counts.cache = cache        # type: ignore[attr-defined]  # read by the tests (its bound), never written through
     app.state.summary_page = page_counts
+    app.state.summary_attention = attention
+
+    scope_docs = {"region": "Only what lies in this region (GUI-9.3), where the module's list accepts it.",
+                  "site_cluster": "Only what lies in this site cluster, where the module's list accepts it."}
+
+    def bad_scope(region: str | None, site_cluster: str | None):
+        """A 400 `INVALID_SCOPE` answer when a scope value is malformed, else None."""
+        if valid_scope(region) and valid_scope(site_cluster):
+            return None
+        return problem(400, "INVALID_SCOPE", "region and site_cluster are 1-64 characters of A-Z a-z 0-9 . _ -")
+
+    @app.get("/api/summary/attention")
+    async def summary_attention(limit: int = Query(ATTENTION_DEFAULT_LIMIT, ge=1, le=ATTENTION_MAX_LIMIT, description="Rows per group (1-10)."),
+                                region: str | None = Query(None, description=scope_docs["region"]),
+                                site_cluster: str | None = Query(None, description=scope_docs["site_cluster"]),
+                                session=Depends(current_session)):
+        """GUI-9.8b: the Dashboard's "Needs your attention" in one call: `{page: "attention", computedAt, groups: [{type, total, items}], partial,
+        scope, unscoped}`, the groups `critical-alarms`, `approvals`, `mlmf-breaches` and `escalations` in that order, each the newest `limit`
+        rows (trimmed to the fields the console shows) and the true total. A group whose module did not answer has `total` null and no items, and
+        the module is in `partial`. Cached 5 s and shared by every user. 400 `INVALID_SCOPE`; 403 if a future rule narrows one of the reads."""
+        refusal = bad_scope(region, site_cluster)
+        if refusal is not None:
+            return refusal
+        if not page_allowed("attention", session.user.role):
+            return problem(403, "FORBIDDEN", "a list on this page needs a read your role does not have")
+        return await attention(region, site_cluster, limit)
 
     @app.get("/api/summary/{page}")
-    async def summary(page: str, session=Depends(current_session)):
+    async def summary(page: str, region: str | None = Query(None, description=scope_docs["region"]),
+                      site_cluster: str | None = Query(None, description=scope_docs["site_cluster"]), session=Depends(current_session)):
         """The counts of one console page (`PAGES`), at most `CACHE_SECONDS` old and shared by every user. `counts` maps a key such as
-        `alarms.critical` to its total (null when its module did not answer); `partial` lists the modules that did not. 404 for an unknown page."""
+        `alarms.critical` to its total (null when its module did not answer); `partial` lists the modules that did not. With `region` and/or
+        `site_cluster` (GUI-9.3) each count whose list accepts them is narrowed; `scope` echoes it and `unscoped` names the counts that stayed
+        network-wide. 404 for an unknown page, 400 `INVALID_SCOPE` for a malformed scope."""
         if page not in PAGES:
             return problem(404, "NO_SUCH_SUMMARY", f"pages: {', '.join(sorted(PAGES))}")
+        refusal = bad_scope(region, site_cluster)
+        if refusal is not None:
+            return refusal
         if not page_allowed(page, session.user.role):
             return problem(403, "FORBIDDEN", "a count on this page needs a read your role does not have")
-        return await page_counts(page)
+        return await page_counts(page, region, site_cluster)

@@ -26,8 +26,10 @@ Routes (all under /api, which nginx forwards here unchanged, except /.well-known
   *    /api/rapps/{instance}/operator/...  a call to the rApp's operator API, only for the routes that declaration lists; changes audited
   GET|PUT|DELETE /api/me/pins   the rApps the user pinned to the sidebar (at most 5)
   GET|PUT /api/me/preferences   the user's console preferences: theme, text size, accent, start page, rows per page… (preferences.py)
-  GET  /api/summary/{page}      the true counts behind one console page's tiles and badges, cached 5 s and shared (summary.py)
-  GET  /api/events              Server-Sent Events: the summary counts of up to four pages, pushed when they change (events.py, GUI-9.1)
+  GET  /api/summary/{page}      the true counts behind one console page's tiles and badges, cached 5 s and shared, optionally scoped to a region / site cluster (summary.py, GUI-9.3)
+  GET  /api/summary/attention   the Dashboard's "Needs your attention" groups in one call (summary.py, GUI-9.8b)
+  GET  /api/events              Server-Sent Events: the summary counts of up to four pages (or the attention groups), pushed when they change (events.py, GUI-9.1)
+  POST|GET|DELETE /api/exports[/{id}[/file]]  asynchronous CSV export jobs of decision records (operator) and the audit log (admin) (exports.py, GUI-9.5b)
   GET  /api/search              the ⌘K typeahead over elements, rApps, alarms, models and decisions (search.py, GUI-9.2)
   /api/admin/users[...]         user + role CRUD, break-glass flag, revoke a user's sessions, reset a user's one-time code (admin); the list has last-active times
   GET  /api/admin/audit         the append-only audit log, offset or keyset (`after_id`) pages, `since`/`until` (admin)
@@ -59,7 +61,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from .config import Settings, settings as default_settings
-from . import events, preferences, rapps, search, summary, totp
+from . import events, exports, preferences, rapps, search, summary, totp
 from .db import AuditEntry, Database, GuiUser, LoginFailure
 from .oidc import LOGIN_TTL_SECONDS, MAX_PENDING_LOGINS, OidcClient, OidcConfig, OidcError
 from .rbac import MODULES, RULES, Role, Rule, User, decide
@@ -284,6 +286,9 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         if app.state.gateway is None:
             app.state.gateway = R1Gateway(cfg.r1_url, app.state.db, sme_url=cfg.sme_url, timeout=cfg.upstream_timeout_seconds)
         yield
+        runner = getattr(app.state, "exports", None)
+        if runner is not None:
+            await runner.shutdown()        # GUI-9.5b: this instance's export tasks end, their jobs FAILED "interrupted" (another instance can serve the rest)
         await app.state.gateway.aclose()
 
     app = FastAPI(title="SMO Operator GUI BFF", lifespan=lifespan, docs_url=None, redoc_url=None,
@@ -1117,6 +1122,11 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
         name = f"smo-gui-audit-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.csv"
         return StreamingResponse(rows(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+    # ------------------------------------------------------------ asynchronous export jobs (GUI-9.5b): needs audit_query above
+
+    exports.install(app, current_session=current_session, audit=audit, problem=_problem, audit_query=audit_query, csv_cell=_csv_cell,
+                    audit_columns=AUDIT_CSV_COLUMNS, iso=_iso)
 
     return app
 
