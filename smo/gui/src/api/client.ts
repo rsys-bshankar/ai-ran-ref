@@ -42,15 +42,13 @@ export function readCookie(cookieString: string, name: string): string | undefin
   return undefined;
 }
 
-/**
- * Builds the query string ("?a=1&b=2", or "" when nothing is left) for a request.
- * Drops undefined, null and empty-string values so an unset filter is not sent, and repeats the key for an array (`ids=a&ids=b`).
- */
+/** The query string of `query`: undefined, null and empty values are left out, arrays repeat their key. One exception: an empty `after` is
+ * kept (`?after=`), because a keyset route (RAN NF OAM alarms, decision records) reads it as "the first page, keyset-paged". */
 export function buildQuery(query?: Query): string {
   if (!query) return "";
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) {
-    if (v === undefined || v === null || v === "") continue;
+    if (v === undefined || v === null || (v === "" && k !== "after")) continue;
     if (Array.isArray(v)) v.forEach((item) => params.append(k, String(item)));
     else params.append(k, String(v));
   }

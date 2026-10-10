@@ -1,0 +1,5 @@
+/* rApp detail page styles (pages/rapp-detail): the lifecycle-flow rows. Tokens only. */
+.rd-flow { color: var(--text); text-decoration: none; padding: 2px 0; width: 100%; }
+.rd-flow:hover { text-decoration: none; }
+.rd-flow:hover strong { color: var(--volt-text); }
+.rd-flow-t { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

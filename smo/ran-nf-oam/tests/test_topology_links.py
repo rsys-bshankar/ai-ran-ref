@@ -1,4 +1,5 @@
-"""MGT-10.2: link types in the topology: the neighbour relations of the cell guards, and containment relations between managed objects."""
+"""MGT-10.2: link types in the topology: the neighbour relations of the cell guards, and containment relations between managed objects. PR-GUI-9.4: the
+links' paging, the `reciprocal` filter and `GET /topology/links/counts`."""
 
 import pytest
 
@@ -70,6 +71,28 @@ def test_the_links_can_be_narrowed_by_element_and_by_type(client, network):
     ends = _links(client, managed_element_ref="ME-2")                                                  # at either end
     assert {(i["aCell"], i["bCell"]) for i in ends} == {("101", "201"), ("201", "101"), ("202", "301")}
     assert client.get("/topology/links", params={"link_type": "FRONTHAUL"}).status_code == 422
+
+
+def test_the_links_page_only_when_asked(client, network):
+    """PR-GUI-9.4: without `limit`/`offset` the answer is the old `{items}`; with either it is the page envelope over the same order."""
+    whole = client.get("/topology/links").json()
+    assert set(whole) == {"items"} and len(whole["items"]) == 6
+    page = client.get("/topology/links", params={"limit": 4}).json()
+    assert page["total"] == 6 and page["limit"] == 4 and page["offset"] == 0 and page["items"] == whole["items"][:4]
+    assert client.get("/topology/links", params={"offset": 4}).json()["items"] == whole["items"][4:]
+
+
+def test_the_links_can_be_narrowed_by_reciprocity(client, network):
+    """PR-GUI-9.4: `reciprocal=false` lists the one-sided relations (the problem table of the topology page), `true` the others."""
+    assert {(i["aCell"], i["bCell"]) for i in _links(client, reciprocal="false")} == {("101", "999"), ("202", "301")}
+    assert len(_links(client, reciprocal="true")) == 4
+
+
+def test_the_link_counts(client, network):
+    """PR-GUI-9.4: the counts of the topology page's tiles, without the list; narrowed by element like the list."""
+    assert client.get("/topology/links/counts").json() == {"total": 6, "notReciprocal": 2, "external": 1, "ambiguous": 1,
+                                                          "intraElement": 2, "interElement": 2}
+    assert client.get("/topology/links/counts", params={"managed_element_ref": "ME-3"}).json()["total"] == 0
 
 
 def test_a_cell_is_not_its_own_neighbour(client, db_session_factory):

@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
 
 import type { ModuleStatus } from "../api/types";
 
-import { REFUSAL_CODES, REFUSAL_MEANING, APPROVAL_MEANING, DISPOSITION_MEANING, approvalPolicyForm, approvalPolicyPayload, approvalProgress, decidedByText, describeApprovalPolicy, INTEGRITY_MEANING, completionRoute, decisionQuery, describeChange, describeElements, timeLeft, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describePlace, describeScope, describeSeconds, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, waveProgress, metricSeries, moduleRows, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList } from "./domain";
+import { REFUSAL_CODES, REFUSAL_MEANING, APPROVAL_MEANING, DISPOSITION_MEANING, approvalPolicyForm, approvalPolicyPayload, approvalProgress, decidedByText, describeApprovalPolicy, INTEGRITY_MEANING, completionRoute, decisionQuery, describeChange, describeElements, timeLeft, countBySeverity, canRollback, describeDifferences, describeGuardResult, describeLimits, describePlace, describeScope, describeSeconds, kpiNameProblem, limitsForm, limitsPayload, parseCounters, schedulePayload, stagedPayload, waveActions, waveProgress, metricSeries, moduleRows, modelActions, numericMetricKeys, packageActions, parseJsonObject, pipelineSteps, sortAlarms, splitList, type PipelineStepStatus } from "./domain";
+import type { StepStatus } from "./flows";
 
 describe("model lifecycle", () => {
   // Each AI/ML model state offers exactly the actions the AIMgF state machine allows, and job-driven completions go through the job's own route, never a bare advance.
@@ -221,6 +222,10 @@ describe("KPI definition and staged-job forms", () => {
     expect(stagedPayload(blank, { ...guard, baselineMinutes: "10081" })).toMatchObject({ ok: false });
     expect(stagedPayload(blank, { ...guard, maxRegressionPercent: "-5" })).toMatchObject({ ok: false });
     expect(stagedPayload(blank, { ...guard, maxRegressionPercent: "abc" })).toMatchObject({ ok: false });
+    // GUI-10.3: a blank or whitespace-only "Regression allowed, %" is refused, not read as 0
+    expect(stagedPayload(blank, { ...guard, maxRegressionPercent: "" })).toMatchObject({ ok: false, error: expect.stringContaining("Allowed regression") });
+    expect(stagedPayload(blank, { ...guard, maxRegressionPercent: "   " })).toMatchObject({ ok: false });
+    expect(stagedPayload(blank, { ...guard, maxRegressionPercent: " 0 " })).toMatchObject({ ok: true });
   });
 });
 
@@ -409,5 +414,15 @@ describe("tenant and region scope (SEC-10)", () => {
   it("explains every refusal code the safeguards page can filter by, including a scope refusal", () => {
     expect(REFUSAL_CODES).toContain("SCOPE_DENIED");
     for (const code of REFUSAL_CODES) expect(REFUSAL_MEANING[code]).toMatch(/\S/);
+  });
+});
+
+describe("step status types", () => {
+  // GUI-10.5: the model pipeline's status type is its own name, so it no longer shadows the flow boards' `StepStatus`, which has more states
+  it("keeps the pipeline and flow step statuses apart", () => {
+    const pipeline: PipelineStepStatus[] = pipelineSteps("TRAINED").map((s) => s.status);
+    const flow: StepStatus[] = ["failed", "blocked", "warn", ...pipeline];
+    expect(new Set(pipeline)).toEqual(new Set(["done", "current", "todo"]));
+    expect(flow).toContain("failed");
   });
 });

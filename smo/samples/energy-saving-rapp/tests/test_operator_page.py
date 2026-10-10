@@ -37,10 +37,10 @@ def resolves(value, path: str) -> bool:
     return resolves(value[head], rest) if rest else True
 
 
-def test_the_manifest_declares_a_valid_page_with_the_four_kinds_of_panel_it_needs():
-    """The manifest's operator page validates and has its panels, and is not read-only."""
+def test_the_manifest_declares_a_valid_page_with_the_kinds_of_panel_it_needs():
+    """The page validates and has, in order: the instance block, the closed-loop buttons, the cells table, and the cell-state history as a chart and a table."""
     d = declaration()
-    assert [p["kind"] for p in d["panels"]] == ["keyValues", "actions", "table"]
+    assert [p["kind"] for p in d["panels"]] == ["keyValues", "actions", "table", "chart", "table"]
     assert not d.get("readOnly")
 
 
@@ -90,6 +90,12 @@ def test_every_declared_field_is_in_the_answer_the_rapp_gives(client, platform, 
         if panel["kind"] == "actions":
             continue
         answer = fetch(panel["source"])
+        if panel["kind"] == "chart":
+            points = answer[panel["points"]]
+            assert points, f"{panel['id']}: no points to check the chart against"
+            assert all(all(p.get(k) is not None for k in (panel["x"], panel["y"], panel.get("seriesBy", panel["x"]))) for p in points), panel["id"]
+            assert all(isinstance(p[panel["y"]], (int, float)) for p in points), f"{panel['id']}: y must be a number"
+            continue
         if panel["kind"] == "keyValues":
             for item in panel["items"]:
                 assert resolves(answer, item["path"]), f"{panel['id']}: {item['path']}"
@@ -122,11 +128,16 @@ def test_every_declared_field_is_in_the_answer_the_rapp_gives(client, platform, 
 
 
 def test_the_page_is_the_worked_example_of_the_adr():
-    """docs/adr/0004-operator-ui-declaration.md embeds this very declaration (docs/schemas/operator-ui.energy-saving.example.yaml); the sample is its first user."""
+    """docs/adr/0004-operator-ui-declaration.md embeds this page's first three panels (docs/schemas/operator-ui.energy-saving.example.yaml) verbatim; the
+    sample is its first user, and adds after them only the cell-state history panels of GUI-9.8b."""
     for parent in Path(__file__).resolve().parents:
         example = parent / "docs" / "schemas" / "operator-ui.energy-saving.example.yaml"
         if example.exists():
             break
     else:
         pytest.skip("docs/schemas is not above this test")
-    assert declaration() == validate_operator_ui(yaml.safe_load(example.read_text())["operatorUi"])
+    adr = validate_operator_ui(yaml.safe_load(example.read_text())["operatorUi"])
+    mine = declaration()
+    assert {k: v for k, v in mine.items() if k != "panels"} == {k: v for k, v in adr.items() if k != "panels"}
+    assert mine["panels"][:len(adr["panels"])] == adr["panels"]
+    assert [p["id"] for p in mine["panels"][len(adr["panels"]):]] == ["cell-state-history", "cell-state-transitions"]

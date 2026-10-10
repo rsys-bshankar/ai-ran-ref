@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RAN topology — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="topology" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Network" crumb="RAN topology" scope="eu-west · metro-a" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">RAN NF OAM · /topology · /topology/links · /topology/relation</div>
+          <h1 style="margin-top: 6px;">RAN topology</h1>
+          <p>Managed elements, their cells and every declared neighbour relation, straight from the NRM. Problems in the relations show here before they show as handover failures.</p>
+        </div>
+        <div class="row"><button class="btn">Export (TEIV JSON)</button><a class="btn" href="Main.dc.html">Back to health map</a></div>
+      </div>
+
+      <div class="grid g5">
+        <div class="kpi"><span class="kpi-l">Cells in scope</span><span class="kpi-v">2,436</span><span class="kpi-f">812 DUs · metro-a</span></div>
+        <div class="kpi"><span class="kpi-l">Neighbour relations</span><span class="kpi-v">14,902</span><span class="kpi-f">9,804 inter-element</span></div>
+        <div class="kpi hot"><span class="kpi-l">Not reciprocal</span><span class="kpi-v">312</span><span class="kpi-f">A lists B, B doesn't list A</span></div>
+        <div class="kpi"><span class="kpi-l">External</span><span class="kpi-v">41</span><span class="kpi-f">neighbour not managed here</span></div>
+        <div class="kpi"><span class="kpi-l">Ambiguous</span><span class="kpi-v">6</span><span class="kpi-f">cell id on 2+ elements</span></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 16px; align-items: start;">
+        <section class="card" aria-labelledby="g-h">
+          <div class="card-h">
+            <div><h2 id="g-h">Neighbours of du-03 · 3 cells, 27 relations</h2><span class="sub">focus one element at a time · its cells in the centre, neighbours around</span></div>
+            <div class="row wrap"><label class="search" style="width: 220px; min-height: 34px;"><input aria-label="Focus element" value="du-03"></label><div class="seg" role="group" aria-label="Show"><sc-for list="{{filters}}" as="f" hint-placeholder-count="3"><button class="{{f.cls}}" onClick="{{f.go}}">{{f.label}}</button></sc-for></div></div>
+          </div>
+          <div style="position: relative; height: 470px; border-radius: 10px; background: var(--rail); border: 1px solid var(--line); overflow: hidden;">
+            <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="position: absolute; inset: 0;" aria-hidden="true">
+              <sc-for list="{{links}}" as="l" hint-placeholder-count="12"><line x1="{{l.x1}}" y1="{{l.y1}}" x2="{{l.x2}}" y2="{{l.y2}}" style="{{l.style}}" vector-effect="non-scaling-stroke"></line></sc-for>
+            </svg>
+            <div style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 190px; height: 190px; border-radius: 50%; border: 1px dashed var(--line-strong);"></div>
+            <a href="Element.dc.html" class="node" style="left: 50%; top: 50%; text-decoration: none;"><span class="orb hub"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" style="color: var(--volt-text);"><path d="M12 20V10M8 6a6 6 0 018 0M5 3a10 10 0 0114 0"></path></svg></span><b>du-03</b><em>GNBDUFunction=1</em></a>
+            <sc-for list="{{nodes}}" as="n" hint-placeholder-count="12">
+              <a href="{{n.href}}" class="node" style="{{n.pos}}" title="{{n.title}}"><span style="{{n.dot}}"></span><b>{{n.label}}</b><em>{{n.sub}}</em></a>
+            </sc-for>
+          </div>
+          <div class="legend"><span><i style="background: var(--volt);"></i>own cells</span><span><i style="background: var(--info);"></i>inter-element</span><span><i style="background: var(--ok);"></i>intra-element</span><span><i style="background: var(--warn);"></i>external</span><span><i style="background: var(--bad);"></i>ambiguous</span><span>dashed = not reciprocal</span></div>
+        </section>
+
+        <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
+          <section class="card" aria-labelledby="rc-h">
+            <div class="card-h"><h2 id="rc-h">Relation check</h2><span class="sub">/topology/relation</span></div>
+            <label class="field"><span>A</span><input class="input mono" value="ManagedElement=du-03,GNBDUFunction=1,NRCellDU=cell-7"></label>
+            <label class="field"><span>B</span><input class="input mono" value="ManagedElement=du-03,GNBDUFunction=1,NRCellDU=cell-8"></label>
+            <button class="btn btn-sm" style="align-self: flex-start;" onClick="{{check}}">Check</button>
+            <sc-if value="{{checked}}" hint-placeholder-val="{{false}}"><div class="callout volt" style="padding: 10px 12px;"><span class="small"><strong>SIBLING</strong> · same parent GNBDUFunction=1 · both list each other as neighbours</span></div></sc-if>
+          </section>
+          <section class="card" aria-labelledby="sel-h">
+            <div class="card-h"><h2 id="sel-h">du-03</h2><a class="small" href="Element.dc.html">Element detail →</a></div>
+            <dl class="kv"><dt>Vendor</dt><dd>vendor-a · O1 NETCONF</dd><dt>Cells</dt><dd>cell-7 <span class="sev sev-cr" style="min-width: 0;">LOS</span>, cell-8, cell-9</dd><dt>Sector group</dt><dd class="mono">sg-metro-a-12</dd><dt>Incident zone</dt><dd class="mono">iz-stadium</dd><dt>Guards</dt><dd>cell-8 COVERAGE_CRITICAL</dd></dl>
+            <div class="row"><a class="btn btn-sm" href="Alarms.dc.html">Alarms (4)</a><a class="btn btn-sm" href="Element.dc.html">Cell guards</a></div>
+          </section>
+        </div>
+      </div>
+
+      <dc-import name="ListView" spec="{{probs}}" hint-size="100%,520px"></dc-import>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1520}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const st = this.state || {};
+    const show = st.show || 'all';
+    const filters = [['all', 'All'], ['problems', 'Problems only'], ['inter', 'Inter-element']].map(([k, label]) => ({ label, cls: show === k ? 'on' : '', go: () => this.setState({ show: k }) }));
+    const col = { INTER_ELEMENT: 'var(--info)', INTRA_ELEMENT: 'var(--ok)', EXTERNAL: 'var(--warn)', AMBIGUOUS: 'var(--bad)' };
+    // [label, sub, angle deg, radius %, type, reciprocal, href]
+    const raw = [
+      ['cell-8', 'du-03 · own', 210, 13, 'INTRA_ELEMENT', true, 'Element.dc.html'], ['cell-9', 'du-03 · own', 330, 13, 'INTRA_ELEMENT', true, 'Element.dc.html'],
+      ['du-17/cell-1', 'inter', 20, 38, 'INTER_ELEMENT', true, 'Element.dc.html'], ['du-17/cell-2', 'inter', 45, 40, 'INTER_ELEMENT', false, 'Element.dc.html'],
+      ['du-40/cell-2', 'inter', 80, 36, 'INTER_ELEMENT', true, 'Element.dc.html'], ['du-41/cell-1', 'inter', 115, 40, 'INTER_ELEMENT', true, 'Element.dc.html'],
+      ['du-41/cell-3', 'inter', 150, 37, 'INTER_ELEMENT', false, 'Element.dc.html'], ['du-11/cell-3', 'inter', 190, 40, 'INTER_ELEMENT', true, 'Element.dc.html'],
+      ['du-09/cell-2', 'inter', 235, 38, 'INTER_ELEMENT', true, 'Element.dc.html'], ['ext:310-410-77', 'external', 270, 42, 'EXTERNAL', false, '#'],
+      ['cell-5 (×2)', 'ambiguous', 305, 40, 'AMBIGUOUS', false, '#'], ['du-58/cell-6', 'inter', 345, 38, 'INTER_ELEMENT', true, 'Element.dc.html']
+    ].filter((r) => show === 'all' || (show === 'problems' ? (!r[5] || r[4] === 'EXTERNAL' || r[4] === 'AMBIGUOUS') : r[4] === 'INTER_ELEMENT'));
+    const pos = (a, r) => { const rad = a * Math.PI / 180; return [50 + r * Math.cos(rad) * 1.25, 50 + r * Math.sin(rad)]; };
+    const nodes = raw.map(([label, sub, a, r, t, rec, href]) => { const [x, y] = pos(a, r); return { label, sub: sub + (rec ? '' : ' · one-way'), href, title: t, pos: 'left:' + x + '%;top:' + y + '%;text-decoration:none;', dot: 'width:16px;height:16px;border-radius:50%;background:' + col[t] + ';box-shadow:0 0 0 4px var(--surface);' }; });
+    const links = raw.map(([, , a, r, t, rec]) => { const [x, y] = pos(a, r); return { x1: 50, y1: 50, x2: x, y2: y, style: 'stroke:' + col[t] + ';stroke-width:' + (rec ? 1.6 : 2) + ';' + (rec ? '' : 'stroke-dasharray:5 4;') + 'opacity:0.85;' }; });
+    const probs = { title: 'Relations that need attention', sub: '/topology/links · not reciprocal, external or ambiguous', search: 'Search cell or element', chips: ['Problems only', 'metro-a'], actions: ['Fix in cell guards', 'Export'],
+      cols: ['A cell', 'B cell', 'Link type', 'Reciprocal', 'Same sector group', 'Same incident zone', 'Fix'],
+      rows: [['a:Element.dc.html|du-03 / cell-7', 'm:du-17 / cell-2', 'b:info:INTER_ELEMENT', 'b:bad:no', 'yes', 'yes', 'a:Element.dc.html|add cell-7 to du-17/cell-2'],
+        ['a:Element.dc.html|du-03 / cell-9', 'm:310-410-77', 'b:warn:EXTERNAL', 'b:mute:n/a', 'no', 'no', 'mu:onboard the neighbour or remove'],
+        ['a:Element.dc.html|du-03 / cell-9', 'm:cell-5', 'b:bad:AMBIGUOUS', 'b:mute:n/a', '—', '—', 'mu:cell-5 exists on du-40 and du-41'],
+        ['a:Element.dc.html|du-41 / cell-3', 'm:du-03 / cell-7', 'b:info:INTER_ELEMENT', 'b:bad:no', 'yes', 'no', 'a:Element.dc.html|add reverse relation'],
+        ['a:Element.dc.html|du-221 / cell-1', 'm:du-302 / cell-4', 'b:info:INTER_ELEMENT', 'b:bad:no', 'no', 'no', 'a:Element.dc.html|add reverse relation']],
+      total: '359', note: 'problems first', page: '1 / 72' };
+    return { P, filters, nodes, links, probs, checked: !!st.checked, check: () => this.setState({ checked: true }) };
+  }
+}
+</script>
+</body>
+</html>

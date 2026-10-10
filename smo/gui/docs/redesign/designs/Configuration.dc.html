@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Configuration — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="config" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Network" crumb="Configuration" scope="eu-west · all clusters" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">RAN NF OAM · config jobs · vendors · schemas · endpoint trust</div>
+          <h1 style="margin-top: 6px;">Configuration</h1>
+          <p>Every write to the RAN, staged in waves with an alarm gate and an optional KPI guard. Pause, continue, stop or roll back while it runs.</p>
+        </div>
+        <button class="btn btn-primary" onClick="{{toNew}}">New config job</button>
+      </div>
+
+      <div class="tabs" role="tablist"><sc-for list="{{tabs}}" as="t" hint-placeholder-count="5"><button class="{{t.cls}}" role="tab" aria-selected="{{t.sel}}" onClick="{{t.go}}">{{t.label}} <span class="n">{{t.n}}</span></button></sc-for></div>
+
+      <sc-if value="{{T.jobs}}" hint-placeholder-val="{{true}}">
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px; align-items: start;">
+          <dc-import name="ListView" spec="{{S.jobs}}" hint-size="100%,560px"></dc-import>
+          <section class="card">
+            <div class="card-h" style="align-items: flex-start;">
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <div class="row wrap"><span class="id">job-81aa</span><span class="{{job.sc}}">{{job.st}}</span><span class="badge b-mute plain">{{job.reason}}</span></div>
+                <h2 style="font-size: 19px;">Coverage Optimization · tilt + CIO on 340 relations</h2>
+                <span class="small muted">harbour · 140 elements · wave size 20 · pause 10 min · gate ≤ 0 new alarms · on gate failure: revert · <a href="Decisions.dc.html">decision dec-2c91e0</a></span>
+              </div>
+            </div>
+            <div class="eyebrow">Waves · {{job.wavesDone}} of 7</div>
+            <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px;">
+              <sc-for list="{{job.waves}}" as="w" hint-placeholder-count="7"><div style="{{w.box}}"><span class="mono xs">W{{w.n}}</span><span class="xs">{{w.t}}</span></div></sc-for>
+            </div>
+            <sc-if value="{{job.paused}}" hint-placeholder-val="{{true}}"><div class="callout" style="padding: 10px 12px;"><span class="small"><strong>WAVE_PAUSE</strong> · wave 5 starts in 06:12 unless you act</span></div></sc-if>
+            <sc-if value="{{job.note}}" hint-placeholder-val="{{false}}"><div class="callout volt" style="padding: 10px 12px;"><span class="small">{{job.noteText}}</span></div></sc-if>
+            <div class="row wrap">
+              <button class="btn btn-sm btn-primary" onClick="{{cont}}">Continue now</button>
+              <button class="btn btn-sm" onClick="{{halt}}">Halt</button>
+              <button class="btn btn-sm" onClick="{{kpi}}">Run KPI check</button>
+              <button class="btn btn-sm btn-danger" onClick="{{revert}}">Roll back applied waves</button>
+              <button class="btn btn-sm btn-ghost" onClick="{{abort}}">Abort</button>
+            </div>
+            <div class="eyebrow">KPI guard</div>
+            <div class="grid g4" style="gap: 8px;">
+              <div class="inset"><div class="xs muted">KPI</div><div class="mono small">dlThroughputP10</div><div class="xs muted">higher is better</div></div>
+              <div class="inset"><div class="xs muted">Baseline · observe</div><div class="mono small">30 min · 15 min</div></div>
+              <div class="inset"><div class="xs muted">Max regression</div><div class="mono small">5 %</div></div>
+              <div class="inset" style="{{job.kpiBox}}"><div class="xs muted">Last check</div><div class="mono small">{{job.kpiRes}}</div></div>
+            </div>
+            <div class="eyebrow">Sub-changes</div>
+            <dl class="kv"><dt>Applied</dt><dd>212 of 340 · waves 1–4</dd><dt>Rejected</dt><dd class="t-bad">3 · du-302: value out of range</dd><dt>Not started</dt><dd>125 · waves 5–7</dd></dl>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{T.create}}" hint-placeholder-val="{{false}}">
+        <section class="card" style="max-width: 960px;">
+          <div class="card-h"><div><h2>New config job</h2><span class="sub">POST /config-jobs · schema-checked and MSAC-gated before anything is sent</span></div></div>
+          <div class="grid g2">
+            <label class="field"><span>Scope</span><input class="input mono" value="cluster=harbour"></label>
+            <label class="field"><span>Requested by</span><input class="input" value="admin" disabled></label>
+          </div>
+          <label class="field"><span>Changes</span><textarea class="input mono" style="min-height: 110px; padding: 10px 12px;">NRCellDU=*/digitalTilt: +1
+NRCellRelation=*/cellIndividualOffset: 2</textarea></label>
+          <div class="grid g4">
+            <label class="field"><span>Wave size</span><input class="input" value="20"></label>
+            <label class="field"><span>Pause between waves</span><select class="input"><option>10 min</option><option>none</option></select></label>
+            <label class="field"><span>Gate: max new alarms</span><input class="input" value="0"></label>
+            <label class="field"><span>On gate failure</span><select class="input"><option>Revert applied waves</option><option>Halt and ask me</option></select></label>
+          </div>
+          <label class="row small"><input type="checkbox" checked> Add a KPI guard: dlThroughputP10 must not fall more than 5% (30 min baseline, 15 min observation)</label>
+          <div class="row" style="justify-content: flex-end;"><button class="btn" onClick="{{dry}}">Dry run</button><button class="btn btn-primary">Submit job</button></div>
+          <sc-if value="{{dryDone}}" hint-placeholder-val="{{false}}"><div class="callout volt"><span class="small"><strong>Dry run:</strong> 140 elements · 420 sub-changes · schema check passed · MSAC allows role ran-optimizer · 7 waves · 2 cells skipped (EMERGENCY guard).</span></div></sc-if>
+        </section>
+      </sc-if>
+
+      <sc-if value="{{T.vendors}}" hint-placeholder-val="{{false}}">
+        <dc-import name="ListView" spec="{{S.vendors}}" hint-size="100%,420px"></dc-import>
+        <dc-import name="ListView" spec="{{S.schemas}}" hint-size="100%,420px"></dc-import>
+      </sc-if>
+      <sc-if value="{{T.trust}}" hint-placeholder-val="{{false}}">
+        <div class="callout bad"><span class="small"><strong>1 host key changed:</strong> o1-adaptor-h2 presented a different ssh-ed25519 key than the one pinned. Connections are refused until an admin re-pins it.</span></div>
+        <dc-import name="ListView" spec="{{S.keys}}" hint-size="100%,420px"></dc-import>
+      </sc-if>
+      <sc-if value="{{T.onboard}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.onboard}}" hint-size="100%,460px"></dc-import></sc-if>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1260}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const st = this.state || {};
+    const tab = st.tab || 'jobs';
+    const defs = [['jobs', 'Config jobs', '2,904 · 24 h'], ['create', 'New job', ''], ['vendors', 'Vendors & schemas', '12'], ['trust', 'Endpoint trust', '1 alert'], ['onboard', 'Element onboarding', '9 pending']];
+    const tabs = defs.map(([k, label, n]) => ({ label, n, cls: k === tab ? 'tab on' : 'tab', sel: k === tab ? 'true' : 'false', go: () => this.setState({ tab: k }) }));
+    const T = {}; defs.forEach(([k]) => { T[k] = k === tab; });
+    const s = st.s || 'HALTED';
+    const SC = { HALTED: 'badge b-warn', PROCESSING: 'badge b-info', FAILED: 'badge b-bad', COMPLETED: 'badge b-ok', PARTIAL_SUCCESS: 'badge b-warn' };
+    const done = s === 'PROCESSING' ? 5 : 4;
+    const waves = [];
+    for (let i = 1; i <= 7; i++) {
+      const t = s === 'REVERTED' ? (i <= 4 ? 'reverted' : 'skipped') : i <= 4 ? 'applied' : (i === 5 && s === 'PROCESSING') ? 'running' : s === 'FAILED' ? 'aborted' : 'waiting';
+      const c = t === 'applied' ? 'var(--ok)' : t === 'running' ? 'var(--volt)' : t === 'reverted' ? 'var(--warn)' : 'var(--line-strong)';
+      waves.push({ n: i, t, box: 'display:flex;flex-direction:column;gap:4px;padding:8px;border-radius:8px;background:var(--raised);border-top:3px solid ' + c + ';' });
+    }
+    const notes = { PROCESSING: 'Continued by admin · wave 5 of 7 running', FAILED: 'Aborted by admin · waves 5–7 will not run · applied waves stay', REVERTED: 'Revert job job-91c0 created · waves 1–4 are being restored from their snapshots', KPI: 'KPI check passed · dlThroughputP10 −2.1% (limit 5%) · 8 samples' };
+    const job = { st: s === 'REVERTED' ? 'HALTED' : s, sc: SC[s === 'REVERTED' ? 'HALTED' : s] || 'badge b-warn', reason: s === 'HALTED' ? (st.kpiRun ? 'WAVE_PAUSE' : 'WAVE_PAUSE') : s === 'PROCESSING' ? 'running' : s === 'REVERTED' ? 'GATE_FAILED → revert' : 'OPERATOR_ABORT', wavesDone: done, waves,
+      paused: s === 'HALTED' && !st.kpiRun, note: s !== 'HALTED' || !!st.kpiRun, noteText: st.kpiRun && s === 'HALTED' ? notes.KPI : notes[s] || '',
+      kpiRes: st.kpiRun ? '−2.1 % · pass' : '−1.4 % · pass (wave 3)', kpiBox: 'border-color:var(--ok);' };
+    const S = {
+      jobs: { title: 'Config jobs', sub: 'staged writes · halted first', search: 'Search job, requester, scope', chips: ['Last 24 h'], actions: [],
+        cols: ['Job', 'Requested by', 'Scope', 'Waves', 'Status'],
+        rows: [['a:#|job-81aa', 'Coverage Opt.', 'm:harbour', '4 / 7', 'b:warn:HALTED · pause'], ['a:#|job-91c0', 'sa-smos', 'm:du-03', '1 / 1', 'b:warn:REVERT'], ['a:#|job-7c02', 'Energy Saving', 'm:metro-a', '12 / 12', 'b:ok:COMPLETED'], ['a:#|job-77e2', 'Mobility Opt.', 'm:metro-a', '3 / 3', 'b:warn:PARTIAL_SUCCESS'], ['a:#|job-6e19', 'operator1', 'm:du-03', '1 / 1', 'b:ok:COMPLETED'], ['a:#|job-6a02', 'Energy Saving', 'm:stadium', '0 / 2', 'b:bad:FAILED · gate']],
+        total: '2,904', note: 'halted first', page: '1 / 484' },
+      vendors: { title: 'Vendor capabilities', sub: 'what each RAN vendor (or digital twin) supports · onboarding is data, not code', search: 'Search vendor', chips: [], actions: ['Onboard vendor'],
+        cols: ['Vendor', 'Services', 'Conformance', 'Modes', 'Schema', 'Updated'],
+        rows: [['a:#|vendor-a', 'CM, FM, PM, SWM', 'b:ok:SPEC', 'O1_NETCONF', 'm:TS 28.541 r18', 'mu:3 d ago'], ['a:#|vendor-b', 'CM, FM, PM', 'b:info:COMBINED', 'O1_NETCONF', 'm:vendor-b-nrm 2.4 + TS 28.541', 'mu:9 d ago'], ['a:#|vendor-c', 'CM, FM', 'b:warn:OWN', 'O1_NETCONF', 'm:vendor-c-yang 1.7', 'mu:21 d ago'], ['a:#|digital-twin', 'CM, FM, PM, SWM', 'b:ok:SPEC', 'O1_NETCONF', 'm:TS 28.541 r18', 'mu:1 d ago']],
+        total: '12', note: '', page: '1 / 3' },
+      schemas: { title: 'CM schemas', sub: 'what every config write is checked against', search: 'Search schema', chips: [], actions: ['Add schema'],
+        cols: ['Schema', 'Type', 'Revision', 'Used by', 'Location'],
+        rows: [['a:#|_3gpp-nr-nrm-nrcelldu', 'b:info:YANG', 'm:2024-06-12', 'vendor-a, twin', 'mu:bundled'], ['a:#|vendor-b-nrm', 'b:info:OPENAPI_NRM', 'm:2.4', 'vendor-b', 'm:https://vendor-b.example/nrm'], ['a:#|vendor-c-yang', 'b:info:YANG', 'm:1.7', 'vendor-c', 'mu:uploaded']],
+        total: '31', note: '', page: '1 / 7' },
+      keys: { title: 'Pinned SSH host keys', sub: 'O1 adaptor endpoints · NETCONF over SSH', search: 'Search endpoint', chips: ['Mismatch first'], actions: ['Re-pin selected'],
+        cols: ['Endpoint', 'Key type', 'Fingerprint', 'Pinned by', 'Pinned', 'Status'],
+        rows: [['a:Element.dc.html|o1-adaptor-h2', 'ssh-ed25519', 'm:SHA256:9q1…Kx0', 'admin', 'mu:21 d ago', 'b:bad:MISMATCH'], ['a:Element.dc.html|o1-adaptor-m3', 'ssh-ed25519', 'm:SHA256:Lm7…a2Q', 'admin', 'mu:40 d ago', 'b:ok:MATCH'], ['a:Element.dc.html|o1-adaptor-s1', 'ecdsa-sha2-nistp256', 'm:SHA256:x8T…0pE', 'operator2', 'mu:12 d ago', 'b:ok:MATCH']],
+        total: '214', note: '', page: '1 / 43' },
+      onboard: { title: 'Element onboarding', sub: 'new elements: discovered → template selected → applied', search: 'Search element', chips: ['Pending'], actions: ['Apply selected'],
+        cols: ['Element', 'Vendor', 'Template', 'Software check', 'Status'],
+        rows: [['a:Element.dc.html|du-913-airport', 'vendor-a', 'm:du-std-v3', 'b:ok:24.3.1 ok', 'b:warn:SELECTED'], ['a:Element.dc.html|du-914-airport', 'vendor-a', 'm:du-std-v3', 'b:warn:24.1.0 old', 'b:warn:SELECTED'], ['a:Element.dc.html|ru-501-coast', 'vendor-b', 'mu:—', 'b:mute:unknown', 'b:info:DISCOVERED']],
+        total: '9', note: '', page: '1 / 2' }
+    };
+    return { P, tabs, T, S, job, dryDone: !!st.dry, dry: () => this.setState({ dry: true }), toNew: () => this.setState({ tab: 'create' }),
+      cont: () => this.setState({ s: 'PROCESSING', kpiRun: false }), halt: () => this.setState({ s: 'HALTED', kpiRun: false }), kpi: () => this.setState({ kpiRun: true, s: 'HALTED' }),
+      revert: () => this.setState({ s: 'REVERTED', kpiRun: false }), abort: () => this.setState({ s: 'FAILED', kpiRun: false }) };
+  }
+}
+</script>
+</body>
+</html>

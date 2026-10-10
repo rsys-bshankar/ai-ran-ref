@@ -8,6 +8,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, type ReactN
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, ApiError } from "../api/client";
+import { useOptionalToast } from "../components/Toast";
 import type { Me } from "../api/types";
 import { isChallenge, type LoginChallenge, type SignedIn } from "../lib/mfa";
 import { can as canWith, type PermissionRule, type QueryValues, type Role } from "./rbac";
@@ -24,6 +25,8 @@ interface AuthState {
   loginWithCode: (challenge: string, code: string) => Promise<SignedIn>;
   logout: () => Promise<void>;
   can: (method: string, path: string, query?: QueryValues) => boolean;
+  /** The BFF's permission table (`GET /api/permissions`), empty until read: the Admin role matrix is drawn from it (GUI-10.4). */
+  rules: PermissionRule[];
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -40,6 +43,7 @@ const isMeQuery = (key: readonly unknown[]) => key[0] === "bff" && key[1] === "m
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
+  const toast = useOptionalToast();
   const meQuery = useQuery<Me | null, ApiError>({
     queryKey: ["bff", "me"],
     queryFn: async () => {
@@ -90,15 +94,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return result;
   }, [startSession]);
 
+  // GUI-10.7: a failed `POST /logout` (network, 5xx) is caught: the user is signed out here anyway and told that the server did not confirm it
+  // (the session cookie then ends when it expires, or with "Revoke sessions"); it never surfaces as an unhandled rejection.
   const logout = useCallback(async () => {
     let endSessionUrl: string | undefined;
-    try { endSessionUrl = (await api<{ endSessionUrl?: string }>("/logout", { method: "POST" })).endSessionUrl; } finally {
+    try {
+      endSessionUrl = (await api<{ endSessionUrl?: string }>("/logout", { method: "POST" })).endSessionUrl;
+    } catch (e) {
+      // a 401 means the session had already ended: nothing to tell
+      if (!(e instanceof ApiError && e.status === 401)) toast?.push({ tone: "error", text: `Signed out in this browser, but the server did not confirm it (${(e as Error).message}); the session ends when it expires.` });
+    } finally {
       qc.setQueryData(["bff", "me"], null);
       qc.removeQueries({ predicate: (q) => !isMeQuery(q.queryKey) });
     }
     // PR-SEC-6: a user who signed in through the identity provider also leaves its session (RP-initiated logout), when it has an end-session page.
     if (endSessionUrl && /^https?:\/\//.test(endSessionUrl)) window.location.assign(endSessionUrl);
-  }, [qc]);
+  }, [qc, toast]);
 
   const value = useMemo<AuthState>(() => {
     const rules = rulesQuery.data?.rules ?? [];
@@ -110,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginWithCode,
       logout,
       can: (method, path, query) => canWith(rules, me?.role, method, path, query),
+      rules,
     };
   }, [me, meQuery.isLoading, rulesQuery.data, login, loginWithCode, logout]);
 

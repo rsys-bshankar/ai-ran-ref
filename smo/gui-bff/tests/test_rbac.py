@@ -136,6 +136,34 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/ran-nf-oam/kpi-definitions/standard", "admin"),
     ("PUT", "/ran-nf-oam/kpi-schedules/s", "admin"),
     ("DELETE", "/ran-nf-oam/kpi-schedules/s", "admin"),
+    # GUI-9.7: the routes the redesigned pages showed read-only, and the global stop and site cluster of GUI-9.6 / GUI-9.8
+    ("POST", "/intent-service/intents/i/negotiation-feedback", "operator"),
+    ("POST", "/mdaf/mda-requests", "operator"),
+    ("DELETE", "/mdaf/mda-requests/r", "operator"),
+    ("POST", "/ran-nf-oam/config-jobs/j/kpi-check", "operator"),
+    ("PUT", "/ran-nf-oam/o1-adaptor-endpoints/e/host-keys", "admin"),
+    ("DELETE", "/ran-nf-oam/o1-adaptor-endpoints/e/host-keys", "admin"),
+    ("DELETE", "/ran-nf-oam/o1-adaptor-endpoints/e/host-keys/ssh-ed25519", "admin"),
+    ("POST", "/ran-nf-oam/managed-entities/me-1/managed-objects/refresh", "operator"),
+    ("POST", "/ran-nf-oam/msac/roles", "admin"),
+    ("PUT", "/ran-nf-oam/msac/roles/r", "admin"),
+    ("DELETE", "/ran-nf-oam/msac/roles/r", "admin"),
+    ("POST", "/ran-nf-oam/msac/identities", "admin"),
+    ("PUT", "/ran-nf-oam/msac/identities/i", "admin"),
+    ("DELETE", "/ran-nf-oam/msac/identities/i", "admin"),
+    ("POST", "/ran-nf-oam/msac/access-rules", "admin"),
+    ("DELETE", "/ran-nf-oam/msac/access-rules/a", "admin"),
+    ("GET", "/ran-nf-oam/msac/roles", "viewer"),
+    ("PUT", "/rapp-mgmt/kill-all", "operator"),
+    ("DELETE", "/rapp-mgmt/kill-all", "admin"),
+    ("GET", "/rapp-mgmt/kill-all", "viewer"),
+    ("PUT", "/ran-nf-oam/managed-entities/me-1/site-cluster", "admin"),
+    # GUI-10.1: the FM subscription form and the FM / PM Unsubscribe buttons are operator actions; listing them stays a read
+    ("POST", "/ran-nf-oam/fm-subscriptions", "operator"),
+    ("DELETE", "/ran-nf-oam/fm-subscriptions/s-1", "operator"),
+    ("DELETE", "/ran-nf-oam/pm-subscriptions/s-1", "operator"),
+    ("POST", "/ran-nf-oam/pm-subscriptions", "operator"),
+    ("GET", "/ran-nf-oam/fm-subscriptions", "viewer"),
 ])
 def test_minimum_role_per_route(method, path, minimum):
     order = ["viewer", "operator", "admin"]
@@ -208,8 +236,19 @@ def test_a_job_action_is_always_attributed_to_the_gui_user_and_an_admin_holds_th
         assert rule.json_overrides(user(Role.OPERATOR))["msacRole"] is None and rule.json_overrides(user(Role.ADMIN))["msacRole"] == "admin"
 
 
-def test_kpi_check_and_publish_are_not_exposed_to_the_gui():
-    """The KPI check, the KPI publish and the due-job sweep belong to services and workers, so even an admin cannot reach them through the GUI.
-    """
-    for path in ("/ran-nf-oam/config-jobs/j/kpi-check", "/ran-nf-oam/kpis/k/publish", "/ran-nf-oam/config-jobs/advance-due"):
+def test_kpi_publish_and_the_sweep_are_not_exposed_to_the_gui():
+    """Publishing a KPI and the staged-job sweep are the worker's; only the KPI check of one job is a GUI action (GUI-9.7)."""
+    for path in ("/ran-nf-oam/kpis/k/publish", "/ran-nf-oam/config-jobs/advance-due"):
         assert not decide("POST", path, {}, Role.ADMIN).allowed
+
+
+def test_the_global_stop_is_attributed_to_the_gui_user():
+    """GUI-9.6: `PUT /rapp-mgmt/kill-all` records the signed-in user as `requestedBy`, whatever the browser sent, like the per-instance kill."""
+    decision = decide("PUT", "/rapp-mgmt/kill-all", {}, Role.OPERATOR)
+    assert decision.allowed and decision.rule.json_overrides(type("U", (), {"username": "alice", "role": Role.OPERATOR})()) == {"requestedBy": "smo-gui:alice"}
+
+
+def test_a_host_key_pin_is_attributed_to_the_gui_user():
+    """GUI-9.7 / STD-4.6: who re-pinned an SSH host key is the signed-in admin, never a `pinnedBy` the browser chose."""
+    rule = decide("PUT", "/ran-nf-oam/o1-adaptor-endpoints/e/host-keys", {}, Role.ADMIN).rule
+    assert rule.json_overrides(type("U", (), {"username": "root", "role": Role.ADMIN})()) == {"pinnedBy": "smo-gui:root"}

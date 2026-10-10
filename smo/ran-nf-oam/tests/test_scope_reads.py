@@ -380,6 +380,9 @@ ABOUT_ELEMENTS = {
     "/pm-subscriptions", "/software-campaigns", "/software-campaigns/{campaign_id}", "/software-campaigns/{campaign_id}/report", "/software-management-jobs",
     "/topology", "/topology/links", "/topology/relation", "/kpi-schedules", "/kpi-schedules/{schedule_id}", "/vendor-capabilities", "/vendor-capabilities/{vendor_name}",
     "/capabilities", "/cm-schemas", "/cm-schemas/{schema_name}", "/rapp-approvals/{approval_id}", "/decision-records/{decision_id}",
+    # PR-GUI-9.3/9.4/9.8: the console's aggregates count only the caller's elements
+    "/alarms/counts", "/alarms/stats", "/alarms/{alarm_id}/correlated", "/managed-entities/health", "/managed-entities/scopes", "/managed-entities/worst",
+    "/topology/links/counts",
 }
 NOT_ABOUT_ELEMENTS = {            # route: why a claim has nothing to match on (a new read route must be put in one of the two sets, with its reason)
     "/health": "probe", "/live": "probe", "/ready": "probe", "/version": "build information",
@@ -391,7 +394,7 @@ NOT_ABOUT_ELEMENTS = {            # route: why a claim has nothing to match on (
     "/rapp-approval-policy/{invoker_id_}": "a safeguard setting named by an invoker id", "/rapp-kill": "internal-only at R1", "/rapp-kill/{invoker_id_}": "a safeguard setting named by an invoker id",
     "/rapp-limits/{invoker_id_}": "a safeguard setting named by an invoker id", "/rapp-approvals": "internal-only at R1", "/decision-records": "internal-only at R1",
     "/safeguard-refusals": "internal-only at R1", "/safeguard-subscriptions": "internal-only at R1", "/approval-subscriptions": "internal-only at R1",
-    "/lifecycle-subscriptions": "internal-only at R1",
+    "/lifecycle-subscriptions": "internal-only at R1", "/decision-records/export.csv": "internal-only at R1 (the list's rows, as CSV)",
 }
 
 
@@ -427,13 +430,19 @@ def _seed_everything(client, tree):
 
 
 def _nothing(response, name):
-    """Tells whether a response to a caller whose claim matches nothing shows nothing: a 403 or 404, an empty list (bundled schemas excepted), or an empty topology or vendor list."""
+    """Tells whether a response to a caller whose claim matches nothing shows nothing: a 403 or 404, an empty list (bundled schemas excepted), an empty topology or vendor
+    list, or a console aggregate that counts nothing (no groups, regions or links, no open or acknowledged alarm)."""
     if response.status_code in (403, 404):
         return True
     body = response.json()
+    if isinstance(body, list):                                                                    # /managed-entities/worst: a bare list
+        return body == []
     if "items" in body:
         return all(item.get("builtin") for item in body["items"]) if name == "/cm-schemas" else body["items"] == []
-    return {"/topology": body.get("entities") == [] and body.get("relationships") == [], "/capabilities": body.get("vendors") == [], "/files": False}.get(name, False)
+    return {"/topology": body.get("entities") == [] and body.get("relationships") == [], "/capabilities": body.get("vendors") == [], "/files": False,
+            "/alarms/counts": body.get("groups") == [], "/alarms/stats": body.get("open") == 0 and body.get("acked") == 0,
+            "/managed-entities/health": body.get("groups") == [], "/managed-entities/scopes": body.get("regions") == [],
+            "/topology/links/counts": body.get("total") == 0}.get(name, False)
 
 
 def test_a_claim_that_matches_nothing_sees_nothing_of_what_is_there(client, vendors, tmp_path):
@@ -452,10 +461,11 @@ def test_a_claim_that_matches_nothing_sees_nothing_of_what_is_there(client, vend
         pm_file = db.query(PMFile).one()
         db.commit()
         ids = {"job_id": job, "file_id": pm_file.file_id, "endpoint_id": endpoint.endpoint_id, "alarm_id": alarm.alarm_id}
-    params = {"/files": {"fileDataType": "Performance"}, "/kpis/{name}": {"from_time": "2026-01-01T00:00:00Z", "group_by": "element"},
+    params = {"/files": {"fileDataType": "Performance"}, "/alarms/counts": {"group_by": "severity"}, "/kpis/{name}": {"from_time": "2026-01-01T00:00:00Z", "group_by": "element"},
               "/topology/relation": {"a": dn("ME-3"), "b": dn("ME-3")}, "/managed-entities/{managed_element_ref}/config-history/diff": {"from_snapshot": str(uuid.uuid4()), "to_snapshot": str(uuid.uuid4())}}
     values = {"job_id": ids["job_id"], "managed_element_ref": "ME-3", "dn": dn("ME-3"), "file_id": ids["file_id"], "endpoint_id": ids["endpoint_id"], "name": "prb", "schedule_id": "s",
-              "vendor_name": "other-ran", "schema_name": "other-model", "campaign_id": uuid.uuid4(), "approval_id": uuid.uuid4(), "decision_id": uuid.uuid4()}
+              "vendor_name": "other-ran", "schema_name": "other-model", "campaign_id": uuid.uuid4(), "approval_id": uuid.uuid4(), "decision_id": uuid.uuid4(),
+              "alarm_id": ids["alarm_id"]}
     for route in sorted(ABOUT_ELEMENTS):
         path = route.format(**values)
         response = client.get(path, headers=NOWHERE, params={**params.get(route, {}), **({"revision": "1"} if route.startswith("/cm-schemas/") else {})})

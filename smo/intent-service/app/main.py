@@ -33,7 +33,7 @@ from typing import Any
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from smo_shared.logconfig import install_logging
@@ -342,6 +342,8 @@ def _create_intent_row(db: Session, body: CreateIntentRequest) -> Intent:
     db.add(report)
     db.flush()
     intent.intent_report_reference = report.id
+    _apply_report(intent, report)
+    intent.in_conflict = bool(conflicts)       # a new intent with no conflict is known not to be in one
 
     # Outbox rows in the caller's transaction (PR-MSG-1.9): this function no longer commits, its caller does, and the
     # notifications are sent once that commit has happened.
@@ -400,6 +402,36 @@ def _report_view(r: IntentReport) -> dict:
             "attributes": {**attrs, "lastUpdatedTime": r.last_updated_time.isoformat(), "intentReference": str(r.intent_id)}}
 
 
+def fulfilment_percent(fulfilment_report: dict | None) -> float | None:
+    """GUI-9.8: the share (0-100, one decimal) of an `IntentFulfilmentReport` that is FULFILLED, counted over its targets
+    (`expectationFulfilmentResult[].targetFulfilmentResults[]`); a report that lists no targets is counted over its expectations, and one that lists
+    neither by the intent's own `intentFulfilmentInfo` (0 or 100). None for no report. Revision 0037 repeats this rule to fill the existing rows."""
+    if not isinstance(fulfilment_report, dict):
+        return None
+    results = [e for e in fulfilment_report.get("expectationFulfilmentResult") or [] if isinstance(e, dict)]
+    infos = [t.get("targetFulfilmentInfo") for e in results for t in e.get("targetFulfilmentResults") or [] if isinstance(t, dict)]
+    if not infos:
+        infos = [e.get("expectationFulfilmentInfo") for e in results]
+    if not infos:
+        infos = [fulfilment_report.get("intentFulfilmentInfo")]
+    graded = [i for i in infos if isinstance(i, dict)]
+    if not graded:
+        return None
+    return round(100 * sum(i.get("fulfilmentStatus") == "FULFILLED" for i in graded) / len(graded), 1)
+
+
+def _apply_report(intent: Intent, report: IntentReport) -> None:
+    """Keeps the intent's summary columns in step with a report just stored for it (GUI-9.8): a fulfilment report sets `fulfilment_percent` and
+    `fulfilled` (the intent's own `intentFulfilmentInfo.fulfilmentStatus`); a report that carries conflict reports sets `in_conflict` (an empty list
+    clears it). A report of other kinds changes neither. Does not commit."""
+    if report.intent_fulfilment_report is not None:
+        intent.fulfilment_percent = fulfilment_percent(report.intent_fulfilment_report)
+        info = report.intent_fulfilment_report.get("intentFulfilmentInfo") or {}
+        intent.fulfilled = info.get("fulfilmentStatus") == "FULFILLED"
+    if report.intent_conflict_reports is not None:
+        intent.in_conflict = bool(report.intent_conflict_reports)
+
+
 def _deliver_report(db: Session, intent: Intent, report: IntentReport) -> None:
     """Enqueues `report` for every report control of `intent` that has a `reportRecipientAddress` and wants it; the caller commits.
 
@@ -426,12 +458,21 @@ def query_intent(intent_id: uuid.UUID, db: Session = Depends(get_session)):
 
 
 @app.get("/intents")
-def query_intents(admin_state: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
-                   db: Session = Depends(get_session)):
-    # Route notes: `admin_state` is an exact match and is not validated (an unknown value gives an empty page). Paginated, in primary-key order (a random UUID, so not creation order).
+def query_intents(admin_state: str | None = None, fulfilled: bool | None = None, in_conflict: bool | None = None, limit: int = PageLimit,
+                  offset: int = PageOffset, db: Session = Depends(get_session)):
+    """QueryIntents, paginated. `admin_state` is an exact match. GUI-9.8: `fulfilled` keeps the intents whose newest fulfilment report says
+    FULFILLED (`true`) or NOT_FULFILLED (`false`; an intent with no fulfilment report matches neither); `in_conflict` keeps the intents whose
+    newest conflict report names a conflict (`true`) or the others (`false`)."""
+    # Route notes: `admin_state` is not validated (an unknown value gives an empty page). Paginated, in primary-key order (a random UUID, so not creation order).
+    # Both GUI-9.8 filters are SQL on the summary columns `_apply_report` keeps; a row written by the previous release during a rolling upgrade has
+    # `in_conflict` NULL, which counts as not in conflict.
     stmt = select(Intent)
     if admin_state:
         stmt = stmt.where(Intent.intent_admin_state == admin_state)
+    if fulfilled is not None:
+        stmt = stmt.where(Intent.fulfilled.is_(fulfilled))
+    if in_conflict is not None:
+        stmt = stmt.where(Intent.in_conflict.is_(True) if in_conflict else or_(Intent.in_conflict.is_(False), Intent.in_conflict.is_(None)))
     page = paginate(db, stmt, limit, offset)
     return {**page, "items": [_intent_view(i) for i in page["items"]]}
 
@@ -458,6 +499,7 @@ def update_intent_admin_state(intent_id: uuid.UUID, body: AdminStateRequest, db:
         db.add(report)
         db.flush()
         intent.intent_report_reference = report.id
+        _apply_report(intent, report)
         _deliver_report(db, intent, report)
         db.commit()
     return _intent_view(intent)
@@ -522,6 +564,7 @@ def publish_intent_report(body: IntentReportRequest, db: Session = Depends(get_s
     db.add(report)
     db.flush()
     intent.intent_report_reference = report.id
+    _apply_report(intent, report)
     _deliver_report(db, intent, report)
     db.commit()
     return {"reportId": str(report.id), **_report_view(report)}
@@ -565,11 +608,13 @@ def deregister_intent_handling_function(rmih_id: str, db: Session = Depends(get_
 def _intent_view(i: Intent) -> dict:
     """Returns the wire form of an intent: summary keys the existing readers use, plus the full TS 28.312 Intent under `attributes`.
 
-    Attributes that are None are left out of `attributes`; `intentReportReference` and `intentUtilityFormulaRef` are strings.
+    Attributes that are None are left out of `attributes`; `intentReportReference` and `intentUtilityFormulaRef` are strings. GUI-9.8 summary keys:
+    `fulfilmentPercent` and `fulfilled` (null until a fulfilment report exists) and `inConflict` (always a bool), from the columns `_apply_report` keeps.
     """
     return {"id": str(i.intent_id), "intentId": str(i.intent_id), "intentAdminState": i.intent_admin_state,
             "intentPriority": i.intent_priority, "rmioId": i.rmio_id, "intentMgmtPurpose": i.intent_mgmt_purpose,
             "rmihId": i.rmih_id, "userLabel": i.user_label,
+            "fulfilmentPercent": i.fulfilment_percent, "fulfilled": i.fulfilled, "inConflict": bool(i.in_conflict),
             "attributes": {k: v for k, v in {
                 "userLabel": i.user_label, "intentExpectations": i.intent_expectations,
                 "intentMgmtPurpose": i.intent_mgmt_purpose, "contextSelectivity": i.context_selectivity,

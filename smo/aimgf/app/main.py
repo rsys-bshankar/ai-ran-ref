@@ -35,7 +35,7 @@ from typing import Any, Literal
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -324,8 +324,11 @@ class CreateFeatureGroupRequest(BaseModel):
 
 class TrainingProgressRequest(BaseModel):
     """OI-5-aiml-trainingjob-steps: the execution runtime reports the step
-    the run has reached."""
-    step: Literal["DATA_EXTRACTION", "TRAINING", "TRAINED_MODEL"]
+    the run has reached and, optionally (GUI-9.8), the epoch it has reached
+    out of how many. At least one of `step`, `epoch` and `totalEpochs`."""
+    step: Literal["DATA_EXTRACTION", "TRAINING", "TRAINED_MODEL"] | None = None
+    epoch: int | None = Field(default=None, ge=0)
+    totalEpochs: int | None = Field(default=None, ge=1)
 
 
 # ---------------------------------------------------------------- Execution runtimes (jointly with NFO)
@@ -701,7 +704,7 @@ def query_training_job_status(training_job_id: uuid.UUID, db: Session = Depends(
         "nfDeploymentId": str(job.nf_deployment_id) if job.nf_deployment_id else None,
         "runtimeProfile": job.runtime_profile, "timeoutSeconds": job.timeout_seconds,
         "startedAt": _aware(job.started_at).isoformat(),
-        "currentStep": job.current_step, "steps": _training_steps(job),
+        "currentStep": job.current_step, "steps": _training_steps(job), **_epoch_view(job),
     }
 
 
@@ -872,7 +875,11 @@ def report_training_progress(training_job_id: uuid.UUID, body: TrainingProgressR
     repeating the current step is a no-op, going back is refused. Only an
     IN_PROGRESS run makes progress (a SUSPENDED one is paused; an ended one
     is history), 409 otherwise. Completion stays `POST .../complete`: this
-    reports where the run is, not how it ended.
+    reports where the run is, not how it ended. GUI-9.8: `epoch` and
+    `totalEpochs` (either, or both, with or without `step`) record how far
+    the run is; every training job answer then carries them with
+    `etaSeconds`, (now - startedAt) / epoch x (totalEpochs - epoch) while
+    the run is IN_PROGRESS. 422 for an epoch beyond the total.
     """
     # Route notes: the read first runs `_expire_overdue_jobs`, which fails every overdue run (and commits) before the answer is built. So a run that has just
     # timed out is already FAILED and gets the 409. 404 `TRAINING_JOB_NOT_FOUND`; 409 `TRAINING_JOB_ILLEGAL_TRANSITION` unless the job is IN_PROGRESS, or for a
@@ -882,16 +889,51 @@ def report_training_progress(training_job_id: uuid.UUID, body: TrainingProgressR
     job = db.get(TrainingJob, training_job_id)
     if job is None:
         raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
+    # GUI-9.8: `epoch`/`totalEpochs` are recorded with `_record_epoch` (422 `SCHEMA_VALIDATION_FAILED` for an epoch beyond the total, or a body with
+    # none of the three fields); the step rule above is unchanged and applies only when `step` is given.
+    if body.step is None and body.epoch is None and body.totalEpochs is None:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="report at least one of step, epoch and totalEpochs")
     if job.status != "IN_PROGRESS":
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"a training job in status {job.status} makes no progress")
-    if TRAINING_STEPS.index(body.step) < TRAINING_STEPS.index(job.current_step):
+    if body.step is not None and TRAINING_STEPS.index(body.step) < TRAINING_STEPS.index(job.current_step):
         raise framework_error(FrameworkError.TRAINING_JOB_ILLEGAL_TRANSITION,
                                detail=f"step {body.step} is behind the run's current step {job.current_step}")
-    job.current_step = body.step
+    if body.epoch is not None or body.totalEpochs is not None:
+        _record_epoch(job, body.epoch, body.totalEpochs)
+    if body.step is not None:
+        job.current_step = body.step
     db.commit()
     return {"trainingJobId": str(job.training_job_id), "status": job.status,
-            "currentStep": job.current_step, "steps": _training_steps(job)}
+            "currentStep": job.current_step, "steps": _training_steps(job), **_epoch_view(job)}
+
+
+def _record_epoch(job: TrainingJob, epoch: int | None, total_epochs: int | None) -> None:
+    """Records the epoch the run has reached and the epochs it will run (either may be None: the stored value is kept) and stamps
+    `progress_updated_at`. Does not commit. Raises 422 `SCHEMA_VALIDATION_FAILED` when the epoch would exceed the total, so the ETA is never negative."""
+    new_epoch = job.epoch if epoch is None else epoch
+    new_total = job.total_epochs if total_epochs is None else total_epochs
+    if new_epoch is not None and new_total is not None and new_epoch > new_total:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"epoch {new_epoch} is beyond totalEpochs {new_total}")
+    job.epoch, job.total_epochs = new_epoch, new_total
+    job.progress_updated_at = datetime.datetime.now(datetime.UTC)
+
+
+def _eta_seconds(job: TrainingJob, now: datetime.datetime | None = None) -> int | None:
+    """GUI-9.8: the seconds the run still needs at the pace it has kept, (now - started_at) / epoch x (totalEpochs - epoch), rounded. None unless the
+    run is IN_PROGRESS and has reported at least one finished epoch and its total. `started_at` restarts on resume, so after a resume the pace is that
+    of the epochs since then measured against all the epochs reported: an estimate, not a promise."""
+    if job.status != "IN_PROGRESS" or not job.epoch or job.total_epochs is None:
+        return None
+    elapsed = ((now or datetime.datetime.now(datetime.UTC)) - _aware(job.started_at)).total_seconds()
+    return max(0, round(elapsed / job.epoch * (job.total_epochs - job.epoch)))
+
+
+def _epoch_view(job: TrainingJob) -> dict:
+    """The progress fields every training job answer carries: `epoch`, `totalEpochs`, `progressUpdatedAt` (null until reported) and `etaSeconds`."""
+    return {"epoch": job.epoch, "totalEpochs": job.total_epochs,
+            "progressUpdatedAt": _aware(job.progress_updated_at).isoformat() if job.progress_updated_at else None,
+            "etaSeconds": _eta_seconds(job)}
 
 
 @app.post("/training-jobs/{training_job_id}/model-metrics")
@@ -902,10 +944,16 @@ def update_training_job_model_metrics(training_job_id: uuid.UUID, model_metrics:
     replaces model_metrics wholesale, not a merge — same here.
     """
     # Route notes: no sweep and no status check, so metrics can be written to a job in any status, including after it ended. The whole JSON object in the body
-    # replaces `model_metrics`. 404 `TRAINING_JOB_NOT_FOUND`; one commit.
+    # replaces `model_metrics`. 404 `TRAINING_JOB_NOT_FOUND`; one commit. GUI-9.8: a whole-number `epoch` and/or `totalEpochs` key in the metrics is also
+    # recorded as the run's progress (`_record_epoch`, 422 for an epoch beyond the total); any other value of those keys is kept as a metric only.
     job = db.get(TrainingJob, training_job_id)
     if job is None:
         raise framework_error(FrameworkError.TRAINING_JOB_NOT_FOUND, detail="no such training job")
+    epoch, total = (model_metrics.get(k) for k in ("epoch", "totalEpochs"))
+    epoch = epoch if isinstance(epoch, int) and not isinstance(epoch, bool) and epoch >= 0 else None
+    total = total if isinstance(total, int) and not isinstance(total, bool) and total >= 1 else None
+    if epoch is not None or total is not None:
+        _record_epoch(job, epoch, total)
     job.model_metrics = model_metrics
     db.commit()
     return {"trainingJobId": str(job.training_job_id), "modelMetrics": job.model_metrics}
@@ -1235,6 +1283,16 @@ def list_model_lifecycles(limit: int = PageLimit, offset: int = PageOffset, db: 
     # Route notes: paginated; reads only this module's table (no MLMR call), so a model AIMgF has never touched is absent.
     page = paginate(db, select(ModelLifecycle), limit, offset)
     return {**page, "items": [_lifecycle_view(l) for l in page["items"]]}
+
+
+@app.get("/model-lifecycles/counts")
+def count_model_lifecycles(db: Session = Depends(get_session)):
+    """GUI-9.4/9.8, models by stage: `{"groups": [{"state", "count"}]}`, the number of lifecycle rows in each model lifecycle state (one SQL GROUP BY,
+    largest group first). A model MLMR knows that AIMgF has never acted on has no row here, so it is not counted (it is REGISTERED in truth, see
+    `GET /model-lifecycles`)."""
+    stmt = (select(ModelLifecycle.model_lifecycle_state, func.count()).group_by(ModelLifecycle.model_lifecycle_state)
+            .order_by(func.count().desc(), ModelLifecycle.model_lifecycle_state))
+    return {"groups": [{"state": state, "count": count} for state, count in db.execute(stmt)]}
 
 
 @app.get("/models/{model_id}/governance-history")
@@ -1730,7 +1788,8 @@ def _write_training_report(db: Session, job: TrainingJob, body: CompleteJobReque
 
 
 def _training_job_view(j: TrainingJob) -> dict:
-    """Returns the training job as the dict the job routes answer: ids, status, dataset names, metrics, `mlTrainingType`, runtime profile, timeout, `currentStep` and the derived `steps`."""
+    """Returns the training job as the dict the job routes answer: ids, status, dataset names, metrics, `mlTrainingType`, runtime profile, timeout, `currentStep`, the derived `steps`
+    and the epoch progress with its ETA (`_epoch_view`)."""
     return {"trainingJobId": str(j.training_job_id), "modelId": str(j.model_id) if j.model_id else None,
             "modelCoordinationGroupId": str(j.model_coordination_group_id) if j.model_coordination_group_id else None,
             "producerId": j.producer_id, "status": j.status, "runId": j.run_id,
@@ -1739,7 +1798,7 @@ def _training_job_view(j: TrainingJob) -> dict:
             "outcomeArtifactDmeTypeId": str(j.outcome_artifact_dme_type_id) if j.outcome_artifact_dme_type_id else None,
             "nfDeploymentId": str(j.nf_deployment_id) if j.nf_deployment_id else None,
             "runtimeProfile": j.runtime_profile, "timeoutSeconds": j.timeout_seconds,
-            "currentStep": j.current_step, "steps": _training_steps(j)}
+            "currentStep": j.current_step, "steps": _training_steps(j), **_epoch_view(j)}
 
 
 # OI-5-aiml-trainingjob-steps: what the current step shows for each job status

@@ -1,7 +1,7 @@
 /**
  * The drawer of one CM write job at RAN NF OAM (polled every 5 s): its status and wave progress, the decision record when an rApp made it (AI-13.4), the Continue/Halt/Abort
  * buttons of a halted job, the rollback dialog (a preview first, then the rollback, forced only when a value was changed after the job wrote it), the KPI guard settings and result,
- * and the sub-changes. Used by the pages that list config jobs (Infrastructure, Alarms, Safeguards). The wording and the wave rules come from `lib/domain.ts`; the buttons are `ActionButton`s,
+ * and the sub-changes. Used by the pages that show config jobs (Infrastructure → O1 jobs, Configuration, Approvals, Decisions, element onboarding). The wording and the wave rules come from `lib/domain.ts`; the buttons are `ActionButton`s,
  * so a user whose role may not make the call does not see them.
  */
 

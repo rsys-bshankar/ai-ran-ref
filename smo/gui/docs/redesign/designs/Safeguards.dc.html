@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Safeguards — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="safeguards" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Automation" crumb="Safeguards" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">Guardrails</div>
+          <h1 style="margin-top: 6px;">Safeguards</h1>
+          <p>What holds an rApp in check: stop it, set how much it may change, and see every time it was refused.</p>
+        </div>
+        <button class="btn btn-danger"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>Stop all rApp writes</button>
+      </div>
+
+      <div class="tabs" role="tablist"><sc-for list="{{tabs}}" as="t" hint-placeholder-count="3"><button class="{{t.cls}}" role="tab" aria-selected="{{t.sel}}" onClick="{{t.go}}">{{t.label}} <span class="n">{{t.n}}</span></button></sc-for></div>
+      <sc-if value="{{T.refusals}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.refusals}}" hint-size="100%,520px"></dc-import></sc-if>
+      <sc-if value="{{T.watchers}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.watchers}}" hint-size="100%,400px"></dc-import></sc-if>
+      <sc-if value="{{T.limits}}" hint-placeholder-val="{{true}}">
+
+      <div class="grid g4">
+        <div class="kpi"><span class="kpi-l">rApps writing</span><span class="kpi-v">483 <small>/ 487</small></span><span class="kpi-f">4 stopped</span></div>
+        <div class="kpi"><span class="kpi-l">Near their rate limit</span><span class="kpi-v">9</span><span class="kpi-f">&gt; 80% of jobs/hour used</span></div>
+        <div class="kpi"><span class="kpi-l">Holding for approval</span><span class="kpi-v">198</span><span class="kpi-f">all assist-mode rApps</span></div>
+        <div class="kpi hot"><span class="kpi-l">Refusals · 24 h</span><span class="kpi-v">122</span><span class="kpi-f">rate 64 · limit 41 · lapsed 17</span></div>
+      </div>
+
+      <section class="card flush" aria-labelledby="lim-h">
+        <div class="card-h">
+          <div class="row wrap" style="gap: 8px;"><h2 id="lim-h">Limits per rApp</h2><label class="search" style="width: 260px;"><input aria-label="Find rApp" placeholder="Find rApp or id"></label><span class="chip">Near limit ×</span></div>
+          <div class="row"><button class="btn btn-sm">Hold selected for approval</button><button class="btn btn-sm btn-danger">Stop selected</button></div>
+        </div>
+        <div class="tbl-box"><table class="tbl">
+          <thead><tr><th style="width: 36px;"><input type="checkbox" aria-label="Select page"></th><th>rApp</th><th>Mode</th><th>Writes</th><th>Change / write</th><th>Jobs / hour used</th><th>Elements / job</th><th>Hold</th><th class="r">Refusals 24 h</th><th class="r"></th></tr></thead>
+          <tbody>
+            <sc-for list="{{apps}}" as="a" hint-placeholder-count="6">
+              <tr>
+                <td><input type="checkbox" aria-label="Select row"></td>
+                <td><div style="display: flex; flex-direction: column; gap: 2px;"><strong class="small">{{a.name}}</strong><span class="id" style="align-self: flex-start;">{{a.id}}</span></div></td>
+                <td class="small muted">{{a.mode}}</td>
+                <td><span class="{{a.sc}}">{{a.st}}</span></td>
+                <td class="mono small">{{a.chg}}</td>
+                <td><div class="row"><div class="meter" style="width: 90px;"><span class="{{a.jf}}" style="{{a.jobsW}}"></span></div><span class="mono xs">{{a.jobs}}</span></div></td>
+                <td class="mono small">{{a.me}}</td>
+                <td class="small">{{a.holdTxt}}</td>
+                <td class="r mono {{a.rc}}">{{a.ref}}</td>
+                <td class="r"><button class="{{a.btnCls}}">{{a.btn}}</button></td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table></div>
+        <dc-import name="Pager" from="1" to="6" total="9" noun="rApps" note="filter: near limit · 487 in scope" page="1 / 2" hint-size="100%,56px"></dc-import>
+      </section>
+
+      <div class="grid g3">
+        <section class="card s2" aria-labelledby="ref-h">
+          <div class="card-h"><div><h2 id="ref-h">Refusals, newest first</h2><span class="sub">every write a safeguard stopped</span></div><a class="small" href="#">All 122 →</a></div>
+          <div class="tbl-box"><table class="tbl">
+            <thead><tr><th>When</th><th>rApp</th><th>Refused because</th><th>Requested</th></tr></thead>
+            <tbody>
+              <tr><td class="mono muted">02:40</td><td><strong class="small">Coverage Opt.</strong></td><td><span class="badge b-bad plain">LIMIT</span> <span class="small">2° tilt exceeds 1° per job</span></td><td class="mono xs muted">cell-9 tilt 6°→8°</td></tr>
+              <tr><td class="mono muted">01:10</td><td><strong class="small">Traffic Steering</strong></td><td><span class="badge b-bad plain">RATE</span> <span class="small">11th config job this hour (max 10)</span></td><td class="mono xs muted">steer 8% → cell-2</td></tr>
+              <tr><td class="mono muted">yest. 18:22</td><td><strong class="small">Energy Saving</strong></td><td><span class="badge b-warn plain">LAPSED</span> <span class="small">Nobody decided within 30 min</span></td><td class="mono xs muted">sleep 3 cells du-04</td></tr>
+              <tr><td class="mono muted">yest. 09:03</td><td><strong class="small">Mobility Opt.</strong></td><td><span class="badge b-bad plain">STOPPED</span> <span class="small">rApp was stopped by admin</span></td><td class="mono xs muted">CIO +1 dB cell-7</td></tr>
+            </tbody>
+          </table></div>
+        </section>
+        <section class="card" aria-labelledby="w-h">
+          <div class="card-h"><h2 id="w-h">Who is told</h2><button class="btn btn-sm">Add watcher</button></div>
+          <div class="inset" style="display: flex; flex-direction: column; gap: 4px;"><strong class="small">noc-webhook</strong><span class="mono xs muted" style="overflow-wrap: anywhere;">https://noc.example/hooks/smo-refusals</span><span class="xs muted">all rApps · since 3 d</span></div>
+          <div class="inset" style="display: flex; flex-direction: column; gap: 4px;"><strong class="small">ran-energy-team</strong><span class="mono xs muted" style="overflow-wrap: anywhere;">https://energy.example/alerts</span><span class="xs muted">Energy Saving only</span></div>
+          <div class="callout volt" style="padding: 10px 12px;"><span class="small">A request nobody decides is refused, not written.</span></div>
+        </section>
+      </div>
+      </sc-if>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1300}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const mk = (name, id, mode, stopped, chg, chgP, jobs, jobsP, me, hold, wait, ref) => ({
+      name, id, mode,
+      st: stopped ? 'Stopped' : 'Writing', sc: stopped ? 'badge b-bad' : 'badge b-ok',
+      btn: stopped ? 'Resume' : 'Stop', btnCls: stopped ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-danger',
+      chg, chgW: 'width:' + chgP + '%', jobs, jobsW: 'width:' + jobsP + '%', jf: jobsP > 80 ? 'f-warn' : 'f-volt',
+      me, hold, wait, ref, rc: ref === '0' ? 'muted' : 't-warn', holdTxt: hold ? 'yes · ' + wait : 'no'
+    });
+    const apps = [
+      mk('Traffic Steering', '7ac1d903', 'Shadow', true, '≤ 15%', 50, '10 / 10', 100, '≤ 3', false, '30 min', '14'),
+      mk('Load Balancing', '5aa91c04', 'Autonomous', false, '≤ 20%', 50, '9 / 10', 90, '≤ 4', false, '30 min', '9'),
+      mk('Energy Saving', '2f2e6149', 'Autonomous', false, '≤ 25%', 60, '27 / 30', 90, '≤ 2', false, '30 min', '6'),
+      mk('Mobility Optimization', 'd62fcb3e', 'Assist', false, '±3 dB', 66, '17 / 20', 85, '≤ 5', true, '30 min', '3'),
+      mk('RACH Optimizer', 'c3d0e941', 'Autonomous', false, '±2 steps', 50, '8 / 10', 80, '≤ 10', false, '30 min', '0'),
+      mk('Coverage Optimization', 'ebe8dbf1', 'Assist', false, '1° tilt', 100, '5 / 6', 83, '≤ 1', true, '45 min', '12')
+    ];
+    const tab = (this.state && this.state.tab) || 'limits';
+    const defs = [['limits', 'rApp limits & stop', '487'], ['refusals', 'Refusals', '122 · 24 h'], ['watchers', 'Watchers', '6']];
+    const tabs = defs.map(([k, label, n]) => ({ label, n, cls: k === tab ? 'tab on' : 'tab', sel: k === tab ? 'true' : 'false', go: () => this.setState({ tab: k }) }));
+    const T = {}; defs.forEach(([k]) => { T[k] = k === tab; });
+    const S = {
+      refusals: { title: 'Refusals, newest first', sub: 'every write a safeguard stopped', search: 'Search rApp, reason, element', chips: ['Last 24 h'], actions: ['Export'],
+        cols: ['When', 'rApp', 'Reason', 'Detail', 'Requested'],
+        rows: [['mu:02:40', 'a:RappDetail.dc.html|Coverage Opt.', 'b:bad:LIMIT', '2° tilt exceeds 1° per job', 'm:cell-9 tilt 6°→8°'], ['mu:01:10', 'a:RappDetail.dc.html|Traffic Steering', 'b:bad:RATE', '11th config job this hour (max 10)', 'm:steer 8% → cell-2'], ['mu:00:44', 'a:RappDetail.dc.html|Load Balancing', 'b:bad:RATE', '10th job this hour', 'm:offload 6%'], ['mu:yest. 18:22', 'a:RappDetail.dc.html|Energy Saving', 'b:warn:LAPSED', 'nobody decided within 30 min', 'm:sleep 3 cells du-04'], ['mu:yest. 09:03', 'a:RappDetail.dc.html|Mobility Opt.', 'b:bad:STOPPED', 'rApp was stopped by admin', 'm:CIO +1 dB cell-7']],
+        total: '122', note: 'last 24 h', page: '1 / 25' },
+      watchers: { title: 'Who is told about refusals', sub: 'webhooks called on every refusal', search: 'Search watcher', chips: [], actions: ['Add watcher'],
+        cols: ['Watcher', 'Callback', 'Scope', 'Since', 'Last delivery'],
+        rows: [['noc-webhook', 'm:https://noc.example/hooks/smo-refusals', 'all rApps', 'mu:3 d', 'b:ok:200 · 2 min ago'], ['ran-energy-team', 'm:https://energy.example/alerts', 'Energy Saving', 'mu:9 d', 'b:ok:200 · 1 h ago'], ['ticketing', 'm:https://itsm.example/smo', 'STOPPED only', 'mu:20 d', 'b:warn:retrying']],
+        total: '6', note: '', page: '1 / 2' }
+    };
+    return { P,  apps, tabs, T, S };
+  }
+}
+</script>
+</body>
+</html>

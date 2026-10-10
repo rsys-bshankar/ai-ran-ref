@@ -84,6 +84,18 @@
     "queryMatch": {}
   },
   {
+    "method": "PUT",
+    "pattern": "^/rapp-mgmt/kill-all$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/rapp-mgmt/kill-all$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
     "method": "POST",
     "pattern": "^/rapp-mgmt/instances/[^/]+/terminate$",
     "role": "admin",
@@ -334,6 +346,12 @@
     "queryMatch": {}
   },
   {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/config-jobs/[^/]+/kpi-check$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
     "method": "PUT",
     "pattern": "^/ran-nf-oam/kpi-definitions/[^/]+$",
     "role": "admin",
@@ -371,6 +389,18 @@
   },
   {
     "method": "POST",
+    "pattern": "^/ran-nf-oam/fm-subscriptions$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-nf-oam/(fm-subscriptions|pm-subscriptions)/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/ran-nf-oam/software-management-jobs/[^/]+/advance$",
     "role": "operator",
     "queryMatch": {}
@@ -378,6 +408,42 @@
   {
     "method": "POST",
     "pattern": "^/ran-nf-oam/o1-adaptor-endpoints/[^/]+/heartbeat$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/ran-nf-oam/o1-adaptor-endpoints/[^/]+/host-keys$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-nf-oam/o1-adaptor-endpoints/[^/]+/host-keys(/[^/]+)?$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/managed-entities/[^/]+/managed-objects/refresh$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/ran-nf-oam/msac/(roles|identities|access-rules)(/[^/]+)?$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/ran-nf-oam/msac/(roles|identities|access-rules)(/[^/]+)?$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/ran-nf-oam/msac/(roles|identities|access-rules)(/[^/]+)?$",
     "role": "admin",
     "queryMatch": {}
   },
@@ -462,6 +528,12 @@
   {
     "method": "PUT",
     "pattern": "^/ran-nf-oam/managed-entities/[^/]+/scope$",
+    "role": "admin",
+    "queryMatch": {}
+  },
+  {
+    "method": "PUT",
+    "pattern": "^/ran-nf-oam/managed-entities/[^/]+/site-cluster$",
     "role": "admin",
     "queryMatch": {}
   },
@@ -743,6 +815,12 @@
   },
   {
     "method": "POST",
+    "pattern": "^/intent-service/intents/[^/]+/negotiation-feedback$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
     "pattern": "^/intent-service/intent-handling-functions$",
     "role": "admin",
     "queryMatch": {}
@@ -786,6 +864,18 @@
   {
     "method": "DELETE",
     "pattern": "^/mdaf/subscriptions/[^/]+$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "POST",
+    "pattern": "^/mdaf/mda-requests$",
+    "role": "operator",
+    "queryMatch": {}
+  },
+  {
+    "method": "DELETE",
+    "pattern": "^/mdaf/mda-requests/[^/]+$",
     "role": "operator",
     "queryMatch": {}
   },

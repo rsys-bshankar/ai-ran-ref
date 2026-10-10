@@ -11,7 +11,7 @@
  * the declaration lists; a change button is drawn only when the BFF says the user may change (`canChange`).
  *
  * The declaration is data from the rApp's package and is read defensively (`obj`, `arr`, `str`, `isObj`): a malformed panel degrades to an "unsupported" card and never throws.
- * Used by `pages/RappDetail.tsx`; covered by `OperatorUi.test.tsx`.
+ * Used by `pages/rapp-detail/sections/DeclaredPages.tsx`; covered by `OperatorUi.test.tsx`.
  */
 
 import { Component, useState, type ErrorInfo, type FormEvent, type ReactNode } from "react";

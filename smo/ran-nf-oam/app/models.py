@@ -86,6 +86,9 @@ class ManagedEntity(Base):
     # restricts regions (tenants) may touch only elements whose region (tenant) is one it names, so an element without one is for unscoped callers only.
     region: Mapped[str | None] = mapped_column(String, index=True)
     tenant: Mapped[str | None] = mapped_column(String, index=True)
+    # PR-GUI-9.8: the site cluster the element belongs to (an operator's grouping below the region, e.g. "metro-a"; `PUT /managed-entities/{me}/site-cluster`).
+    # NULL: not set. Only a grouping for the health map and the filters: it is not part of the scope rule of ADR 0005.
+    site_cluster: Mapped[str | None] = mapped_column(String, index=True)
 
 
 class Alarm(Base):
@@ -100,7 +103,8 @@ class Alarm(Base):
     severity: Mapped[str] = mapped_column(String, nullable=False)  # this build's own wire name for 3GPP's perceivedSeverity
     ack_state: Mapped[str] = mapped_column(String, nullable=False, default="UNACKNOWLEDGED")
     correlation_group: Mapped[str | None] = mapped_column(String)
-    raised_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+    # PR-GUI-9.4: indexed for the time filters, the hourly buckets and the keyset order of the alarm console (revision 0036)
+    raised_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC), index=True)
     # HISTORY.md §5: standard 3GPP TS 28.532 FaultMnS NotifyNewAlarm
     # fields (per oam's own stndDefined-r16-notify-new-alarm.json VES template)
     # this alarm model was missing entirely.
@@ -127,6 +131,9 @@ class Alarm(Base):
     # alarmChangedTime (distinct from raised_at/cleared_at — the spec's own
     # "last mutated" timestamp, set whenever ack_state or severity changes).
     ack_user_id: Mapped[str | None] = mapped_column(String)
+    # PR-GUI-9.8: when the alarm was acknowledged (the first ack of the current acknowledged state; NULL while unacknowledged, and for an
+    # alarm acknowledged before revision 0036). Mean time to acknowledge (`GET /alarms/stats`) is computed from it.
+    acknowledged_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     changed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 

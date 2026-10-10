@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Intents — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="intents" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Automation" crumb="Intents" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">Intent Service · RMIH</div>
+          <h1 style="margin-top: 6px;">Intents</h1>
+          <p>Say what the network should achieve. Handlers turn it into rApp work and report how well it is met.</p>
+        </div>
+        <button class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Create intent</button>
+      </div>
+
+      <div class="tabs" role="tablist"><sc-for list="{{tabs}}" as="t" hint-placeholder-count="3"><button class="{{t.cls}}" role="tab" aria-selected="{{t.sel}}" onClick="{{t.go}}">{{t.label}} <span class="n">{{t.n}}</span></button></sc-for></div>
+      <sc-if value="{{T.rmih}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.rmih}}" hint-size="100%,460px"></dc-import></sc-if>
+      <sc-if value="{{T.formulas}}" hint-placeholder-val="{{false}}"><div class="callout volt"><span class="small">A utility formula turns raw expectation results into one fulfilment score: score = scale × f(parameters) + offset. Handlers report against it; the % on every intent comes from here.</span></div><dc-import name="ListView" spec="{{S.formulas}}" hint-size="100%,420px"></dc-import></sc-if>
+      <sc-if value="{{T.disp}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.disp}}" hint-size="100%,460px"></dc-import></sc-if>
+      <sc-if value="{{T.intents}}" hint-placeholder-val="{{true}}">
+
+      <div class="grid g4">
+        <div class="kpi"><span class="kpi-l">Active intents</span><span class="kpi-v">574 <small>/ 612</small></span></div>
+        <div class="kpi hot"><span class="kpi-l">Not fulfilled</span><span class="kpi-v">23</span><span class="kpi-f">under 80% fulfilment</span></div>
+        <div class="kpi"><span class="kpi-l">In conflict</span><span class="kpi-v">7</span><span class="kpi-f">detected by the server</span></div>
+        <div class="kpi"><span class="kpi-l">Reports · 1 h</span><span class="kpi-v">3,402</span><span class="kpi-f">from 41 handlers</span></div>
+      </div>
+
+      <section class="card flush" aria-labelledby="it-h">
+        <div class="card-h">
+          <div class="row wrap" style="gap: 8px;"><h2 id="it-h">Intents</h2><label class="search" style="width: 260px;"><input aria-label="Find intent" placeholder="Find purpose, target, handler"></label><span class="chip">Fulfilment &lt; 80% ×</span></div>
+          <div class="seg" role="group" aria-label="View"><button class="on">Table</button><button>Cards</button></div>
+        </div>
+        <div class="tbl-box"><table class="tbl">
+          <thead><tr><th>Intent</th><th>State</th><th>Priority</th><th>Fulfilment ↑</th><th>Handler</th><th>Scope</th><th>Last report</th><th class="r"></th></tr></thead>
+          <tbody>
+            <sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
+              <tr>
+                <td><div style="display: flex; flex-direction: column; gap: 2px;"><strong class="small">{{r.t}}</strong><span class="id" style="align-self: flex-start;">{{r.id}}</span></div></td>
+                <td><span class="badge b-ok">ACTIVATED</span></td>
+                <td class="mono">{{r.p}}</td>
+                <td><div class="row"><div class="meter" style="width: 90px;"><span class="{{r.f}}" style="{{r.w}}"></span></div><span class="mono xs">{{r.pct}}</span></div></td>
+                <td class="small">{{r.h}}</td>
+                <td class="mono xs">{{r.s}}</td>
+                <td class="xs muted">{{r.rep}}</td>
+                <td class="r"><span class="{{r.cc}}">{{r.c}}</span></td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table></div>
+        <dc-import name="Pager" from="1" to="6" total="23" noun="intents" note="filter: not fulfilled · 612 in scope" page="1 / 4" hint-size="100%,56px"></dc-import>
+      </section>
+
+      <div class="eyebrow">Selected intent</div>
+      <div class="grid g2">
+        <sc-for list="{{intents}}" as="i" hint-placeholder-count="2">
+          <article class="card">
+            <div class="card-h" style="align-items: flex-start;">
+              <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+                <div class="row wrap"><span class="{{i.sc}}">{{i.st}}</span><span class="badge b-mute plain">priority {{i.p}}</span><span class="id">{{i.id}}</span></div>
+                <h2 style="font-size: 17px;">{{i.title}}</h2>
+              </div>
+              <div style="position: relative; width: 76px; height: 76px; flex: none;">
+                <svg width="76" height="76" viewBox="0 0 76 76" role="img" aria-label="{{i.aria}}"><circle cx="38" cy="38" r="31" fill="none"  stroke-width="7" class="ln-s"></circle><circle cx="38" cy="38" r="31" fill="none" stroke="{{i.col}}" stroke-width="7" stroke-linecap="round" stroke-dasharray="{{i.dash}}" transform="rotate(-90 38 38)"></circle></svg>
+                <span class="num" style="position: absolute; inset: 0; display: grid; place-items: center; font-size: 17px;">{{i.pct}}</span>
+              </div>
+            </div>
+            <div class="inset" style="display: flex; flex-direction: column; gap: 6px;">
+              <span class="xs muted">Expectation</span>
+              <span class="mono small">{{i.exp}}</span>
+              <span class="xs muted">targets {{i.tgt}}</span>
+            </div>
+            <div class="row between wrap">
+              <span class="small muted">Handler <strong style="color: var(--text);">{{i.h}}</strong> · {{i.rep}}</span>
+              <div class="row"><button class="btn btn-sm">Reports</button><button class="btn btn-sm btn-ghost">{{i.act}}</button></div>
+            </div>
+            <div class="inset" style="display: flex; flex-direction: column; gap: 8px;">
+              <span class="xs muted">Your feedback on the latest outcome (negotiation feedback)</span>
+              <div class="row wrap" style="gap: 6px;"><span class="small">Satisfied?</span><button class="btn btn-sm" onClick="{{i.fbLow}}">Not enough</button><button class="btn btn-sm" onClick="{{i.fbOk}}">Acceptable</button><button class="btn btn-sm" onClick="{{i.fbHigh}}">Fully met</button></div>
+              <sc-if value="{{i.fbSent}}" hint-placeholder-val="{{false}}"><span class="xs t-volt">Sent · consumerSatisfactionIndex {{i.fbVal}} on outcome {{i.outcome}} · the handler may renegotiate</span></sc-if>
+            </div>
+            <sc-if value="{{i.conflict}}" hint-placeholder-val="{{false}}">
+              <div class="callout warn" style="padding: 10px 12px;"><span class="badge b-warn plain">Conflict</span><span class="small">Competes with <strong>Save energy at night</strong> for cell sleep on du-04. The higher priority wins.</span></div>
+            </sc-if>
+          </article>
+        </sc-for>
+      </div>
+
+      <section class="card" aria-labelledby="new-h">
+        <div class="card-h"><div><h2 id="new-h">New intent</h2><span class="sub">TS 28.312 expectation · checked against handlers before it is sent</span></div></div>
+        <div class="grid g4">
+          <label class="field"><span>Purpose</span><input class="input" value="Keep video quality in the stadium area"></label>
+          <label class="field"><span>Expectation object type</span><select class="input"><option>RAN_SubNetwork</option></select></label>
+          <label class="field"><span>Target</span><input class="input mono" value="dlThroughputP10 ≥ 25 Mbps"></label>
+          <label class="field"><span>Handler</span><select class="input"><option>rmih-ran-01 (auto-matched)</option></select></label>
+        </div>
+        <div class="row between wrap">
+          <div class="row wrap" style="gap: 8px;"><span class="badge b-ok">Handler supports target</span><span class="badge b-warn">Overlaps 1 intent</span></div>
+          <div class="row"><button class="btn">Save draft</button><button class="btn btn-primary">Activate intent</button></div>
+        </div>
+      </section>
+      </sc-if>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1460}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const C = 2 * Math.PI * 31;
+    const mk = (id, title, st, p, pct, exp, tgt, h, rep, act, conflict) => {
+      const col = pct >= 95 ? 'var(--ok)' : pct >= 80 ? 'var(--warn)' : pct > 0 ? 'var(--bad)' : 'var(--line-strong)';
+      const fb = (this.state && this.state['fb_' + id]);
+      const send = (v) => () => this.setState({ ['fb_' + id]: v });
+      return { fbLow: send('0.3'), fbOk: send('0.7'), fbHigh: send('1.0'), fbSent: !!fb, fbVal: fb || '', outcome: 'out-' + id.slice(4) + '-17', id, title, st, sc: st === 'ACTIVATED' ? 'badge b-ok' : 'badge b-mute', p, pct: pct ? pct + '%' : '—',
+        aria: 'Fulfilment ' + pct + ' percent', col, dash: (C * pct / 100).toFixed(1) + ' ' + C.toFixed(1), exp, tgt, h, rep, act, conflict };
+    };
+    const intents = [
+      mk('int-01', 'Save energy at night without hurting service', 'ACTIVATED', 2, 97, 'energyEfficiency ≥ +15% · 23:00–06:00', 'du-01…du-05', 'rmih-energy', 'reported 3 min ago', 'Deactivate', false),
+      mk('int-02', 'Keep handover success above 99%', 'ACTIVATED', 1, 92, 'hoSuccessRate ≥ 99.0%', 'RAN_SubNetwork=metro-a', 'rmih-ran-01', 'reported 1 min ago', 'Deactivate', false),
+      mk('int-03', 'No congested cells during the stadium event', 'ACTIVATED', 1, 74, 'prbUtilisation ≤ 80% on every cell', 'du-04, du-03', 'rmih-ran-01', 'reported 2 min ago', 'Deactivate', true),
+      mk('int-04', 'Reduce weak-coverage area by 10%', 'DEACTIVATED', 3, 0, 'rsrpP10 ≥ −110 dBm', 'du-03', 'rmih-coverage', 'paused by operator1', 'Activate', false)
+    ];
+    const rows = [
+      ['int-311', 'No congested cells during the stadium event', 1, 74, 'rmih-ran-01', 'stadium', '2 min ago', true],
+      ['int-208', 'Keep video p10 ≥ 25 Mbps downtown', 1, 76, 'rmih-ran-02', 'metro-a', '1 min ago', false],
+      ['int-144', 'Handover success ≥ 99% on rail corridor', 2, 77, 'rmih-ran-01', 'rail-hub', '4 min ago', false],
+      ['int-402', 'Reduce weak coverage 10% in harbour', 3, 61, 'rmih-coverage', 'harbour', '9 min ago', false],
+      ['int-019', 'Save energy at night without hurting service', 2, 79, 'rmih-energy', 'eu-west/*', '3 min ago', true],
+      ['int-517', 'RRC setup success ≥ 98%', 1, 52, 'rmih-ran-03', 'north-ring', 'late · 22 min', false]
+    ].map(([id, t, p, pct, h, s, rep, c]) => ({ id, t, p, pct: pct + '%', w: 'width:' + pct + '%', f: pct < 65 ? 'f-bad' : 'f-warn', h, s, rep, c: c ? 'Conflict' : '', cc: c ? 'badge b-warn plain' : '' }));
+    const tab = (this.state && this.state.tab) || 'intents';
+    const defs = [['intents', 'Intents', '612'], ['rmih', 'Handlers (RMIH)', '41'], ['disp', 'Autonomy dispatches', '3,402 · 1 h'], ['formulas', 'Utility formulas', '9']];
+    const tabs = defs.map(([k, label, n]) => ({ label, n, cls: k === tab ? 'tab on' : 'tab', sel: k === tab ? 'true' : 'false', go: () => this.setState({ tab: k }) }));
+    const T = {}; defs.forEach(([k]) => { T[k] = k === tab; });
+    const S = {
+      rmih: { title: 'Intent handlers (RMIH)', sub: 'registered by SO / SA SMOS · framework-internal', search: 'Search handler', chips: [], actions: ['Register handler'],
+        cols: ['RMIH', 'Supported object types', 'Supported targets', 'Handling scope', 'Intents', 'Status'],
+        rows: [['a:#|rmih-ran-01', 'RAN_SubNetwork', 'hoSuccessRate, prbUtilisation', 'm:eu-west', '214', 'b:ok:REGISTERED'], ['a:#|rmih-energy', 'RAN_SubNetwork', 'energyEfficiency', 'm:eu-west', '96', 'b:ok:REGISTERED'], ['a:#|rmih-coverage', 'NRCellDU', 'rsrpP10', 'm:harbour, river', '58', 'b:ok:REGISTERED'], ['a:#|rmih-ran-03', 'RAN_SubNetwork', 'rrcSetupSuccess', 'm:north-ring', '12', 'b:warn:REPORTS LATE']],
+        total: '41', note: '', page: '1 / 9' },
+      formulas: { title: 'Intent utility formulas', sub: 'GET /intent-utility-formulas', search: 'Search formula', chips: [], actions: ['New formula'], cols: ['Formula', 'Function', 'Parameters', 'Scale', 'Offset', 'Used by'], rows: [['a:#|uf-throughput', 'linear', 'dlThroughputP10, target 25 Mbps', 'm:1.0', 'm:0', '128 intents'], ['a:#|uf-ho-success', 'step', 'hoSuccessRate ≥ 99%', 'm:1.0', 'm:0', '214 intents'], ['a:#|uf-energy', 'log', 'energyEfficiency gain', 'm:0.8', 'm:0.2', '96 intents']], total: '9', page: '1 / 2' },
+      disp: { title: 'Autonomy dispatches', sub: 'how each intent was turned into rApp work', search: 'Search intent or rApp', chips: ['Last 1 h'], actions: [],
+        cols: ['Intent', 'Dispatched to', 'Mode', 'Dispatch', 'Rejected', 'When'],
+        rows: [['a:#|int-311', 'Traffic Steering', 'b:mute:Shadow', 'steer idle UEs', 'mu:—', 'mu:2 min ago'], ['a:#|int-019', 'Energy Saving', 'b:volt:Autonomous', 'sleep plan · 812 cells', 'mu:—', 'mu:3 min ago'], ['a:#|int-208', 'Mobility Optimization', 'b:info:Assist', 'CIO plan · held for approval', 'mu:—', 'mu:4 min ago'], ['a:#|int-517', 'Coverage Optimization', 'b:info:Assist', 'tilt plan', 'b:bad:conflict int-402', 'mu:9 min ago']],
+        total: '3,402', note: 'last 1 h', page: '1 / 681' }
+    };
+    return { P,  intents: intents.slice(2, 4), rows, tabs, T, S };
+  }
+}
+</script>
+</body>
+</html>

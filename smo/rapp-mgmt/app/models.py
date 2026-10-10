@@ -9,7 +9,7 @@ The lifecycle rules for `RAppInstance.state` are in `statemachine.py`, not here.
 import datetime
 import uuid
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Uuid, false
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Uuid, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -134,6 +134,8 @@ class RAppPerformanceReport(Base):
     """One metrics object an rApp instance reported, with the time it arrived so the newest can be listed first. Deleted with the instance (ON DELETE CASCADE, and explicitly by the delete route).
     """
     __tablename__ = "rapp_performance_report"
+    # GUI-9.8: the newest report per instance (GET /instances/{id}/performance/latest and its batched form) and the newest-first list read; revision 0037.
+    __table_args__ = (Index("ix_rapp_performance_report_instance_reported", "instance_id", "reported_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     instance_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("rapp_instance.instance_id", ondelete="CASCADE"))  # NEW section 5: delete_instance's cascade

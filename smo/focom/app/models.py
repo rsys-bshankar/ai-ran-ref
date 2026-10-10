@@ -18,7 +18,7 @@ SQLite `JSON` variant so the unit tests run without Postgres; `none_as_null=True
 import datetime
 import uuid
 
-from sqlalchemy import ARRAY, Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Uuid
+from sqlalchemy import ARRAY, Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
@@ -190,9 +190,11 @@ class OCloudPerformanceMetric(Base):
     """An O2-IMS `PerformanceMeasurementRecord`, table `ocloud_performance_metric`.
 
     A scalar measurement is stored in `value`; an object-valued one in `measurement_value` (and `value` stays null). `job_id` is the string form of a
-    `PerformanceJob.job_id`, or null for a record ingested with no job.
+    `PerformanceJob.job_id`, or null for a record ingested with no job. The index `ix_ocloud_performance_metric_resource_metric_collected`
+    (revision 0038) serves the newest-record-per-resource-and-measurement read of the utilisation routes (`fcaps.py`).
     """
     __tablename__ = "ocloud_performance_metric"
+    __table_args__ = (Index("ix_ocloud_performance_metric_resource_metric_collected", "resource_ref", "metric_name", "collected_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     resource_ref: Mapped[str] = mapped_column(String, nullable=False)

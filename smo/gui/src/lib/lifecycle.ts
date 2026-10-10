@@ -2,7 +2,10 @@
  * What the onboarding and software campaign pages (MGT-14.6, MGT-15.5) decide without a screen: the wording of each state, which actions a state allows (the
  * ones RAN NF OAM's state machines allow, so a button is never offered that the backend would refuse as an illegal transition), and the forms turned into the
  * request bodies RAN NF OAM validates (the same limits, so a mistake is shown before the call). Who asked (`requestedBy`) is never sent: the GUI backend sets it.
- * Used by pages/Onboarding.tsx and pages/Campaigns.tsx; pure functions only, no network and no React, so lifecycle.test.ts covers it without a screen.
+ * The onboarding part is used by Configuration → Element onboarding (pages/configuration/sections/OnboardingTemplates.tsx, ElementOnboarding.tsx,
+ * OnboardingDialogs.tsx). The Software page (pages/software) builds its campaign body and offers its actions with its own data/form.ts and data/types.ts
+ * (which take `MAX_JOB_TIMEOUT_SECONDS` from here); the campaign helpers below state the same backend rules and stay unit-tested, so a change to RAN NF OAM's
+ * campaign rules is made in both places. Pure functions only, no network and no React, so lifecycle.test.ts covers it without a screen.
  * A limit changed in RAN NF OAM's validation must be changed here as well, or the form accepts what the backend then refuses.
  */
 

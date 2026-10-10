@@ -21,7 +21,7 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0035"        # raise this with every new revision: the tests below then check it is the head
+HEAD = "0038"         # raise this with every new revision: the tests below then check it is the head
 
 
 def _scripts() -> ScriptDirectory:
@@ -82,8 +82,9 @@ def _run(script: Path, url: str, *args: str) -> subprocess.CompletedProcess:
 
 
 def _schema(url: str) -> dict:
-    """{(table, column): (type, nullable, default)}, plus the constraints (name and definition), from the catalog, across every schema (a module's
-    tables live in its own schema since PR-DB-2.5; a check on a status column is a constraint whose definition changes, its name does not)."""
+    """{(table, column): (type, nullable, default)}, plus the constraints (name and definition) and the indexes (name and definition), from the
+    catalog, across every schema (a module's tables live in its own schema since PR-DB-2.5; a check on a status column is a constraint whose
+    definition changes, its name does not; a revision may add only an index, as 0038 does)."""
     engine = create_engine(url)
     with engine.connect() as connection:
         columns = connection.execute(text(
@@ -93,8 +94,11 @@ def _schema(url: str) -> dict:
             "SELECT conrelid::regclass::text, conname, pg_get_constraintdef(oid) FROM pg_constraint "
             "WHERE connamespace NOT IN ('pg_catalog'::regnamespace, 'information_schema'::regnamespace) AND conrelid <> 0 "
             "AND conrelid::regclass::text <> 'alembic_version'")).all()
+        indexes = connection.execute(text(
+            "SELECT schemaname || '.' || tablename, indexname, indexdef FROM pg_indexes "
+            "WHERE schemaname NOT IN ('pg_catalog', 'information_schema') AND tablename <> 'alembic_version'")).all()
     engine.dispose()
-    return {"columns": sorted(map(tuple, columns)), "constraints": sorted(map(tuple, constraints))}
+    return {"columns": sorted(map(tuple, columns)), "constraints": sorted(map(tuple, constraints)), "indexes": sorted(map(tuple, indexes))}
 
 
 @needs_postgres

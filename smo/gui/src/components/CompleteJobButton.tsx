@@ -1,5 +1,5 @@
 /**
- * The "Complete" button of a model lifecycle drawer: finishes the model's in-flight training, validation or emulation run. Used by `pages/Aiml.tsx`.
+ * The "Complete" button of a model lifecycle drawer: finishes the model's in-flight training, validation or emulation run. Used by the AI/ML page (`pages/aiml/sections/ModelActions.tsx`) and flow 02 (`pages/flows/data/flow02.tsx`).
  * It reads the job route and the id field from `completionRoute` in `lib/domain.ts` and calls the job's own `/complete` route through `ActionButton`, so the role gating is the same.
  */
 

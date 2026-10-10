@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign in — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" style="zoom: {{P.zoom}}; display: flex; flex-wrap: wrap; min-height: 900px; background: var(--ground); color: var(--text); font-family: 'IBM Plex Sans', system-ui, sans-serif;">
+  <section style="flex: 1 1 560px; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; padding: 48px 56px; background: var(--rail); border-right: 1px solid var(--line); min-height: 420px;">
+    <div class="row" style="gap: 12px;">
+      <img src="/_blob/d353a95fc4ce791ad17c0bc964c883f5" alt="Radisys" width="44" height="44" style="width: 44px; height: 44px; border-radius: 11px; display: block;">
+      <div style="display: flex; flex-direction: column;"><strong style="font-family: 'Space Grotesk', sans-serif; font-size: 18px;">AI-RAN SMO</strong><span class="small muted">Service Management &amp; Orchestration</span></div>
+    </div>
+    <svg width="560" height="420" viewBox="0 0 560 420" style="position: absolute; right: -60px; top: 120px; max-width: none;" aria-hidden="true">
+      <g fill="none"  stroke-width="1.5" class="ln-s">
+        <circle cx="300" cy="210" r="60"></circle><circle cx="300" cy="210" r="120"></circle><circle cx="300" cy="210" r="180"></circle><circle cx="300" cy="210" r="240"></circle>
+      </g>
+      <path d="M300 210 L330 30 A182 182 0 0 1 470 270 Z"  stroke-width="1.5" class="acc-s" style="fill: var(--volt-soft)"></path>
+      <path d="M300 210 L450 320 A182 182 0 0 1 150 320 Z" fill="rgba(108,178,255,0.06)"  stroke-width="1.5" class="ln-s"></path>
+      <path d="M300 210 L130 280 A182 182 0 0 1 270 30 Z" fill="rgba(108,178,255,0.04)"  stroke-width="1.5" class="ln-s"></path>
+      <circle cx="300" cy="210" r="8" class="acc-f"></circle>
+      <circle cx="402" cy="128" r="4" class="acc-f"></circle><circle cx="430" cy="196" r="4" class="acc-f"></circle><circle cx="248" cy="330" r="4" fill="#6cb2ff"></circle><circle cx="196" cy="160" r="4" fill="#6cb2ff"></circle>
+    </svg>
+    <div style="position: relative; display: flex; flex-direction: column; gap: 18px; max-width: 460px;">
+      <div class="eyebrow">O-RAN Non-RT RIC · R1 · O1 · O2</div>
+      <h1 style="font-size: 44px; line-height: 1.05;">Run the RAN with rApps you can trust.</h1>
+      <p class="muted" style="font-size: 15px;">Every change an rApp proposes is limited, explained and, when you choose, held for a person to approve before it touches the network.</p>
+      <div class="row wrap" style="gap: 8px;"><span class="chip">Closed-loop automation</span><span class="chip">AI/ML lifecycle</span><span class="chip">Intent-driven</span></div>
+      <div class="row" style="gap: 12px; margin-top: 18px;">
+        <span class="xs muted">A product of</span>
+        <span style="display: inline-flex; padding: 6px 12px; border-radius: 8px; background: #ffffff;"><img src="/_blob/69a2398d3214fb3a5697f50e2abdb088" alt="Radisys" height="26" style="height: 26px; width: auto; display: block;"></span>
+      </div>
+    </div>
+  </section>
+
+  <section style="flex: 1 1 440px; display: grid; place-items: center; padding: 48px 24px;">
+    <form style="width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 18px;">
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <h2 style="font-size: 26px;">Sign in</h2>
+        <p class="muted">Use your operator account. Every action is recorded against it.</p>
+      </div>
+      <a href="Main.dc.html" class="btn" style="min-height: 44px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"></path></svg>Continue with company SSO</a>
+      <div class="row" style="gap: 12px;"><span style="flex: 1; height: 1px; background: var(--line);"></span><span class="xs muted">or with a local account</span><span style="flex: 1; height: 1px; background: var(--line);"></span></div>
+      <label class="field"><span>Username</span><input class="input" style="min-height: 44px;" value="operator1" autocomplete="username"></label>
+      <label class="field"><span>Password</span><input class="input" style="min-height: 44px;" type="password" value="••••••••••" autocomplete="current-password"></label>
+      <div class="row between"><label class="row small"><input type="checkbox"> Keep me signed in on this device</label></div>
+      <a href="Main.dc.html" class="btn btn-primary" style="min-height: 44px;">Sign in</a>
+      <div class="callout" style="padding: 10px 12px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6cb2ff" stroke-width="1.8" aria-hidden="true" style="flex: none;"><path d="M6 11h12v9H6zM9 11V8a3 3 0 016 0v3"></path></svg>
+        <span class="small muted">A one-time code from your authenticator app follows the password. Lost it? Use a recovery code.</span>
+      </div>
+      <p class="xs faint">Break-glass admin sign-in stays available when SSO is down. Repeated failed attempts lock the account.</p>
+    </form>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })(); return { P, }; }
+}
+</script>
+</body>
+</html>

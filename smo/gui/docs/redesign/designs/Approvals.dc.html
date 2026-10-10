@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Approvals — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="approvals" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Automation" crumb="Approvals" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">Human in the loop</div>
+          <h1 style="margin-top: 6px;">Approvals</h1>
+          <p>What is waiting for a person to decide before anything is written to the network.</p>
+        </div>
+        <div class="row"><span class="chip"><span class="dot d-warn"></span>18 waiting · pushed live</span><span class="chip">Median decision time 4 min</span></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 16px; align-items: start;">
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div class="row between" style="padding: 0 2px;"><span class="eyebrow">Waiting · 18 in 5 groups</span><div class="seg" role="group" aria-label="Group"><button class="on">Grouped</button><button>Flat</button></div></div>
+          <div class="row wrap" style="gap: 6px;"><select class="input" style="flex: 1; min-height: 32px;" aria-label="rApp"><option>All rApps</option></select><select class="input" style="flex: 1; min-height: 32px;" aria-label="Sort"><option>Lapses soonest</option></select></div>
+          <a href="#" style="display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 12px; border: 1px solid var(--volt); background: var(--volt-soft); text-decoration: none; color: inherit;">
+            <div class="row between"><strong>Raise CIO · 14 similar requests</strong><span class="badge b-warn">6 min left</span></div>
+            <span class="small muted">Mobility Optimization · metro-a, stadium · 340 relations</span>
+            <div class="meter" style="height: 4px;"><span class="f-warn" style="width: 80%;"></span></div>
+            <div class="row" style="gap: 6px;"><button class="btn btn-sm btn-primary" onClick="{{approveAll}}">Approve all 14</button><button class="btn btn-sm">Open group</button></div>
+          </a>
+          <a href="#" style="display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); text-decoration: none; color: inherit;">
+            <div class="row between"><strong>Uptilt 2° on cell-9</strong><span class="badge b-mute">24 min left</span></div>
+            <span class="small muted">Coverage Optimization · du-03</span>
+            <div class="meter" style="height: 4px;"><span class="f-info" style="width: 20%;"></span></div>
+          </a>
+          <div class="eyebrow" style="padding: 12px 2px 0;">Decided &amp; lapsed · today</div>
+          <section class="card flush">
+            <div class="tbl-box"><table class="tbl">
+              <tbody>
+                <tr><td><div style="display: flex; flex-direction: column; gap: 2px;"><strong class="small">Steer 12% idle UEs</strong><span class="xs muted">Traffic Steering · operator1</span></div></td><td class="r"><span class="badge b-ok">Approved</span></td></tr>
+                <tr><td><div style="display: flex; flex-direction: column; gap: 2px;"><strong class="small">Sleep 3 cells on du-04</strong><span class="xs muted">Energy Saving · admin</span></div></td><td class="r"><span class="badge b-bad">Rejected</span></td></tr>
+                <tr><td><div style="display: flex; flex-direction: column; gap: 2px;"><strong class="small">CIO −1 dB on cell-11</strong><span class="xs muted">Mobility Optimization</span></div></td><td class="r"><span class="badge b-mute">Lapsed</span></td></tr>
+              </tbody>
+            </table></div>
+          </section>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
+          <section class="card">
+            <div class="card-h" style="align-items: flex-start;">
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <div class="row wrap"><span class="badge b-info plain">Assist mode</span><span class="id">apr-7f31c2</span><span class="xs muted">asked 02:51 · lapses 03:21</span></div>
+                <h2 style="font-size: 22px;">Mobility Optimization wants to raise CIO on 3 cells</h2>
+              </div>
+              <div style="text-align: right;"><div class="num" style="font-size: 28px; color: var(--warn);">11:04</div><div class="xs muted">until it lapses</div></div>
+            </div>
+            <div class="grid g3">
+              <div class="inset"><div class="xs muted">Expected handover success</div><div class="num" style="font-size: 22px;">98.2 → <span class="t-ok">99.1%</span></div></div>
+              <div class="inset"><div class="xs muted">Ping-pong handovers</div><div class="num" style="font-size: 22px;">4.1 → <span class="t-ok">2.6%</span></div></div>
+              <div class="inset"><div class="xs muted">Model confidence</div><div class="num" style="font-size: 22px;">0.91</div><div class="xs muted mono">mobility-model v2.3</div></div>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="ch-h">
+            <div class="card-h"><h2 id="ch-h">Changes it will write</h2><span class="sub">O1 config job · 3 managed elements · inside safeguards</span></div>
+            <div class="inset row wrap between" style="gap: 10px;"><span class="small"><strong>Summary</strong> · cellIndividualOffset +2 dB on 3 relations · 1 parameter · 2 DUs</span><a class="small" href="#">Download full diff</a></div>
+            <div class="diff">
+              <div class="muted">ManagedElement=du-04 / NRCellRelation=cell-4→cell-5</div>
+              <div class="m">-  cellIndividualOffset: 0 dB</div>
+              <div class="p">+  cellIndividualOffset: 2 dB</div>
+              <div class="muted" style="margin-top: 6px;">ManagedElement=du-04 / NRCellRelation=cell-6→cell-5</div>
+              <div class="m">-  cellIndividualOffset: 0 dB</div>
+              <div class="p">+  cellIndividualOffset: 2 dB</div>
+              <div class="muted" style="margin-top: 6px;">ManagedElement=du-01 / NRCellRelation=cell-2→cell-5</div>
+              <div class="m">-  cellIndividualOffset: 1 dB</div>
+              <div class="p">+  cellIndividualOffset: 3 dB</div>
+            </div>
+            <span class="xs faint">Large jobs show the first 50 lines grouped by parameter, then page.</span>
+            <div class="row wrap" style="gap: 8px;"><span class="badge b-ok">Schema check passed</span><span class="badge b-ok">±3 dB limit respected</span><span class="badge b-ok">3 ≤ 5 elements per job</span></div>
+          </section>
+
+          <section class="card" aria-labelledby="why-h">
+            <div class="card-h"><h2 id="why-h">Why the rApp asks</h2></div>
+            <p style="font-size: 14.5px; line-height: 1.6;">Late handovers from cell-4, cell-6 and cell-2 into cell-5 rose to 3.8% over the last 30 minutes as evening traffic moved toward the stadium. Raising the offset makes UEs hand over earlier. Similar changes in the last 7 days held handover success above 99% and were verified.</p>
+            <div class="row wrap" style="gap: 8px;"><span class="xs muted">Inputs</span><span class="id">PM · HO.ExeFail 15 min</span><span class="id">RAN analytics · mobility-issue</span><span class="id">cell load · DME</span></div>
+          </section>
+
+          <section class="card" aria-labelledby="dec-h">
+            <div class="card-h"><h2 id="dec-h">Your decision</h2></div>
+            <sc-if value="{{hasResult}}" hint-placeholder-val="{{false}}"><div class="{{resultCls}}" style="padding: 10px 12px;"><span class="small">{{result}}</span><button class="btn btn-sm btn-ghost" style="margin-left: auto;" onClick="{{undo}}">Undo (10 s)</button></div></sc-if>
+            <label class="field"><span>Reason (recorded in the audit log)</span><textarea class="input" style="min-height: 72px; padding: 10px 12px; resize: vertical;" placeholder="Optional for approve, required for reject"></textarea></label>
+            <div class="row wrap between">
+              <label class="row small"><input type="checkbox"> Also approve similar changes from this rApp for the next hour</label>
+              <div class="row"><button class="btn btn-danger" onClick="{{reject}}">Reject</button><button class="btn btn-primary" onClick="{{approve}}">Approve &amp; write</button></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1200}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const r = (this.state && this.state.r) || '';
+    const msg = { ok: 'Approved by admin · config job 9b21 sent · 3 elements · verify in 15 min', no: 'Rejected · the rApp is told why and the request is closed', all: 'Approved 14 requests · 14 config jobs sent · 340 relations' };
+    return { P, 
+      hasResult: !!r, result: msg[r] || '', resultCls: r === 'no' ? 'callout bad' : 'callout volt',
+      approve: () => this.setState({ r: 'ok' }), reject: () => this.setState({ r: 'no' }), approveAll: () => this.setState({ r: 'all' }), undo: () => this.setState({ r: '' })
+    };
+  }
+}
+</script>
+</body>
+</html>

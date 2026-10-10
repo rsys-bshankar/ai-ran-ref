@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Admin — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="admin" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Account" crumb="Admin" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">GUI users · held by the BFF</div>
+          <h1 style="margin-top: 6px;">Admin</h1>
+          <p>Users and roles, and the audit log of every call that changed something.</p>
+        </div>
+        <button class="btn btn-primary" onClick="{{openAdd}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Add user</button>
+      </div>
+
+      <div class="tabs" role="tablist"><sc-for list="{{tabs}}" as="t" hint-placeholder-count="2"><button class="{{t.cls}}" role="tab" aria-selected="{{t.sel}}" onClick="{{t.go}}">{{t.label}} <span class="n">{{t.n}}</span></button></sc-for></div>
+
+      <sc-if value="{{T.users}}" hint-placeholder-val="{{true}}">
+      <div class="grid g3">
+        <section class="card flush s2" aria-labelledby="u-h">
+          <div class="card-h"><h2 id="u-h">Users</h2><label class="search" style="width: 240px;"><input aria-label="Filter users" placeholder="Filter by name"></label></div>
+          <div class="tbl-box"><table class="tbl">
+            <thead><tr><th>User</th><th>Role</th><th>Sign-in</th><th>One-time code</th><th>Last active</th><th class="r"></th></tr></thead>
+            <tbody>
+              <sc-for list="{{users}}" as="u" hint-placeholder-count="5">
+                <tr>
+                  <td><div class="row"><span class="av">{{u.i}}</span><div style="display: flex; flex-direction: column; gap: 2px;"><strong class="small">{{u.n}}</strong><span class="xs muted">{{u.note}}</span></div></div></td>
+                  <td><span class="{{u.rc}}">{{u.r}}</span></td>
+                  <td class="small">{{u.how}}</td>
+                  <td><span class="{{u.mc}}">{{u.m}}</span></td>
+                  <td class="mono xs muted">{{u.last}}</td>
+                  <td class="r"><button class="btn btn-sm btn-ghost" aria-label="Edit user">Edit</button></td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table></div>
+          <dc-import name="Pager" from="1" to="5" total="214" noun="users" note="SSO users appear on first sign-in" page="1 / 43" hint-size="100%,56px"></dc-import>
+        </section>
+        <section class="card" aria-labelledby="rm-h">
+          <div class="card-h"><h2 id="rm-h">Role matrix</h2><span class="sub">BFF re-checks every call</span></div>
+          <div class="tbl-box"><table class="tbl" style="font-size: 12.5px;">
+            <thead><tr><th>Can</th><th class="r">Viewer</th><th class="r">Operator</th><th class="r">Admin</th></tr></thead>
+            <tbody>
+              <tr><td>Read status, alarms, KPIs</td><td class="r t-ok">✓</td><td class="r t-ok">✓</td><td class="r t-ok">✓</td></tr>
+              <tr><td>Ack / clear alarms</td><td class="r faint">—</td><td class="r t-ok">✓</td><td class="r t-ok">✓</td></tr>
+              <tr><td>Approve rApp changes</td><td class="r faint">—</td><td class="r t-ok">✓</td><td class="r t-ok">✓</td></tr>
+              <tr><td>rApp lifecycle, intents</td><td class="r faint">—</td><td class="r t-ok">✓</td><td class="r t-ok">✓</td></tr>
+              <tr><td>Stop rApps, safeguards</td><td class="r faint">—</td><td class="r faint">—</td><td class="r t-ok">✓</td></tr>
+              <tr><td>Users &amp; audit log</td><td class="r faint">—</td><td class="r faint">—</td><td class="r t-ok">✓</td></tr>
+            </tbody>
+          </table></div>
+        </section>
+      </div>
+
+      </sc-if>
+      <sc-if value="{{T.audit}}" hint-placeholder-val="{{false}}">
+      <section class="card flush" aria-labelledby="al-h">
+        <div class="card-h">
+          <div><h2 id="al-h">Audit log</h2><span class="sub">every mutating call, newest first</span></div>
+          <div class="row wrap"><select class="input" style="width: 160px;" aria-label="User"><option>All users</option></select><select class="input" style="width: 180px;" aria-label="Action"><option>All actions</option></select><div class="seg" role="group" aria-label="Range"><button class="on">24 h</button><button>7 d</button><button>Custom</button></div><button class="btn btn-sm">Export</button></div>
+        </div>
+        <div class="tbl-box"><table class="tbl">
+          <thead><tr><th>When</th><th>User</th><th>Call</th><th>Detail</th><th>Outcome</th></tr></thead>
+          <tbody>
+            <tr><td class="mono xs muted">03:06:41</td><td class="small">operator1</td><td class="mono small">POST /approvals/apr-7a02/approve</td><td class="small">Traffic Steering · steer 12%</td><td><span class="badge b-ok">200</span></td></tr>
+            <tr><td class="mono xs muted">02:59:12</td><td class="small">admin</td><td class="mono small">POST /safeguards/7ac1d903/stop</td><td class="small">reason: rate limit hit twice</td><td><span class="badge b-ok">200</span></td></tr>
+            <tr><td class="mono xs muted">02:41:05</td><td class="small">operator2</td><td class="mono small">POST /alarms/alm-0377/ack</td><td class="small">du-02 PRB threshold</td><td><span class="badge b-ok">200</span></td></tr>
+            <tr><td class="mono xs muted">02:12:50</td><td class="small">viewer1</td><td class="mono small">DELETE /rapps/instances/91cc07f5</td><td class="small">refused by role</td><td><span class="badge b-bad">403</span></td></tr>
+            <tr><td class="mono xs muted">01:22:18</td><td class="small">admin</td><td class="mono small">POST /approvals/apr-6f11/reject</td><td class="small">Energy Saving · sleep 3 cells</td><td><span class="badge b-ok">200</span></td></tr>
+          </tbody>
+        </table></div>
+        <dc-import name="Pager" from="1" to="5" total="8,904" noun="calls" note="last 24 h · export runs on the server" page="1 / 1,781" hint-size="100%,56px"></dc-import>
+      </section>
+      </sc-if>
+      <sc-if value="{{T.msac}}" hint-placeholder-val="{{false}}">
+        <div class="callout volt"><span class="small"><strong>RAN access control (MSAC)</strong> decides which identity may read or change which part of the RAN data model. Every config job is checked against it before anything is sent. GUI roles above decide what a person may click; MSAC decides what a write may touch.</span></div>
+        <div class="grid g2" style="align-items: start;">
+          <dc-import name="ListView" spec="{{S.roles}}" hint-size="100%,400px"></dc-import>
+          <dc-import name="ListView" spec="{{S.idents}}" hint-size="100%,400px"></dc-import>
+        </div>
+        <dc-import name="ListView" spec="{{S.rules}}" hint-size="100%,460px"></dc-import>
+      </sc-if>
+    </main>
+    <sc-if value="{{addOpen}}" hint-placeholder-val="{{false}}">
+      <div style="position: fixed; inset: 0; background: var(--scrim); display: flex; justify-content: center; align-items: flex-start; padding-top: 120px; z-index: 30;">
+        <div role="dialog" aria-modal="true" aria-labelledby="add-h" class="card" style="width: min(520px, 92vw); gap: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
+          <div class="card-h"><h2 id="add-h">Add user</h2><button class="btn btn-ghost btn-icon btn-sm" aria-label="Close" onClick="{{closeAdd}}">✕</button></div>
+          <label class="field"><span>Username</span><input class="input" placeholder="e.g. operator3"></label>
+          <label class="field"><span>Role</span><select class="input"><option>viewer</option><option>operator</option><option>admin</option></select></label>
+          <label class="field"><span>Initial password</span><input class="input" type="password" placeholder="At least 12 characters"></label>
+          <label class="row small"><input type="checkbox" checked> Require a one-time code at first sign-in</label>
+          <div class="row" style="justify-content: flex-end;"><button class="btn" onClick="{{closeAdd}}">Cancel</button><button class="btn btn-primary" onClick="{{closeAdd}}">Add user</button></div>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1260}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const R = { admin: 'badge b-bad plain', operator: 'badge b-warn plain', viewer: 'badge b-info plain' };
+    const users = [
+      ['A', 'admin', 'break-glass', 'admin', 'Local', 'Enrolled', 'now'],
+      ['O', 'operator1', 'NOC shift A', 'operator', 'SSO (OIDC)', 'Enrolled', '2 min ago'],
+      ['O', 'operator2', 'NOC shift B', 'operator', 'SSO (OIDC)', 'Enrolled', '25 min ago'],
+      ['R', 'ran-energy-team', 'service account', 'operator', 'Token', '—', '3 min ago'],
+      ['V', 'viewer1', 'planning', 'viewer', 'Local', 'Pending', 'yesterday']
+    ].map(([i, n, note, r, how, m, last]) => ({ i, n, note, r, rc: R[r], how, m, mc: m === 'Enrolled' ? 'badge b-ok' : m === 'Pending' ? 'badge b-warn' : 'badge b-mute', last }));
+    const st = this.state || {};
+    const tab = st.tab || 'users';
+    const defs = [['users', 'Users & roles', '214'], ['msac', 'RAN access control (MSAC)', '18 rules'], ['audit', 'Audit log', '8,904 · 24 h']];
+    const tabs = defs.map(([k, label, n]) => ({ label, n, cls: k === tab ? 'tab on' : 'tab', sel: k === tab ? 'true' : 'false', go: () => this.setState({ tab: k }) }));
+    const T = {}; defs.forEach(([k]) => { T[k] = k === tab; });
+    const S = {
+      roles: { title: 'MSAC roles', sub: 'bundles of access rules', search: 'Search role', chips: [], actions: ['New role'],
+        cols: ['Role', 'Access rules', 'Identities'],
+        rows: [['a:#|ran-optimizer', 'cm-tilt-cio-rw, cm-read-all', '6 rApps'], ['a:#|ran-energy', 'cm-cell-sleep-rw, cm-read-all', '1 rApp'], ['a:#|noc-operator', 'cm-read-all, alarm-rw', '42 people'], ['a:#|break-glass', 'cm-all-rw', '1 person']],
+        total: '7', note: '', page: '1 / 2' },
+      idents: { title: 'MSAC identities', sub: 'who a write is made as', search: 'Search identity', chips: [], actions: ['New identity'],
+        cols: ['Identity', 'Type', 'Roles'],
+        rows: [['a:#|coverage-optimization-rapp', 'b:info:MACHINEUSER', 'ran-optimizer'], ['a:#|energy-saving-rapp', 'b:info:MACHINEUSER', 'ran-energy'], ['a:#|operator1@noc.example', 'b:mute:EMAIL_ADDRESS', 'noc-operator'], ['a:#|10.20.4.0/24', 'b:mute:IP_ADDRESS', 'noc-operator']],
+        total: '58', note: '', page: '1 / 12' },
+      rules: { title: 'Access rules', sub: 'ALLOW or DENY operations on a part of the data model', search: 'Search rule or data node', chips: [], actions: ['New rule'],
+        cols: ['Rule', 'Action', 'Operations', 'Data node selector', 'Used by roles'],
+        rows: [['a:#|cm-tilt-cio-rw', 'b:ok:ALLOW', 'read, update', 'm:/NRCellDU/digitalTilt, /NRCellRelation/cellIndividualOffset', 'ran-optimizer'], ['a:#|cm-cell-sleep-rw', 'b:ok:ALLOW', 'read, update', 'm:/NRCellDU/administrativeState', 'ran-energy'], ['a:#|deny-emergency-cells', 'b:bad:DENY', 'update', 'm:/NRCellDU[cellClass=EMERGENCY]/*', 'ran-optimizer, ran-energy'], ['a:#|cm-read-all', 'b:ok:ALLOW', 'read', 'm:/*', '5 roles']],
+        total: '18', note: 'DENY wins over ALLOW', page: '1 / 4' }
+    };
+    return { P,  users, tabs, T, S, addOpen: !!st.add, openAdd: () => this.setState({ add: true }), closeAdd: () => this.setState({ add: false }) };
+  }
+}
+</script>
+</body>
+</html>

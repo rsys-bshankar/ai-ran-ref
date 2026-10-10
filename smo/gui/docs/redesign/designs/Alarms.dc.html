@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Alarms — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="alarms" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Network" crumb="Alarms" scope="eu-west · all clusters" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">O1 FaultMnS · FOCOM</div>
+          <h1 style="margin-top: 6px;">Alarms</h1>
+          <p>1,284 open in eu-west · new alarms are pushed in · acknowledge and clear are recorded against your user</p>
+        </div>
+        <div class="row"><select class="input" style="width: 190px;" aria-label="Saved view"><option>View: Critical &amp; major, unacked</option></select><button class="btn">FM subscriptions</button></div>
+      </div>
+
+      <div class="grid g5">
+        <button class="kpi" style="{{sv.cr}}" onClick="{{sv.goCr}}"><span class="row between"><span class="sev sev-cr">Critical</span><span class="xs muted">21 unack</span></span><span class="kpi-v">37</span></button>
+        <button class="kpi" style="{{sv.mj}}" onClick="{{sv.goMj}}"><span class="row between"><span class="sev sev-mj">Major</span><span class="xs muted">96 unack</span></span><span class="kpi-v">180</span></button>
+        <button class="kpi" style="{{sv.mn}}" onClick="{{sv.goMn}}"><span class="row between"><span class="sev sev-mn">Minor</span><span class="xs muted">201 unack</span></span><span class="kpi-v">488</span></button>
+        <button class="kpi" style="{{sv.wn}}" onClick="{{sv.goWn}}"><span class="row between"><span class="sev sev-wn">Warning</span><span class="xs muted">84 unack</span></span><span class="kpi-v">579</span></button>
+        <div class="kpi"><span class="kpi-l">Time to acknowledge · p50</span><span class="kpi-v">6<small> min</small></span><span class="kpi-f">p90 31 min · this week</span></div>
+      </div>
+
+      <div class="tabs" role="tablist"><sc-for list="{{tabs}}" as="t" hint-placeholder-count="3"><button class="{{t.cls}}" role="tab" aria-selected="{{t.sel}}" onClick="{{t.go}}">{{t.label}} <span class="n">{{t.n}}</span></button></sc-for></div>
+      <sc-if value="{{T.ocloud}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.ocloud}}" hint-size="100%,520px"></dc-import></sc-if>
+      <sc-if value="{{T.fm}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.fm}}" hint-size="100%,460px"></dc-import></sc-if>
+      <sc-if value="{{T.ran}}" hint-placeholder-val="{{true}}">
+      <div style="display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+        <section class="card flush">
+          <div class="card-h">
+            <h2>RAN NF alarms · O1 FaultMnS</h2>
+            <div class="row"><span class="xs muted">Group by</span><div class="seg" role="group" aria-label="Group by"><button class="on">Cause</button><button>Element</button><button>Cluster</button><button>None</button></div></div>
+          </div>
+          <div class="row wrap" style="gap: 8px; padding: 0 18px 12px;">
+            <label class="search" style="flex: 1 1 220px; min-height: 34px;"><input aria-label="Search alarms" placeholder="Search DU, cell, cause, alarm id"></label>
+            <span class="chip">Severity: {{sv.chip}} ×</span><span class="chip">Unacked ×</span><button class="btn btn-sm btn-ghost">+ Filter</button>
+          </div>
+          <div class="row between" style="padding: 8px 18px; background: rgba(108,178,255,0.10); border-top: 1px solid var(--line);"><span class="small t-info">9 new alarms since you opened this view</span><button class="btn btn-sm">Show</button></div>
+          <div class="row between" style="padding: 8px 18px; background: var(--volt-soft); border-top: 1px solid var(--line);">
+            <span class="small"><strong>Group selected: 37 alarms</strong> · Loss of signal</span>
+            <div class="row"><button class="btn btn-sm btn-primary">Ack 37</button><button class="btn btn-sm">Assign…</button></div>
+          </div>
+          <div class="tbl-box"><table class="tbl">
+            <thead><tr><th style="width: 36px;"></th><th>Severity</th><th>Probable cause · element</th><th>Where</th><th class="r">Alarms</th><th>Oldest</th><th>Ack</th></tr></thead>
+            <tbody>
+              <tr class="sel"><td><input type="checkbox" aria-label="Select group" checked></td><td><span class="sev sev-cr">Critical</span></td><td><strong class="small">▾ Loss of signal</strong> <span class="xs muted">· 12 DUs</span></td><td class="small">metro-a</td><td class="r mono">37</td><td class="mono xs muted">03:02</td><td><span class="badge b-warn">21 unack</span></td></tr>
+              <sc-for list="{{children}}" as="c" hint-placeholder-count="4">
+                <tr><td></td><td></td><td style="padding-left: 30px;"><span class="mono small">{{c.me}}</span> <span class="xs muted">{{c.obj}}</span></td><td class="small muted">{{c.cl}}</td><td class="r mono">{{c.n}}</td><td class="mono xs muted">{{c.t}}</td><td><span class="{{c.ac}}">{{c.a}}</span></td></tr>
+              </sc-for>
+              <tr><td></td><td></td><td style="padding-left: 30px;"><a class="xs" href="#">+ 8 more DUs in this group</a></td><td></td><td></td><td></td><td></td></tr>
+              <sc-for list="{{groups}}" as="g" hint-placeholder-count="5">
+                <tr onClick="{{g.toggle}}" style="cursor: pointer;"><td><input type="checkbox" aria-label="Select group"></td><td><span class="{{g.sc}}">{{g.s}}</span></td><td><strong class="small">{{g.arrow}} {{g.c}}</strong> <span class="xs muted">· {{g.d}}</span></td><td class="small">{{g.w}}</td><td class="r mono">{{g.n}}</td><td class="mono xs muted">{{g.t}}</td><td><span class="badge b-warn">{{g.u}}</span></td></tr>
+                <sc-if value="{{g.open}}" hint-placeholder-val="{{false}}"><tr><td></td><td></td><td colspan="5" style="padding-left: 30px;"><span class="small muted">{{g.n}} alarms on {{g.d}} in {{g.w}} · oldest {{g.t}}</span> <a class="small" href="#">Page through them →</a> <button class="btn btn-sm" style="margin-left: 8px;">Ack {{g.n}}</button></td></tr></sc-if>
+              </sc-for>
+            </tbody>
+          </table></div>
+          <dc-import name="Pager" from="1" to="6" total="41" noun="groups" note="217 alarms match · sorted by severity, then oldest" page="1 / 7" hint-size="100%,56px"></dc-import>
+        </section>
+
+        <section class="card">
+          <div class="card-h" style="align-items: flex-start;">
+            <div style="display: flex; flex-direction: column; gap: 6px;"><span class="row"><span class="sev sev-cr">Critical</span><span class="badge b-mute plain">group · 37 alarms</span></span><h2 style="font-size: 19px;">Loss of signal on 12 DUs in metro-a</h2><span class="small muted">First 03:02:11 · last 03:04:40 · 2 min 29 s window</span></div>
+          </div>
+          <div class="row wrap"><button class="btn btn-primary">Acknowledge 37</button><button class="btn">Clear</button><button class="btn btn-ghost">Assign…</button></div>
+          <div class="callout volt">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c8f051" stroke-width="1.8" aria-hidden="true" style="flex: none;"><path d="M12 3l2.5 5.5L20 11l-5.5 2.5L12 19l-2.5-5.5L4 11l5.5-2.5z"></path></svg>
+            <div style="display: flex; flex-direction: column; gap: 4px;"><strong class="small">Likely one cause: transport to hub-7</strong><span class="xs muted">All 12 DUs share the fronthaul hub hub-7 and went down within 150 s. Coverage and Mobility rApps paused writes on the affected cells.</span></div>
+          </div>
+          <div class="eyebrow">Affected</div>
+          <div class="grid g3" style="gap: 8px;">
+            <div class="inset"><div class="xs muted">DUs</div><div class="num" style="font-size: 20px;">12</div></div>
+            <div class="inset"><div class="xs muted">Cells</div><div class="num" style="font-size: 20px;">34</div></div>
+            <div class="inset"><div class="xs muted">rApps paused</div><div class="num" style="font-size: 20px;">2</div></div>
+          </div>
+          <div class="eyebrow">3GPP TS 28.532 fields · first alarm</div>
+          <dl class="kv">
+            <dt>Object instance</dt><dd class="mono">ManagedElement=du-03,GNBDUFunction=1,NRCellDU=cell-7</dd>
+            <dt>Alarm type</dt><dd>COMMUNICATIONS_ALARM</dd>
+            <dt>Probable cause</dt><dd>lossOfSignal</dd>
+            <dt>Specific problem</dt><dd>CPRI link down on port 2</dd>
+            <dt>Southbound</dt><dd>O1 VES · ran-nf-oam</dd>
+          </dl>
+          <a class="small" href="#">Open the 37 alarms one by one →</a>
+        </section>
+      </div>
+      </sc-if>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1340}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const children = [
+      ['du-03', 'cell-7, cell-8, cell-9', 'metro-a', 4, '03:02', '4 unack', 'badge b-warn'],
+      ['du-17', 'cell-1, cell-2', 'metro-a', 3, '03:02', 'operator1', 'badge b-ok'],
+      ['du-40', 'RU ru-40a', 'metro-a', 3, '03:03', '3 unack', 'badge b-warn'],
+      ['du-41', 'cell-1…cell-3', 'metro-a', 3, '03:03', '3 unack', 'badge b-warn']
+    ].map(([me, obj, cl, n, t, a, ac]) => ({ me, obj, cl, n, t, a, ac }));
+    const groups = [
+      ['Critical', 'sev sev-cr', 'DU unreachable', '1 DU', 'stadium', 1, '02:57', '1 unack'],
+      ['Major', 'sev sev-mj', 'Transmitter power problem', '22 RUs', 'harbour, metro-a', 48, '01:12', '30 unack'],
+      ['Major', 'sev sev-mj', 'Threshold crossed · PRB', '31 cells', 'stadium, metro-b', 64, '22:40', '41 unack'],
+      ['Major', 'sev sev-mj', 'Synchronisation lost', '9 DUs', 'river', 27, '00:05', '9 unack'],
+      ['Major', 'sev sev-mj', 'Heartbeat late (O1 adaptor)', '14 DUs', 'harbour', 40, '02:31', '16 unack']
+    ].map(([s, sc, c, d, w, n, t, u], i) => {
+      const open = !!(this.state && this.state['g' + i]);
+      return { s, sc, c, d, w, n, t, u, open, arrow: open ? '▾' : '▸', toggle: () => this.setState({ ['g' + i]: !open }) };
+    });
+    const sel = (this.state && this.state.sev) || { cr: true, mj: true, mn: false, wn: false };
+    const col = { cr: 'var(--bad)', mj: 'var(--sev-major)', mn: 'var(--sev-minor)', wn: 'var(--info)' };
+    const base = 'text-align:left;cursor:pointer;font:inherit;color:inherit;';
+    const flip = (k) => () => { const n = Object.assign({}, sel); n[k] = !n[k]; this.setState({ sev: n }); };
+    const names = { cr: 'Crit', mj: 'Major', mn: 'Minor', wn: 'Warn' };
+    const sv = { chip: Object.keys(names).filter((k) => sel[k]).map((k) => names[k]).join(', ') || 'any', goCr: flip('cr'), goMj: flip('mj'), goMn: flip('mn'), goWn: flip('wn') };
+    Object.keys(col).forEach((k) => { sv[k] = base + (sel[k] ? 'border:2px solid ' + col[k] + ';' : ''); });
+    const tab = (this.state && this.state.tab) || 'ran';
+    const defs = [['ran', 'RAN NF (O1)', '1,284'], ['ocloud', 'O-Cloud (FOCOM)', '63'], ['fm', 'FM subscriptions', '12']];
+    const tabs = defs.map(([k, label, n]) => ({ label, n, cls: k === tab ? 'tab on' : 'tab', sel: k === tab ? 'true' : 'false', go: () => this.setState({ tab: k }) }));
+    const T = {}; defs.forEach(([k]) => { T[k] = k === tab; });
+    const S = {
+      ocloud: { title: 'O-Cloud infrastructure alarms', sub: 'FOCOM · O2ims', search: 'Search resource, cause, alarm id', chips: ['Open'], actions: ['Ack selected'],
+        cols: ['Severity', 'Resource', 'Resource type', 'Probable cause', 'Raised', 'Ack'],
+        rows: [['sev:cr:Critical', 'a:Infrastructure.dc.html|node ba46bb50', 'gpu-l40', 'Node not ready', 'mu:02:57', 'b:warn:Unack'], ['sev:mj:Major', 'a:Infrastructure.dc.html|pool-cpu-1', 'pserver pool', 'Capacity above 90%', 'mu:01:40', 'b:warn:Unack'], ['sev:mj:Major', 'a:#|edge-stadium', 'O-Cloud site', 'Link to core degraded', 'mu:00:12', 'b:ok:operator2'], ['sev:mn:Minor', 'a:#|node 765b31bd', 'gpu-l40', 'GPU temperature high', 'mu:yest. 23:10', 'b:warn:Unack']],
+        total: '63', note: 'severity, then oldest', page: '1 / 13' },
+      fm: { title: 'FM subscriptions', sub: 'who gets alarm notifications, and how', search: 'Search subscriber or filter', chips: [], actions: ['New FM subscription'],
+        cols: ['Subscription', 'Subscriber', 'Filter', 'Delivery', 'Southbound engine', 'State'],
+        rows: [['id:fm-01', 'noc-webhook', 'severity ≥ major', 'mu:push · https', 'O1 VES', 'b:ok:ACTIVE'], ['id:fm-02', 'Coverage Optimization', 'cause in [lossOfSignal, txPower]', 'mu:push · DME', 'O1 VES', 'b:ok:ACTIVE'], ['id:fm-03', 'ticketing-bridge', 'all, region eu-west', 'mu:push · https', 'O1 VES', 'b:warn:DELIVERY LATE']],
+        total: '12', note: '', page: '1 / 3' }
+    };
+    return { P,  children, groups, tabs, T, S, sv };
+  }
+}
+</script>
+</body>
+</html>

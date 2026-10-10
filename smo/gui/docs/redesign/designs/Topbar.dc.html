@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Top bar</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; min-height: 64px; padding: 12px 28px; border-bottom: 1px solid var(--line); background: var(--ground); font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text);">
+  <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); min-width: 0;">
+    <span>{{section}}</span>
+    <span aria-hidden="true">/</span>
+    <strong style="color: var(--text); font-weight: 600;">{{crumb}}</strong>
+  </div>
+  <button class="btn" aria-label="Scope: region eu-west, all clusters" style="gap: 10px;">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0114 0c0 4.8-7 11-7 11zM12 8a2 2 0 100 4 2 2 0 000-4z"></path></svg>
+    <span style="display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15;"><span style="font-size: 10.5px; color: var(--muted);">Scope</span><span>{{scope}}</span></span>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+  </button>
+  <div style="flex: 1 1 280px; display: flex; justify-content: center; min-width: 0;">
+    <label class="search" style="width: 100%; max-width: 460px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4"></path></svg>
+      <input type="search" aria-label="Search" placeholder="Jump to a DU, cell, rApp, alarm id, model…">
+      <kbd>⌘K</kbd>
+    </label>
+  </div>
+  <div style="display: flex; align-items: center; gap: 10px;">
+    <span class="chip"><span class="dot d-ok"></span>Live · pushed</span>
+    <span class="chip">Autonomy <strong style="color: var(--volt-text);">Assist</strong></span>
+    <button class="btn btn-icon" aria-label="Notifications, 4 new" style="position: relative;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M6 16v-5a6 6 0 0112 0v5l2 2H4zM10 21h4"></path></svg>
+      <span style="position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; border-radius: 999px; background: var(--bad); color: var(--on-sev); font: 700 10.5px/18px 'JetBrains Mono', monospace; text-align: center;">4</span>
+    </button>
+    <a class="btn btn-icon" href="Preferences.dc.html" aria-label="Appearance and preferences" title="Theme, text size, accent colour">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 109 9 7 7 0 01-9-9z"></path></svg>
+    </a>
+    <button class="btn btn-icon" aria-label="Help">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 100 18 9 9 0 000-18zM9.5 9.5a2.5 2.5 0 114 2c-.9.6-1.5 1.1-1.5 2.5M12 17h.01"></path></svg>
+    </button>
+  </div>
+</header>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"section":{"editor":"text","default":"Overview"},"crumb":{"editor":"text","default":"Dashboard"},"scope":{"editor":"text","default":"eu-west · all clusters"},"$preview":{"width":1192,"height":64}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { section: this.props.section ?? 'Overview', crumb: this.props.crumb ?? 'Dashboard', scope: this.props.scope ?? 'eu-west · all clusters' };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>List view</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<section class="card flush" style="font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text);">
+  <div class="card-h">
+    <div><h2>{{v.title}}</h2><span class="sub">{{v.sub}}</span></div>
+    <div class="row wrap">
+      <sc-for list="{{v.actions}}" as="a" hint-placeholder-count="1"><button class="{{a.c}}">{{a.t}}</button></sc-for>
+    </div>
+  </div>
+  <div class="row wrap" style="gap: 8px; padding: 0 18px 12px;">
+    <label class="search" style="flex: 1 1 260px; min-height: 34px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4"></path></svg><input aria-label="Search" placeholder="{{v.search}}"></label>
+    <sc-for list="{{v.chips}}" as="c" hint-placeholder-count="2"><span class="chip">{{c}} ×</span></sc-for>
+    <button class="btn btn-sm btn-ghost">+ Filter</button>
+  </div>
+  <div class="tbl-box"><table class="tbl">
+    <thead><tr><sc-for list="{{v.cols}}" as="h" hint-placeholder-count="5"><th>{{h}}</th></sc-for></tr></thead>
+    <tbody>
+      <sc-for list="{{v.rows}}" as="r" hint-placeholder-count="6">
+        <tr>
+          <sc-for list="{{r}}" as="c" hint-placeholder-count="5">
+            <td>
+              <sc-if value="{{c.isLink}}" hint-placeholder-val="{{false}}"><a href="{{c.href}}" style="color: var(--text);"><strong class="small">{{c.t}}</strong></a></sc-if>
+              <sc-if value="{{c.isText}}" hint-placeholder-val="{{true}}"><span class="{{c.c}}">{{c.t}}</span></sc-if>
+            </td>
+          </sc-for>
+        </tr>
+      </sc-for>
+    </tbody>
+  </table></div>
+  <nav aria-label="Pagination" style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--rail); font-size: 13px;">
+    <span>Showing <strong class="num">1–{{v.shown}}</strong> of <strong class="num">{{v.total}}</strong> · <span class="muted">{{v.note}}</span></span>
+    <div class="row"><button class="btn btn-sm btn-icon" aria-label="Previous page">‹</button><span class="mono" style="padding: 0 6px;">{{v.page}}</span><button class="btn btn-sm btn-icon" aria-label="Next page">›</button></div>
+  </nav>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"spec":{"editor":null,"tsType":"object"},"$preview":{"width":1100,"height":460}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const s = this.props.spec || {
+      title: 'Example list', sub: 'server-side table', search: 'Search…', chips: ['State: Running'], actions: ['New'],
+      cols: ['Name', 'State', 'Owner'], rows: [['row-1', 'b:ok:RUNNING', 'operator1'], ['row-2', 'b:warn:PENDING', 'admin']], total: '1,204', note: 'sorted on the server', page: '1 / 25'
+    };
+    const cell = (x) => {
+      if (typeof x !== 'string') x = String(x);
+      if (x.startsWith('b:')) { const [, tone, t] = x.split(':'); return { t, c: 'badge b-' + tone, isText: true, isLink: false }; }
+      if (x.startsWith('id:')) return { t: x.slice(3), c: 'id', isText: true, isLink: false };
+      if (x.startsWith('m:')) return { t: x.slice(2), c: 'mono small', isText: true, isLink: false };
+      if (x.startsWith('mu:')) return { t: x.slice(3), c: 'small muted', isText: true, isLink: false };
+      if (x.startsWith('sev:')) { const [, k, t] = x.split(':'); return { t, c: 'sev sev-' + k, isText: true, isLink: false }; }
+      if (x.startsWith('a:')) { const [, href, t] = x.split('|').length > 1 ? ['', ...x.slice(2).split('|')] : ['', '#', x.slice(2)]; return { t, href, isText: false, isLink: true }; }
+      return { t: x, c: 'small', isText: true, isLink: false };
+    };
+    return { v: {
+      title: s.title, sub: s.sub || '', search: s.search || 'Search…', chips: s.chips || [],
+      actions: (s.actions || []).map((t, i) => ({ t, c: i === 0 ? 'btn btn-sm btn-primary' : 'btn btn-sm' })),
+      cols: s.cols, rows: s.rows.map((r) => r.map(cell)), shown: s.rows.length, total: s.total, note: s.note || '', page: s.page || '1 / 1'
+    } };
+  }
+}
+</script>
+</body>
+</html>

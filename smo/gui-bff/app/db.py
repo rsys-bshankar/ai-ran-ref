@@ -8,11 +8,12 @@ by default; any SQLAlchemy URL works via GUI_DATABASE_URL.
 """
 
 import datetime
+import uuid
 import time
 
 from typing import cast
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, create_engine, delete, event, false, func, inspect, select, text, update
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Uuid, case, create_engine, delete, event, false, func, inspect, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -84,8 +85,12 @@ class LoginChallenge(Base):
 class AuditEntry(Base):
     """Append-only: nothing in the BFF updates or deletes a row, and the
     ORM guard below refuses it if anything ever tries.
+
+    The index on (username, id) serves a user's own sign-ins (`GET /api/me/sign-ins`) and the last-active time per user (`GET /api/admin/users`);
+    a database made before it existed gets it from `Database._add_missing_indexes`.
     """
     __tablename__ = "gui_audit_log"
+    __table_args__ = (Index("ix_gui_audit_log_username_id", "username", "id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
@@ -176,6 +181,53 @@ class RappPin(Base):
 MAX_PINS = 5
 
 
+class UserPreference(Base):
+    """A user's console preferences (theme, text size, accent, start page, rows per page, time zone, clock, motion, alarm sound), one JSON object per
+    user (the GUI redesign, BRIEF §4d; validated by app/preferences.py before it is stored). Kept here and not only in the browser, so the console looks
+    the same on every device; the browser keeps a copy just so its first paint is right. A new table, made by `create_all`. An SSO user gets a row the
+    first time they save; until then `GET /api/me/preferences` answers the defaults."""
+    __tablename__ = "gui_user_preference"
+
+    username: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(String, nullable=False)          # JSON text
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+class ExportJob(Base):
+    """An asynchronous CSV export (GUI-9.5b, app/exports.py): who asked (`username`), what (`kind` `decisions` or `audit`, and the filters in
+    `params`), where it is (`state` QUEUED, RUNNING, DONE, FAILED; EXPIRED is shown for a job past `expires_at` and such rows are purged on the
+    next create), how much it wrote (`rows`, `bytes`) and why it failed (`error`). In the database, not in a process, so every instance on a
+    shared GUI_DATABASE_URL lists it and serves its file. `runner_id` is the process that runs it and `heartbeat_at` the last time that process
+    showed it was alive: a QUEUED or RUNNING job whose heartbeat is stale is an orphan (its instance stopped) and is marked FAILED "interrupted"
+    when read. A new table, made by `create_all`."""
+    __tablename__ = "gui_export_job"
+    __table_args__ = (Index("ix_gui_export_job_username_created", "username", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    username: Mapped[str] = mapped_column(String, nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    params: Mapped[dict] = mapped_column(JSON, nullable=False)
+    state: Mapped[str] = mapped_column(String, nullable=False, default="QUEUED")
+    rows: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    runner_id: Mapped[str | None] = mapped_column(String)
+    heartbeat_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ExportChunk(Base):
+    """One piece of an export's CSV file, in order (`seq` from 0), at most 1 MiB (`exports.CHUNK_BYTES`). The file is the chunks concatenated;
+    a chunk may end inside a row. Deleted with its job."""
+    __tablename__ = "gui_export_chunk"
+
+    job_id: Mapped[object] = mapped_column(Uuid, ForeignKey("gui_export_job.id", ondelete="CASCADE"), primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+
+
 class Database:
     """The BFF's own store (SQLAlchemy over SQLite by default, any SQLAlchemy URL in production), shared by every instance of the BFF.
     Every method opens its own short session and commits before it returns; none leaves a transaction open. State that several instances must agree on (failed-login counts,
@@ -205,6 +257,7 @@ class Database:
                     raise
                 time.sleep(0.25)
         self._add_missing_columns()
+        self._add_missing_indexes()
 
     def _add_missing_columns(self) -> None:
         """`create_all` makes absent tables but never alters a table that exists, so a column added to one later is added here (expand only: nullable or
@@ -222,8 +275,33 @@ class Database:
                     if name not in {c["name"] for c in inspect(self.engine).get_columns(table)}:
                         raise
 
+    def _add_missing_indexes(self) -> None:
+        """Like `_add_missing_columns`, for indexes added to a table after its first release: `create_all` makes an index only with its table.
+        `IF NOT EXISTS` works on SQLite and Postgres; a race between two instances starting together is tolerated like a column's."""
+        wanted = {"ix_gui_audit_log_username_id": "gui_audit_log (username, id)"}
+        for name, target in wanted.items():
+            try:
+                with self.engine.begin() as conn:
+                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {target}"))
+            except (OperationalError, ProgrammingError, IntegrityError):
+                # another instance made it at the same moment (Postgres can report that as a unique violation): fine if it is there now
+                if name not in {i["name"] for i in inspect(self.engine).get_indexes(target.split(" ")[0])}:
+                    raise
+
     def session(self) -> Session:
         return self.sessions()
+
+    # ------------------------------------------------------------ what the audit log says about users (GUI-9.8)
+
+    def user_activity(self, sign_in_actions: tuple[str, ...], username: str | None = None) -> dict[str, tuple[datetime.datetime | None, datetime.datetime | None]]:
+        """username -> (time of the user's newest audit row, time of the newest row whose action is one of `sign_in_actions`), in one grouped query;
+        only for `username` when given. A user with no audit row is absent."""
+        stmt = (select(AuditEntry.username, func.max(AuditEntry.at), func.max(case((AuditEntry.action.in_(sign_in_actions), AuditEntry.at))))
+                .where(AuditEntry.username.is_not(None)).group_by(AuditEntry.username))
+        if username is not None:
+            stmt = stmt.where(AuditEntry.username == username)
+        with self.session() as s:
+            return {row[0]: (row[1], row[2]) for row in s.execute(stmt)}
 
     # ------------------------------------------------------------ state shared by every instance (PR-ST-5)
 
@@ -392,6 +470,13 @@ class Database:
                 return None
         return self.recovery_codes_left(username)
 
+    def recovery_code_slots(self, username: str) -> list[tuple[int, datetime.datetime | None]]:
+        """(slot, when it was used or None) for each of the user's recovery codes, slot 1 the first issued (the order they were shown in). Never a code
+        or its hash."""
+        with self.session() as s:
+            used = s.scalars(select(GuiRecoveryCode.used_at).where(GuiRecoveryCode.username == username).order_by(GuiRecoveryCode.id)).all()
+        return [(i + 1, at) for i, at in enumerate(used)]
+
     def recovery_codes_left(self, username: str) -> int:
         """The number of unused recovery codes of `username` (0 when the user has none). Read only."""
         with self.session() as s:
@@ -502,3 +587,31 @@ class Database:
             s.execute(delete(RappPin).where(RappPin.username == username))
             s.commit()
 
+    # ------------------------------------------------------------ console preferences (GUI redesign, BRIEF §4d)
+
+    def preferences(self, username: str) -> str | None:
+        """The user's stored preferences as JSON text, or None when they never saved any."""
+        with self.session() as s:
+            row = s.get(UserPreference, username)
+            return row.value if row is not None else None
+
+    def save_preferences(self, username: str, value: str) -> None:
+        """Store (insert or replace) the user's preferences, JSON text already validated by the caller. Two saves at once: the later commit wins."""
+        with self.session() as s:
+            row = s.get(UserPreference, username)
+            if row is None:
+                s.add(UserPreference(username=username, value=value))
+            else:
+                row.value, row.updated_at = value, _now()
+            try:
+                s.commit()
+            except IntegrityError:          # the same user's first save from another request a moment earlier: replace it
+                s.rollback()
+                s.execute(update(UserPreference).where(UserPreference.username == username).values(value=value, updated_at=_now()))
+                s.commit()
+
+    def remove_preferences(self, username: str) -> None:
+        """Forget the user's preferences (they are back on the defaults); used when the user is deleted."""
+        with self.session() as s:
+            s.execute(delete(UserPreference).where(UserPreference.username == username))
+            s.commit()
