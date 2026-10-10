@@ -23,8 +23,13 @@ def _ingest_module(script: str = "ingest_cm_schema"):
     return module
 
 
+# One case per bundled descriptor file.
+# One case per bundled descriptor file.
 @pytest.mark.parametrize("path", BUNDLED, ids=[p.name for p in BUNDLED])
 def test_bundled_descriptor_matches_its_spec_source(path):
+    """Each bundled descriptor equals what the ingest script derives from its source (the YANG ones need `specs/` checked out and are skipped
+    without it).
+    """
     descriptor = json.loads(path.read_text())
     if descriptor["type"] == "YANG":  # SA-O1-4: sources are paths below specs/
         sources = [SMO_ROOT.parent / "specs" / name for name in descriptor["source"]]
@@ -46,6 +51,7 @@ def test_bundled_descriptor_matches_its_spec_source(path):
 
 
 def test_the_energy_saving_actuators_are_in_the_spec_descriptor():
+    """The NR descriptor has the two energy-saving actuators with their enum values: the cell's administrative state and the energy saving control."""
     classes = json.loads((SMO_ROOT / "ran-nf-oam/app/cm_schemas/3gpp-ts28541-nrnrm.json").read_text())["classes"]
     assert classes["NRCellDU"]["administrativeState"]["enum"] == ["LOCKED", "UNLOCKED"]
     assert classes["CESManagementFunction"]["energySavingControl"]["enum"] == ["TO_BE_ENERGY_SAVING", "TO_BE_NOT_ENERGY_SAVING"]

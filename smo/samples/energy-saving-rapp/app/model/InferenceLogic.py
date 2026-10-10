@@ -9,6 +9,9 @@ from .series import Series, value_at
 
 
 def infer(model: EnergyModel, cell: str, series: Series) -> dict | None:
+    """One prediction for a cell from its live series, using the sample an hour before the latest as the trend baseline; None when the series is
+    empty.
+    """
     if not series:
         return None
     now_t, now = series[-1]

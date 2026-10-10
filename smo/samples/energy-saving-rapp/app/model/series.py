@@ -9,6 +9,7 @@ Series = list[tuple[datetime.datetime, float]]
 
 
 def parse_time(value: str) -> datetime.datetime:
+    """Parses an ISO 8601 time (a trailing Z allowed) and returns it timezone-aware, assuming UTC when it has no offset."""
     t = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
     return t if t.tzinfo else t.replace(tzinfo=datetime.UTC)
 

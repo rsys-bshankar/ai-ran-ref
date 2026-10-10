@@ -18,6 +18,11 @@ INTERNAL = "https" if os.environ.get("SMO_MTLS", "off").strip().lower() in ("on"
 
 
 def test_full_runbook_sequence_succeeds(mesh, loaded_apps, monkeypatch, callbacks):
+    """Every step of DEMO_RUNBOOK.md (onboard, deploy, bootstrap, operate, RAN NF OAM writes and alarms, FOCOM, Intent Service, SME, the AI
+    platform lifecycle, RAN Analytics, SA SMOS, SO SMOS, DME subscriptions, topology export, the AI/ML workflow feature groups, event
+    subscriptions, and retire) succeeds against the real routes in the in-process mesh, with the outbound notifications intercepted at the
+    module's own `httpx.post`.
+    """
     csar_bytes = (Path(__file__).resolve().parent.parent / "samples" / "energy-saving-rapp.csar").read_bytes()
 
     class FakeResp:

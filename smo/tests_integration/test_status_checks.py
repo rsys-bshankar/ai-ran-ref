@@ -32,6 +32,7 @@ def _allowed(connection, constraint: str) -> set[str]:
 
 
 def test_the_sub_change_states_listed_here_are_the_ones_the_code_assigns():
+    """The sub-change states listed in this file include every one RAN NF OAM's code assigns, so a new state is noticed here."""
     source = (SMO_ROOT / "ran-nf-oam" / "app" / "main.py").read_text()
     assigned = set(re.findall(r'(?:row\.status|status)\s*,?[^=\n]*=\s*"([A-Z_]+)"', source)) & {"PENDING", "APPLIED", "REJECTED", "REVERTED", "ABORTED"}
     assert assigned <= SUB_CHANGE_STATES, f"main.py gives a sub-change a state this test does not know: {assigned - SUB_CHANGE_STATES}"
@@ -39,6 +40,7 @@ def test_the_sub_change_states_listed_here_are_the_ones_the_code_assigns():
 
 @needs_postgres
 def test_the_checks_admit_every_state_of_the_code(database):  # noqa: F811
+    """The CHECK constraints of a migrated Postgres database allow exactly the job states and sub-change states of the code. Needs Postgres."""
     url, *_ = database
     engine = create_engine(url, isolation_level="AUTOCOMMIT")
     with engine.connect() as connection:
@@ -49,6 +51,9 @@ def test_the_checks_admit_every_state_of_the_code(database):  # noqa: F811
 
 @needs_postgres
 def test_a_job_can_be_put_in_each_state_and_a_sub_change_in_each_of_its_states(database):  # noqa: F811
+    """A job row can be moved through every state its CHECK allows. Despite the name it does not put a sub-change in any state: it only checks that
+    `job_id` is among the sub-change table's NOT NULL columns without a default. Needs Postgres.
+    """
     url, *_ = database
     engine = create_engine(url, isolation_level="AUTOCOMMIT")
     with engine.connect() as connection:

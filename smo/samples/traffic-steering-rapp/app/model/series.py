@@ -30,6 +30,7 @@ Series = list[Window]
 
 
 def parse_time(value: str) -> datetime.datetime:
+    """Parses an ISO 8601 time (a trailing Z allowed) and returns it timezone-aware, assuming UTC when it has no offset."""
     t = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
     return t if t.tzinfo else t.replace(tzinfo=datetime.UTC)
 
@@ -61,6 +62,7 @@ def neighbours(c: dict) -> list[str]:
 
 
 def ho_fail_rate(c: dict, target: str) -> float | None:
+    """The handover failure rate (%) from the cell to `target` in the window; None when there were no attempts."""
     att = float(c.get(f"{HO_ATT}{target}", 0))
     return None if att <= 0 else round(100.0 * float(c.get(f"{HO_FAIL}{target}", 0)) / att, 3)
 
@@ -72,6 +74,7 @@ def biases(c: dict) -> tuple[dict[str, float], dict[str, float]]:
 
 
 def at(series: Series, when: datetime.datetime) -> dict | None:
+    """The payload of the window that starts exactly at `when`, or None."""
     for t, p in series:
         if t == when:
             return p

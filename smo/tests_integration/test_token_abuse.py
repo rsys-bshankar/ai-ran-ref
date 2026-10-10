@@ -45,6 +45,9 @@ class _Gateway:
 
 @pytest.fixture
 def gateway(mesh, loaded_apps, monkeypatch):
+    """A TestClient on the real R1 gateway with the rate limit and role enforcement variable cleared, whose upstream is a recorder in front of SME;
+    returns (client, requests that reached a backend).
+    """
     reached: list = []
     monkeypatch.setenv("R1_RATE_PER_SECOND", "0")
     monkeypatch.delenv("SMO_ROLE_ENFORCEMENT", raising=False)
@@ -55,6 +58,7 @@ def gateway(mesh, loaded_apps, monkeypatch):
 
 @pytest.fixture
 def enroll(mesh):
+    """Returns a function that registers a new invoker at SME, gets a token for it and returns {id, token}."""
     def _enroll() -> dict:
         invoker = mesh["sme"].post("/invoker-registrations", json={"apiInvokerPublicKey": "abuse-test-key"}).json()
         token = mesh["sme"].post("/oauth2/token", json={"grant_type": "client_credentials", "client_id": invoker["apiInvokerId"],
@@ -72,18 +76,22 @@ def _refused(response, reached):
 
 
 def test_a_call_with_a_valid_token_reaches_the_backend(gateway, enroll):
+    """Control case: a valid token reaches the backend exactly once, so the refusals below mean something."""
     client, reached = gateway
     assert client.get(PROBE, headers={"Authorization": f"Bearer {enroll()['token']}"}).status_code == 200
     assert len(reached) == 1
 
 
+# One row per header value (None is no header).
 @pytest.mark.parametrize("header", [None, "", "Bearer", "Bearer ", "Bearer    ", "Token abc", "Basic YWJjOmRlZg==", "Bearer a b c"])
 def test_a_missing_or_malformed_authorization_header_is_refused(gateway, header):
+    """A missing, empty or malformed Authorization header is refused and nothing reaches a backend."""
     client, reached = gateway
     _refused(client.get(PROBE, headers={} if header is None else {"Authorization": header}), reached)
 
 
 def test_the_valid_token_under_another_scheme_is_refused(gateway, enroll):
+    """A valid token sent under another scheme, or bare, is refused."""
     client, reached = gateway
     token = enroll()["token"]
     for header in (f"Basic {token}", f"Token {token}", f"Digest {token}", token):
@@ -91,6 +99,9 @@ def test_the_valid_token_under_another_scheme_is_refused(gateway, enroll):
 
 
 def test_guessed_forged_and_altered_tokens_are_refused(gateway, enroll):
+    """Guessed, forged (including an `alg: none` JWT), truncated, extended, case-changed, reversed and injected tokens are refused; a token the
+    client library cannot send is skipped because there is nothing to defend.
+    """
     client, reached = gateway
     real = enroll()["token"]
     forged_jwt_none = "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJpbnRlcm5hbCJ9."
@@ -104,6 +115,7 @@ def test_guessed_forged_and_altered_tokens_are_refused(gateway, enroll):
 
 
 def test_an_expired_token_is_refused(gateway, enroll, loaded_apps, db_connection):
+    """A token that worked is refused once its expiry has passed."""
     client, reached = gateway
     caller = enroll()
     assert client.get(PROBE, headers={"Authorization": f"Bearer {caller['token']}"}).status_code == 200
@@ -116,6 +128,7 @@ def test_an_expired_token_is_refused(gateway, enroll, loaded_apps, db_connection
 
 
 def test_the_token_of_an_offboarded_invoker_is_refused(gateway, enroll, mesh):
+    """A token that worked is refused after its invoker is deregistered."""
     client, reached = gateway
     caller = enroll()
     assert client.get(PROBE, headers={"Authorization": f"Bearer {caller['token']}"}).status_code == 200
@@ -125,6 +138,9 @@ def test_the_token_of_an_offboarded_invoker_is_refused(gateway, enroll, mesh):
 
 
 def test_identity_and_role_headers_a_caller_sends_never_reach_a_backend(gateway, enroll, loaded_apps, db_connection):
+    """Role, invoker and on-behalf-of headers a caller sends are replaced by the gateway's own: the backend sees the caller's real role and invoker
+    id, not the spoofed ones.
+    """
     client, reached = gateway
     caller = enroll()
     registration_model = loaded_apps["sme"].InvokerRegistration
@@ -142,6 +158,9 @@ def test_identity_and_role_headers_a_caller_sends_never_reach_a_backend(gateway,
 
 
 def test_an_rapp_cannot_pose_as_a_module_to_change_what_only_a_module_may(gateway, enroll, loaded_apps, db_connection):
+    """An rApp that sends the internal role header is still an rApp: a module-only route is refused 403 ROLE_NOT_PERMITTED and nothing reaches the
+    backend.
+    """
     client, reached = gateway
     caller = enroll()
     registration_model = loaded_apps["sme"].InvokerRegistration
@@ -170,6 +189,7 @@ def _dot_segment_variants(template: str) -> list[str]:
 
 
 def _is_a_route(templates: list[tuple[str, str]], method: str, path: str) -> bool:
+    """True when some (method, template) pair matches the method and the concrete path, with each template parameter standing for one path segment."""
     for m, template in templates:
         pattern = "[^/]+".join(re.escape(part) for part in re.split(r"\{[^}]+\}", template))
         if m == method and re.fullmatch(pattern, path):
@@ -210,9 +230,13 @@ def test_the_dot_segment_walk_finds_the_escape_the_gateway_guard_closes(loaded_a
     assert "GET /ran-nf-oam/rapp-kill/. -> /ran-nf-oam/rapp-kill" in escapes
 
 
+# One row per path that is not in its resolved form.
 @pytest.mark.parametrize("path", ["/ran-nf-oam/rapp-kill/.", "/ran-nf-oam/rapp-kill/./", "/ran-nf-oam/./rapp-kill", "/ran-nf-oam/x/../rapp-kill",
                                   "/ran-nf-oam/x/%2e%2e/rapp-kill", "/ran-nf-oam//rapp-kill", "/ran-nf-oam/rapp-kill/%2e", "/ran-nf-oam/rapp-kill\\x"])
 def test_a_path_that_is_not_in_its_resolved_form_is_refused_before_anything_is_forwarded(gateway, enroll, loaded_apps, db_connection, path):
+    """A path with dot segments, encoded dots, doubled slashes or a backslash is refused and never forwarded, so the role policy and the backend
+    cannot disagree about which route it names.
+    """
     client, reached = gateway
     caller = enroll()
     registration_model = loaded_apps["sme"].InvokerRegistration
@@ -225,6 +249,7 @@ def test_a_path_that_is_not_in_its_resolved_form_is_refused_before_anything_is_f
 
 
 def test_one_trailing_slash_is_the_same_route_for_policy_and_backend(gateway, enroll):
+    """A single trailing slash names the same route for the policy and the backend: the gateway forwards it without the slash."""
     client, reached = gateway
     assert client.get("/dme/data-jobs/", headers={"Authorization": f"Bearer {enroll()['token']}"}).status_code == 200
     assert [url for _, url, _ in reached] == ["http://dme:8000/data-jobs"]

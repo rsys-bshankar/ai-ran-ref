@@ -18,6 +18,9 @@ def _gateway_prefixes() -> set[str]:
 
 
 def test_every_path_moves_under_the_prefix_and_nothing_else_changes():
+    """Every path of a module's spec moves under the gateway prefix, the operation objects and components stay the same objects and the servers
+    entry is dropped.
+    """
     spec = {"openapi": "3.1.0", "servers": [{"url": "http://x"}], "paths": {"/health": {"get": {}}, "/a/{id}": {"get": {}}}, "components": {"schemas": {"A": {}}}}
     out = dast.through_gateway(spec, "sme/")
     assert list(out["paths"]) == ["/sme/health", "/sme/a/{id}"]
@@ -25,6 +28,9 @@ def test_every_path_moves_under_the_prefix_and_nothing_else_changes():
 
 
 def test_the_modules_the_workflow_scans_are_routed_by_the_gateway_and_have_a_document():
+    """The DAST workflow scans 15 modules in three groups of five for each of two roles, and each is routed by the gateway and has an OpenAPI
+    document with paths.
+    """
     workflow = (SMO_ROOT.parent / ".github" / "workflows" / "smo-dast.yml").read_text()
     import re
     groups = re.findall(r'modules: "([^"]+)"', workflow)

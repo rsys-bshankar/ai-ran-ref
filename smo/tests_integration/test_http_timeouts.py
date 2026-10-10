@@ -26,6 +26,9 @@ def _scan_files(root: Path = SMO_ROOT) -> list[Path]:
 
 
 def untimed_calls(source: str, name: str = "<test>") -> list[str]:
+    """Returns a message `<name>:<line>: httpx.<call>(...) has no timeout=` for each module-level httpx request function or client constructor in
+    the source that does not pass `timeout=`; calls on an already configured client are not checked.
+    """
     found = []
     for node in ast.walk(ast.parse(source, filename=name)):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
@@ -37,12 +40,16 @@ def untimed_calls(source: str, name: str = "<test>") -> list[str]:
 
 
 def test_every_outbound_http_call_in_service_code_has_an_explicit_timeout():
+    """No service code (module apps, shared, the SDK and the sample apps) makes an httpx call without an explicit timeout, because httpx's implicit
+    5 seconds was nobody's choice.
+    """
     findings = []
     for path in _scan_files():
         findings += untimed_calls(path.read_text(), path.relative_to(SMO_ROOT).as_posix())
     assert findings == [], "outbound HTTP calls without a timeout (see smo_shared/timeouts.py):\n" + "\n".join(findings)
 
 
+# One row per source snippet; each must give exactly one finding.
 @pytest.mark.parametrize("source", [
     "import httpx\nhttpx.get('http://x')\n",
     "import httpx\nhttpx.post('http://x', json={})\n",
@@ -50,9 +57,11 @@ def test_every_outbound_http_call_in_service_code_has_an_explicit_timeout():
     "import httpx\nc = httpx.Client(transport=None)\n",
 ])
 def test_the_guard_flags_a_call_without_a_timeout(source):
+    """The guard flags each way of making a call without a timeout: a bare get or post and a client of either kind with no timeout."""
     assert len(untimed_calls(source)) == 1
 
 
+# One row per source snippet; none may give a finding.
 @pytest.mark.parametrize("source", [
     "import httpx\nhttpx.get('http://x', timeout=5.0)\n",
     "import httpx\nc = httpx.AsyncClient(timeout=None)\n",       # an explicit decision, even if it is "none"
@@ -61,4 +70,7 @@ def test_the_guard_flags_a_call_without_a_timeout(source):
     "import httpx\nx = httpx.Response(200)\n",                    # not a request
 ])
 def test_the_guard_accepts_an_explicit_timeout_and_ignores_other_calls(source):
+    """The guard accepts any explicit timeout (even None, which is a decision) and ignores calls on a configured client and things that are not
+    requests.
+    """
     assert untimed_calls(source) == []

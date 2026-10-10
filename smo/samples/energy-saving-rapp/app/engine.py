@@ -52,6 +52,10 @@ LOCK, UNLOCK, NO_CHANGE = "LOCK", "UNLOCK", "NO_CHANGE"
 
 @dataclass
 class CellInput:
+    """One cell's inputs to a decision: its PRB series (time, %) and rApp state, the model's and MDAF's predictions, the RAN NF OAM guard record,
+    how many other cells of its sector group are awake, the neighbours' PRB, the alarm facts, when it was last unlocked and whether an operator
+    override is set.
+    """
     cell: str                                   # "<managedElementRef>/<cellId>"
     series: list[tuple[datetime.datetime, float]]
     state: str = SERVING
@@ -68,6 +72,9 @@ class CellInput:
 
 @dataclass
 class Decision:
+    """The engine's verdict for one cell: LOCK, UNLOCK or NO_CHANGE, the reason code the audit trail shows, the state the cell moves to, the guard
+    evaluation, and the latest sample (time and PRB) with how long PRB has been low.
+    """
     decision: str
     reason: str
     next_state: str
@@ -91,6 +98,11 @@ def low_run_minutes(series) -> float:
 
 
 def evaluate_guards(c: CellInput, now: datetime.datetime) -> dict:
+    """Runs every LOCK guard on one cell and returns {"passed": bool, "blocks": [{guard, level, detail?}]}.
+
+    Each guard that fires adds a block, so the audit trail lists every reason and not only the first. `now` is the newest sample's time, not the
+    wall clock, so replaying old data gives the same answer. No I/O.
+    """
     blocks: list[dict] = []
     cell_class = c.guards.get("cellClass", "NORMAL")
     if cell_class == "EMERGENCY":
@@ -113,6 +125,13 @@ def evaluate_guards(c: CellInput, now: datetime.datetime) -> dict:
 
 
 def decide(c: CellInput) -> Decision:
+    """Decides LOCK, UNLOCK or NO_CHANGE for one cell from its inputs (the rules are in the module description).
+
+    A sleeping cell is woken by an override, a coverage alarm, congested neighbours or a predicted load above the wake threshold, in that order;
+    otherwise it stays asleep. A serving cell is locked only when the guards pass, the model (and MDAF) predict low load and PRB has been low
+    for the whole sustain window; the PRE_SLEEP state marks a cell that is low but not yet for long enough. No samples gives NO_CHANGE with
+    reason NO_DATA.
+    """
     if not c.series:
         return Decision(NO_CHANGE, "NO_DATA", c.state, {"passed": False, "blocks": []}, None, None, 0.0)
     now, prb = c.series[-1]

@@ -29,6 +29,10 @@ def _relations(mesh, iid):
 # ---------------------------------------------------------------- TS-01..14, TS-20
 
 def test_ts01_to_ts14_lifecycle_connected_and_idle_steering_kpi_revert_and_release(mesh, loaded_apps, monkeypatch):
+    """TS-01 to TS-14 end to end: onboarding and datasets; training (the transfer per step learned), validation, emulation, promotion; a hotspot
+    steered by one connected step through Intent, the O1-CM handler and DME and read back; an idle-mode step; the KPI-verified confirmation,
+    revert and release of steering.
+    """
     out = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"})["rapp"]
     iid = out["instanceId"]
     # TS-01 — onboarded AVAILABLE with execution modes, autonomy modes and runtime profiles
@@ -121,6 +125,9 @@ def test_ts01_to_ts14_lifecycle_connected_and_idle_steering_kpi_revert_and_relea
 # ---------------------------------------------------------------- TS-15
 
 def test_ts15_a_step_that_congests_its_target_is_reverted(mesh, loaded_apps, monkeypatch):
+    """TS-15: a step whose target becomes congested within the observation hour is reverted through DME, the cause is named, and the steering in
+    force is cleared.
+    """
     iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"})["rapp"]["instanceId"]
     clock = Clock(mesh, loaded_apps).hour(HOT_401)
     assert decision(evaluate(mesh, iid), "401")["managedRef"] == "NRCellRelation=401-402"
@@ -134,6 +141,9 @@ def test_ts15_a_step_that_congests_its_target_is_reverted(mesh, loaded_apps, mon
 # ---------------------------------------------------------------- TS-16, TS-17
 
 def test_ts16_protected_targets_thin_samples_and_critical_alarms(mesh, loaded_apps, monkeypatch):
+    """TS-16: a target in an incident zone is excluded and the load goes to the other layer in idle mode; protected sources, thin samples and a
+    critical alarm hold their cells, with every reason recorded.
+    """
     iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"},
                    guards={"402": {"incidentZone": "flood-7"}, "412": {"cellClass": "EMERGENCY"}})["rapp"]["instanceId"]
     clock = Clock(mesh, loaded_apps).hour(HOT_401)
@@ -177,6 +187,9 @@ def test_a_cell_alarm_excludes_that_cell_as_a_target_only(mesh, loaded_apps, mon
 
 
 def test_ts17_bounds_mlb_disallowed_relations_and_the_target_capacity_limit(mesh, loaded_apps, monkeypatch):
+    """TS-17: an idle priority at its bound and a relation that bars load balancing are excluded, and the one candidate left is rejected because
+    its target would end above the capacity limit, so nothing is written.
+    """
     iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"})["rapp"]["instanceId"]
     # the operator has already pushed 401's idle UEs to the other layer (priority 7) and barred load balancing on 401→402
     ok(mesh["ran-nf-oam"].post("/config-jobs", json={"requestedBy": "noc", "scope": "cell", "changes": [
@@ -199,6 +212,7 @@ def test_ts17_bounds_mlb_disallowed_relations_and_the_target_capacity_limit(mesh
 # ---------------------------------------------------------------- TS-18
 
 def test_ts18_coordination_with_the_energy_saving_rapp(mesh, loaded_apps, monkeypatch):
+    """TS-18: a neighbour the EnergySaving rApp has asleep is not a target, and a sleeping source is held."""
     es_iid = es.ready(mesh, loaded_apps, monkeypatch)
     cells = ["101", "102", "103", "104"]   # the sample cluster mapped onto the EnergySaving rApp's cells
     iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"}, me=es.ME, reset=False, cells=cells,
@@ -217,6 +231,10 @@ def test_ts18_coordination_with_the_energy_saving_rapp(mesh, loaded_apps, monkey
 
 
 def test_ts18_two_way_cio_arbitration_with_the_mobility_rapp(mesh, loaded_apps, monkeypatch):
+    """TS-18: the two rApps share the CIO. While the Mobility rApp observes a change on a relation Traffic Steering leaves it alone; once that
+    change is confirmed Traffic Steering may step it, and a Mobility instance that coordinates with it then holds the relation while it is
+    observed.
+    """
     relations = [{"relation": "401-402", "source": "401", "target": "402"}]
     # (a) the Mobility rApp is observing a CIO change on 401→402: Traffic Steering leaves that relation alone
     m_iid = mro.scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"}, me=ME, relations=relations,
@@ -252,6 +270,9 @@ def test_ts18_two_way_cio_arbitration_with_the_mobility_rapp(mesh, loaded_apps, 
 # ---------------------------------------------------------------- TS-19
 
 def test_ts19_shadow_recommends_and_assist_needs_approval(mesh, loaded_apps, monkeypatch):
+    """TS-19: SHADOW recommends and writes nothing; ASSIST waits for approval (every cell is recorded as waiting) and enacts after the operator
+    resolves the dispatch.
+    """
     ids = {k: v["instanceId"] for k, v in scenario(mesh, loaded_apps, monkeypatch, {"shadow": "SHADOW", "assist": "ASSIST"}).items()}
     clock = Clock(mesh, loaded_apps).hour(HOT_401)
     d = decision(evaluate(mesh, ids["shadow"]), "401")
@@ -269,6 +290,9 @@ def test_ts19_shadow_recommends_and_assist_needs_approval(mesh, loaded_apps, mon
 
 
 def test_ts19_a_failed_or_unverified_write_is_rolled_back(mesh, loaded_apps, monkeypatch):
+    """TS-19: a write that fails is rolled back as ACTION_FAILED and one that is accepted but never takes is rolled back as VERIFY_FAILED, leaving
+    the CIO and the steering as they were.
+    """
     ids = {k: v["instanceId"] for k, v in scenario(mesh, loaded_apps, monkeypatch,
                                                    {"first": "AUTONOMOUS", "second": "AUTONOMOUS"}).items()}
     iid = ids["first"]
@@ -287,6 +311,9 @@ def test_ts19_a_failed_or_unverified_write_is_rolled_back(mesh, loaded_apps, mon
 
 
 def test_the_committed_csar_is_built_from_the_sample_sources():
+    """The committed package is exactly what `samples/build_csar.py` builds from the sample's sources now (signed with the demo key), so a source
+    change without a rebuilt package fails here with the command to run.
+    """
     import importlib.util
     spec = importlib.util.spec_from_file_location("build_csar", SMO_ROOT / "samples" / "build_csar.py")
     builder = importlib.util.module_from_spec(spec)

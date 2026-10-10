@@ -34,6 +34,9 @@ def _jitter(key: str, t: datetime.datetime, amplitude: float) -> float:
 
 
 def diurnal_prb(cell: str, t: datetime.datetime, scale: float = 1.0) -> float:
+    """The sample PRB (%) of a cell at time `t`: the daily profile interpolated linearly, times `scale`, plus a small deterministic jitter, kept
+    within 0 to 100.
+    """
     hour = t.hour + t.minute / 60
     for (h0, v0), (h1, v1) in zip(_PROFILE, _PROFILE[1:]):
         if h0 <= hour <= h1:
@@ -60,6 +63,8 @@ def pm_report(managed_element_ref: str, measurements: list[dict], counter: str =
 
 # ---------------------------------------------------------------- Digital Twin producer (DME callbacks)
 
+# Request body of POST /sim-producer/publish: the managed element, the cells, the first sample time, the span in hours and the step in
+# minutes.
 class SimPublishRequest(BaseModel):
     managedElementRef: str
     cells: list[str]
@@ -69,6 +74,7 @@ class SimPublishRequest(BaseModel):
 
 
 def register_sim_type(sdk) -> dict:
+    """Registers the sim data type at DME as source domain DIGITAL_TWIN, with this rApp's health and job callback URLs."""
     return sdk.data.register_type(
         SIM_TYPE["namespace"], SIM_TYPE["name"], SIM_TYPE["version"], SIM_TYPE["typeName"], SIM_PRODUCER_ID,
         data_production_schema={}, producer_health_callback_url=f"{SELF_URL}/sim-producer/health",
@@ -77,6 +83,7 @@ def register_sim_type(sdk) -> dict:
 
 
 def publish_sim(sdk, body: SimPublishRequest) -> dict:
+    """Delivers the sim samples to every data job of the sim type and returns {dmeTypeId, dataJobs, recordsDelivered}."""
     type_id = next(t["dmeTypeId"] for t in sdk.data.discover_types("RAN") if t["dmeTypeIdStruct"]["name"] == SIM_TYPE["name"])
     jobs = sdk.data.list_data_jobs(dme_type_id=type_id)
     count = 0
@@ -90,6 +97,7 @@ def publish_sim(sdk, body: SimPublishRequest) -> dict:
 
 @router.get("/sim-producer/health")
 def sim_producer_health():
+    # DME's producer health callback: always healthy.
     return {"status": "healthy"}
 
 
@@ -102,4 +110,5 @@ def sim_producer_job(body: dict):
 
 @router.delete("/sim-producer/jobs/{data_job_id}", status_code=204)
 def sim_producer_job_stop(data_job_id: str):
+    # DME's callback when a data job is stopped: nothing to clean up (204).
     pass

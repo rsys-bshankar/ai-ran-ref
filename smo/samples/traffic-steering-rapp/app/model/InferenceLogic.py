@@ -8,6 +8,9 @@ from .series import Series, at, counters, score
 
 
 def infer(model: SteeringModel, cell: str, series: Series) -> dict | None:
+    """One cell's congestion score, next-hour forecast, band and the model's confidence from its latest window and the one an hour earlier; None
+    when the series is empty.
+    """
     if not series:
         return None
     t, p = series[-1]

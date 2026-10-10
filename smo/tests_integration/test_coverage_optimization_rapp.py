@@ -24,6 +24,10 @@ def _decisions(mesh, iid, **params):
 # ---------------------------------------------------------------- CCO-01..13, CCO-20
 
 def test_cco01_to_cco13_lifecycle_joint_plan_verified_tilt_and_kpi_confirmation(mesh, loaded_apps, monkeypatch):
+    """CCO-01 to CCO-13 end to end: onboarding and datasets; training (the sensitivities learned), validation, emulation, promotion; a joint plan
+    that downtilts the overshooting cell, enacted through Intent, the O1-CM handler and DME and read back; and the KPI-verified confirmation of
+    the change set.
+    """
     out = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"})["rapp"]
     iid = out["instanceId"]
     # CCO-01 — onboarded AVAILABLE with execution modes, autonomy modes and runtime profiles
@@ -96,6 +100,9 @@ def test_cco01_to_cco13_lifecycle_joint_plan_verified_tilt_and_kpi_confirmation(
 # ---------------------------------------------------------------- CCO-14, CCO-15
 
 def test_cco14_weak_coverage_raises_power_and_cco15_pollution_pulls_in_the_neighbours(mesh, loaded_apps, monkeypatch):
+    """CCO-14: weak coverage in one cell raises that cell's power and nothing else. CCO-15: pilot pollution in a cell with no overshooter is cured
+    by downtilting its neighbours, not by pushing the polluted cell.
+    """
     iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"})["rapp"]["instanceId"]
     clock = Clock(mesh, loaded_apps).hour({"302": "WEAK_COVERAGE"})
     # CCO-14 — weak coverage in 302: more power on 302, nothing else
@@ -119,6 +126,9 @@ def test_cco14_weak_coverage_raises_power_and_cco15_pollution_pulls_in_the_neigh
 # ---------------------------------------------------------------- CCO-16
 
 def test_cco16_a_change_set_that_made_the_cluster_worse_is_reverted(mesh, loaded_apps, monkeypatch):
+    """CCO-16: when the cluster is worse an hour after a change set, every changed cell is reverted through DME to its baseline, verified, with the
+    reason and correlation id on the action.
+    """
     iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"})["rapp"]["instanceId"]
     clock = Clock(mesh, loaded_apps).hour(OVERSHOOT_301)
     moved = evaluate(mesh, iid)["plan"]["moves"]
@@ -140,6 +150,9 @@ def test_cco16_a_change_set_that_made_the_cluster_worse_is_reverted(mesh, loaded
 # ---------------------------------------------------------------- CCO-17
 
 def test_cco17_protected_cells_thin_samples_and_critical_alarms_block(mesh, loaded_apps, monkeypatch):
+    """CCO-17: an emergency cell, an incident zone and a cell with thin samples are held, and with the overshooting cell held no move is worth its
+    cost; an active critical alarm on the gNB holds every cell.
+    """
     iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"},
                    guards={"301": {"cellClass": "EMERGENCY"}, "302": {"incidentZone": "flood-7"}})["rapp"]["instanceId"]
     thin = {"MR.Total": 60, "MR.WeakRsrp": 1, "MR.Overshoot": 1, "MR.PilotPollution": 1, "MR.Overlap.301": 6,
@@ -182,6 +195,9 @@ def test_a_cell_alarm_holds_that_cell_and_its_neighbours_only(mesh, loaded_apps,
 # ---------------------------------------------------------------- CCO-18
 
 def test_cco18_coordination_with_the_energy_saving_rapp(mesh, loaded_apps, monkeypatch):
+    """CCO-18: a cell the EnergySaving rApp has asleep, and its neighbours, are held; when EnergySaving wakes it, the cell and its neighbours wait
+    out the after-wake window.
+    """
     es_iid = es.ready(mesh, loaded_apps, monkeypatch)
     cells = ["101", "102", "103", "104"]   # the sample cluster mapped onto the EnergySaving rApp's cells
     iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"}, me=es.ME, reset=False, cells=cells,
@@ -207,6 +223,9 @@ def test_cco18_coordination_with_the_energy_saving_rapp(mesh, loaded_apps, monke
 
 
 def test_cco18_coordination_with_the_mobility_rapp(mesh, loaded_apps, monkeypatch):
+    """CCO-18: cells on a relation the Mobility rApp is observing are held, naming the relation, so the two rApps do not change the same area
+    together.
+    """
     relations = [{"relation": "301-302", "source": "301", "target": "302"}]
     m_iid = mro.scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"}, me=ME, relations=relations,
                          history={"301-302": "TOO_LATE"})["rapp"]["instanceId"]
@@ -226,6 +245,9 @@ def test_cco18_coordination_with_the_mobility_rapp(mesh, loaded_apps, monkeypatc
 # ---------------------------------------------------------------- CCO-19
 
 def test_cco19_shadow_recommends_and_assist_needs_approval(mesh, loaded_apps, monkeypatch):
+    """CCO-19: SHADOW recommends and writes nothing; ASSIST waits for approval (every cell is recorded as waiting) and enacts the change set after
+    the operator resolves the dispatch.
+    """
     ids = {k: v["instanceId"] for k, v in scenario(mesh, loaded_apps, monkeypatch,
                                                    {"shadow": "SHADOW", "assist": "ASSIST"}).items()}
     clock = Clock(mesh, loaded_apps).hour(OVERSHOOT_301)
@@ -246,6 +268,9 @@ def test_cco19_shadow_recommends_and_assist_needs_approval(mesh, loaded_apps, mo
 
 
 def test_cco19_a_failed_or_unverified_write_is_rolled_back(mesh, loaded_apps, monkeypatch):
+    """CCO-19: a write that fails and one that is accepted but never takes are each rolled back, leaving the tilt and power at their baselines and
+    no change set under observation.
+    """
     iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"})["rapp"]["instanceId"]
     fault(mesh, "CommonBeamformingFunction=301", "RPC_ERROR")
     fault(mesh, "CommonBeamformingFunction=304", "IGNORE_WRITE")
@@ -262,6 +287,9 @@ def test_cco19_a_failed_or_unverified_write_is_rolled_back(mesh, loaded_apps, mo
 
 
 def test_the_committed_csar_is_built_from_the_sample_sources():
+    """The committed package is exactly what `samples/build_csar.py` builds from the sample's sources now (signed with the demo key), so a source
+    change without a rebuilt package fails here with the command to run.
+    """
     import importlib.util
     spec = importlib.util.spec_from_file_location("build_csar", SMO_ROOT / "samples" / "build_csar.py")
     builder = importlib.util.module_from_spec(spec)

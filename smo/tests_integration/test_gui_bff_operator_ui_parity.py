@@ -36,6 +36,9 @@ bff = _load_bff()
 
 
 def _definitions(path: Path) -> dict[str, str]:
+    """The top-level functions and simple assignments of a source file as {name: ast dump}, so two files can be compared definition by definition
+    without regard to comments or layout.
+    """
     found = {}
     for node in ast.parse(path.read_text()).body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -45,20 +48,28 @@ def _definitions(path: Path) -> dict[str, str]:
     return found
 
 
+# One row per vendored definition.
 @pytest.mark.parametrize("name", VENDORED)
 def test_each_vendored_definition_is_the_original_node_for_node(name):
+    """Each definition the BFF vendors is, as a syntax tree, identical to the one in `smo_shared`, so a drifted copy fails and the fix is to change
+    the original and copy it.
+    """
     original, copy = _definitions(SHARED_SOURCE), _definitions(BFF_SOURCE)
     assert name in original and name in copy, f"{name} must exist in both files"
     assert original[name] == copy[name], f"gui-bff/app/operator_ui.py: {name} differs from shared/smo_shared/operator_ui.py: change the original first, then copy it"
 
 
 def test_the_bff_example_is_the_validated_adr_example():
+    """The BFF's JSON example is the validated form of the ADR's YAML example, so the BFF's own tests run on what the ADR specifies."""
     expected = shared.validate_operator_ui(yaml.safe_load(EXAMPLE_YAML.read_text())["operatorUi"])
     assert json.loads(EXAMPLE_JSON.read_text()) == json.loads(json.dumps(expected, sort_keys=True)), \
         "regenerate gui-bff/tests/operator_ui_example.json from docs/schemas/operator-ui.energy-saving.example.yaml (validated)"
 
 
 def _declarations() -> list[dict]:
+    """Three operator-page declarations to run both matchers on: the ADR example, a read-only one and a writable one, the last two with a table
+    whose row detail has a second source.
+    """
     example = shared.validate_operator_ui(yaml.safe_load(EXAMPLE_YAML.read_text())["operatorUi"])
     table = {"id": "t", "title": "T", "kind": "table", "source": {"path": "/instances/{instanceId}/cells"}, "rows": "items", "rowKey": "cellId",
              "columns": [{"path": "cellId", "label": "Cell"}],
@@ -68,6 +79,9 @@ def _declarations() -> list[dict]:
 
 
 def _paths() -> list[str]:
+    """A fixed list of interesting request paths plus 3000 generated from path pieces that include dot segments, encoded slashes, spaces, query and
+    fragment characters, non-ASCII text and a template placeholder, with a fixed seed so a failure reproduces.
+    """
     iid = "0b9f3f1e-4b0e-4a0c-9d6f-111111111111"
     fixed = [f"/instances/{iid}", f"/instances/{iid}/dashboard", f"/instances/{iid}/evaluate", f"/instances/{iid}/cells/C1/override", f"/instances/{iid}/cells/C-1_x.y~z/override",
              f"/instances/{iid}/decisions", "/c/C1/load", "/instances/abc/cells", "/instances/abc/decisions", "/", "", "/instances", "instances/abc/cells"]
@@ -77,8 +91,12 @@ def _paths() -> list[str]:
     return fixed + generated
 
 
+# One row per declaration from `_declarations`.
 @pytest.mark.parametrize("index", range(3))
 def test_both_matchers_answer_the_same_for_every_method_and_path(index):
+    """For each declaration both matchers list the same routes and give the same allow or refuse answer for every method and path, hostile ones
+    included, so the BFF never allows what the declaration does not.
+    """
     declaration = _declarations()[index]
     assert shared.declared_routes(declaration) == bff.declared_routes(declaration)
     for method, path in itertools.product(("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"), _paths()):
@@ -86,6 +104,7 @@ def test_both_matchers_answer_the_same_for_every_method_and_path(index):
 
 
 def test_the_roles_agree():
+    """Both copies require the same role for each HTTP method."""
     assert [shared.required_role(m) for m in ("GET", "POST", "PUT", "PATCH", "DELETE")] == [bff.required_role(m) for m in ("GET", "POST", "PUT", "PATCH", "DELETE")]
 
 

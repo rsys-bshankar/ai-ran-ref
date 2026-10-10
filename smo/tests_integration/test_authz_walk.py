@@ -89,6 +89,9 @@ class FakeGateway:
 
 @pytest.fixture
 def gateway(loaded_apps, monkeypatch):
+    """A TestClient on R1 Termination whose upstream is a fake that records which paths reach a backend, with the rate limit off because one walk
+    makes thousands of requests; returns (client, upstream_calls).
+    """
     upstream_calls: list = []
     monkeypatch.setenv("R1_RATE_PER_SECOND", "0")   # one walker makes thousands of requests: the budget is not under test here
     r1 = loaded_apps["r1-termination"]
@@ -97,6 +100,7 @@ def gateway(loaded_apps, monkeypatch):
 
 
 def test_the_gateways_own_explicit_routes_are_exactly_the_public_ones(loaded_apps):
+    """The only routes the gateway answers itself, without a token, are the public ones; a new explicit route must be added to the list on purpose."""
     explicit = {route.path for route in loaded_apps["r1-termination"].app.routes
                 if isinstance(route, APIRoute) and route.path != "/{full_path:path}"}
     assert explicit == PUBLIC_AT_THE_GATEWAY, "an explicit route on the gateway is answered without a token"
@@ -104,6 +108,9 @@ def test_the_gateways_own_explicit_routes_are_exactly_the_public_ones(loaded_app
 
 def test_every_route_of_every_backend_is_refused_without_a_valid_token_and_reaches_the_backend_with_one(
         loaded_apps, gateway):
+    """Every route of every backend, walked from its real route table through the gateway, is refused without a valid token and reaches the backend
+    with one, so no route is open.
+    """
     client, upstream_calls = gateway
     services = sorted({service for service in R1_PREFIX_TO_SERVICE.values()})
     walked = 0
@@ -118,11 +125,13 @@ def test_every_route_of_every_backend_is_refused_without_a_valid_token_and_reach
 
 
 def test_the_walker_finds_a_seeded_open_route():
+    """The walker reports a route a toy gateway leaves open and none of the safe ones, so a clean result on the real routes means something."""
     upstream_calls: list = []
     toy = FastAPI()
 
     @toy.api_route("/{full_path:path}", methods=["GET", "POST"])
     async def proxy(full_path: str, request: Request):
+        # The toy gateway's catch-all: it demands the good token except for paths starting `leaky`, which is the seeded hole.
         if not full_path.startswith("leaky") and request.headers.get("authorization") != f"Bearer {GOOD_TOKEN}":
             return JSONResponse(status_code=401, content={})
         upstream_calls.append(full_path)
@@ -133,6 +142,9 @@ def test_the_walker_finds_a_seeded_open_route():
 
 
 def test_each_services_openapi_declares_the_token_on_every_operation_except_its_public_ones():
+    """Each R1-facing service's committed OpenAPI document declares the bearer token for every operation, except the gateway's public routes and
+    SME's token endpoints.
+    """
     import json
     from pathlib import Path
     openapi = Path(__file__).resolve().parent.parent / "docs" / "openapi"

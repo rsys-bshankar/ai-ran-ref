@@ -14,6 +14,7 @@ _spec.loader.exec_module(p)
 
 
 def workload(kind, name, selector=None):
+    """A minimal workload manifest of the given kind and name, with a node selector when one is given."""
     spec = {"containers": []}
     if selector:
         spec["nodeSelector"] = selector
@@ -21,6 +22,9 @@ def workload(kind, name, selector=None):
 
 
 def test_only_postgres_onboarding_and_the_gui_backend_are_pinned():
+    """The post-renderer pins exactly the StatefulSet `postgres`, and the `onboarding` and `gui-bff` Deployments to the state node, and leaves
+    other workloads (a Deployment named `postgres` included) and Services alone.
+    """
     docs = [workload("StatefulSet", "postgres"), workload("Deployment", "onboarding"), workload("Deployment", "gui-bff"),
             workload("Deployment", "sme"), workload("Deployment", "postgres"), {"kind": "Service", "metadata": {"name": "postgres"}}]
     out = p.pin(docs)
@@ -29,11 +33,15 @@ def test_only_postgres_onboarding_and_the_gui_backend_are_pinned():
 
 
 def test_an_existing_selector_is_kept_and_extended():
+    """A workload that already has a node selector keeps it and gains the state label."""
     out = p.pin([workload("Deployment", "onboarding", {"disk": "ssd"})])
     assert out[0]["spec"]["template"]["spec"]["nodeSelector"] == {"disk": "ssd", "smo-state": "true"}
 
 
 def test_it_works_as_a_filter_on_a_multi_document_stream():
+    """As a command it reads a multi-document YAML stream on stdin and writes it back with only the stateful workload pinned, which is how Helm
+    calls a post-renderer.
+    """
     text = yaml.safe_dump_all([workload("StatefulSet", "postgres"), workload("Deployment", "sme")])
     done = subprocess.run([sys.executable, str(SMO_ROOT / "scripts" / "k8s_pin_state.py")], input=text, capture_output=True, text=True, check=True)
     docs = list(yaml.safe_load_all(done.stdout))

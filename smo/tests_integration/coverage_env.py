@@ -22,6 +22,9 @@ LIVE_START = HISTORY_START + datetime.timedelta(days=3)
 
 
 def serve_csar(loaded_apps, monkeypatch):
+    """Makes Onboarding's download of the sample's package URL return the committed .csar bytes (every other URL goes to the real `httpx.get`), for
+    the duration of the test.
+    """
     import httpx
     real_get = httpx.get
     csar = CSAR.read_bytes()
@@ -42,6 +45,9 @@ def producer(loaded_apps):
 
 
 def build_ran(mesh, me=ME, reset=True):
+    """Builds the RAN the scenario needs behind the mock O1 adaptor: with `reset`, clears the adaptor and registers and activates it, and registers
+    the SA SMOS O1 handler; always subscribes the PM counter type and registers the rApp's Digital Twin producer.
+    """
     if reset:
         ok(mesh["mock-o1-adaptor"].delete("/state"))
         endpoint = ok(mesh["ran-nf-oam"].post("/o1-adaptor-endpoints", json={
@@ -55,6 +61,7 @@ def build_ran(mesh, me=ME, reset=True):
 
 
 def onboard(mesh):
+    """Uploads the sample's package to Onboarding by URL and returns (packageId, the onboarding status)."""
     package = ok(mesh["onboarding"].post("/packages", json={"location": CSAR_URL}))
     return package["packageId"], ok(mesh["onboarding"].get(f"/packages/{package['packageId']}/onboarding-status"))
 
@@ -68,6 +75,9 @@ def topology(loaded_apps, cells=None) -> dict[str, list[str]]:
 
 
 def create_instance(mesh, package_id, mode, me=ME, cells=None, **config):
+    """Creates an rApp Management instance of the sample in `mode` for the managed element and its cells (all four by default), with the rApp's
+    operator API base and a region scope covering those cells; returns the instance id. `config` adds to the instance configuration.
+    """
     cells = cells or ["301", "302", "303", "304"]
     created = ok(mesh["rapp-mgmt"].post("/instances", json={
         "operatorApiBase": "http://coverage-optimization-rapp:8000",     # where the gateway's /rapps/{instanceId}/operator/... reaches this rApp (GUI-8.3)
@@ -88,6 +98,9 @@ def setting(mesh, cell, me=ME) -> tuple[int, int]:
 
 
 def lifecycle(mesh, loaded_apps, instance_id):
+    """Runs the model lifecycle through the rApp's routes with the operator's governance steps between them (train, approve, validate, approve,
+    publish the Digital Twin data, emulate, certify and promote, deploy) and returns each step's answer and the model id.
+    """
     rapp = mesh[RAPP]
     out = {"train": ok(rapp.post(f"/instances/{instance_id}/lifecycle/train"))}
     model_id = out["train"]["modelId"]
@@ -142,6 +155,9 @@ class Clock:
 
 
 def evaluate(mesh, instance_id, correlation_id=None):
+    """Runs one closed-loop pass over the instance through the rApp's `evaluate` route, with `correlation_id` as the X-Correlation-ID (the
+    execution id in the audit trail) when given, and returns the answer.
+    """
     headers = {"X-Correlation-ID": correlation_id} if correlation_id else {}
     return ok(mesh[RAPP].post(f"/instances/{instance_id}/evaluate", headers=headers))
 

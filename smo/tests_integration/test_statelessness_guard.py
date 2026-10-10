@@ -36,11 +36,15 @@ def _rules(tmp_path: Path, source: str) -> list[str]:
 
 
 def test_services_hold_no_unlisted_process_state():
+    """The guard run on the real tree finds no in-process state in service code that is not on the allow-list, and no allow-list entry that no
+    longer matches, so the services stay safe to run as several replicas.
+    """
     new, stale = guard.check()
     assert new == [], "new in-process state in service code:\n" + "\n".join(new)
     assert stale == [], "stale allowlist entries:\n" + "\n".join(stale)
 
 
+# One row per source snippet and the rule it must trigger.
 @pytest.mark.parametrize("source,rule", [
     ("_seen = {}\n", "module-state"),
     ("_seen: list[str] = []\n", "module-state"),
@@ -58,9 +62,13 @@ def test_services_hold_no_unlisted_process_state():
     ("app = object()\napp.state.seen = {}\n", "app-state"),
 ])
 def test_guard_flags(tmp_path, source, rule):
+    """The guard flags each kind of in-process state: a mutable module-level container or lock, a `global` statement, a cache decorator, background
+    work (a thread, a task, a scheduler, FastAPI background tasks) and an instance with state held at module level.
+    """
     assert rule in _rules(tmp_path, source)
 
 
+# One row per source snippet that must give no finding.
 @pytest.mark.parametrize("source", [
     "ROUTES = {'a': 1}\n",                       # ALL_CAPS is a constant
     "_FSM = build()\n",                          # a function call, not a container
@@ -70,10 +78,14 @@ def test_guard_flags(tmp_path, source, rule):
     "import asyncio\nasync def f():\n    await asyncio.gather()\n",  # within-request concurrency
 ])
 def test_guard_ignores(tmp_path, source):
+    """The guard ignores what is not shared mutable state: constants, function-call values, immutable tuples, stateless classes, locals and
+    within-request concurrency.
+    """
     assert _rules(tmp_path, source) == []
 
 
 def test_mocks_and_tests_are_not_scanned(tmp_path):
+    """The mock adaptor and test directories are not scanned, so their state is not reported."""
     _tree(tmp_path, "_policies = {}\n", module="mock-o1-adaptor")
     tests = tmp_path / "demo" / "app" / "tests"
     tests.mkdir(parents=True)
@@ -83,6 +95,7 @@ def test_mocks_and_tests_are_not_scanned(tmp_path):
 
 
 def test_allowlisted_finding_passes_and_a_stale_entry_fails(tmp_path):
+    """A finding on the allow-list passes, and an allow-list entry that matches nothing is reported as stale."""
     root = _tree(tmp_path, "_seen = {}\n")
     key = "demo/app/main.py:module-state:_seen"
     assert guard.check(root, allowlist={key: "ok"}) == ([], [])
@@ -91,6 +104,7 @@ def test_allowlisted_finding_passes_and_a_stale_entry_fails(tmp_path):
 
 
 def test_allowlist_entries_need_a_reason(tmp_path):
+    """An allow-list line without a reason is refused when the list is loaded."""
     bad = tmp_path / "list.txt"
     bad.write_text("a/app/x.py:cache:f\n")
     with pytest.raises(SystemExit):

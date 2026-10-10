@@ -34,6 +34,10 @@ STEP_DB = {"TOO_LATE": 2, "TOO_EARLY": -2, "PING_PONG": -2, "WRONG_CELL": -1}
 
 @dataclass
 class MobilityModel:
+    """The trained predictor: the two regression weights (drift and trend gain), the fit (RMSE, sample count), the act and healthy thresholds and
+    the version. The methods predict the next-hour problem rate and turn it into a RAISE_CIO, LOWER_CIO, HOLD or HEALTHY recommendation; the
+    artifact is this dataclass as JSON.
+    """
     weights: list[float] = field(default_factory=lambda: [0.0, 0.0])  # [drift, trend gain]; untrained = persistence
     rmse: float = 0.0
     act_threshold: float = ACT_THRESHOLD
@@ -43,11 +47,17 @@ class MobilityModel:
     version: str = "1.0.0"
 
     def predict(self, rate_now: float, rate_hour_ago: float | None = None) -> float:
+        """Predicted next-hour problem rate (%), kept within 0 to 100: the current rate plus the drift and the gain on the last hour's trend. Without a
+        window from an hour ago the trend is 0.
+        """
         trend = rate_now - (rate_hour_ago if rate_hour_ago is not None else rate_now)
         w0, w1 = self.weights
         return max(0.0, min(100.0, rate_now + w0 + w1 * trend))
 
     def recommend(self, future_rate: float, cause: str | None) -> str:
+        """RAISE_CIO or LOWER_CIO (by the dominant failure class) when the predicted rate is at least the act threshold and a cause is known; otherwise
+        HOLD at or above the healthy threshold and HEALTHY below it.
+        """
         if future_rate >= self.act_threshold and cause:
             return "RAISE_CIO" if STEP_DB[cause] > 0 else "LOWER_CIO"
         return "HOLD" if future_rate >= self.healthy_threshold else "HEALTHY"
@@ -58,11 +68,13 @@ class MobilityModel:
         return round(max(0.0, 1.0 - self.rmse / (self.act_threshold - self.healthy_threshold)), 3)
 
     def infer(self, rate_now: float, rate_hour_ago: float | None, cause: str | None) -> dict:
+        """The inference answer for one relation: {futureRate, cause, recommendation, confidence}."""
         future = self.predict(rate_now, rate_hour_ago)
         return {"futureRate": round(future, 3), "cause": cause, "recommendation": self.recommend(future, cause),
                 "confidence": self.confidence()}
 
     def to_artifact(self) -> bytes:
+        """Serialises the model as a .zip holding one JSON member (`mobility_model.json`), the form stored in MLMR."""
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr(ARTIFACT_MEMBER, json.dumps(asdict(self), indent=1, sort_keys=True))
@@ -70,6 +82,7 @@ class MobilityModel:
 
     @classmethod
     def from_artifact(cls, data: bytes) -> "MobilityModel":
+        """Reads a model back from the bytes `to_artifact` made; raises zipfile.BadZipFile or KeyError for anything else."""
         with zipfile.ZipFile(io.BytesIO(data)) as z:
             return cls.from_dict(json.loads(z.read(ARTIFACT_MEMBER)))
 

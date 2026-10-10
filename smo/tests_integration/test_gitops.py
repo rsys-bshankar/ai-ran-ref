@@ -37,11 +37,13 @@ def _missing_keys(values: dict, schema: dict, prefix: str = "") -> list[str]:
 
 
 def test_there_are_a_lab_a_staging_and_a_production_overlay_and_two_applications():
+    """The example has the lab, prod and staging overlays and two Argo CD applications, so one cannot be added or dropped unnoticed."""
     assert [p.name for p in OVERLAYS] == ["lab", "prod", "staging"]
     assert [p.name for p in ARGOCD] == ["application-kustomize.yaml", "application.yaml"]
 
 
 def test_the_base_resources_exist():
+    """The base kustomization lists only files that exist and hold a Namespace."""
     kustomization = _load(GITOPS / "base" / "kustomization.yaml")
     assert kustomization["kind"] == "Kustomization"
     for resource in kustomization["resources"]:
@@ -49,8 +51,12 @@ def test_the_base_resources_exist():
         assert _load(GITOPS / "base" / resource)["kind"] == "Namespace"
 
 
+# One case per overlay.
 @pytest.mark.parametrize("overlay", OVERLAYS, ids=lambda p: p.name)
 def test_an_overlay_names_the_base_the_chart_and_a_values_file_that_exist(overlay):
+    """Each overlay's kustomization points at a base, the chart directory (the repository's own chart) and a values file that exist, in namespace
+    `smo`.
+    """
     kustomization = _load(overlay / "kustomization.yaml")
     assert kustomization["kind"] == "Kustomization"
     for resource in kustomization["resources"]:
@@ -63,8 +69,12 @@ def test_an_overlay_names_the_base_the_chart_and_a_values_file_that_exist(overla
         assert chart["namespace"] == "smo"
 
 
+# One case per overlay.
 @pytest.mark.parametrize("overlay", OVERLAYS, ids=lambda p: p.name)
 def test_every_key_an_overlay_sets_exists_in_the_charts_values(overlay):
+    """Every key an overlay's values set exists in the chart's values.yaml, and each module's keys exist in the defaults or that module's entry,
+    because Helm would otherwise accept a typo and do nothing.
+    """
     values = _load(overlay / "values.yaml")
     assert values, "an overlay with no values is the chart's defaults, which is not an overlay"
     modules = values.pop("modules", {})
@@ -75,8 +85,10 @@ def test_every_key_an_overlay_sets_exists_in_the_charts_values(overlay):
         assert _missing_keys(settings, {**CHART_VALUES["moduleDefaults"], **CHART_VALUES["modules"][module]}, f"modules.{module}.") == []
 
 
+# One case per overlay.
 @pytest.mark.parametrize("overlay", OVERLAYS, ids=lambda p: p.name)
 def test_an_overlay_carries_no_credential(overlay):
+    """No key in an overlay's values is named like a credential; secrets come from a Secret named by `existingSecret`."""
     def keys(node):
         for key, value in (node.items() if isinstance(node, dict) else []):
             yield str(key)
@@ -87,8 +99,12 @@ def test_an_overlay_carries_no_credential(overlay):
             f"{overlay.name}: a value named {key!r}; secrets come from a Secret named by existingSecret"
 
 
+# One case per Application file.
 @pytest.mark.parametrize("application", ARGOCD, ids=lambda p: p.name)
 def test_an_argo_application_points_at_paths_of_this_repository(application):
+    """An Argo CD Application is an `argoproj.io/v1alpha1` Application in the `smo` namespace whose source path is under this repository's `smo/`
+    and exists, and, for a Helm source, is the chart and has value files that exist.
+    """
     doc = _load(application)
     assert doc["apiVersion"] == "argoproj.io/v1alpha1" and doc["kind"] == "Application"
     source = doc["spec"]["source"]
@@ -107,9 +123,13 @@ def test_an_argo_application_points_at_paths_of_this_repository(application):
         assert path.resolve().is_relative_to((GITOPS / "overlays").resolve())
 
 
+# One case per overlay.
 @pytest.mark.skipif(shutil.which("kustomize") is None or shutil.which("helm") is None, reason="kustomize and helm are not installed")
 @pytest.mark.parametrize("overlay", OVERLAYS, ids=lambda p: p.name)
 def test_an_overlay_builds_with_kustomize(overlay):
+    """Each overlay builds with `kustomize build --enable-helm` into the expected kinds and Deployments; the staging and prod overlays add an
+    Ingress and PodDisruptionBudgets and no bundled database. Skipped without kustomize and helm.
+    """
     result = subprocess.run(["kustomize", "build", "--enable-helm", str(overlay)], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     docs = [d for d in yaml.safe_load_all(result.stdout) if d]
