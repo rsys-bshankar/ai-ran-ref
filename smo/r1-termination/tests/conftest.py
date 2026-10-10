@@ -5,6 +5,12 @@ tables and a cleared kill-switch cache, unless the test installs its own. Used a
 `cd smo/r1-termination && PYTHONPATH=.:../shared python -m pytest tests -q`.
 """
 
+import os
+
+# The in-memory SQLite fallback of smo_shared.db is an explicit opt-in (SMO_ALLOW_SQLITE_FALLBACK), never inferred from pytest being loaded; set here,
+# before any application module is imported, because smo_shared.db builds its engine at import.
+os.environ.setdefault("SMO_ALLOW_SQLITE_FALLBACK", "1")
+
 import pytest
 from sqlalchemy.orm import sessionmaker
 

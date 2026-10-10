@@ -47,3 +47,24 @@ def test_the_comparison_is_constant_time(monkeypatch):
     monkeypatch.setattr(roles.hmac, "compare_digest", lambda a, b: calls.append((a, b)) or real(a, b))
     assert roles.enrollment_secret_valid("a", "a") is True
     assert calls == [(b"a", b"a")]
+
+
+def test_a_trailing_newline_does_not_dodge_the_internal_only_deny_list():
+    """The deny-list errs on the side of refusing: `GET /rapp-kill` is internal-only, and so is `GET /rapp-kill\\n` (`$` also matches before a final newline)."""
+    assert roles.internal_only("/ran-nf-oam", "GET", "/rapp-kill")
+    assert roles.internal_only("/ran-nf-oam", "GET", "/rapp-kill\n")
+
+
+def test_a_trailing_newline_does_not_widen_the_rapp_change_allow_list():
+    """An rApp may POST /ran-nf-oam/config-jobs but not `/config-jobs\\n`: `$` matched before a final newline, so the allow-list used to accept it."""
+    assert roles.rapp_may_change("/ran-nf-oam", "POST", "/config-jobs")
+    assert not roles.rapp_may_change("/ran-nf-oam", "POST", "/config-jobs\n")
+    assert not roles.rapp_may_change("/sme", "POST", "/provider-registrations\n")
+    assert not roles.rapp_may_change("/mllf", "POST", "/models/m/deploy\n")
+
+
+def test_the_kill_switch_exemption_list_matches_the_whole_path():
+    """A stopped rApp may still POST /ran-nf-oam/config-jobs/{id}/rollback, but not the same path with a trailing newline (`$` matched before it)."""
+    from smo_shared import killswitch
+    assert killswitch.exempt("/ran-nf-oam", "POST", "/config-jobs/abc/rollback")
+    assert not killswitch.exempt("/ran-nf-oam", "POST", "/config-jobs/abc/rollback\n")

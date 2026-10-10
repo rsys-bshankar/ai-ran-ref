@@ -437,6 +437,37 @@ Done (`HISTORY.md`, PR-SEC-10; decision `docs/adr/0005-tenant-region-authorizati
 | SEC-14.4 | Scope for an external penetration test | One-page scope | SEC-4.5 |
 
 
+#### PR-SEC-15 — Findings of the security review of October 2026 (registered, not fixed here)
+
+Found while hardening `smo_shared` (branch `claude/sec-shared-hardening`, which closes the four shared findings listed under "Closed" below). Each row is a finding that is
+registered and not yet fixed. "Planned PR" is the follow-up change that is meant to close it: PR 2 = authorization and ownership of routes, PR 3 = integrity and state
+of what the routes accept, PR 4 = clients, tooling and migrations; "none yet" means no follow-up is planned.
+
+| ID | Finding | Where | Planned PR |
+|---|---|---|---|
+| SEC-15.1 | An rApp token can call `POST /aimgf/models/{id}/advance` (model-advance): the admin check is made only in the GUI BFF, and the role allow-list (`RAPP_MAY_CHANGE`) lists `advance` for an rApp | `aimgf/app`, `shared/smo_shared/roles.py`, `gui-bff` | PR 2 |
+| SEC-15.2 | The AIMgF feature-group token is stored and returned in clear text | `aimgf/app` (feature groups) | PR 3 |
+| SEC-15.3 | AIMgF runtime routes (deploy, activate, inference) do not check MLMR for the model (whether it exists, its phase, who owns it) | `aimgf/app` | PR 2 |
+| SEC-15.4 | RAN NF OAM config-job `kpi-check`, `continue`, `halt`, `abort` and the software-update routes lack the ownership and scope checks the other config-job routes have | `ran-nf-oam/app` | PR 2 |
+| SEC-15.5 | `build_edit_config_rpc` builds the NETCONF `edit-config` XML without escaping values | `ran-nf-oam/app` (NETCONF client) | PR 3 |
+| SEC-15.6 | MSAC `check_credential` is never called, and compares without a constant-time function | `ran-nf-oam/app` (MSAC) | PR 3 |
+| SEC-15.7 | Vendor models: get and delete are not filtered by the caller's scope | `sme/app` | PR 2 |
+| SEC-15.8 | Two-person approval trusts `decidedBy` from the client instead of the authenticated caller | `ran-nf-oam/app` (approvals) | PR 3 |
+| SEC-15.9 | rApp Management `report_fault` and `set_config` do not check that the instance is the caller's own | `rapp-mgmt/app` | PR 2 |
+| SEC-15.10 | DME: `register_dme_type` can be overwritten by any caller; `mediate_action` leaves the action in `FORWARDED` when the forward fails; an unregistered `dmeTypeId` is accepted | `dme/app` | PR 2 (overwrite), PR 3 (the other two) |
+| SEC-15.11 | GUI-BFF login lockout is keyed by user name only, so one attacker locks out a user from anywhere and a spread attack is not slowed | `gui-bff/app` | PR 3 |
+| SEC-15.12 | The audit record's path includes query values (which can carry secrets or personal data) | `shared/smo_shared/audit.py`, `r1-termination` | PR 3 |
+| SEC-15.13 | Java SDK registration retries without an idempotency key, so a retry after a lost answer can register twice | `sdk-java/` | PR 4 |
+| SEC-15.14 | Migration 0017 `downgrade()` deletes the `rapp_limit` rows | `migrations/versions/` | PR 4 |
+| SEC-15.15 | `scripts/check_breaking_changes.py` passes silently when `--base` does not resolve, so the gate checks nothing | `scripts/check_breaking_changes.py` | PR 4 |
+| SEC-15.16 | The webhook guard resolves a host name once to check it and the HTTP client resolves it again to connect, so DNS rebinding between the two is not caught; closing it needs the client to connect to the vetted address (a pinned transport) | `shared/smo_shared/webhook.py` | none yet |
+| SEC-15.17 | Onboarding's own parse of an unsigned package opens the zip without the size limits `csar_signing.verify_zip` now applies (`ZipLimits`) | `onboarding/app/package_validation.py` | none yet |
+
+Closed by this change (details in `CHANGELOG.md` and the `shared` README): the webhook SSRF guard accepted spellings of loopback, unspecified and link-local addresses
+(`localhost.`, `127.1`, `2130706433`, `0x7f.0.0.1`, octal, `0`, IPv4-mapped IPv6) and did not look at what a name resolves to; `roles.py` allow-list patterns ended in `$`, which
+also matches before a trailing newline; `smo_shared.db` fell back to in-memory SQLite whenever `pytest` was imported; `csar_signing.verify_zip` read an archive of any size.
+
+
 ### 5.5 Observability (`PR-OBS`)
 
 HTTP request metrics and `/metrics` exist (`PR-OBS-2`, `HISTORY.md` §10). A correlation id exists in `smo_shared/correlation.py`; W3C trace propagation, optional

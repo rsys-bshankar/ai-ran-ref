@@ -60,7 +60,7 @@ def exempt(module: str, method: str, path: str) -> bool:
     if method == "DELETE":
         return True
     path = "/" + path.lstrip("/")
-    return any(m == method and mod == module and pattern.match(path) for m, mod, pattern in _EXEMPT)
+    return any(m == method and mod == module and pattern.fullmatch(path) for m, mod, pattern in _EXEMPT)
 
 
 def _ttl() -> float:
