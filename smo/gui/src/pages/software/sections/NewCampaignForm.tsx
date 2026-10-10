@@ -65,9 +65,9 @@ export function NewCampaignForm({ onStarted }: { onStarted: (id: string) => void
           </div>
           <div className="grid g4">
             {input("jobTimeoutSeconds", "Job timeout, seconds", "Blank: wait for every job however long. A job still running then is failed, and the gate sees it")}
-            <Field label="A rollback undoes">
+            <Field label="A rollback undoes" hint="Last wave first: each earlier wave is reverted once the later one has ended">
               <select value={f.rollbackOrder} onChange={(e) => set({ rollbackOrder: e.target.value as "all" | "reverse" })}>
-                <option value="reverse">The last wave first, then each earlier wave</option><option value="all">Every wave at once</option>
+                <option value="reverse">Last wave first</option><option value="all">Every wave at once</option>
               </select>
             </Field>
           </div>
