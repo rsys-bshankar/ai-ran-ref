@@ -7,6 +7,9 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 
 
+# Published in the OpenAPI documents as the error body schema, so it carries no docstring (see CODE_DOCUMENTATION.md). RFC 7807 fields: `type`,
+# `title` (the error code, one of the names in `FrameworkError`), `status` (the HTTP status), `detail`, `instance`. Routes raise it through
+# `problem()` / `framework_error()`, which wrap it in an HTTPException, so the body on the wire is {"detail": {...ProblemDetails...}}.
 class ProblemDetails(BaseModel):
     type: str = "about:blank"
     title: str
@@ -26,6 +29,13 @@ def problem(status: int, title: str, detail: str | None = None) -> HTTPException
 # from an underlying protocol, these are this SMO's own.
 class FrameworkError:
     # RAN NF OAM LLD section 7
+    """The catalogue of this SMO's own error codes: each attribute is a `(code, HTTP status)` pair, raised with `framework_error(FrameworkError.X,
+    detail=...)`.
+
+    The code is the `title` of the ProblemDetails body and is what clients and tests match on, so a code, once published, is renamed or re-statused
+    only as an API change. The comments between the attributes name the design pass or requirement that introduced a group. Codes here are never
+    inherited from an underlying protocol.
+    """
     ENDPOINT_UNREACHABLE = ("ENDPOINT_UNREACHABLE", 503)
     SCHEMA_VALIDATION_FAILED = ("SCHEMA_VALIDATION_FAILED", 422)
     MSAC_ACCESS_DENIED = ("MSAC_ACCESS_DENIED", 403)
@@ -202,6 +212,9 @@ class FrameworkError:
 
 
 def framework_error(code: tuple[str, int], detail: str | None = None) -> HTTPException:
+    """Builds the HTTPException (not raised: the caller raises it) for a `FrameworkError` pair, as a ProblemDetails body with `detail` as the
+    human-readable text.
+    """
     title, status = code
     return problem(status, title, detail)
 

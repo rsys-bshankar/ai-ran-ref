@@ -17,7 +17,9 @@ const endpoint = (ref: string, extra: Record<string, unknown> = {}) => ({
   healthStatus: "ACTIVE", lastHeartbeatAt: null, ...extra,
 });
 
-/** The fake BFF: an admin, three O1 endpoints and empty job lists. */
+/**
+ * Starts the fake BFF as an admin with three O1 endpoints (two with a region, one with a tenant) and the registration route.
+ */
 function bff() {
   return fakeBff({
     "GET /me": { username: "ana", role: "admin", csrfToken: "c", local: true, totpEnrolled: true, mfaEnrolmentRequired: false },
@@ -32,7 +34,7 @@ function bff() {
 const open = () => mountWith(<AuthProvider><Infrastructure /></AuthProvider>);
 
 describe("the managed elements and where they are (SEC-10.2)", () => {
-  // Each element row shows its region / tenant, with a dash for what is not set.
+  // Each element shows its region and tenant, and a dash for what is not set.
   it("shows the region and tenant of each element, and a dash for what is not set", async () => {
     bff();
     const { container } = await open();
@@ -45,7 +47,7 @@ describe("the managed elements and where they are (SEC-10.2)", () => {
     expect(cells("ME-3")).toContain("—");
   });
 
-  // Registering trims the region and sends a blank tenant as null.
+  // Registering an element sends its region and tenant, and leaves them out when blank.
   it("registers an element with a region and a tenant, and leaves them out when blank", async () => {
     const calls = bff();
     const { container } = await open();

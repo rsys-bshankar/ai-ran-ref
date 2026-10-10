@@ -1,5 +1,6 @@
 /** Software · new campaign (`software.new`): `POST /software-campaigns`. The elements are selected by attributes (vendorName, region,
- * entityType, tenant: every element matching all the keys given) or listed by ref. A dry run comes first (`dryRun: true` answers the waves
+ * entityType, tenant: every element matching all the keys given) or listed by ref; the waves, gate, job timeout (MGT-15.6) and rollback
+ * order (MGT-15.7) are set here. A dry run comes first (`dryRun: true` answers the waves
  * and starts nothing); Start is offered only for the exact values that were dry-run. Gated by `Can` (operator in gui-bff/app/rbac.py, which
  * also sets `requestedBy` from the signed-in user). */
 import { useState } from "react";
@@ -57,6 +58,14 @@ export function NewCampaignForm({ onStarted }: { onStarted: (id: string) => void
             <Field label="On gate failure">
               <select value={f.onGateFailure} onChange={(e) => set({ onGateFailure: e.target.value as "halt" | "rollback" })}>
                 <option value="halt">Halt and ask me</option><option value="rollback">Roll back automatically</option>
+              </select>
+            </Field>
+          </div>
+          <div className="grid g4">
+            {input("jobTimeoutSeconds", "Job timeout, seconds", "Blank: wait for every job however long. A job still running then is failed, and the gate sees it")}
+            <Field label="A rollback undoes">
+              <select value={f.rollbackOrder} onChange={(e) => set({ rollbackOrder: e.target.value as "all" | "reverse" })}>
+                <option value="reverse">The last wave first, then each earlier wave</option><option value="all">Every wave at once</option>
               </select>
             </Field>
           </div>

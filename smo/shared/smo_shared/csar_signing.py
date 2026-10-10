@@ -60,6 +60,9 @@ class TrustStoreError(Exception):
 
 @dataclasses.dataclass(frozen=True)
 class Verification:
+    """What a successful `verify_csar` / `verify_zip` reports: the trust-store name of the publisher (`publisher`), the key's fingerprint (`key_id`)
+    and how many package files the signed digest list covered (`files`, the signing entries not counted).
+    """
     publisher: str
     key_id: str
     files: int
@@ -67,6 +70,8 @@ class Verification:
 
 @dataclasses.dataclass(frozen=True)
 class TrustedKey:
+    """One accepted publisher key: the operator's name for it (`publisher`, taken from the key file's name), its fingerprint and the parsed public key.
+    """
     publisher: str
     key_id: str
     public_key: Ed25519PublicKey
@@ -75,6 +80,9 @@ class TrustedKey:
 # ------------------------------------------------------------------------------------------------------------------------------------- keys
 
 def key_id(public_key: Ed25519PublicKey) -> str:
+    """The fingerprint of a public key: the SHA-256 (hex) of its 32 raw bytes. It is how a signature entry names the key to try; it is not secret and
+    proves nothing by itself.
+    """
     raw = public_key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
     return hashlib.sha256(raw).hexdigest()
 
@@ -119,6 +127,7 @@ def load_private_key(data: bytes) -> Ed25519PrivateKey:
 
 
 def load_public_key(pem: bytes) -> Ed25519PublicKey:
+    """Parses one PEM (SubjectPublicKeyInfo) public key. Raises ValueError when the bytes are not a PEM public key or the key is not ed25519."""
     try:
         key = serialization.load_pem_public_key(pem)
     except ValueError as exc:
@@ -176,6 +185,11 @@ def sign_csar(data: bytes, private_key: Ed25519PrivateKey, *, timestamp: tuple[i
 # ----------------------------------------------------------------------------------------------------------------------------- trust store
 
 class TrustStore:
+    """The set of publisher keys a package may be signed with, looked up by key id. Built by `load_trust_store`.
+
+    Truthy when it holds at least one key. When two entries share a key id the later one wins (the keys are held in a dict by id), so the same key
+    listed under two names is reported under the second name.
+    """
     def __init__(self, keys: list[TrustedKey]):
         self._by_id = {k.key_id: k for k in keys}
         self.keys = list(self._by_id.values())
@@ -191,6 +205,11 @@ _PEM_BLOCK = re.compile(rb"-----BEGIN PUBLIC KEY-----.+?-----END PUBLIC KEY-----
 
 
 def _keys_of(path: Path) -> list[TrustedKey]:
+    """The keys in one trust-store file, one per `PUBLIC KEY` PEM block, named after the file (`acme`, then `acme#2`, `acme#3` ...).
+
+    Raises TrustStoreError when the file cannot be read, holds no PEM block, or a block is not an ed25519 public key. The message carries the file
+    name and the reason, never key material.
+    """
     try:
         text = path.read_bytes()
     except OSError as exc:
@@ -237,6 +256,9 @@ def is_signed(names: list[str]) -> bool:
 
 
 def _parse_digests(raw: bytes) -> dict[str, str]:
+    """Parses a `DIGESTS.sha256` into {path: sha-256 hex}. Raises SignatureError("malformed") for non-UTF-8 text, a line that is not `<64 hex>
+    <path>`, or a path listed twice (a second digest for a path must not silently replace the first).
+    """
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -254,6 +276,9 @@ def _parse_digests(raw: bytes) -> dict[str, str]:
 
 
 def _signature_document(raw: bytes) -> tuple[str, bytes]:
+    """Reads the `.sig` entry and returns (key id, raw signature bytes). Raises SignatureError("malformed") when it is not JSON, is not a version 1
+    ed25519 document, lacks `keyId` or `signature`, or the signature is not strict base64. Nothing here checks the signature itself.
+    """
     try:
         document = json.loads(raw)
     except (ValueError, UnicodeDecodeError) as exc:
@@ -310,6 +335,10 @@ def verify_zip(archive: zipfile.ZipFile, trust: TrustStore) -> Verification:
 
 
 def verify_csar(data: bytes, trust: TrustStore) -> Verification:
+    """Checks a whole CSAR (the zip bytes) against the trust store and returns who signed it; see `verify_zip` for the checks and the error codes.
+
+    A file that is not a zip raises SignatureError("malformed").
+    """
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             return verify_zip(archive, trust)

@@ -92,6 +92,7 @@ def _problem(status: int, title: str, detail: str) -> JSONResponse:
 
 
 class RappError(Exception):
+    """An error this rApp raises on purpose; `_rapp_error` answers it as `{detail: {title, status, detail}}` with `status` as the HTTP status."""
     def __init__(self, status: int, title: str, detail: str):
         self.status, self.title, self.detail = status, title, detail
 
@@ -119,6 +120,9 @@ def _instance(db: Session, instance_id: uuid.UUID) -> EnergySavingInstance:
 
 
 def _cells(db: Session, inst: EnergySavingInstance) -> dict[str, EnergySavingCell]:
+    """Returns the instance's cell rows by cell id, adding (not committing) a SERVING row for any configured cell that has none yet; the caller
+    commits.
+    """
     rows = {c.cell_id: c for c in db.scalars(select(EnergySavingCell).where(EnergySavingCell.instance_id == inst.instance_id))}
     for cell in inst.cells:
         if cell not in rows:
@@ -151,12 +155,24 @@ def _read(inst: EnergySavingInstance, cell: str) -> str | None:
 
 
 def _verify(inst: EnergySavingInstance, cells: list[str], want_locked: bool) -> dict:
+    """Reads each cell's actuator back over O1 and compares it with the locked or unlocked value; returns {result: VERIFIED | VERIFY_FAILED,
+    expected, observed, attribute}. An unreadable cell counts as a mismatch.
+    """
     act = ACTUATORS[inst.actuator]
     expected = act["locked"] if want_locked else act["unlocked"]
     observed = {cell: _read(inst, cell) for cell in cells}
     return {"result": "VERIFIED" if all(v == expected for v in observed.values()) else "VERIFY_FAILED",
             "expected": expected, "observed": observed,
             "attribute": f"{act['ioc']}.{act['readAttribute']}"}
+
+
+def _decision(inst, execution_id: str, reason: str) -> dict:
+    """PR-AI-13: why this write is made, kept by RAN NF OAM as the decision record of the config job (and shown to a person who is asked to approve it): a
+    reference to this execution (its inputs are on the instance's operator page, not in the record), the version of the model that decided, and the reason in words.
+    The direct path of this rApp is a service-restoring write (a wake, a revert, a rollback, an operator override)."""
+    wanted = {"inputsRef": f"{RAPP_ID}:{inst.instance_id}:execution:{execution_id}", "modelVersion": inst.model_version,
+              "rationale": f"Restoring service: {reason}"}
+    return {k: v for k, v in wanted.items() if v}
 
 
 def _execute_direct(inst: EnergySavingInstance, cells: list[str], lock: bool, execution_id: str, reason: str) -> dict:
@@ -167,7 +183,8 @@ def _execute_direct(inst: EnergySavingInstance, cells: list[str], lock: bool, ex
     try:
         result = sdk.platform.execute_action(
             f"{RAPP_ID}:{inst.instance_id}", [_change(inst, c, act["lock"] if lock else act["unlock"]) for c in cells],
-            action_id=action_id, source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason})
+            action_id=action_id, source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason},
+            decision=_decision(inst, execution_id, reason))
         return {"path": "DME_DIRECT", "actionId": result["actionId"], "forwardedJobId": result.get("forwardedJobId"),
                 "status": result["status"]}
     except SdkError as e:
@@ -235,6 +252,9 @@ def _finish_lock(db: Session, inst: EnergySavingInstance, rows: dict, decisions:
 
 
 def _lock_expectation(inst: EnergySavingInstance, cells: list[str], execution_id: str) -> dict:
+    """Builds the one TS 28.312 DELIVER expectation that sets the actuator of all `cells` to its locked value; its id carries the first 8
+    characters of the execution id.
+    """
     act = ACTUATORS[inst.actuator]
     return {"expectationId": f"energy-saving-{execution_id[:8]}", "expectationVerb": "DELIVER",
             "expectationObject": {"objectType": "RAN_SUBNETWORK", "objectInstance": inst.managed_element_ref,
@@ -338,15 +358,18 @@ def start_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.get("/instances")
 def list_instances(db: Session = Depends(get_session)):
+    # Lists every started instance, oldest first.
     return {"items": [_instance_view(i) for i in db.scalars(select(EnergySavingInstance).order_by(EnergySavingInstance.created_at))]}
 
 
 @app.get("/instances/{instance_id}")
 def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Returns one instance; 404 INSTANCE_NOT_STARTED when `start` was never called for it.
     return _instance_view(_instance(db, instance_id))
 
 
 def _instance_view(i: EnergySavingInstance) -> dict:
+    """The JSON shape of an instance on every route that returns one."""
     return {"instanceId": str(i.instance_id), "packageId": str(i.package_id) if i.package_id else None,
             "managedElementRef": i.managed_element_ref, "cells": i.cells, "actuator": i.actuator,
             "autonomyMode": i.autonomy_mode, "rmihId": i.rmih_id, "datasets": i.data_jobs,
@@ -477,6 +500,7 @@ def _sector_peers_awake(key: str, guards: dict, asleep: set) -> int | None:
 
 
 def _mdaf_prediction(key: str) -> float | None:
+    """MDAF's predicted PRB for a cell key, or None when MDAF has no prediction or is unavailable; an MDAF outage never stops the loop."""
     try:
         prediction = sdk.analytics.get_prediction(key, pm_name=DATASET)
     except SdkError:
@@ -595,6 +619,7 @@ def reconcile(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 # ---------------------------------------------------------------- operator override (W10-15)
 
+# Request body of the override route: who is overriding and an optional reason, kept in the audit row's safety note.
 class OverrideRequest(BaseModel):
     operator: str
     reason: str | None = None
@@ -635,6 +660,7 @@ def override(instance_id: uuid.UUID, cell_id: str, body: OverrideRequest, db: Se
 
 @app.delete("/instances/{instance_id}/cells/{cell_id}/override", status_code=204)
 def clear_override(instance_id: uuid.UUID, cell_id: str, db: Session = Depends(get_session)):
+    # Releases the cell from its operator override so AI recommendations apply again; 204 whether or not the cell is managed or was overridden.
     row = _cells(db, _instance(db, instance_id)).get(cell_id)
     if row is not None:
         row.override_by = row.override_at = None
@@ -644,6 +670,7 @@ def clear_override(instance_id: uuid.UUID, cell_id: str, db: Session = Depends(g
 # ---------------------------------------------------------------- audit + dashboard (W10-23, W10-24)
 
 def _decision_view(d: EnergySavingDecision) -> dict:
+    """The JSON shape of one audit row, as the decisions list, the evaluate answer and the dashboard return it."""
     return {"decisionId": str(d.decision_id), "executionId": d.execution_id, "cellId": d.cell_id,
             "observedAt": d.observed_at.isoformat() if d.observed_at else None, "prb": d.prb,
             "prediction": d.prediction, "safety": d.safety, "decision": d.decision, "reason": d.reason,
@@ -654,6 +681,7 @@ def _decision_view(d: EnergySavingDecision) -> dict:
 @app.get("/instances/{instance_id}/decisions")
 def list_decisions(instance_id: uuid.UUID, cell_id: str | None = None, execution_id: str | None = None,
                    limit: int = 100, db: Session = Depends(get_session)):
+    # Audit rows of an instance, newest first; filtered by cell_id and execution_id when given; `limit` is capped at 500.
     stmt = select(EnergySavingDecision).where(EnergySavingDecision.instance_id == instance_id)
     if cell_id:
         stmt = stmt.where(EnergySavingDecision.cell_id == cell_id)
@@ -665,6 +693,7 @@ def list_decisions(instance_id: uuid.UUID, cell_id: str | None = None, execution
 
 @app.get("/instances/{instance_id}/cells")
 def list_cells(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # The instance's cells with their state and override; creates the missing rows and commits, so a freshly started instance lists all its cells.
     inst = _instance(db, instance_id)
     rows = _cells(db, inst)
     db.commit()
@@ -798,11 +827,13 @@ def cell_state_history(instance_id: uuid.UUID, hours: int = Query(24, ge=1, le=C
 
 @app.post("/sim-producer/register", status_code=201)
 def register_sim_producer():
+    # Registers the PRB_UTILIZATION_SIM data type at DME with this rApp as the Digital Twin producer (201).
     return register_sim_type(sdk)
 
 
 @app.post("/sim-producer/publish")
 def publish_sim_data(body: SimPublishRequest):
+    # Generates the requested cells' synthetic PRB samples and delivers them to every data job of the sim type.
     return publish_sim(sdk, body)
 
 

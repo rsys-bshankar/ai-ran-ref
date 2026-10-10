@@ -112,6 +112,7 @@ class CommonEventHeader(BaseModel):
 
 
 class FaultFields(BaseModel):
+    """The members of a VES `faultFields` block this receiver needs to raise or clear an alarm (VES 7.2); other members are accepted and ignored."""
     model_config = ConfigDict(extra="allow")
     faultFieldsVersion: str
     alarmCondition: str
@@ -150,6 +151,8 @@ def _where(error: ValidationError, index: int) -> str:
 
 
 class ParsedEvent(BaseModel):
+    """One event of a post whose `commonEventHeader` has been validated: its position in the post, the header, and the whole event as sent (the domain's field set is read from it).
+    """
     index: int
     header: CommonEventHeader
     body: dict[str, Any]
@@ -171,6 +174,8 @@ def parse_events(events: list[dict[str, Any]]) -> list[ParsedEvent]:
 # ---------------------------------------------------------------- SB-7.2 to SB-7.4: what an event means
 
 class AlarmAction(BaseModel):
+    """What a `fault` event asks of the alarm path: raise (or update) an alarm of `source_alarm_id` on the element with this severity, or clear it when `severity` is None.
+    """
     managed_element_ref: str
     source_alarm_id: str
     severity: str | None            # lower-case PerceivedSeverity; None: this event clears the alarm
@@ -179,12 +184,15 @@ class AlarmAction(BaseModel):
 
 
 class PmReport(BaseModel):
+    """What a measurement event asks of the PM path: measurements of one counter type for one element, in the shape of the `POST /pm-reports` measurement.
+    """
     managed_element_ref: str
     counter_type: str
     measurements: list[dict[str, Any]]      # {cellId, timestamp, values}, the shape of PmMeasurement
 
 
 class HeartbeatAction(BaseModel):
+    """What a `heartbeat` event asks for: a heartbeat of the element's O1 adaptor endpoint."""
     managed_element_ref: str
 
 
@@ -208,6 +216,7 @@ def _short(value: Any) -> str | None:
 
 
 def _number(value: Any) -> float | None:
+    """The finite float a value stands for, or None (a boolean, text that is not a number, NaN and infinity are not measurements)."""
     if isinstance(value, bool):
         return None
     try:
@@ -218,6 +227,8 @@ def _number(value: Any) -> float | None:
 
 
 def fault_action(parsed: ParsedEvent) -> AlarmAction:
+    """The alarm a `fault` event stands for: the element is the header's `sourceName` and the alarm is identified by `alarmCondition` (with `alarmInterfaceA` appended when present), so a later NORMAL event clears the same alarm. Unsupported FAULT_FIELDS_INVALID when `faultFields` is malformed or the identifier is longer than MAX_NAME.
+    """
     try:
         fields = FaultFields.model_validate(parsed.body.get("faultFields"))
     except ValidationError as exc:

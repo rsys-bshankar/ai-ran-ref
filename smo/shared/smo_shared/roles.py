@@ -57,8 +57,10 @@ INTERNAL_ONLY: tuple[tuple[str, frozenset[str], re.Pattern], ...] = tuple(
         ("/ran-nf-oam", ("POST",), r"^/rapp-approvals/([^/]+/(approve|reject)|expire-due)$"),
         ("/ran-nf-oam", ("GET",), r"^/rapp-approvals$"),
         ("/ran-nf-oam", ("GET", "POST", "DELETE"), r"^/approval-subscriptions(/[^/]+)?$"),
-        # AI-13: the record of why rApps acted
-        ("/ran-nf-oam", ("GET",), r"^/decision-records$"),
+        # MGT-14.7, MGT-15.6: who is told when an onboarding fails or a campaign halts (a destination the platform will call)
+        ("/ran-nf-oam", ("GET", "POST", "DELETE"), r"^/lifecycle-subscriptions(/[^/]+)?$"),
+        # AI-13: the record of why rApps acted, and (GUI-9.5) its CSV export, which holds the same rows
+        ("/ran-nf-oam", ("GET",), r"^/decision-records(/export\.csv)?$"),
         # SEC-10: what a caller (or a target) is scoped to is set by the platform, never by an rApp
         ("/sme", ("PUT",), r"^/invoker-registrations/[^/]+/authz-scope$"),
         ("/ran-nf-oam", ("PUT",), r"^/managed-entities/[^/]+/scope$"),
@@ -151,6 +153,7 @@ def rapp_may_change(module: str, method: str, path: str) -> bool:
 
 
 def enforcement_mode() -> str:
+    """Returns `enforce` or `audit` from `SMO_ROLE_ENFORCEMENT`; unset or any other value gives `enforce`, so a typo never weakens the policy."""
     mode = os.environ.get("SMO_ROLE_ENFORCEMENT", "enforce").strip().lower()
     return mode if mode in ("enforce", "audit") else "enforce"      # a typo must not switch protection off
 
@@ -167,6 +170,10 @@ def role_of(request) -> str | None:
 
 
 def enrollment_secret_valid(presented: str | None, expected: str) -> bool:
+    """True when `presented` equals the `expected` enrollment secret; False when either is empty.
+
+    Compared with `hmac.compare_digest` (constant time), so response timing does not reveal how much of a guess was right.
+    """
     if not presented or not expected:
         return False
     return hmac.compare_digest(presented.encode(), expected.encode())

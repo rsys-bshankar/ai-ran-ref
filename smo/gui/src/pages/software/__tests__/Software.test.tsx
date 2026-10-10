@@ -97,6 +97,7 @@ describe("Software page", () => {
   });
 
   // Start stays off until a dry run of the same values; the dry run shows the waves and Start sends the body without dryRun.
+  // Start is offered only after a dry run of the same values, and the started body is the dry-run body without `dryRun` (no `requestedBy`).
   it("dry-runs a new campaign before starting it", async () => {
     window.location.hash = "#new";
     const { container, calls } = await open("operator");
@@ -113,7 +114,7 @@ describe("Software page", () => {
     await settle();
     const posts = calls.filter((c) => c.method === "POST");
     expect(posts[0].body).toMatchObject({ dryRun: true, name: "upgrade", selector: { vendorName: "vendor-a" } });
-    expect(posts[1].body).toEqual({ name: "upgrade", onGateFailure: "halt", selector: { vendorName: "vendor-a" }, wavePauseSeconds: 0, gateMaxNewAlarms: 0 });
+    expect(posts[1].body).toEqual({ name: "upgrade", onGateFailure: "halt", rollbackOrder: "reverse", selector: { vendorName: "vendor-a" }, wavePauseSeconds: 0, gateMaxNewAlarms: 0 });
   });
 });
 
@@ -124,7 +125,7 @@ describe("campaign rules", () => {
     expect(campaignBody({ ...EMPTY_FORM, name: "x" })).toMatchObject({ ok: false });
     expect(campaignBody({ ...EMPTY_FORM, name: "x", mode: "list", elements: "du-1, du-2\ndu-1", waveSize: "0" })).toEqual({ ok: false, error: "Wave size must be a whole number, at least 1" });
     expect(campaignBody({ ...EMPTY_FORM, name: "x", mode: "list", elements: "du-1, du-2\ndu-1", waveSize: "2" }))
-      .toEqual({ ok: true, body: { name: "x", onGateFailure: "halt", managedElementRefs: ["du-1", "du-2"], waveSize: 2, wavePauseSeconds: 0, gateMaxNewAlarms: 0 } });
+      .toEqual({ ok: true, body: { name: "x", onGateFailure: "halt", rollbackOrder: "reverse", managedElementRefs: ["du-1", "du-2"], waveSize: 2, wavePauseSeconds: 0, gateMaxNewAlarms: 0 } });
   });
 
   // Each state offers what the backend accepts: a paused campaign needs force to go on early.

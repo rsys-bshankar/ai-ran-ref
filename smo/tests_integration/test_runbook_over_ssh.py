@@ -20,6 +20,9 @@ CELL = "GNBDUFunction=1,NRCellDU=101"
 
 
 def _host_key(host: str, port: int = 830, wait: float = 120.0):
+    """Connects to the lab SSH server, retrying every 2 seconds until `wait` seconds have passed, and returns the server's host key; the last error
+    is raised when the time is up.
+    """
     import paramiko
 
     deadline = time.monotonic() + wait
@@ -39,6 +42,9 @@ def _host_key(host: str, port: int = 830, wait: float = 120.0):
 
 
 def test_a_cm_write_reaches_the_lab_server_through_the_stack(mesh):
+    """Runbook section 7 through the live stack to a real NETCONF server over SSH: the endpoint is refused until its host key is pinned through the
+    route, and then a configuration write reaches the server. Live mode only.
+    """
     oam = mesh["ran-nf-oam"]
     key = _host_key(LAB)
 

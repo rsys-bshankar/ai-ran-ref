@@ -108,8 +108,8 @@ class FakePlatform:
             raise SdkError(404, {})
         return self.prediction
 
-    def execute_action(self, consumer, changes, action_id, source_context):
-        self.actions.append({"changes": changes, "actionId": action_id, "context": source_context})
+    def execute_action(self, consumer, changes, action_id, source_context, decision=None):
+        self.actions.append({"changes": changes, "actionId": action_id, "context": source_context, "decision": decision})
         if not self.stuck:
             for change in changes:
                 self.config[change["managedFunctionRef"].split("=")[1]] = change["attributeChanges"]["administrativeState"]
@@ -137,6 +137,7 @@ class FakePlatform:
 
 @pytest.fixture
 def platform(monkeypatch):
+    """The in-memory platform double that replaces the AI Runtime SDK, installed in the app for one test."""
     fake = FakePlatform()
     monkeypatch.setattr(main, "sdk", fake)
     return fake
@@ -144,6 +145,7 @@ def platform(monkeypatch):
 
 @pytest.fixture
 def r1(monkeypatch):
+    """The R1 double (rapp-mgmt's instance record), installed in the app for one test."""
     fake = FakeR1()
     monkeypatch.setattr(main, "_r1", fake)
     return fake
@@ -151,6 +153,9 @@ def r1(monkeypatch):
 
 @pytest.fixture
 def client():
+    """A TestClient on a fresh SQLite database with the rApp's three tables created and the session dependency overridden; the override is removed
+    after the test.
+    """
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[m.__table__ for m in (main.EnergySavingInstance, main.EnergySavingCell, main.EnergySavingDecision)])
     factory = sessionmaker(bind=engine)
@@ -168,6 +173,7 @@ def client():
 
 
 def _start(client, r1, mode="AUTONOMOUS", **config):
+    """Registers an instance with the R1 double, calls `start` and returns the instance id; `config` entries extend the instance configuration."""
     instance_id = str(uuid.uuid4())
     r1.instances[instance_id] = {"packageId": str(uuid.uuid4()), "autonomyMode": mode,
                                  "configuration": {"managedElementRef": ME, "cells": [CELL], **config}}
@@ -177,6 +183,7 @@ def _start(client, r1, mode="AUTONOMOUS", **config):
 
 
 def _deployed(client, platform, r1, mode="AUTONOMOUS", **config):
+    """Starts an instance and runs train, validate, emulate and deploy, so the test begins with a deployed model."""
     instance_id = _start(client, r1, mode, **config)
     for step in ("train", "validate", "emulate", "deploy"):
         resp = client.post(f"/instances/{instance_id}/lifecycle/{step}")
@@ -190,7 +197,19 @@ def _dispatched(mode="AUTONOMOUS", **extra):
 
 # ---------------------------------------------------------------- instance binding
 
+
+def _assert_decision(action, rapp, reason):
+    """PR-AI-13: a direct write says why it is made, so RAN NF OAM's decision record (and an approver) has more than the job: the execution it came from, the
+    version of the model that decided (when the instance has one) and the reason in words."""
+    decision = action["decision"]
+    assert decision["rationale"] == f"Restoring service: {reason}"
+    assert decision["inputsRef"].startswith(f"{rapp}:") and ":execution:" in decision["inputsRef"] and decision["inputsRef"].endswith(action["context"]["correlationId"])
+    assert set(decision) <= {"inputsRef", "modelVersion", "rationale"}
+
 def test_start_binds_the_instance_and_discovers_a_dataset_per_stage(client, platform, r1):
+    """`start` stores the configuration (cells, actuator, mode, default RMIH) with a dataset per lifecycle stage, lists the instance and its cells,
+    and a second start re-binds without a duplicate.
+    """
     instance_id = _start(client, r1, "ASSIST", operatorNotificationUri="http://ops/notify")
     view = client.get(f"/instances/{instance_id}").json()
     assert (view["cells"], view["actuator"], view["autonomyMode"], view["rmihId"]) == ([CELL], "ADMINISTRATIVE_STATE", "ASSIST", "sa-smos")
@@ -203,6 +222,7 @@ def test_start_binds_the_instance_and_discovers_a_dataset_per_stage(client, plat
 
 
 def test_start_rejects_an_unknown_instance_and_an_invalid_config(client, platform, r1):
+    """An instance rapp-mgmt does not know is 404 INSTANCE_NOT_FOUND; one without cells or with an unknown actuator is 422 INSTANCE_CONFIG_INVALID."""
     resp = client.post(f"/instances/{uuid.uuid4()}/start")
     assert (resp.status_code, resp.json()["detail"]["title"]) == (404, "INSTANCE_NOT_FOUND")
     for config in ({"cells": []}, {"actuator": "FAN"}):
@@ -213,6 +233,7 @@ def test_start_rejects_an_unknown_instance_and_an_invalid_config(client, platfor
 
 
 def test_an_instance_that_was_never_started_is_404_on_every_route(client, platform, r1):
+    """Every route that takes an instance id answers 404 INSTANCE_NOT_STARTED for one that was never started."""
     missing = uuid.uuid4()
     for verb, path in (("get", ""), ("post", "/lifecycle/train"), ("post", "/evaluate"), ("post", "/reconcile"),
                        ("get", "/cells"), ("get", "/dashboard")):
@@ -221,6 +242,7 @@ def test_an_instance_that_was_never_started_is_404_on_every_route(client, platfo
 
 
 def test_a_platform_error_is_passed_through_and_a_server_error_becomes_502(client, platform, r1, monkeypatch):
+    """An SDK error below 500 reaches the caller with its own status and title; a platform 5xx is answered 502 PLATFORM_ERROR."""
     instance_id = _start(client, r1)
     monkeypatch.setattr(platform.lifecycle, "start_training", _raise(SdkError(409, {"detail": {"title": "BUSY", "detail": "x"}})))
     resp = client.post(f"/instances/{instance_id}/lifecycle/train")
@@ -233,6 +255,7 @@ def test_a_platform_error_is_passed_through_and_a_server_error_becomes_502(clien
 # ---------------------------------------------------------------- lifecycle
 
 def test_the_model_lifecycle_trains_validates_emulates_and_deploys(client, platform, r1):
+    """The four lifecycle routes run in order, record their job ids on the instance, and training again keeps the registered model."""
     instance_id = _start(client, r1)
     trained = client.post(f"/instances/{instance_id}/lifecycle/train").json()
     assert (trained["status"], trained["metrics"]["artifactVersion"]) == ("TRAINED", 3)
@@ -249,6 +272,7 @@ def test_the_model_lifecycle_trains_validates_emulates_and_deploys(client, platf
 
 
 def test_training_on_too_little_history_is_422_and_the_job_is_failed(client, platform, r1):
+    """Too little history is 422 TRAINING_FAILED and the training job is completed as failed with the reason, not left running."""
     instance_id = _start(client, r1)
     platform.records["TRAINING"] = HISTORY[:2]
     resp = client.post(f"/instances/{instance_id}/lifecycle/train")
@@ -260,12 +284,16 @@ def test_training_on_too_little_history_is_422_and_the_job_is_failed(client, pla
 # ---------------------------------------------------------------- evaluate
 
 def test_evaluate_needs_a_deployed_model(client, platform, r1):
+    """`evaluate` before a model is deployed is 409 MODEL_NOT_DEPLOYED."""
     instance_id = _start(client, r1)
     resp = client.post(f"/instances/{instance_id}/evaluate")
     assert (resp.status_code, resp.json()["detail"]["title"]) == (409, "MODEL_NOT_DEPLOYED")
 
 
 def test_evaluate_in_shadow_mode_recommends_a_lock_and_changes_nothing(client, platform, r1):
+    """In SHADOW mode a LOCK is recorded as SHADOWED, the dispatch carries the LOCKED expectation, O1 is not written and the cell is left in
+    PRE_SLEEP.
+    """
     instance_id = _deployed(client, platform, r1, "SHADOW")
     platform.dispatch = {"status": "SHADOWED", "dispatchId": str(uuid.uuid4()), "autonomyMode": "SHADOW"}
     body = client.post(f"/instances/{instance_id}/evaluate", headers={"X-Correlation-ID": "exec-1"}).json()
@@ -276,6 +304,7 @@ def test_evaluate_in_shadow_mode_recommends_a_lock_and_changes_nothing(client, p
 
 
 def test_evaluate_in_autonomous_mode_locks_the_cell_and_verifies_it(client, platform, r1):
+    """An autonomous LOCK goes through the intent, is verified by an O1 read-back and leaves the cell asleep; the next pass keeps it asleep."""
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
@@ -287,6 +316,7 @@ def test_evaluate_in_autonomous_mode_locks_the_cell_and_verifies_it(client, plat
 
 
 def test_a_lock_that_o1_reports_but_does_not_apply_is_rolled_back(client, platform, r1):
+    """A lock whose read-back does not match is VERIFY_FAILED and the cell is rolled back to SERVING and UNLOCKED."""
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     platform.stuck = True
@@ -296,6 +326,7 @@ def test_a_lock_that_o1_reports_but_does_not_apply_is_rolled_back(client, platfo
 
 
 def test_a_partially_applied_lock_is_rolled_back_through_dme(client, platform, r1):
+    """A PARTIAL_SUCCESS action is rolled back through DME without a verification read."""
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     platform.action_status = "PARTIAL_SUCCESS"
@@ -305,6 +336,7 @@ def test_a_partially_applied_lock_is_rolled_back_through_dme(client, platform, r
 
 
 def test_a_lock_the_intent_never_enacted_is_rolled_back_as_failed(client, platform, r1):
+    """An intent report with no usable action counts as NOT_ENACTED and is rolled back as ACTION_FAILED."""
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched(noReport=True)
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
@@ -312,6 +344,9 @@ def test_a_lock_the_intent_never_enacted_is_rolled_back_as_failed(client, platfo
 
 
 def test_assist_mode_waits_for_the_operator_then_enacts_on_reconcile(client, platform, r1):
+    """In ASSIST mode the lock waits for approval and the cell is skipped meanwhile; `reconcile` enacts it once approved, and a pending dispatch
+    settles nothing.
+    """
     instance_id = _deployed(client, platform, r1, "ASSIST")
     dispatch_id = str(uuid.uuid4())
     platform.dispatch = {"status": "AWAITING_SCOPE", "dispatchId": dispatch_id, "autonomyMode": "ASSIST"}
@@ -329,6 +364,7 @@ def test_assist_mode_waits_for_the_operator_then_enacts_on_reconcile(client, pla
 
 
 def test_assist_mode_rejection_returns_the_cell_to_service(client, platform, r1):
+    """A rejected ASSIST dispatch ends as REJECTED and the cell goes back to SERVING."""
     instance_id = _deployed(client, platform, r1, "ASSIST")
     dispatch_id = str(uuid.uuid4())
     platform.dispatch = {"status": "AWAITING_SCOPE", "dispatchId": dispatch_id, "autonomyMode": "ASSIST"}
@@ -340,6 +376,7 @@ def test_assist_mode_rejection_returns_the_cell_to_service(client, platform, r1)
 
 
 def test_a_lock_on_a_cell_already_locked_is_not_repeated(client, platform, r1):
+    """A LOCK for a cell O1 already reports locked is recorded as NO_ACTION_ALREADY_IN_STATE and no dispatch is made."""
     instance_id = _deployed(client, platform, r1)
     platform.config[CELL] = "LOCKED"
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
@@ -348,6 +385,7 @@ def test_a_lock_on_a_cell_already_locked_is_not_repeated(client, platform, r1):
 
 
 def test_a_guard_blocks_the_lock_and_the_audit_trail_says_why(client, platform, r1):
+    """An EMERGENCY cell with a neighbour's critical alarm is not locked, the reason names the guard and the MDAF prediction is in the audit."""
     instance_id = _deployed(client, platform, r1)
     platform.guards = [{"managedElementRef": ME, "cellId": CELL, "cellClass": "EMERGENCY", "neighbourRefs": [f"{ME}/102"]}]
     platform.alarms = [{"alarmId": "al-1", "severity": "critical", "probableCause": "coverage hole", "managedFunctionRef": "NRCellDU=102"}]
@@ -359,6 +397,7 @@ def test_a_guard_blocks_the_lock_and_the_audit_trail_says_why(client, platform, 
 
 
 def test_an_mdaf_outage_does_not_stop_the_loop(client, platform, r1):
+    """When MDAF errors the evaluation still decides, with no MDAF prediction recorded."""
     instance_id = _deployed(client, platform, r1, "SHADOW")
     platform.prediction = "error"
     platform.dispatch = {"status": "SHADOWED", "dispatchId": str(uuid.uuid4()), "autonomyMode": "SHADOW"}
@@ -367,6 +406,9 @@ def test_an_mdaf_outage_does_not_stop_the_loop(client, platform, r1):
 
 
 def _asleep(client, platform, r1, mode):
+    """Deploys a model, evaluates once so the cell is locked, then makes load return (busy PRB and a high MDAF prediction), so the next evaluation
+    must wake it.
+    """
     instance_id = _deployed(client, platform, r1, mode)
     platform.dispatch = _dispatched(mode)
     client.post(f"/instances/{instance_id}/evaluate")
@@ -377,13 +419,18 @@ def _asleep(client, platform, r1, mode):
 
 
 def test_returning_load_wakes_a_sleeping_cell_straight_through_dme(client, platform, r1):
+    """A sleeping cell whose load returns is unlocked directly through DME (not through an intent) with the reason and a decision record on the
+    action.
+    """
     instance_id = _asleep(client, platform, r1, "AUTONOMOUS")
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
     assert (d["decision"], d["reason"], d["outcome"], d["finalState"]) == ("UNLOCK", "PREDICTED_LOAD", "EXECUTED", {"state": "SERVING", "o1": "UNLOCKED"})
     assert platform.config[CELL] == "UNLOCKED" and platform.actions[-1]["context"]["reason"] == "WAKE:PREDICTED_LOAD"
+    _assert_decision(platform.actions[-1], "energy-saving-rapp", "WAKE:PREDICTED_LOAD")
 
 
 def test_a_wake_that_will_not_stick_is_resent_once_and_reported(client, platform, r1):
+    """A wake that O1 does not apply is sent twice and reported as VERIFY_FAILED with the cell still in SLEEP."""
     instance_id = _asleep(client, platform, r1, "AUTONOMOUS")
     platform.stuck = True
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
@@ -392,12 +439,14 @@ def test_a_wake_that_will_not_stick_is_resent_once_and_reported(client, platform
 
 
 def test_in_shadow_mode_a_wake_is_only_recommended(client, platform, r1):
+    """In SHADOW mode an UNLOCK is only recommended and the cell stays locked."""
     instance_id = _asleep(client, platform, r1, "SHADOW")
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
     assert (d["decision"], d["outcome"]) == ("UNLOCK", "SHADOWED") and platform.config[CELL] == "LOCKED"
 
 
 def test_a_wake_for_a_cell_already_awake_performs_no_action(client, platform, r1):
+    """A wake for a cell O1 already reports unlocked is recorded as NO_ACTION_ALREADY_IN_STATE."""
     instance_id = _asleep(client, platform, r1, "AUTONOMOUS")
     platform.config[CELL] = "UNLOCKED"
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
@@ -407,6 +456,9 @@ def test_a_wake_for_a_cell_already_awake_performs_no_action(client, platform, r1
 # ---------------------------------------------------------------- override, audit, dashboard
 
 def test_an_override_wakes_the_cell_and_suppresses_the_ai_until_cleared(client, platform, r1):
+    """An operator override wakes the cell, keeps the AI from locking it until the override is cleared, is idempotent for an awake cell, and
+    clearing an unknown cell is still 204.
+    """
     instance_id = _asleep(client, platform, r1, "AUTONOMOUS")
     resp = client.post(f"/instances/{instance_id}/cells/{CELL}/override", json={"operator": "alice", "reason": "event"})
     d = resp.json()
@@ -426,6 +478,7 @@ def test_an_override_wakes_the_cell_and_suppresses_the_ai_until_cleared(client, 
 
 
 def test_an_override_reports_a_wake_that_cannot_be_verified(client, platform, r1):
+    """An override whose wake does not verify is reported as VERIFY_FAILED."""
     instance_id = _start(client, r1)
     platform.config[CELL] = "LOCKED"
     platform.stuck = True
@@ -434,6 +487,7 @@ def test_an_override_reports_a_wake_that_cannot_be_verified(client, platform, r1
 
 
 def test_override_validates_the_request_and_the_cell(client, platform, r1):
+    """An override without an operator is 422 and one for a cell the instance does not manage is 404 CELL_NOT_MANAGED."""
     instance_id = _start(client, r1)
     assert client.post(f"/instances/{instance_id}/cells/{CELL}/override", json={}).status_code == 422
     resp = client.post(f"/instances/{instance_id}/cells/nope/override", json={"operator": "alice"})
@@ -441,6 +495,7 @@ def test_override_validates_the_request_and_the_cell(client, platform, r1):
 
 
 def test_decisions_are_listed_filtered_and_shown_on_the_dashboard(client, platform, r1):
+    """The decision list filters by execution and cell, and the dashboard returns the PRB trend (limited by `points`) and the latest decision."""
     instance_id = _deployed(client, platform, r1, "SHADOW")
     platform.dispatch = {"status": "SHADOWED", "dispatchId": str(uuid.uuid4()), "autonomyMode": "SHADOW"}
     for execution in ("e-1", "e-2"):
@@ -455,6 +510,7 @@ def test_decisions_are_listed_filtered_and_shown_on_the_dashboard(client, platfo
 
 
 def test_the_dashboard_of_a_cell_without_decisions_has_no_latest_decision(client, platform, r1):
+    """A started instance with no evaluation has a dashboard whose cell has no latest decision."""
     instance_id = _start(client, r1)
     assert client.get(f"/instances/{instance_id}/dashboard").json()["cells"][0]["latestDecision"] is None
 
@@ -532,6 +588,9 @@ def test_past_the_row_bound_the_oldest_changes_are_left_out_and_flagged(client, 
 # ---------------------------------------------------------------- the Digital Twin producer
 
 def test_the_sim_producer_registers_publishes_and_answers_dme_callbacks(client, platform):
+    """The Digital Twin producer registers its type (201), publishes samples to the data jobs (a bad body is 422), and answers DME's health, job
+    and stop callbacks.
+    """
     resp = client.post("/sim-producer/register")
     assert resp.status_code == 201 and resp.json()["dmeTypeId"] == "t-1"
     body = {"managedElementRef": ME, "cells": [CELL], "start": T0.isoformat(), "hours": 3}

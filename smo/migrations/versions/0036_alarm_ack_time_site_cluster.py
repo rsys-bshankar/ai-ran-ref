@@ -13,13 +13,13 @@ Expand only: two nullable columns the previous release neither reads nor writes,
 an alarm acknowledged before the upgrade keeps a NULL ack time (its acknowledge moment was never recorded; `changed_at` may be a later clear), so the mean
 time to acknowledge covers acknowledgements made after the upgrade. The downgrade drops the indexes and the columns.
 
-Revision ID: 0034
-Revises: 0033
+Revision ID: 0036
+Revises: 0035
 """
 from alembic import op
 
-revision = "0034"
-down_revision = "0033"
+revision = "0036"
+down_revision = "0035"
 branch_labels = None
 depends_on = None
 

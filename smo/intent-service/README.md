@@ -126,7 +126,7 @@ The mode is snapshotted onto the dispatch at request time and never rewritten by
   neither; one decimal) and `fulfilled` (the intent's own `intentFulfilmentInfo.fulfilmentStatus`); a report that
   carries conflict reports sets `inConflict` (an empty list clears it; the conflicts found at creation count). They
   are columns, not computed from the JSON at read time, so `GET /intents?fulfilled=&in_conflict=` filters in SQL.
-  Revision `0035` filled them for the intents that existed before; a report written by the previous release during
+  Revision `0037` filled them for the intents that existed before; a report written by the previous release during
   a rolling upgrade does not update them until the next one.
 - **Region scope bounds, never widens.** For an autonomy-created intent the region scope fills a missing
   `objectInstance` (a different one is rejected) and its `cells` become the expectation's `Cell` context; an
@@ -170,7 +170,7 @@ The mode is snapshotted onto the dispatch at request time and never rewritten by
 | `rmih_id` | FK `intent_handling_function.rmih_id`, `ON DELETE CASCADE`, not null |
 | `intent_report_reference` | Bare UUID of the current `intent_report` (no FK: avoids a cycle) |
 | `intent_utility_formula_id` | FK `intent_utility_formula`, `ON DELETE SET NULL` |
-| `fulfilment_percent`, `fulfilled`, `in_conflict` | Nullable summary of the newest fulfilment and conflict reports (1.5, `GUI-9.8`, revision `0035`) |
+| `fulfilment_percent`, `fulfilled`, `in_conflict` | Nullable summary of the newest fulfilment and conflict reports (1.5, `GUI-9.8`, revision `0037`) |
 | other | `user_label`, `context_selectivity`, `expectation_selectivity`, `consumer_satisfaction_index_threshold`, `intent_contexts`, `intent_report_control`, `implicit_intent_index`, `guarantee_periods`, `intent_handling_info`, `intent_interpretation_assistance_info`, `intent_preemption_capability` |
 
 `intent_report`: `id` PK; `intent_id` FK `intent` `ON DELETE CASCADE`; one nullable JSON column per report kind

@@ -44,6 +44,10 @@ RAISE, LOWER, REVERT, NO_CHANGE = "RAISE_CIO", "LOWER_CIO", "REVERT_CIO", "NO_CH
 
 @dataclass
 class RelationInput:
+    """One neighbour relation's inputs to a decision: its PM windows, the live and baseline CIO, the state and the last change (for the KPI check),
+    the model's prediction, whether handover is allowed, both cells' guard records, and the coordination facts (target asleep, the EnergySaving
+    rApp's state for it, when it woke, whether the Traffic Steering rApp is observing the relation).
+    """
     relation: str
     source: str
     target: str
@@ -65,6 +69,10 @@ class RelationInput:
 
 @dataclass
 class Decision:
+    """The engine's verdict for one relation: the action (RAISE_CIO, LOWER_CIO, REVERT_CIO or NO_CHANGE), the reason code the audit trail shows,
+    the new CIO (None when nothing is written), the state the relation moves to, the guard evaluation, the KPI check when one was made, and the
+    latest window's rate and attempts.
+    """
     decision: str
     reason: str
     new_cio: int | None
@@ -81,6 +89,11 @@ def _protected(guard: dict) -> bool:
 
 
 def evaluate_guards(r: RelationInput, now: datetime.datetime, window: dict) -> dict:
+    """Runs every guard on one relation and returns {"passed": bool, "blocks": [{guard, level, detail?}]}.
+
+    Each guard that fires adds a block, so the audit trail lists every reason and not only the first. `window` is the latest window's counters
+    (for the sample-size guard); `now` is the time of that window, not the wall clock, so replaying old data gives the same answer. No I/O.
+    """
     blocks = []
     if not r.ho_allowed:
         blocks.append({"guard": "HO_NOT_ALLOWED", "level": "HARD"})
@@ -103,6 +116,12 @@ def evaluate_guards(r: RelationInput, now: datetime.datetime, window: dict) -> d
 
 
 def decide(r: RelationInput) -> Decision:
+    """Decides what to do with one relation (the four steps are in the module description).
+
+    An OBSERVING relation is only judged by the KPI check (revert, confirm, or keep waiting) and is never changed otherwise. A relation with no
+    windows gives NO_CHANGE with reason NO_DATA. A change is a bounded step in the dominant failure class's direction, clamped to baseline +-
+    MAX_DEVIATION_DB; a step that cannot move gives AT_BOUND.
+    """
     if not r.series:
         return Decision(NO_CHANGE, "NO_DATA", None, r.state, {"passed": False, "blocks": []}, None, None, None, None)
     now, payload = r.series[-1]

@@ -23,6 +23,8 @@ from test_main import PASSWORDS, R1, SME, FakeSmo
 
 
 def make_instance(path, smo, jwt_secret="", **settings):
+    """Builds one BFF instance: its own `Database` object (own engine) on the shared SQLite file at `path`, its own settings (`jwt_secret` empty means the key is shared through the database) and a gateway on the fake SMO. Returns the app, the database and the settings.
+    """
     db = Database(f"sqlite:///{path}")
     cfg = Settings(r1_url=R1, jwt_secret=jwt_secret, cookie_secure=False, admin_password=PASSWORDS["admin"],
                    operator_password=PASSWORDS["operator"], viewer_password=PASSWORDS["viewer"], **settings)
@@ -51,6 +53,8 @@ def hand_over_session(source: TestClient, target: TestClient) -> None:
 # ---------------------------------------------------------------- the session signing key
 
 def test_instances_without_gui_jwt_secret_sign_with_one_stored_key(path, smo):
+    """Two instances started without `GUI_JWT_SECRET` begin with different random keys but, once started, use the one key stored in the database, so a session from one is accepted by the other.
+    """
     a, _, cfg_a = make_instance(path, smo)
     b, _, cfg_b = make_instance(path, smo)
     assert cfg_a.jwt_secret != cfg_b.jwt_secret                 # each starts with its own random value ...
@@ -63,6 +67,8 @@ def test_instances_without_gui_jwt_secret_sign_with_one_stored_key(path, smo):
 
 
 def test_a_restart_keeps_sessions_signed_with_the_stored_key(path, smo):
+    """A restarted instance still accepts a session issued before the restart, because the key is read from the database and not generated again.
+    """
     first, _, _ = make_instance(path, smo)
     with TestClient(first) as old:
         assert login(old).status_code == 200
@@ -74,6 +80,7 @@ def test_a_restart_keeps_sessions_signed_with_the_stored_key(path, smo):
 
 
 def test_an_explicit_gui_jwt_secret_is_used_as_is_and_stores_nothing(path, smo):
+    """When `GUI_JWT_SECRET` is set the instance uses it unchanged and writes no key to the database."""
     a, db, cfg = make_instance(path, smo, jwt_secret="operator-managed")
     with TestClient(a):
         assert cfg.jwt_secret == "operator-managed"
@@ -114,12 +121,14 @@ def run_racing(workers, work):
 
 
 def test_racing_instances_all_end_up_with_the_first_stored_value(path):
+    """Eight instances asking for the same setting at once all get one value, the first one stored."""
     dbs = [Database(f"sqlite:///{path}") for _ in range(8)]
     results = run_racing(8, lambda n: dbs[n].shared_setting("jwt_secret", f"candidate-{n}"))
     assert len(results) == 8 and len(set(results)) == 1
 
 
 def test_instances_starting_together_on_one_new_database_all_create_the_schema(path):
+    """Instances that start together on an empty database all manage to create the tables despite the check-then-create race."""
     results = run_racing(6, lambda n: Database(f"sqlite:///{path}").shared_setting("k", f"v{n}"))
     assert len(results) == 6 and len(set(results)) == 1
 
@@ -127,6 +136,7 @@ def test_instances_starting_together_on_one_new_database_all_create_the_schema(p
 # ---------------------------------------------------------------- the login lockout
 
 def test_failed_logins_count_across_instances(path, smo):
+    """Failures on two instances add up in the shared counter, so the lockout applies on both after five in all."""
     a, _, _ = make_instance(path, smo)
     b, _, _ = make_instance(path, smo)
     with TestClient(a) as client_a, TestClient(b) as client_b:
@@ -142,6 +152,7 @@ def test_failed_logins_count_across_instances(path, smo):
 
 
 def test_a_successful_login_on_one_instance_clears_the_count_for_all(path, smo):
+    """A successful sign-in on one instance resets the failure counter that the other instance sees."""
     a, _, _ = make_instance(path, smo)
     b, _, _ = make_instance(path, smo)
     with TestClient(a) as client_a, TestClient(b) as client_b:
@@ -163,6 +174,8 @@ def test_an_unknown_username_is_locked_exactly_like_a_real_one(path, smo):
 
 
 def test_the_counting_window_restarts_after_the_lockout_period(path):
+    """Once the window has passed the account is unlocked, and the next failure restarts the counter at one; clearing removes the row.
+    """
     db = Database(f"sqlite:///{path}")
     for n in range(5):
         db.record_login_failure("operator", 300, now=1000.0 + n)
@@ -178,6 +191,8 @@ def test_the_counting_window_restarts_after_the_lockout_period(path):
 
 
 def test_concurrent_failures_are_all_counted(path):
+    """Twelve failures recorded at the same moment from separate connections are all counted (the increment is done in SQL, not read and written back).
+    """
     dbs = [Database(f"sqlite:///{path}") for _ in range(12)]
     run_racing(12, lambda n: dbs[n].record_login_failure("operator", 300, now=1000.0))
     with Database(f"sqlite:///{path}").session() as s:
@@ -187,6 +202,8 @@ def test_concurrent_failures_are_all_counted(path):
 # ---------------------------------------------------------------- first-boot seeding
 
 def test_two_instances_seeding_one_empty_database_do_not_crash_and_leave_one_password_file(path, tmp_path, monkeypatch):
+    """Two instances that both found the user table empty and seed it at once do not crash, and the loser deletes the generated password file so the one left matches the stored admin.
+    """
     barrier = threading.Barrier(2, timeout=20)
     seen = threading.local()
     real_hash = main.hash_password
@@ -260,11 +277,15 @@ class Sme:
 
 
 def gateway(path, sme):
+    """Builds an `R1Gateway` on the fake SME over its own database object on the shared file; returns the gateway and the database.
+    """
     db = Database(f"sqlite:///{path}")
     return R1Gateway(R1, db, transport=httpx.MockTransport(sme.handler)), db
 
 
 def test_two_instances_onboarding_at_once_keep_one_invoker_and_offboard_the_duplicate(path):
+    """Two gateways registering at SME at the same moment keep one stored invoker identity, and the loser deletes the duplicate it registered.
+    """
     sme = Sme()
     (first, _), (second, db_second) = gateway(path, sme), gateway(path, sme)
 
@@ -299,6 +320,7 @@ def test_the_bff_presents_the_enrollment_secret_when_it_registers(path, monkeypa
 
 
 def test_without_a_secret_the_bff_sends_no_enrollment_header(path, monkeypatch):
+    """With no enrollment secret configured, the registration request carries no enrollment header."""
     monkeypatch.delenv("SMO_ENROLLMENT_SECRET", raising=False)
     monkeypatch.delenv("SMO_ENROLLMENT_SECRET_FILE", raising=False)
     sent = []
@@ -315,6 +337,8 @@ def test_without_a_secret_the_bff_sends_no_enrollment_header(path, monkeypatch):
 
 
 def test_an_invoker_sme_forgot_is_replaced_once_and_the_other_instance_adopts_it(path):
+    """When SME forgets the invoker, the instances register a replacement once between them and both end up using the stored one.
+    """
     sme = Sme()
     (first, _), (second, db) = gateway(path, sme), gateway(path, sme)
     asyncio.run(first.token())
@@ -364,12 +388,14 @@ def url(request, tmp_path):
 
 
 def test_the_stored_setting_is_one_value_under_a_race_on_either_database(url):
+    """The shared-setting race has one winner on SQLite and, when `SMO_TEST_POSTGRES_URL` is set, on Postgres."""
     dbs = [Database(url) for _ in range(8)]
     results = run_racing(8, lambda n: dbs[n].shared_setting("jwt_secret", f"candidate-{n}"))
     assert len(set(results)) == 1
 
 
 def test_no_failed_login_is_lost_under_a_race_on_either_database(url):
+    """Concurrent failure counting loses no failure on SQLite or Postgres."""
     dbs = [Database(url) for _ in range(12)]
     run_racing(12, lambda n: dbs[n].record_login_failure("operator", 300, now=1000.0))
     with dbs[0].session() as s:
@@ -377,6 +403,8 @@ def test_no_failed_login_is_lost_under_a_race_on_either_database(url):
 
 
 def test_the_sme_credential_has_one_first_writer_and_one_replacer_on_either_database(url):
+    """Of eight instances storing the SME credential at once exactly one wins, and of eight replacing a stale one exactly one wins, on SQLite and Postgres.
+    """
     dbs = [Database(url) for _ in range(8)]
     firsts = run_racing(8, lambda n: dbs[n].store_smo_credential(f"inv-{n}", "s"))
     assert sorted(firsts) == [False] * 7 + [True]

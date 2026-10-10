@@ -65,6 +65,9 @@ def _literal_path(node) -> str | None:
 
 
 def _is_r1_receiver(node) -> bool:
+    """True when the object a method is called on is an R1 client: a name from `RECEIVER_NAMES`, an attribute `_r1`, or a direct `R1Client(...)`
+    call.
+    """
     if isinstance(node, ast.Name):
         return node.id in RECEIVER_NAMES
     if isinstance(node, ast.Attribute):
@@ -138,6 +141,9 @@ def _resolve(spec: dict, schema: dict) -> dict:
 
 
 def _path_matches(template: str, path: str) -> bool:
+    """True when a call's path (with `{}` where a value is formatted in) matches an OpenAPI path template segment by segment; a placeholder may
+    stand for a literal segment of the template.
+    """
     t, p = template.strip("/").split("/"), path.strip("/").split("/")
     if len(t) != len(p):
         return False
@@ -153,6 +159,9 @@ def _path_matches(template: str, path: str) -> bool:
 
 
 def _query_params(spec: dict, path_item: dict, operation: dict) -> set[str]:
+    """The names of the query parameters an operation declares, from the path item and the operation, following references into the spec's
+    components.
+    """
     names = set()
     for param in path_item.get("parameters", []) + operation.get("parameters", []):
         if "$ref" in param:
@@ -217,6 +226,7 @@ def check_call(call: dict, routes: dict[str, str], specs: dict[str, dict]) -> li
 
 
 def source_files() -> list[Path]:
+    """The source files the consumer-call scan covers, from `SOURCE_GLOBS`, without tests and `node_modules`."""
     files = set()
     for pattern in SOURCE_GLOBS:
         files.update(SMO_ROOT.glob(pattern))
@@ -251,6 +261,9 @@ def real_run():
 
 
 def test_every_r1_call_matches_the_producers_spec(real_run, capsys):
+    """Every literal-path call through `R1Client` names a route prefix, path, method, query parameters and body fields that the producer's
+    committed spec has, except the waived ones, and the scan sees more than 100 calls.
+    """
     findings, checked, skipped, _ = real_run
     waived_keys = {key for key, _, _ in findings} & set(WAIVERS)
     unwaived = [f"{key} (line {line}): {problem}" for key, line, problem in findings if key not in WAIVERS]
@@ -262,6 +275,7 @@ def test_every_r1_call_matches_the_producers_spec(real_run, capsys):
 
 
 def test_no_stale_waivers(real_run):
+    """Every waiver still matches a finding and carries a reason, so a fixed call has its waiver removed."""
     findings = {key for key, _, _ in real_run[0]}
     stale = sorted(set(WAIVERS) - findings)
     assert not stale, f"waivers that match no finding (remove them from r1_consumer_waivers.json): {stale}"
@@ -275,6 +289,7 @@ def test_every_gateway_call_goes_through_an_r1_client_the_finder_knows(real_run)
 
 
 def test_the_routing_table_and_the_specs_line_up():
+    """The gateway's routing table has the known prefixes (`/dme-push` goes to DME) and every routed module has a spec to check calls against."""
     routes, specs = gateway_routes(), load_specs()
     assert {"/sme", "/nfo", "/ran-nf-oam", "/dme-push"} <= set(routes)
     assert routes["/dme-push"] == "dme"
@@ -296,10 +311,12 @@ def _findings(source: str, specs: dict | None = None):
 
 
 def test_seeded_snippet_clean_call_is_checked_and_dynamic_call_is_skipped():
+    """A correct call is checked and finds nothing, and a call whose path is not a literal is counted as skipped."""
     findings, checked, skipped, _ = _findings(SNIPPET_OK)
     assert (findings, checked, skipped) == ([], 1, 1)
 
 
+# One row per seeded snippet and the words its finding must contain.
 @pytest.mark.parametrize("snippet, expected", [
     ('_r1 = R1Client()\n_r1.get("/nosuch-module/x")', "not a gateway route prefix"),
     ('_r1 = R1Client()\n_r1.get("/nfo/no-such-route")', "no such path"),
@@ -311,11 +328,17 @@ def test_seeded_snippet_clean_call_is_checked_and_dynamic_call_is_skipped():
     ('R1Client().post("/focom/inventory".format(1))', "not this method"),
 ])
 def test_seeded_snippet_breaks_are_detected(snippet, expected):
+    """Each kind of mistake in a consumer call is reported: an unknown prefix, path or method, a field not in the request schema, a missing
+    required field and an undeclared query parameter, in a plain or an f-string or formatted path.
+    """
     findings = _findings(snippet)[0]
     assert findings and expected in findings[0][2], findings
 
 
 def test_seeded_snippet_spreads_and_open_schemas_are_not_flagged():
+    """A body built with `**spread` or a variable, and a route whose schema is open, are not flagged because nothing can be said about their
+    fields.
+    """
     findings, checked, _, _ = _findings('_r1 = R1Client()\n_r1.post("/nfo/descriptors", json={**base, "x": 1})\n'
                                         '_r1.post("/dme/production-capabilities", json=body)')
     assert findings == [] and checked == 2

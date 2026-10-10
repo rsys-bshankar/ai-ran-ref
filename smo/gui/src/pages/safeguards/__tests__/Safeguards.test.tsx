@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Tests of the Safeguards page (pages/safeguards): the per-rApp limits table and its approval-policy actions (AI-11.4), RBAC on them, the
+/** Tests of the Safeguards page (pages/safeguards): the per-rApp limits table and its approval-policy actions (AI-11.4, with one or two approvers), RBAC on them, the
  * one-call "Stop all rApp writes" (`PUT /rapp-mgmt/kill-all`) with its confirm and result, the admin's "Resume all", and the tabs. Run: `npx vitest run src/pages/safeguards`. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -63,6 +63,41 @@ describe("holding an rApp's changes for approval (AI-11.4)", () => {
     const put = calls.find((c) => c.method === "PUT")!;
     expect(put.path).toBe(`/smo/ran-nf-oam/rapp-approval-policy/${INVOKER}`);
     expect(put.body).toEqual({ timeoutSeconds: 1800, onTimeout: "REJECT" });          // who set it is pinned by the BFF
+  });
+
+  // The policy dialog defaults to one approval and sends `requiredApprovals: 2` only when two is chosen, so a policy left at one sends no such key.
+  it("lets an admin ask for two different people to approve, and sends nothing extra when it is left at one", async () => {
+    const calls = bff("admin");
+    await open();
+    await settle();
+    await click(byText(document.body, "button", "Approval…")!);
+    let dialog = document.querySelector("[role=dialog]") as HTMLElement;
+    const needed = dialog.querySelectorAll("select")[1] as HTMLSelectElement;
+    expect(needed.value).toBe("1");                                                                 // the default is the single approval
+    needed.value = "2";
+    needed.dispatchEvent(new Event("change", { bubbles: true }));
+    await click(byText(dialog, "button", "Hold for approval")!);
+    await settle();
+    expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ timeoutSeconds: 3600, onTimeout: "EXPIRE", requiredApprovals: 2 });
+    cleanup();
+    const second = bff("admin");
+    await open();
+    await settle();
+    await click(byText(document.body, "button", "Approval…")!);
+    dialog = document.querySelector("[role=dialog]") as HTMLElement;
+    await click(byText(dialog, "button", "Hold for approval")!);
+    await settle();
+    expect(second.find((c) => c.method === "PUT")!.body).toEqual({ timeoutSeconds: 3600, onTimeout: "EXPIRE" });       // no requiredApprovals key
+  });
+
+  // A policy with `requiredApprovals: 2` is described as needing two different people, and its dialog opens with two selected.
+  it("shows a policy that asks for two approvals, and opens its dialog with two selected", async () => {
+    bff("admin", { invokerId: INVOKER, timeoutSeconds: 3600, onTimeout: "EXPIRE", requiredApprovals: 2, setBy: "admin", updatedAt: "2026-10-09T00:00:00Z" });
+    const view = await open();
+    await settle();
+    expect(view.container.textContent).toContain("Held for approval · two different people must approve · lapses after 1 h (expires)");
+    await click(byText(document.body, "button", "Approval…")!);
+    expect(((document.querySelector("[role=dialog]") as HTMLElement).querySelectorAll("select")[1] as HTMLSelectElement).value).toBe("2");
   });
 
   // Pins down: refuses a timeout that is not a whole number of minutes in range, without calling.

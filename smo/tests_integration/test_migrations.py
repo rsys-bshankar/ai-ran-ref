@@ -21,7 +21,7 @@ MIGRATE = SMO_ROOT / "scripts" / "migrate.py"
 CHECK = SMO_ROOT / "scripts" / "check_migration_matches_models.py"
 ADMIN_URL = os.environ.get("SMO_TEST_POSTGRES_URL")
 needs_postgres = pytest.mark.skipif(not ADMIN_URL, reason="SMO_TEST_POSTGRES_URL not set")
-HEAD = "0036"         # raise this with every new revision: the tests below then check it is the head
+HEAD = "0038"         # raise this with every new revision: the tests below then check it is the head
 
 
 def _scripts() -> ScriptDirectory:
@@ -31,6 +31,7 @@ def _scripts() -> ScriptDirectory:
 
 
 def test_the_history_is_one_linear_chain_from_the_baseline():
+    """The migration history has one head and one root, `0001`, so two revisions that share a parent fail here and must be merged."""
     scripts = _scripts()
     assert len(scripts.get_heads()) == 1, "two revisions share a parent: merge them (alembic merge)"
     revisions = list(scripts.walk_revisions())          # head first
@@ -38,6 +39,9 @@ def test_the_history_is_one_linear_chain_from_the_baseline():
 
 
 def test_the_baseline_revision_runs_the_001_init_sql_file_unchanged():
+    """The baseline revision runs `001_init.sql` itself, so a database made by the compose initdb and one made by Alembic start from the same
+    schema.
+    """
     spec = importlib.util.spec_from_file_location("baseline", SMO_ROOT / "migrations" / "versions" / "0001_baseline.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -45,16 +49,21 @@ def test_the_baseline_revision_runs_the_001_init_sql_file_unchanged():
 
 
 def test_the_head_is_the_revision_these_tests_expect():
+    """The head revision is the one this file names in `HEAD`, which is a reminder to update the tests that depend on it when a revision is added."""
     assert _scripts().get_current_head() == HEAD, "a new revision: update HEAD here and add what it needs to the tests below"
 
 
 def test_every_revision_has_a_downgrade_or_says_it_cannot():
+    """Every revision defines a callable `downgrade`; the check is only that it exists, not what it does."""
     for revision in _scripts().walk_revisions():
         assert callable(getattr(revision.module, "downgrade", None)), revision.revision
 
 
 @pytest.fixture
 def databases():
+    """Two empty databases, one for a fresh migration and one for a hand-created (legacy) schema, dropped afterwards with their connections forced
+    closed.
+    """
     admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT")
     names = {kind: f"mig_{kind}_{uuid.uuid4().hex[:8]}" for kind in ("fresh", "legacy")}
     with admin.connect() as connection:
@@ -75,7 +84,7 @@ def _run(script: Path, url: str, *args: str) -> subprocess.CompletedProcess:
 def _schema(url: str) -> dict:
     """{(table, column): (type, nullable, default)}, plus the constraints (name and definition) and the indexes (name and definition), from the
     catalog, across every schema (a module's tables live in its own schema since PR-DB-2.5; a check on a status column is a constraint whose
-    definition changes, its name does not; a revision may add only an index, as 0036 does)."""
+    definition changes, its name does not; a revision may add only an index, as 0038 does)."""
     engine = create_engine(url)
     with engine.connect() as connection:
         columns = connection.execute(text(
@@ -94,6 +103,9 @@ def _schema(url: str) -> dict:
 
 @needs_postgres
 def test_a_fresh_database_and_a_hand_created_one_reach_the_same_schema(databases):
+    """A database migrated from empty and one created from `001_init.sql` (as compose does) and then migrated, which stamps it at `0001`, end with
+    identical schemas at the head. Needs Postgres.
+    """
     fresh = _run(MIGRATE, databases["fresh"])
     assert fresh.returncode == 0, fresh.stderr
     assert f"upgraded to {HEAD}" in fresh.stdout and "stamped" not in fresh.stdout
@@ -112,6 +124,7 @@ def test_a_fresh_database_and_a_hand_created_one_reach_the_same_schema(databases
 
 @needs_postgres
 def test_migrating_twice_is_a_no_op_and_never_restamps(databases):
+    """Running the migration again on a migrated database succeeds and does not stamp it again. Needs Postgres."""
     assert _run(MIGRATE, databases["fresh"]).returncode == 0
     again = _run(MIGRATE, databases["fresh"])
     assert again.returncode == 0 and "stamped" not in again.stdout
@@ -134,6 +147,9 @@ def test_a_database_at_a_later_revision_is_left_alone_by_this_images_migrate(dat
 
 @needs_postgres
 def test_the_models_check_passes_at_head_and_refuses_a_database_that_is_not(databases):
+    """The models-against-schema check passes on a migrated database and refuses one with no revision, telling the operator to run the migration
+    first. Needs Postgres.
+    """
     assert _run(MIGRATE, databases["fresh"]).returncode == 0
     ok = _run(CHECK, databases["fresh"])
     assert ok.returncode == 0, ok.stdout + ok.stderr
@@ -187,6 +203,7 @@ def _migrate_module():
     return module
 
 
+# One row per database revision (None for none) and whether it counts as current for an image whose head is 0020.
 @pytest.mark.parametrize("db, expected", [
     (None, False),                                  # no schema yet
     ("0001", False), ("0019", False),               # older than the image's head: wait for the migration
@@ -195,11 +212,15 @@ def _migrate_module():
     ("9999", True),
 ])
 def test_the_schema_is_current_when_the_database_is_at_or_past_the_head(db, expected):
+    """A schema is current when its revision is the image's head or later (a newer schema is fine for an older image during a rolling upgrade), and
+    not when there is none or it is older.
+    """
     assert _migrate_module().schema_is_current(db, ["0020", "0019", "0018", "0001"]) is expected
 
 
 @needs_postgres
 def test_wait_returns_when_the_schema_is_current_and_fails_when_it_is_not(databases):
+    """`--wait` fails (exit 1) when the database is empty or older than the head and succeeds once it is at the head. Needs Postgres."""
     url = databases["fresh"]
     assert _run(MIGRATE, url, "--wait", "1").returncode == 1                  # an empty database: no schema, the wait runs out
     assert _run(MIGRATE, url, "--revision", "0001").returncode == 0           # the baseline only: older than head

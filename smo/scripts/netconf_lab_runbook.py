@@ -25,7 +25,7 @@ from smo_shared.testing import make_test_engine
 
 from app.main import app
 from app.models import (ManagedObject, Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, MsacAccessRule, MsacIdentity, MsacRole, O1AdaptorEndpoint,
-                        O1AdaptorHostKey, OnboardingTemplate, ElementOnboarding, VendorCapability, WriteConfigJob, WriteConfigSubChange)
+                        O1AdaptorHostKey, OnboardingTemplate, ElementOnboarding, LifecycleSubscription, VendorCapability, WriteConfigJob, WriteConfigSubChange)
 
 ME = "SubNetwork=lab,ManagedElement=ME-1"
 CELL = "GNBDUFunction=1,NRCellDU=101"
@@ -33,19 +33,26 @@ failures: list[str] = []
 
 
 def check(name: str, ok: bool, detail: object = "") -> None:
+    """Prints one line per step (`ok` or `FAIL` with the detail) and records a failed step's name in `failures`, which decides the exit code."""
     print(f"{'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f" -- {detail}"))
     if not ok:
         failures.append(name)
 
 
 def main() -> int:
+    """Runs runbook section 7 against the lab NETCONF server and returns the process exit code (0 when every step holds, 1 otherwise).
+
+    Builds an in-memory RAN NF OAM (its own SQLite engine and the route app through TestClient); `argv[1]` is the server's host:port (default
+    127.0.0.1:8830). It pins the server's host key from the file `NETCONF_SSH_KNOWN_HOSTS` names and then removes that variable from the
+    environment, so later steps prove the pinned key is what establishes trust. It writes values to the server and puts the seeded ones back.
+    """
     hostport = sys.argv[1] if len(sys.argv) > 1 else "127.0.0.1:8830"
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
         WriteConfigSubChange.__table__, CMSnapshot.__table__, VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__,
         MsacAccessRule.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__, ManagedObject.__table__, O1AdaptorHostKey.__table__,
-        OnboardingTemplate.__table__, ElementOnboarding.__table__])         # registering an element looks for an onboarding template (PR-MGT-14)
+        OnboardingTemplate.__table__, ElementOnboarding.__table__, LifecycleSubscription.__table__])         # registering an element looks for an onboarding template, and a failed onboarding for its subscribers (PR-MGT-14)
     factory = sessionmaker(bind=engine)
 
     def session():

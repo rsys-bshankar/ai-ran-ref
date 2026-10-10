@@ -68,7 +68,7 @@ Route: /alarms    Owner: <team>    Design: canvas board "Alarms · at scale"
 | `flows/` | `FlowList`, `FleetFunnel`, `SubjectPicker`, `SequenceLanes`, `StepTimeline`, `FlowActions`. One route per flow (`/flows/01` … `/flows/10`) driven by the `FLOWS` catalogue; per-flow data in `flows/data/flowNN.ts` (sources and funnel aggregate); evaluators stay in `lib/flows.ts` |
 | `rapps/` | `SummaryTiles`, `PinnedAttention`, `FacetPanel`, `InstanceTable` (+ `BulkBar`), `PackagesTable`, `Rollouts`, `Directory` |
 | `rapp-detail/` | `Header` (autonomy, pin, stop), `KpiTiles`, `CellStateDistribution`, `CellsInScope`, **`LifecycleFlows`** (flows 01, 06, 07 and the rApp's model flow 02), `LifecycleHistory`, `RecentDecisions`, `Safeguards`, `InstanceState`, `KpisReported`, `Faults`, `DeclaredPages` |
-| `approvals/` | `Queue` (grouped/flat, filters), `GroupActions`, `Detail`, `ImpactTiles`, `ChangeDiff` (summary + paged diff), `Rationale`, `DecisionBox`, `Decided` |
+| `approvals/` | `Queue` (grouped/flat, filters), `GroupActions`, `Detail`, `ImpactTiles`, `ChangeDiff` (summary + paged diff), `Votes` (two-person approval), `Rationale`, `DecisionBox`, `Decided` |
 | `decisions/` | `FilterBar`, `SummaryTiles`, `DecisionTable`, `DecisionChain`, `Integrity`, `ExportJob` |
 | `safeguards/` | `SummaryTiles`, `LimitsTable` (+ bulk hold/stop), `GlobalStop`, `Refusals`, `Watchers` |
 | `aiml/` | `StageBoard` (counts + top-N per stage), `ModelSearch`, `ModelDetail`, `GuardKpiChart`, `TrainingJobs`, `Governance`, `InferenceJobs`, plus one section per tab (feature groups, coordination, MLMF) |
@@ -82,8 +82,8 @@ Route: /alarms    Owner: <team>    Design: canvas board "Alarms · at scale"
 | `login/` | `BrandPanel`, `SignInForm` |
 | `topology/` | `RelationTiles`, `NeighbourGraph` (focus one element, ≤ 200 nodes), `RelationCheck`, `ElementSummary`, `ProblemRelations` |
 | `element/` | `Header`, `Overview`, `ConfigHistory`, `SnapshotDiff`, `MoTree`, `MoAttributes`, `CellGuards`, `GuardEditor` |
-| `configuration/` | `JobList`, `StagedJob` (waves, controls), `KpiGuard`, `NewJobForm`, `Vendors`, `CmSchemas`, `HostKeys`, `ElementOnboarding` |
-| `software/` | `CampaignTiles`, `CampaignList`, `CampaignDetail` (waves, gate, controls, events), `CampaignElements`, `ElementJobs`, `NewCampaignForm` |
+| `configuration/` | `JobList`, `StagedJob` (waves, controls), `KpiGuard`, `NewJobForm`, `Vendors`, `CmSchemas`, `HostKeys`, `OnboardingTemplates`, `ElementOnboarding` (+ `OnboardingDialogs`), the shared `LifecycleWatchers` |
+| `software/` | `CampaignTiles`, `CampaignList`, `CampaignDetail` (waves, gate, controls, events), `CampaignElements`, `ElementJobs`, `NewCampaignForm`, `LifecycleWatchers` (failure notices; also on Configuration → Element onboarding) |
 | `preferences/` | `ThemePicker`, `AccentPicker`, `TextSize`, `DisplayDefaults`, `LivePreview`, `SaveBar`; data via `data/queries.ts` → `/api/me/preferences`; applied by `shell/ThemeProvider.tsx` |
 
 ## 5. Migrating from today's files

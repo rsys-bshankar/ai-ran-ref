@@ -1,16 +1,22 @@
-/** Configuration · element onboarding (`configuration.onboarding`): new elements on their way from discovered to configured, paged by the
- * server (`GET /element-onboarding?status=&software_check=`): which template was selected, the software check against its baseline, and the
- * config job that applied it. "Select template" (`POST /{me}/select`, match again) and "Apply" (`POST /{me}/apply`, write the template as a
- * config job) are operator actions, role-gated `ActionButton`s (the BFF sets `requestedBy`). */
+/** Configuration · element onboarding (`configuration.onboarding`, MGT-14.6): new elements on their way from discovered to configured, paged by the
+ * server (`GET /element-onboarding?status=&software_check=`): which template was selected, the software check against its baseline, why one
+ * failed, and the config job that applied it. Row buttons follow RAN NF OAM's state machine (`onboardingActions` in lib/lifecycle.ts): **Apply**
+ * once a template is selected and **Apply again** after a success or a failure (`POST /{me}/apply`, with the software version the element runs),
+ * **Select…** wherever the template is not being written (`POST /{me}/select`, best match or a named template); "Select a template for an
+ * element…" covers an element that has no row yet. They are operator actions, role-gated with `Can` (the BFF sets `requestedBy`). A row click
+ * opens the detail drawer. The dialogs are in OnboardingDialogs.tsx. */
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { ActionButton, Card, Id, StateBadge, type Column } from "../../../components/ui";
+import type { ElementOnboarding as Onboarding } from "../../../api/types";
+import { Can, Card, Id, StateBadge, type Column } from "../../../components/ui";
 import { Badge } from "../../../kit/Badge";
 import { ServerTable } from "../../../kit/ServerTable";
 import { MiniSteps, type StepState } from "../../../kit/Timeline";
-import { elementHref, type Onboarding } from "../../element/data/types";
+import { ONBOARDING_MEANING, onboardingActions } from "../../../lib/lifecycle";
+import { elementHref } from "../../element/data/types";
 import { ONBOARDING_PATH, onboardingPath } from "../data/queries";
+import { ApplyModal, OnboardingDrawer, SelectModal } from "./OnboardingDialogs";
 
 const STATES = ["DISCOVERED", "NO_TEMPLATE", "TEMPLATE_SELECTED", "APPLYING", "ONBOARDED", "FAILED"];
 
@@ -26,30 +32,43 @@ function steps(status: string): StepState[] {
 /** The tone of a software check. */
 const CHECK_TONE: Record<string, "ok" | "bad" | "mute"> = { MATCH: "ok", MISMATCH: "bad", NOT_CHECKED: "mute" };
 
-/** The table's columns. */
-const COLUMNS: Column<Onboarding>[] = [
-  { header: "Element", render: (o) => <Link to={elementHref(o.managedElementRef)}>{o.managedElementRef}</Link> },
-  { header: "Template", render: (o) => (o.templateName ? <span className="mono small">{o.templateName}</span> : <span className="muted">—</span>) },
-  { header: "Software check", render: (o) => (
-    <span className="row wrap"><Badge tone={CHECK_TONE[o.softwareCheck ?? ""] ?? "mute"}>{o.softwareCheck ?? "NOT_CHECKED"}</Badge>
-      {o.softwareVersion && <span className="small mono">{o.softwareVersion}{o.softwareBaseline ? ` / baseline ${o.softwareBaseline}` : ""}</span>}</span>
-  ) },
-  { header: "Progress", render: (o) => <MiniSteps states={steps(o.status)} label={`discovered, selected, applying, onboarded: ${o.status}`} /> },
-  { header: "Status", render: (o) => <span className="row wrap"><StateBadge state={o.status} />{o.detail && <span className="small muted" title={o.detail}>{o.detail.slice(0, 60)}</span>}</span> },
-  { header: "Config job", render: (o) => (o.configJobId ? <Link to={`/configuration?job=${o.configJobId}#jobs`}><Id value={o.configJobId} /></Link> : <span className="muted">—</span>) },
-  { header: "", className: "actions", render: (o) => (
-    <span className="row">
-      {o.status !== "APPLYING" && o.status !== "ONBOARDED" && <ActionButton label="Select template" action={{ method: "POST", path: onboardingPath(o.managedElementRef, "select"), json: {}, success: "Template matched again" }} />}
-      {o.status === "TEMPLATE_SELECTED" && <ActionButton label="Apply" tone="primary" confirm={`Write template ${o.templateName ?? ""} to ${o.managedElementRef} as a config job?`}
-        action={{ method: "POST", path: onboardingPath(o.managedElementRef, "apply"), json: {}, success: "Template applied" }} />}
-    </span>
-  ) },
-];
+/** What a row's buttons open: the apply dialog, the select dialog, or nothing. */
+type Opened = { kind: "apply"; row: Onboarding } | { kind: "select"; element: string | null } | null;
 
-/** The card. */
+/** The table's columns; `open` opens a row's dialog (the clicks do not also open the row's drawer). */
+function columns(open: (o: Opened) => void): Column<Onboarding>[] {
+  return [
+    { header: "Element", render: (o) => <Link to={elementHref(o.managedElementRef)} onClick={(e) => e.stopPropagation()}>{o.managedElementRef}</Link> },
+    { header: "Template", render: (o) => (o.templateName ? <span className="mono small">{o.templateName}</span> : <span className="muted">—</span>) },
+    { header: "Software check", render: (o) => (
+      <span className="row wrap"><Badge tone={CHECK_TONE[o.softwareCheck ?? ""] ?? "mute"}>{o.softwareCheck ?? "NOT_CHECKED"}</Badge>
+        <span className="small mono">{o.softwareVersion ?? <span className="muted">not reported</span>}{o.softwareBaseline ? ` / baseline ${o.softwareBaseline}` : ""}</span></span>
+    ) },
+    { header: "Progress", render: (o) => <MiniSteps states={steps(o.status)} label={`discovered, selected, applying, onboarded: ${o.status}`} /> },
+    { header: "Status", render: (o) => <span className="row wrap"><span title={ONBOARDING_MEANING[o.status]}><StateBadge state={o.status} /></span>{o.detail && <span className="small muted" title={o.detail}>{o.detail.length > 70 ? `${o.detail.slice(0, 70)}…` : o.detail}</span>}</span> },
+    { header: "Config job", render: (o) => (o.configJobId ? <Link to={`/configuration?job=${o.configJobId}#jobs`} onClick={(e) => e.stopPropagation()}><Id value={o.configJobId} /></Link> : <span className="muted">—</span>) },
+    { header: "", className: "actions", render: (o) => {
+      const allowed = onboardingActions(o.status);
+      return (
+        <span className="row">
+          {allowed.apply && <Can method="POST" path={onboardingPath(o.managedElementRef, "apply")}>
+            <button type="button" className="btn primary small" onClick={(e) => { e.stopPropagation(); open({ kind: "apply", row: o }); }}>{o.status === "TEMPLATE_SELECTED" ? "Apply" : "Apply again"}</button>
+          </Can>}
+          {allowed.select && <Can method="POST" path={onboardingPath(o.managedElementRef, "select")}>
+            <button type="button" className="btn small" onClick={(e) => { e.stopPropagation(); open({ kind: "select", element: o.managedElementRef }); }}>Select…</button>
+          </Can>}
+        </span>
+      );
+    } },
+  ];
+}
+
+/** The card: filters, the server-paged table, and the dialog or drawer a row opened. */
 export function ElementOnboarding() {
   const [status, setStatus] = useState("");
   const [check, setCheck] = useState("");
+  const [opened, setOpened] = useState<Opened>(null);
+  const [detail, setDetail] = useState<Onboarding | null>(null);
   const query = { ...(status ? { status } : {}), ...(check ? { software_check: check } : {}) };
   return (
     <Card section="configuration.onboarding" title="Element onboarding" sub="new elements: discovered → template selected → applied"
@@ -58,9 +77,18 @@ export function ElementOnboarding() {
           <option value="">All</option>{STATES.map((s) => <option key={s}>{s}</option>)}</select></label>
         <label className="row small">Software<select aria-label="Software check" value={check} onChange={(e) => setCheck(e.target.value)}>
           <option value="">All</option>{["MATCH", "MISMATCH", "NOT_CHECKED"].map((s) => <option key={s}>{s}</option>)}</select></label>
+        <Can method="POST" path={onboardingPath("any", "select")}>
+          <button type="button" className="btn" onClick={() => setOpened({ kind: "select", element: null })}>Select a template for an element…</button>
+        </Can>
       </>}>
-      <ServerTable<Onboarding> path={ONBOARDING_PATH} query={query} columns={COLUMNS} rowKey={(o) => o.managedElementRef}
-        empty="No element is being onboarded through a template." />
+      <p className="muted small">
+        One row for each element that registered while a template existed, or that an operator selected a template for. A flagged software version does not stop an onboarding unless the template requires the baseline.
+      </p>
+      <ServerTable<Onboarding> path={ONBOARDING_PATH} query={query} columns={columns(setOpened)} rowKey={(o) => o.managedElementRef} onRowClick={setDetail}
+        empty="No element has been matched against a template." />
+      {opened?.kind === "apply" && <ApplyModal row={opened.row} onClose={() => setOpened(null)} />}
+      {opened?.kind === "select" && <SelectModal element={opened.element} onClose={() => setOpened(null)} />}
+      {detail && <OnboardingDrawer row={detail} onClose={() => setDetail(null)} />}
     </Card>
   );
 }

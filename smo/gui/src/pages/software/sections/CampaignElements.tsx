@@ -1,10 +1,11 @@
 /** Software · elements of a wave (`software.elements`): the elements of the selected campaign's chosen wave from its report, with each one's
- * software job (phase, status, whether a revert undid it). The job opens its flow-19 board (`/flows/19?subject=<job>`), the element its
+ * software job (phase, status, "timed out" when the job timeout failed it, whether a revert undid it). The job opens its flow-19 board (`/flows/19?subject=<job>`), the element its
  * Element detail page. Elements of a wave that has not started have no job yet. Paged 50 at a time (a wave is at most `waveSize` elements). */
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Card, DataTable, Id, StateBadge } from "../../../components/ui";
+import { Badge } from "../../../kit/Badge";
 import { Pager } from "../../../kit/Pager";
 import { Empty } from "../../../kit/states";
 import { elementHref } from "../../element/data/types";
@@ -37,7 +38,7 @@ export function CampaignElements() {
             { header: "Element", render: (r) => <Link to={elementHref(r.me)}>{r.me}</Link> },
             { header: "Job", render: (r) => (r.job ? <Link to={flow19Href(r.job.jobId)} title="Open its flow-19 board"><Id value={r.job.jobId} /></Link> : <span className="muted">not started</span>) },
             { header: "Phase", render: (r) => r.job?.phase ?? "—" },
-            { header: "Status", render: (r) => (r.job ? <StateBadge state={r.job.status} /> : <span className="muted">—</span>) },
+            { header: "Status", render: (r) => (r.job ? <span className="row wrap"><StateBadge state={r.job.status} />{r.job.timedOut && <Badge tone="bad" title="The element did not report in time (the campaign's job timeout)">timed out</Badge>}</span> : <span className="muted">—</span>) },
             { header: "Revert", render: (r) => (r.job?.revert ? <StateBadge state={r.job.revert} /> : <span className="muted">—</span>) },
           ]} />
           <Pager offset={offset} limit={PAGE} shown={rows.slice(offset, offset + PAGE).length} total={rows.length} onOffset={setOffset} />

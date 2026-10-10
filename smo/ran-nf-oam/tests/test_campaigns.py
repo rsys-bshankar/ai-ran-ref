@@ -58,6 +58,9 @@ def _complete(client, job_id):
 
 
 def _run_wave(client, cid, wave, fail=()):
+    """Drives every software job of `wave` to its end: each job completes, except those of the elements in `fail`, which fail in their current
+    phase.
+    """
     for job in _wave_jobs(client, cid, wave):
         if job["managedElementRef"] in fail:
             _step(client, job["jobId"], ok=False)
@@ -78,6 +81,7 @@ def _events(client, cid):
 # ---- 15.1 the campaign and its jobs
 
 def test_a_campaign_without_waves_starts_every_job_and_completes_when_they_all_have(client, fleet):
+    """A campaign without a wave size starts one job per element at once and completes only when every job has ended."""
     cid = _campaign(client)
     view = _view(client, cid)
     assert view["status"] == "RUNNING" and view["wave"] == 1 and view["waveCount"] == 1 and view["elements"] == ELEMENTS and view["softwareVersion"] == "3.0"
@@ -93,6 +97,7 @@ def test_a_campaign_without_waves_starts_every_job_and_completes_when_they_all_h
 
 
 def test_the_software_job_list_shows_the_campaign_of_a_job_and_leaves_other_jobs_as_they_were(client, fleet):
+    """The software job list shows the campaign and wave of a campaign's jobs and nothing extra for a job started the old way."""
     plain = client.post("/software-management-jobs", params={"managed_element_ref": "ME-1"}).json()
     _complete(client, plain["jobId"])                                          # a job started the old way, advanced the old way
     cid = _campaign(client, ["ME-2"])
@@ -102,6 +107,7 @@ def test_the_software_job_list_shows_the_campaign_of_a_job_and_leaves_other_jobs
 
 
 def test_waves_run_one_after_the_other_and_the_next_starts_by_itself(client, fleet):
+    """Waves run in order: the next wave starts by itself when the previous one's jobs have all ended, and the campaign completes after the last."""
     cid = _campaign(client, waveSize=2)
     view = _view(client, cid)
     assert view["waveCount"] == 2 and view["wave"] == 1
@@ -116,6 +122,7 @@ def test_waves_run_one_after_the_other_and_the_next_starts_by_itself(client, fle
 
 
 def test_elements_can_be_selected_by_entity_type_vendor_region_and_tenant(client, fleet):
+    """A selector picks the elements matching every key it names (entity type, vendor, region, tenant), in reference order."""
     with fleet["db"]() as db:
         for ref, (region, tenant, vendor) in {"ME-1": ("eu", "acme", "v1"), "ME-2": ("eu", "globex", "v1"), "ME-3": ("us", "acme", "v2"), "ME-4": ("eu", "acme", "v2")}.items():
             row = db.get(ManagedEntity, ref)
@@ -136,6 +143,9 @@ def test_elements_can_be_selected_by_entity_type_vendor_region_and_tenant(client
 
 
 def test_an_invalid_request_is_refused_and_starts_nothing(client, fleet):
+    """A request with neither or both ways of naming elements, an empty selector or list, a bad wave size, unknown or unregistered elements is
+    refused and no job is started.
+    """
     def refused(**body):
         resp = client.post("/software-campaigns", json={"requestedBy": "a", "name": "n", **body})
         assert resp.status_code in (409, 422), resp.text
@@ -161,6 +171,7 @@ def test_an_invalid_request_is_refused_and_starts_nothing(client, fleet):
 
 
 def test_selecting_skips_elements_without_a_software_service_and_an_oversized_selection_is_refused(client, fleet, monkeypatch):
+    """A selector skips elements whose vendor lacks the SWM service, and a selection above the element limit is refused (422, narrow it)."""
     with fleet["db"]() as db:
         db.add(VendorCapability(vendor_name="nosw", supported_services=["PROV"], conformance_mode="SPEC", supported_vendor_modes=["O1_NETCONF"]))
         db.get(ManagedEntity, "ME-2").vendor_name = "nosw"
@@ -173,6 +184,7 @@ def test_selecting_skips_elements_without_a_software_service_and_an_oversized_se
 
 
 def test_an_element_that_already_has_a_software_job_running_is_refused(client, fleet):
+    """An element that already has a software job in flight, from a manual job or another campaign, is 409 and the campaign is not started."""
     client.post("/software-management-jobs", params={"managed_element_ref": "ME-3"})
     busy = _create(client)
     assert busy.status_code == 409 and "ME-3" in busy.json()["detail"]["detail"]
@@ -182,12 +194,14 @@ def test_an_element_that_already_has_a_software_job_running_is_refused(client, f
 
 
 def test_a_dry_run_works_out_the_waves_and_starts_nothing(client, fleet):
+    """A dry run answers 200 with the waves it would run and creates no campaign or job."""
     resp = _create(client, waveSize=3, dryRun=True)
     assert resp.status_code == 200 and resp.json() == {"dryRun": True, "status": "VALIDATED", "waveCount": 2, "waves": [["ME-1", "ME-2", "ME-3"], ["ME-4"]]}
     assert client.get("/software-campaigns").json()["items"] == [] and client.get("/software-management-jobs").json()["items"] == []
 
 
 def test_the_same_request_with_the_same_idempotency_key_is_one_campaign(client, fleet):
+    """Repeating a campaign request with the same Idempotency-Key gives the same answer and one campaign."""
     headers = {"Idempotency-Key": str(uuid.uuid4())}
     body = {"requestedBy": "a", "name": "n", "managedElementRefs": ["ME-1"]}
     first, second = (client.post("/software-campaigns", json=body, headers=headers) for _ in range(2))
@@ -196,6 +210,7 @@ def test_the_same_request_with_the_same_idempotency_key_is_one_campaign(client, 
 
 
 def test_list_get_and_the_unknown_campaign(client, fleet):
+    """Campaigns can be listed (and filtered by status; a bad status is 422) and read, and an unknown campaign is 404 on every route."""
     a = _campaign(client, ["ME-1"])
     b = _campaign(client, ["ME-2"])
     _step(client, _wave_jobs(client, b, 1)[0]["jobId"], ok=False)
@@ -212,6 +227,7 @@ def test_list_get_and_the_unknown_campaign(client, fleet):
 # ---- 15.2 the health gate
 
 def test_a_failed_job_fails_the_gate_and_halts_the_campaign_before_the_next_wave(client, fleet):
+    """A failed job fails the wave's gate: the campaign halts with GATE_FAILED, its detail names the job and the next wave never starts."""
     cid = _campaign(client, waveSize=2)
     _run_wave(client, cid, 1, fail={"ME-2"})
     view = _view(client, cid)
@@ -222,6 +238,7 @@ def test_a_failed_job_fails_the_gate_and_halts_the_campaign_before_the_next_wave
 
 
 def test_new_critical_or_major_alarms_on_the_wave_fail_the_gate_up_to_the_limit(client, fleet):
+    """New critical or major alarms on the wave's elements fail the gate; older ones, minor ones and other waves' elements are not counted."""
     cid = _campaign(client, waveSize=2)
     _alarm(fleet, "ME-1", "major", hours=-1)                                    # there before the wave: not new
     _alarm(fleet, "ME-1", "minor")                                              # not severe
@@ -236,6 +253,7 @@ def test_new_critical_or_major_alarms_on_the_wave_fail_the_gate_up_to_the_limit(
 
 
 def test_the_alarm_limit_is_the_operators(client, fleet):
+    """`gateMaxNewAlarms` sets how many new severe alarms a wave may raise before its gate fails."""
     cid = _campaign(client, waveSize=2, gateMaxNewAlarms=1)
     _alarm(fleet, "ME-1", "major")
     _run_wave(client, cid, 1)
@@ -247,6 +265,9 @@ def test_the_alarm_limit_is_the_operators(client, fleet):
 
 
 def test_continuing_after_a_failed_gate_is_the_operators_decision_to_go_on(client, fleet):
+    """After a failed gate an explicit continue goes on with the next wave and is recorded with who did it; a finished campaign cannot be continued
+    (409).
+    """
     cid = _campaign(client, waveSize=2)
     _run_wave(client, cid, 1, fail={"ME-1"})
     resumed = client.post(f"/software-campaigns/{cid}/continue", json={"requestedBy": "bob"})
@@ -259,6 +280,7 @@ def test_continuing_after_a_failed_gate_is_the_operators_decision_to_go_on(clien
 
 
 def test_continuing_after_a_failed_gate_on_the_last_wave_ends_the_campaign(client, fleet):
+    """Continuing after a failed gate on the last wave completes the campaign, and the report still lists the failed job as needing attention."""
     cid = _campaign(client)
     _run_wave(client, cid, 1, fail={"ME-1"})
     assert _view(client, cid)["status"] == "HALTED"
@@ -268,6 +290,9 @@ def test_continuing_after_a_failed_gate_on_the_last_wave_ends_the_campaign(clien
 
 
 def test_a_pause_between_waves_holds_the_campaign_until_it_has_elapsed(client, fleet, db_session_factory):
+    """A wave pause halts the campaign as WAVE_PAUSE; continuing early is 409 WAVE_PAUSE_NOT_ELAPSED unless forced, and the sweep does nothing
+    before the time.
+    """
     cid = _campaign(client, waveSize=2, wavePauseSeconds=3600)
     _run_wave(client, cid, 1)
     view = _view(client, cid)
@@ -280,6 +305,7 @@ def test_a_pause_between_waves_holds_the_campaign_until_it_has_elapsed(client, f
 
 
 def test_the_sweep_continues_a_campaign_whose_pause_has_elapsed(client, fleet, db_session_factory):
+    """The sweep continues a campaign whose pause has elapsed, once."""
     cid = _campaign(client, waveSize=2, wavePauseSeconds=3600)
     _run_wave(client, cid, 1)
     with db_session_factory() as db:
@@ -291,6 +317,7 @@ def test_the_sweep_continues_a_campaign_whose_pause_has_elapsed(client, fleet, d
 
 
 def test_the_sweep_catches_up_a_campaign_whose_jobs_ended_while_nobody_was_looking(client, fleet, db_session_factory):
+    """The sweep moves on a campaign whose jobs ended without any request advancing the campaign."""
     cid = _campaign(client, waveSize=2)
     with db_session_factory() as db:
         for job in db.scalars(select(SoftwareManagementJob).where(SoftwareManagementJob.campaign_id == uuid.UUID(cid))).all():
@@ -302,6 +329,9 @@ def test_the_sweep_catches_up_a_campaign_whose_jobs_ended_while_nobody_was_looki
 
 
 def test_an_operator_halt_stops_the_next_wave_and_continue_runs_the_gate_then(client, fleet):
+    """An operator halt lets the jobs in flight finish but stops the next wave; halting again changes nothing, and continue then runs the gate and
+    the next wave.
+    """
     cid = _campaign(client, waveSize=2)
     halted = client.post(f"/software-campaigns/{cid}/halt", json={"requestedBy": "bob"})
     assert halted.json()["status"] == "HALTED" and halted.json()["haltedReason"] == "OPERATOR_HALT"
@@ -312,6 +342,7 @@ def test_an_operator_halt_stops_the_next_wave_and_continue_runs_the_gate_then(cl
 
 
 def test_an_operator_halt_while_the_wave_is_still_running_waits_for_it_on_continue(client, fleet):
+    """Continuing an operator-halted campaign whose jobs have not ended leaves it RUNNING until they end."""
     cid = _campaign(client)
     client.post(f"/software-campaigns/{cid}/halt", json={"requestedBy": "bob"})
     assert client.post(f"/software-campaigns/{cid}/continue", json={"requestedBy": "bob"}).json()["status"] == "RUNNING"    # jobs not ended: still running
@@ -320,6 +351,7 @@ def test_an_operator_halt_while_the_wave_is_still_running_waits_for_it_on_contin
 
 
 def test_halting_a_pause_makes_it_an_operator_halt_and_halting_an_ended_campaign_is_refused(client, fleet):
+    """Halting a campaign held by its pause turns it into an operator halt that the sweep no longer continues."""
     cid = _campaign(client, waveSize=2, wavePauseSeconds=3600)
     _run_wave(client, cid, 1)
     assert client.post(f"/software-campaigns/{cid}/halt", json={"requestedBy": "bob"}).json()["haltedReason"] == "OPERATOR_HALT"
@@ -328,6 +360,7 @@ def test_halting_a_pause_makes_it_an_operator_halt_and_halting_an_ended_campaign
 
 
 def test_a_campaign_that_ended_cannot_be_halted_continued_or_aborted(client, fleet):
+    """Halt, continue and abort on an ended campaign are 409 LIFECYCLE_ILLEGAL_TRANSITION."""
     cid = _campaign(client, ["ME-1"])
     _run_wave(client, cid, 1)
     for action in ("halt", "continue", "abort"):
@@ -336,6 +369,7 @@ def test_a_campaign_that_ended_cannot_be_halted_continued_or_aborted(client, fle
 
 
 def test_abort_ends_a_halted_campaign_and_the_report_says_which_elements_were_never_reached(client, fleet):
+    """Abort ends a halted campaign and the report lists the failed and the never-reached elements as needing attention."""
     cid = _campaign(client, waveSize=2)
     _run_wave(client, cid, 1, fail={"ME-2"})
     aborted = client.post(f"/software-campaigns/{cid}/abort", json={"requestedBy": "bob"})
@@ -354,6 +388,9 @@ def _reverts(client, cid):
 
 
 def test_a_failed_gate_can_undo_what_the_campaign_did_by_itself(client, fleet):
+    """With `onGateFailure: rollback` a failed gate starts a rollback of only the jobs that completed, and the campaign ends ROLLED_BACK when the
+    revert jobs have.
+    """
     cid = _campaign(client, waveSize=2, onGateFailure="rollback")
     _run_wave(client, cid, 1, fail={"ME-2"})
     assert _view(client, cid)["status"] == "ROLLING_BACK"
@@ -370,6 +407,9 @@ def test_a_failed_gate_can_undo_what_the_campaign_did_by_itself(client, fleet):
 
 
 def test_an_operator_can_roll_back_a_completed_campaign_and_a_failed_revert_can_be_retried(client, fleet):
+    """An operator can roll back a completed campaign (one revert job per completed job); if a revert fails the campaign is ROLLBACK_FAILED and
+    rolling back again retries only what is not undone.
+    """
     cid = _campaign(client, waveSize=2)
     _run_wave(client, cid, 1)
     _run_wave(client, cid, 2)
@@ -395,6 +435,7 @@ def test_an_operator_can_roll_back_a_completed_campaign_and_a_failed_revert_can_
 
 
 def test_a_halted_campaign_can_be_rolled_back_and_one_with_nothing_completed_is_rolled_back_at_once(client, fleet):
+    """A halted campaign can be rolled back, and one with nothing completed is ROLLED_BACK at once with no revert job."""
     cid = _campaign(client, waveSize=2)
     _run_wave(client, cid, 1, fail={"ME-1", "ME-2"})
     assert _view(client, cid)["status"] == "HALTED"
@@ -404,6 +445,7 @@ def test_a_halted_campaign_can_be_rolled_back_and_one_with_nothing_completed_is_
 
 
 def test_rollback_waits_for_running_jobs_and_is_refused_in_the_wrong_state(client, fleet):
+    """A rollback is 422 ROLLBACK_NOT_POSSIBLE while a job is still running, and 409 from a RUNNING campaign."""
     cid = _campaign(client, waveSize=2)
     halted = client.post(f"/software-campaigns/{cid}/halt", json={"requestedBy": "bob"})
     assert halted.status_code == 200
@@ -415,6 +457,7 @@ def test_rollback_waits_for_running_jobs_and_is_refused_in_the_wrong_state(clien
 
 
 def test_the_campaign_fsm_has_the_documented_edges():
+    """The campaign state machine has the documented transitions and refuses the others."""
     fire = CAMPAIGN_FSM.fire
     S, E = CampaignState, CampaignEvent
     assert fire(S.PENDING, E.START) == S.RUNNING and fire(S.RUNNING, E.HALT) == S.HALTED and fire(S.HALTED, E.RESUME) == S.RUNNING
@@ -430,6 +473,7 @@ def test_the_campaign_fsm_has_the_documented_edges():
 # ---- 15.4 the report
 
 def test_the_report_gives_the_outcome_per_wave_and_element(client, fleet):
+    """The report gives the totals and, per wave and element, the job, its phase and status and whether a revert undid it."""
     cid = _campaign(client, waveSize=2)
     jobs = _wave_jobs(client, cid, 1)
     _complete(client, jobs[0]["jobId"])
@@ -451,6 +495,9 @@ def _scoped(region):
 
 
 def test_a_scoped_caller_starts_sees_and_drives_only_campaigns_inside_its_scope(client, fleet):
+    """A scoped caller cannot name elements outside its scope (403), a selector selects only its own, and it sees and drives only campaigns wholly
+    inside its scope.
+    """
     with fleet["db"]() as db:
         for ref, region in {"ME-1": "eu", "ME-2": "eu", "ME-3": "us", "ME-4": "us"}.items():
             db.get(ManagedEntity, ref).region = region
@@ -474,6 +521,7 @@ def test_a_scoped_caller_starts_sees_and_drives_only_campaigns_inside_its_scope(
 # ---- concurrency
 
 def test_a_campaign_moved_by_another_request_while_a_job_advances_leaves_the_job_advance_standing(client, fleet):
+    """If another request moves the campaign while a job advances, the job's advance stands (200) and the sweep brings the campaign up to date."""
     cid = _campaign(client, ["ME-1"])
     job = _wave_jobs(client, cid, 1)[0]["jobId"]
     _step(client, job)
@@ -486,6 +534,7 @@ def test_a_campaign_moved_by_another_request_while_a_job_advances_leaves_the_job
 
 
 def test_a_job_of_a_campaign_that_is_gone_is_advanced_all_the_same(client, fleet, db_session_factory):
+    """A software job whose campaign has been deleted is still advanced."""
     cid = _campaign(client, ["ME-1"])
     job = _wave_jobs(client, cid, 1)[0]["jobId"]
     with db_session_factory() as db:

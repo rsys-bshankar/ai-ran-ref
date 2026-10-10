@@ -18,6 +18,9 @@ E = TypeVar("E")  # event enum/str type
 
 
 class IllegalTransition(Exception):
+    """Raised by `StateMachine.fire` when no transition fits; carries the `state` and the `event`. A route turns it into 409
+    LIFECYCLE_ILLEGAL_TRANSITION with `errors.illegal_transition_error`.
+    """
     def __init__(self, state: S, event: E):
         super().__init__(f"no transition for event {event!r} in state {state!r}")
         self.state = state
@@ -26,6 +29,9 @@ class IllegalTransition(Exception):
 
 @dataclass
 class Transition(Generic[S, E]):
+    """One row of a transition table: in `from_state`, `event` leads to `to_state`, if `guard(**context)` is true (or there is no guard), running
+    `action(**context)` when taken.
+    """
     from_state: S
     event: E
     to_state: S
@@ -43,6 +49,9 @@ class StateMachine(Generic[S, E]):
     transitions: list[Transition[S, E]] = field(default_factory=list)
 
     def add(self, from_state: S, event: E, to_state: S, guard=None, action=None) -> "StateMachine":
+        """Appends a transition to the table and returns the machine, so definitions can be chained. Transitions for the same (state, event) are tried
+        in the order added.
+        """
         self.transitions.append(Transition(from_state, event, to_state, guard, action))
         return self
 

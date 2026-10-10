@@ -9,13 +9,14 @@ Tabs (URL hash): `#waiting` (queue and detail side by side) · `#decided`. `Appr
 
 | id | file | what it shows | API (via data/queries.ts) | refresh | budget |
 | --- | --- | --- | --- | --- | --- |
-| approvals.queue | sections/Queue.tsx | waiting requests as cards with a lapse countdown bar; first one selected | `/ran-nf-oam/rapp-approvals?status=PENDING&total=false` | 5 s | 1 call per page |
+| approvals.queue | sections/Queue.tsx | waiting requests as cards with a lapse countdown bar and, for a request that needs two people, "1 of 2 approvals" ("one needed" otherwise); first one selected | `/ran-nf-oam/rapp-approvals?status=PENDING&total=false` | 5 s | 1 call per page |
 | approvals.detail | sections/Detail.tsx | title, status, countdown clock, facts; hosts the boxes below | `/ran-nf-oam/rapp-approvals/{id}` (+ `/decision-records?approval_id=` once decided) | 5 s | 1–2 calls |
 | approvals.impact | sections/ImpactTiles.tsx | changes, managed elements, access scope, what a lapse does | — (the request) | — | 0 |
 | approvals.diff | sections/ChangeDiff.tsx | the config change as a diff (`kit/Diff`), 50 lines then "… N more" | — | — | 0 |
+| approvals.votes | sections/Votes.tsx | two-person approval only: who has approved so far, when, with what reason ("Approvals so far (n of 2)"); nothing for a request that needs one | — (the request's `approvals`) | — | 0 |
 | approvals.why | sections/Rationale.tsx | rationale, input chips, link to the decision record | — | — | 0 |
-| approvals.decide | sections/DecisionBox.tsx | reason, Approve & write, Reject; then the result (status, config job) | `POST …/{id}/approve`, `POST …/{id}/reject` | — | 0 |
-| approvals.decided | sections/Decided.tsx | decided and lapsed requests, outcome filter, drawer | `/ran-nf-oam/rapp-approvals?status&total=false` | 15 s | 1 call per page |
+| approvals.decide | sections/DecisionBox.tsx | reason, Approve & write, Reject; then the result (status, config job). Two-person approval: says whether this is the first approval (nothing written yet) or the last one; Approve is disabled for someone who already approved (they can still reject) | `POST …/{id}/approve`, `POST …/{id}/reject` | — | 0 |
+| approvals.decided | sections/Decided.tsx | decided and lapsed requests ("By" lists both approvers of a two-person request, `decidedByText`), outcome filter, drawer | `/ran-nf-oam/rapp-approvals?status&total=false` | 15 s | 1 call per page |
 
 The tab badge is `approvals.PENDING` from `/api/summary/approvals` (never the length of a page).
 
@@ -28,9 +29,11 @@ The tab badge is `approvals.PENDING` from `/api/summary/approvals` (never the le
 - Decided with "Every outcome": the route has no "not pending" filter, so pending rows of the page are left out in the browser.
 - Change-window approvals (GUI-7.1) and model gate approvals (GUI-7.3) are not in this inbox yet; the page says so.
 - **Scope** (GUI-9.3): a request matches a region or site cluster when its change touches an element there (`managedElements`, recorded when it was parked); a request with no element is absent under any scope.
+- **Two-person approval** (opt-in per rApp, Safeguards → Approval…): "you already approved" is decided in the browser by comparing the BFF's `smo-gui:<username>` voter name with the signed-in user; RAN NF OAM refuses a second approval by the same person anyway.
 
 ## Troubleshooting
 
+- Approve is greyed out on a two-person request: you gave its first approval; a different person must give the second.
 - No Approve / Reject: the role lacks `POST /ran-nf-oam/rapp-approvals/{id}/approve` (operator and up), or the request is no longer pending.
 - Approve answers `REFUSED`: a safeguard (stopped rApp, a limit) refused it when it ran; see Safeguards → Refusals.
 - Queue empty but the badge counts: the summary is cached 5 s by the BFF; it catches up on the next refresh.

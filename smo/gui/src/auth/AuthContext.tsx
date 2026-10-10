@@ -1,3 +1,9 @@
+/**
+ * The session state of the SPA: `AuthProvider` fetches the signed-in user (GET /api/me) and the BFF's permission table, offers `login`,
+ * `loginWithCode` and `logout`, and exposes `can(method, path)` through the `useAuth` hook.
+ * `can` only decides what to show; the BFF re-checks every call (see rbac.ts). Mounted once in main.tsx, inside the toast and query providers.
+ */
+
 import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -7,6 +13,9 @@ import type { Me } from "../api/types";
 import { isChallenge, type LoginChallenge, type SignedIn } from "../lib/mfa";
 import { can as canWith, type PermissionRule, type QueryValues, type Role } from "./rbac";
 
+/**
+ * What `useAuth` returns: the user (null when signed out), whether that is still loading, the role, the two sign-in steps, sign-out and the permission check.
+ */
 interface AuthState {
   me: Me | null;
   loading: boolean;
@@ -24,6 +33,14 @@ const AuthContext = createContext<AuthState | null>(null);
 
 const isMeQuery = (key: readonly unknown[]) => key[0] === "bff" && key[1] === "me";
 
+/**
+ * Provides the session to the app and keeps it in the react-query cache under ["bff", "me"].
+ * Loads the user once (a 401 means "signed out", not an error) and the permission table after that, except while a local admin must still enrol
+ * a one-time code (every other route answers 403 until then). Listens for the window event `smo:unauthorized` (fired by `api` on any 401) and
+ * clears the user, which sends the router back to the login page. Starting a session or signing out removes every other cached query, so the
+ * next user never sees the previous user's data; the "me" entry itself is updated in place because clearing the whole client would orphan the
+ * observer and leave the app stuck on the login page. Sign-out also follows the identity provider's end-session URL when the BFF returns an http(s) one (PR-SEC-6).
+ */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const toast = useOptionalToast();
@@ -111,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+/** Returns the session state; throws when used outside `AuthProvider`. */
 export function useAuth(): AuthState {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth outside AuthProvider");

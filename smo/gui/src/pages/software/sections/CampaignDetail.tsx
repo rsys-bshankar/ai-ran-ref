@@ -1,5 +1,5 @@
 /** Software · campaign detail (`software.detail`): the selected campaign (`GET /software-campaigns/{id}`) and its report (`/report`): what it
- * upgrades and how (selector, wave size, pause, gate, on gate failure), why it halted (GATE_FAILED, WAVE_PAUSE with a countdown, OPERATOR_HALT),
+ * upgrades and how (selector, wave size, pause, gate, on gate failure, job timeout, rollback order), why it halted (GATE_FAILED, WAVE_PAUSE with a countdown, OPERATOR_HALT),
  * the controls, the totals, the wave strip (a wave opens its elements below) and the event log, newest first. */
 import { Card, Id, StateBadge } from "../../../components/ui";
 import { Badge } from "../../../kit/Badge";
@@ -55,11 +55,14 @@ export function CampaignDetail() {
   );
 }
 
-/** "selector vendorName=…, region=… · 812 elements · wave size 100 · pause 15 min · gate: ≤ 0 new critical/major alarms · requested by …". */
+/** "selector vendorName=…, region=… · 812 elements · wave size 100 · pause 15 min · gate: ≤ 0 new critical/major alarms · no job timeout ·
+ * rollback: last wave first · requested by …". */
 function describeCampaign(c: Campaign): string {
   const sel = c.selector ? Object.entries(c.selector).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join(", ") : null;
   return [sel ? `selector ${sel}` : "named elements", `${c.elements.length} element(s)`, `wave size ${c.waveSize}`,
     c.wavePauseSeconds ? `pause ${describeSeconds(c.wavePauseSeconds)}` : "no pause", `gate: ≤ ${c.gateMaxNewAlarms} new critical/major alarms`,
+    c.jobTimeoutSeconds ? `a job times out after ${describeSeconds(c.jobTimeoutSeconds)}` : "no job timeout",
+    c.rollbackOrder === "reverse" ? "rollback: last wave first" : "rollback: all waves at once",
     `requested by ${c.requestedBy}`].join(" · ");
 }
 

@@ -253,9 +253,9 @@ Override rules (`Rule.query_overrides` / `json_overrides`), applied before forwa
 | `POST /intent-service/intents`, `PATCH .../intents/{id}/admin-state` | body `rmioId` / `requesterId` = `smo-gui` |
 | `POST /intent-service/autonomy-dispatches/{id}/reject` | body `rejectedBy` = `smo-gui:<user>` |
 | `POST /ran-nf-oam/rapp-approvals/{id}/approve` and `.../reject` | body `decidedBy` = `smo-gui:<user>` (`AI-11`: operator; the sweep `rapp-approvals/expire-due` is not exposed) |
-| `PUT /ran-nf-oam/rapp-approval-policy/{id}` | body `requestedBy` = `smo-gui:<user>` (admin; so is `DELETE` and the approval subscriptions) |
 | `PUT /rapp-mgmt/kill-all` | body `requestedBy` = `smo-gui:<user>` (GUI-9.6: the global stop of every rApp's writes, operator like the per-instance kill; `DELETE /rapp-mgmt/kill-all`, resuming them all, is admin) |
 | `PUT /ran-nf-oam/o1-adaptor-endpoints/{id}/host-keys` | body `pinnedBy` = `smo-gui:<user>` (GUI-9.7, admin: the SSH host key is the O1 session's trust anchor; `DELETE .../host-keys/{keyType}` is admin too) |
+| `PUT /ran-nf-oam/rapp-approval-policy/{id}` | body `requestedBy` = `smo-gui:<user>` (admin; so is `DELETE` and the approval subscriptions); `requiredApprovals` (1 or 2) is passed through. For the approve and reject routes above, `decidedBy` is what makes two approvals two people: it is always the signed-in user, never the browser's value |
 | `PUT /ran-nf-oam/managed-entities/{id}/scope`, `PUT /sme/invoker-registrations/{id}/authz-scope` | nothing forced (admin only): the `region` and `tenant` of a managed element, and the scope claim of an invoker (`PR-SEC-10`). The BFF itself is an unscoped `internal` caller; scoping the console's users is `GUI-5.1` |
 | `POST /sa-smos/monitors/{id}/remedial-actions` | query `requester_is_admin` = `true` for admins else `false` |
 

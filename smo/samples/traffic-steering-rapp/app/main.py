@@ -74,6 +74,7 @@ PRIO_TARGET = "NRFreqRelation.cellReselectionPriority"
 
 
 class RappError(Exception):
+    """An error this rApp raises on purpose; `_rapp_error` answers it as `{detail: {title, status, detail}}` with `status` as the HTTP status."""
     def __init__(self, status: int, title: str, detail: str):
         self.status, self.title, self.detail = status, title, detail
 
@@ -105,6 +106,9 @@ def _layers(inst: TrafficInstance) -> dict[str, str]:
 
 
 def _cells(db: Session, inst: TrafficInstance) -> dict[str, TrafficCell]:
+    """Returns the instance's cell rows by cell id, adding (not committing) a row with no steering for any configured cell that has none yet; the
+    caller commits.
+    """
     rows = {r.cell_id: r for r in db.scalars(select(TrafficCell).where(TrafficCell.instance_id == inst.instance_id))}
     for cell in _layers(inst):
         if cell not in rows:
@@ -173,12 +177,26 @@ def _verify(inst: TrafficInstance, values: dict[str, int]) -> dict:
             "expected": values, "observed": observed}
 
 
+def _decision(inst, execution_id: str, reason: str) -> dict:
+    """PR-AI-13: why this write is made, kept by RAN NF OAM as the decision record of the config job (and shown to a person who is asked to approve it): a
+    reference to this execution (its inputs are on the instance's operator page, not in the record), the version of the model that decided, and the reason in words.
+    The direct path of this rApp is a service-restoring write (a wake, a revert, a rollback, an operator override)."""
+    wanted = {"inputsRef": f"{RAPP_ID}:{inst.instance_id}:execution:{execution_id}", "modelVersion": inst.model_version,
+              "rationale": f"Restoring service: {reason}"}
+    return {k: v for k, v in wanted.items() if v}
+
+
 def _execute_direct(inst: TrafficInstance, values: dict[str, int], execution_id: str, reason: str) -> dict:
+    """Sends writes ({managed ref: value}) straight to DME `/actions` with a fresh actionId and returns {path, actionId, status, ...}.
+
+    A platform error is returned as status REJECTED with the error body, not raised, so the caller's verification read decides what happened.
+    """
     action_id = str(uuid.uuid4())
     try:
         result = sdk.platform.execute_action(
             f"{RAPP_ID}:{inst.instance_id}", [_change(inst, ref, v) for ref, v in values.items()], action_id=action_id,
-            source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason})
+            source_context={"rApp": RAPP_ID, "correlationId": execution_id, "reason": reason},
+            decision=_decision(inst, execution_id, reason))
         return {"path": "DME_DIRECT", "actionId": result["actionId"], "forwardedJobId": result.get("forwardedJobId"),
                 "status": result["status"]}
     except SdkError as e:
@@ -214,6 +232,9 @@ def _intent_actions(intent_id: str) -> dict[str, dict]:
 
 
 def _expectation(inst: TrafficInstance, d: TrafficDecision) -> dict:
+    """Builds the one TS 28.312 DELIVER expectation for a steering step: the source cell's relation, the CIO or the idle priority as the target
+    with its new value. Its id (`mlb-<cell>-<first 8 of the execution id>`) is how the Intent's fulfilment report is matched back to the cell.
+    """
     ref, to_value = cast(str, d.managed_ref), cast(int, d.to_value)      # a step has both
     ioc, name = ref.split("=", 1)
     return {"expectationId": f"mlb-{d.cell_id}-{d.execution_id[:8]}", "expectationVerb": "DELIVER",
@@ -240,6 +261,12 @@ def _bias(row: TrafficCell, d: TrafficDecision, sign: int) -> None:
 
 
 def _settle(inst: TrafficInstance, row: TrafficCell, d: TrafficDecision, ok: bool, execution_id: str) -> None:
+    """Records the end state of one cell's step on its row and audit row.
+
+    When `ok`, the step's bias is added to (steering) or removed from (release) the steering in force, the change time is kept for pacing, and a
+    steering step puts the cell under observation and into the steering log (the anti-oscillation source). Otherwise the outcome names the
+    rollback trigger and whether the rollback was verified, and the row's steering is left as it was.
+    """
     steering = d.decision.startswith("STEER_")
     if ok:
         _bias(row, d, +1 if steering else -1)
@@ -263,6 +290,12 @@ def _settle(inst: TrafficInstance, row: TrafficCell, d: TrafficDecision, ok: boo
 
 def _follow_dispatch(inst: TrafficInstance, rows: dict[str, TrafficCell], decisions: dict[str, TrafficDecision],
                      dispatch: dict, execution_id: str) -> None:
+    """Settles the cells of one AutonomyDispatch according to where it is.
+
+    SHADOWED, REJECTED and AWAITING_SCOPE only record the outcome (ASSIST remembers the pending dispatch on the instance); a dispatched step is
+    matched to the Intent's action report, verified by an O1 read-back, and rolled back through DME when the action did not complete or the
+    read-back differs.
+    """
     intent = {"dispatchId": dispatch["dispatchId"], "autonomyMode": dispatch["autonomyMode"], "status": dispatch["status"],
               "intentId": dispatch.get("intentId"), "rejectedBy": dispatch.get("rejectedBy")}
     for d in decisions.values():
@@ -290,6 +323,11 @@ def _follow_dispatch(inst: TrafficInstance, rows: dict[str, TrafficCell], decisi
 
 
 def _reconcile(db: Session, inst: TrafficInstance) -> list[dict]:
+    """Settles the instance's pending ASSIST dispatch once the operator has resolved it.
+
+    Returns [] when nothing is pending or the dispatch is still AWAITING_SCOPE; otherwise follows the dispatch, commits, and returns one summary
+    with each cell's outcome.
+    """
     pending = inst.pending_dispatch
     if not pending:
         return []
@@ -351,15 +389,18 @@ def start_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.get("/instances")
 def list_instances(db: Session = Depends(get_session)):
+    # Lists every started instance, oldest first.
     return {"items": [_instance_view(i) for i in db.scalars(select(TrafficInstance).order_by(TrafficInstance.created_at))]}
 
 
 @app.get("/instances/{instance_id}")
 def get_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Returns one instance; 404 INSTANCE_NOT_STARTED when `start` was never called for it.
     return _instance_view(_instance(db, instance_id))
 
 
 def _instance_view(i: TrafficInstance) -> dict:
+    """The JSON shape of an instance on every route that returns one."""
     return {"instanceId": str(i.instance_id), "packageId": str(i.package_id) if i.package_id else None,
             "managedElementRef": i.managed_element_ref, "cells": i.cells, "baselineCio": i.baseline_cio,
             "baselinePriority": i.baseline_priority, "autonomyMode": i.autonomy_mode, "rmihId": i.rmih_id,
@@ -414,6 +455,8 @@ def train(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.post("/instances/{instance_id}/lifecycle/validate")
 def validate(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # VALIDATION on MLVF: scores the stored model on the held-out part of the TRAINING dataset and records the job. Needs a trained model
+    # (`inst.model_params`); 404 INSTANCE_NOT_STARTED for an unknown instance.
     inst = _instance(db, instance_id)
     job = sdk.lifecycle.start_validation(inst.model_id, RAPP_ID, package_id=inst.package_id,
                                          training_job_id=(inst.lifecycle_jobs or {}).get("training"),
@@ -496,6 +539,9 @@ def _critical_alarms(inst: TrafficInstance) -> AlarmScope:
 
 
 def _record(db, inst, execution_id, cell, state, **kw) -> TrafficDecision:
+    """Adds one audit row (TrafficDecision) for a cell, taking the observed time, score and forecast from its latest inference; `outcome` starts as
+    NONE and the caller sets it once the write is known. Not committed here.
+    """
     s = state.get(cell) or {}
     d = TrafficDecision(execution_id=execution_id, instance_id=inst.instance_id, cell_id=cell,
                         observed_at=parse_time(s["observedAt"]) if s.get("observedAt") else None,
@@ -672,12 +718,15 @@ def _plan(db, inst, rows, model, state, latest, planning, now, execution_id) -> 
 
 @app.post("/instances/{instance_id}/reconcile")
 def reconcile(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Settles a pending ASSIST dispatch now (the same step `evaluate` runs first); returns {settled: [...]}, empty when there is nothing to
+    # settle.
     return {"settled": _reconcile(db, _instance(db, instance_id))}
 
 
 # ---------------------------------------------------------------- audit + dashboard
 
 def _decision_view(d: TrafficDecision) -> dict:
+    """The JSON shape of one audit row, as the decisions list, the evaluate answer and the dashboard return it."""
     return {"decisionId": str(d.decision_id), "executionId": d.execution_id, "cellId": d.cell_id,
             "observedAt": d.observed_at.isoformat() if d.observed_at else None, "score": d.score, "forecast": d.forecast,
             "prediction": d.prediction, "safety": d.safety, "decision": d.decision, "reason": d.reason, "knob": d.knob,
@@ -689,6 +738,7 @@ def _decision_view(d: TrafficDecision) -> dict:
 @app.get("/instances/{instance_id}/decisions")
 def list_decisions(instance_id: uuid.UUID, cell_id: str | None = None, execution_id: str | None = None,
                    limit: int = 100, db: Session = Depends(get_session)):
+    # Audit rows of an instance, newest first; filtered by cell_id and execution_id when given; `limit` is capped at 500.
     stmt = select(TrafficDecision).where(TrafficDecision.instance_id == instance_id)
     if cell_id:
         stmt = stmt.where(TrafficDecision.cell_id == cell_id)
@@ -705,6 +755,8 @@ def _cell_view(inst: TrafficInstance, r: TrafficCell) -> dict:
 
 @app.get("/instances/{instance_id}/cells")
 def list_cells(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # The instance's cells with their layer, state and steering in force; creates the missing rows and commits, so a freshly started instance
+    # lists all its cells.
     inst = _instance(db, instance_id)
     rows = _cells(db, inst)
     db.commit()
@@ -754,11 +806,13 @@ def dashboard(instance_id: uuid.UUID, points: int = 48, db: Session = Depends(ge
 
 @app.post("/sim-producer/register", status_code=201)
 def register_sim_producer():
+    # Registers the LOAD_PERFORMANCE_SIM data type at DME with this rApp as the Digital Twin producer (201).
     return register_sim_type(sdk)
 
 
 @app.post("/sim-producer/publish")
 def publish_sim_data(body: SimPublishRequest):
+    # Generates the requested clusters' windows (a hotspot or healthy) and delivers them to every data job of the sim type.
     return publish_sim(sdk, body)
 
 

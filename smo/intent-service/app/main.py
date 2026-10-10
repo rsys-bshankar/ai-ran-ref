@@ -405,7 +405,7 @@ def _report_view(r: IntentReport) -> dict:
 def fulfilment_percent(fulfilment_report: dict | None) -> float | None:
     """GUI-9.8: the share (0-100, one decimal) of an `IntentFulfilmentReport` that is FULFILLED, counted over its targets
     (`expectationFulfilmentResult[].targetFulfilmentResults[]`); a report that lists no targets is counted over its expectations, and one that lists
-    neither by the intent's own `intentFulfilmentInfo` (0 or 100). None for no report. Revision 0035 repeats this rule to fill the existing rows."""
+    neither by the intent's own `intentFulfilmentInfo` (0 or 100). None for no report. Revision 0037 repeats this rule to fill the existing rows."""
     if not isinstance(fulfilment_report, dict):
         return None
     results = [e for e in fulfilment_report.get("expectationFulfilmentResult") or [] if isinstance(e, dict)]

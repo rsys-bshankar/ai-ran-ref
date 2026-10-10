@@ -17,7 +17,7 @@ O1 PM data through the governed TS 28.105 model lifecycle to verified O1 CM
 writes. The GUI has one rApps entry: a searchable directory of every rApp and, for each,
 a page its own package declares (`operatorUi` in `manifest.yaml`) that a generic renderer
 draws, so a rApp onboarded at run time has its page with no GUI build. An operator can hold an rApp's config jobs for a person's
-approval (an Approvals inbox in the GUI, a timeout that writes nothing), and every config job an rApp makes has a record of why,
+approval (an Approvals inbox in the GUI, a timeout that writes nothing, and, if asked, two different people instead of one), and every config job an rApp makes has a record of why,
 hashed into the audit chain. An rApp can be limited to the regions and tenants of the managed elements it may touch (a scope
 claim on its identity, enforced by the module that owns the element; nothing changes until one is set).
 
@@ -45,7 +45,7 @@ that realises a standard and adds its own behaviour on top says so.
 | [DME](dme/README.md) | O-RAN (R1 DME, ICS-derived) + Internal (O1 action mediation) | `dme/` | Data management and exposure: producers, types, data jobs, offers, type subscriptions | `/dme`, `/dme-push`, `/dme-pull` |
 | [Onboarding](onboarding/README.md) | O-RAN (rApp package, ASD / TOSCA CSAR) + Internal (`manifest.yaml`, `capabilities.yaml`) | `onboarding/` | CSAR package validation, `ApplicationPackage` FSM, priming, usage registrations | `/onboarding` |
 | [rApp Management](rapp-mgmt/README.md) | O-RAN (rApp Manager) + Internal (autonomy mode, region scope) | `rapp-mgmt/` | `RAppInstance` FSM, deploy/bootstrap/upgrade/terminate, perf/fault reports | `/rapp-mgmt` |
-| [RAN NF OAM](ran-nf-oam/README.md) | O-RAN (O1) + 3GPP (MnS: TS 28.532 / 28.541 / 28.111, TS 28.319 MSAC) + Internal (vendor capability registry) | `ran-nf-oam/` | O1: adaptor endpoints, NETCONF and RESTCONF CM writes with MSAC access control (reads too, when switched on), alarms, PM subscriptions and PM files, a VES event receiver for adaptors (off until given a password), software management, vendor capability registry, zero-touch onboarding templates, software campaigns in waves | `/ran-nf-oam` |
+| [RAN NF OAM](ran-nf-oam/README.md) | O-RAN (O1) + 3GPP (MnS: TS 28.532 / 28.541 / 28.111, TS 28.319 MSAC) + Internal (vendor capability registry) | `ran-nf-oam/` | O1: adaptor endpoints, NETCONF and RESTCONF CM writes with MSAC access control (reads too, when switched on), alarms, PM subscriptions and PM files, a VES event receiver for adaptors (off until given a password), software management, vendor capability registry, zero-touch onboarding templates, software campaigns in waves (with a job timeout, a rollback in reverse wave order, GUI tabs and notices of a failed onboarding or a halted campaign) | `/ran-nf-oam` |
 | [NFO](nfo/README.md) | O-RAN (O2-DMS-style deployment) + Internal (descriptor model) | `nfo/` | NF descriptors and deployments (`NFDeployment` FSM, heal/scale/terminate) | `/nfo` |
 | [FOCOM](focom/README.md) | O-RAN (O2-IMS) | `focom/` | O-Cloud inventory, provisioning, inventory subscriptions, FCAPS, TEIV topology export | `/focom` |
 | [AIMgF](aimgf/README.md) | 3GPP (TS 28.105) + Internal (lifecycle orchestration) | `aimgf/` | AI/ML lifecycle orchestration: model and runtime lifecycle FSMs, training/validation/emulation/inference jobs, feature groups, MLMF | `/aimgf` |

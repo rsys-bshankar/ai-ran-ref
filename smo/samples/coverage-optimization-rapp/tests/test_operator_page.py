@@ -38,18 +38,21 @@ def resolves(value, path: str) -> bool:
 
 
 def test_the_manifest_declares_a_valid_page_with_the_four_kinds_of_panel_it_needs():
+    """The manifest's operator page validates and has its key-values, actions and table panels, and is not read-only."""
     d = declaration()
     assert [p["kind"] for p in d["panels"]] == ["keyValues", "actions", "table"]
     assert not d.get("readOnly")
 
 
 def test_every_declared_route_is_a_route_of_this_rapp():
+    """Every route the page calls exists in the rApp's OpenAPI document, so a renamed route breaks here and not in the GUI."""
     served = {(method.upper(), PARAM.sub("{}", path)) for path, ops in app.openapi()["paths"].items() for method in ops}
     for method, template in declared_routes(declaration()):
         assert (method, PARAM.sub("{}", template.replace("{instanceId}", "{}"))) in served, f"{method} {template} is not served by this rApp"
 
 
 def test_the_query_parameters_a_source_sends_are_taken_by_its_route():
+    """Every query parameter a page source sends is one its route accepts."""
     spec = app.openapi()["paths"]
     for panel in declaration()["panels"]:
         for source in [panel.get("source")] + [b.get("source") for b in panel.get("rowDetail", {}).get("blocks", [])]:
@@ -61,6 +64,9 @@ def test_the_query_parameters_a_source_sends_are_taken_by_its_route():
 
 
 def test_every_declared_field_is_in_the_answer_the_rapp_gives(client, platform, r1):  # noqa: F811
+    """Runs two evaluations, then fetches each panel's source and checks that every field, column, chart point and row reference the page declares
+    exists in the real answer.
+    """
     iid = _deployed(client, platform, r1, "SHADOW")
     platform.dispatch = {"status": "SHADOWED", "dispatchId": str(uuid.uuid4()), "autonomyMode": "SHADOW"}
     for execution in ("e-1", "e-2"):

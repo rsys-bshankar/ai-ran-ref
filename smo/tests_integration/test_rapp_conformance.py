@@ -39,11 +39,13 @@ def failures(results) -> dict[str, str]:
 
 
 def entries(path: Path = ES) -> dict[str, bytes]:
+    """The files of a package as {name: bytes}."""
     with zipfile.ZipFile(path) as z:
         return {i.filename: z.read(i.filename) for i in z.infolist()}
 
 
 def zipped(files: dict[str, bytes]) -> bytes:
+    """Builds package bytes (a zip) from {name: bytes}."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         for name, content in files.items():
@@ -52,6 +54,7 @@ def zipped(files: dict[str, bytes]) -> bytes:
 
 
 def unsigned(change=None, path: Path = ES) -> bytes:
+    """The energy-saving sample as a package without its signing files, after `change` (if given) has edited the file map."""
     files = {k: v for k, v in entries(path).items() if k not in cs.SIGNING_FILES}
     if change:
         change(files)
@@ -59,6 +62,7 @@ def unsigned(change=None, path: Path = ES) -> bytes:
 
 
 def offline(data: bytes, name="pkg.csar", **kwargs):
+    """Runs the offline package checks on package bytes; `trust` becomes the trust store and the other keyword arguments the package context."""
     trust = kwargs.pop("trust", None)
     return run(PackageContext(name, data, trust, **kwargs))
 
@@ -66,6 +70,9 @@ def offline(data: bytes, name="pkg.csar", **kwargs):
 # ------------------------------------------------------------------------------------------------------------------------------- offline
 
 def test_each_sample_package_passes_every_offline_check_that_applies_with_its_signature_verified():
+    """Each committed sample package passes every offline check with its signature verified against the demo trust store, with no warning, and the
+    only check skipped is the one for SME providers, which no sample declares.
+    """
     trust = cs.load_trust_store(DEMO_TRUST)
     for csar in sorted(SAMPLES.glob("*.csar")):
         results = offline(csar.read_bytes(), csar.name, trust=trust, require_signed=True)
@@ -76,6 +83,7 @@ def test_each_sample_package_passes_every_offline_check_that_applies_with_its_si
 
 
 def test_without_a_trust_store_the_signature_is_skipped_and_with_require_signed_it_fails():
+    """Without a trust store the signature check is skipped, and with `require_signed` it fails and says there is no trust store."""
     assert outcome(offline(ES.read_bytes()))["PK-S"] == SKIP
     failed = failures(offline(ES.read_bytes(), require_signed=True))
     assert "no trust store" in failed["PK-S"] and "no trusted publisher keys" in failed["PK-V"]
@@ -104,8 +112,10 @@ BAD_PACKAGES = {
 }
 
 
+# One row per bad package: how to make it, the file name and the set of checks that must fail.
 @pytest.mark.parametrize("name", sorted(BAD_PACKAGES))
 def test_a_crafted_bad_package_fails_the_check_that_names_the_problem(name):
+    """Each crafted bad package fails exactly the checks that name its problem, each with a detail."""
     make, filename, expected = BAD_PACKAGES[name]
     results = offline(make(), filename)
     assert set(failures(results)) == expected, failures(results)
@@ -113,11 +123,15 @@ def test_a_crafted_bad_package_fails_the_check_that_names_the_problem(name):
 
 
 def test_a_package_that_is_not_a_zip_does_not_crash_the_checks_that_need_one():
+    """Bytes that are not a zip do not crash the checks: those that need the archive are skipped."""
     results = offline(b"nope")
     assert {r.id for r in results if r.status == SKIP} >= {"PK-2", "PK-3", "PK-4", "PK-8", "PK-9"}
 
 
 def test_advice_is_a_warning_not_a_failure():
+    """A package with advice-level problems (a missing application version, a mode with no runtime profile, an unknown data namespace and others)
+    only warns and fails nothing.
+    """
     def advise(files):
         files["tests/test_x.py"] = b"def test_x(): pass\n"
         files["capabilities.yaml"] = b"capabilities:\n  consumes: [{namespace: quantum, description: x}]\n"
@@ -131,6 +145,7 @@ def test_advice_is_a_warning_not_a_failure():
 
 
 def test_an_unsigned_package_is_a_warning_with_a_trust_store_and_a_failure_when_signing_is_required():
+    """An unsigned package is a warning when a trust store is given and a failure, with the signature validity check, when signing is required."""
     trust = cs.load_trust_store(DEMO_TRUST)
     assert outcome(offline(unsigned(), trust=trust))["PK-S"] == WARN
     results = offline(unsigned(), trust=trust, require_signed=True)
@@ -138,6 +153,9 @@ def test_an_unsigned_package_is_a_warning_with_a_trust_store_and_a_failure_when_
 
 
 def test_a_package_changed_after_signing_fails_the_signature_check_and_onboardings_verdict():
+    """A package edited after signing fails the signature check with the file named, and the validity check (Onboarding's own verdict) fails with
+    it.
+    """
     trust = cs.load_trust_store(DEMO_TRUST)
     files = entries()
     files["manifest.yaml"] += b"# one more line\n"
@@ -146,6 +164,7 @@ def test_a_package_changed_after_signing_fails_the_signature_check_and_onboardin
 
 
 def test_a_package_signed_by_a_publisher_the_trust_store_does_not_hold_is_an_unknown_publisher(tmp_path):
+    """A package signed by a publisher whose key is not in the trust store is reported as an unknown publisher by both checks."""
     (tmp_path / "other.pub").write_bytes(cs.generate_keypair()[1])
     failed = failures(offline(ES.read_bytes(), trust=cs.load_trust_store(tmp_path)))
     assert "unknown publisher" in failed["PK-S"] and "unknown publisher" in failed["PK-V"]
@@ -172,6 +191,9 @@ def test_the_offline_verdict_is_the_one_the_real_onboarding_gives(name, mesh, lo
 
 
 def test_the_good_packages_are_accepted_by_both(mesh, loaded_apps, monkeypatch):
+    """The sample package is accepted by the real Onboarding app in the mesh (state AVAILABLE) and passes the kit's validity check, so the kit's
+    offline verdict matches Onboarding's.
+    """
     data = ES.read_bytes()
 
     class Resp:
@@ -188,6 +210,9 @@ def test_the_good_packages_are_accepted_by_both(mesh, loaded_apps, monkeypatch):
 # ---------------------------------------------------------------------------------------------------------------------------- the CLI
 
 def test_the_package_command_writes_the_report_files_and_exits_0_on_the_samples(tmp_path, capsys):
+    """The `package` command on the sample directory with the demo trust store exits 0, writes the JSON and Markdown reports with no failure or
+    warning, covers the four packages and prints the same Markdown.
+    """
     out = tmp_path / "report"
     assert main(["package", str(SAMPLES), "--trust", str(DEMO_TRUST), "--require-signed", "--out", str(out)]) == 0
     report = json.loads((tmp_path / "report.json").read_text())
@@ -199,6 +224,9 @@ def test_the_package_command_writes_the_report_files_and_exits_0_on_the_samples(
 
 
 def test_the_package_command_exits_1_on_a_bad_package_and_2_on_a_usage_problem(tmp_path, capsys):
+    """The `package` command exits 1 with the failing check's message for a bad package, and 2 for usage problems: a missing path,
+    `--require-signed` without a trust store, a missing trust store, a directory with no package, and no arguments.
+    """
     bad = tmp_path / "bad.csar"
     bad.write_bytes(BAD_PACKAGES["negative-cpu"][0]())
     assert main(["package", str(bad)]) == 1
@@ -214,6 +242,7 @@ def test_the_package_command_exits_1_on_a_bad_package_and_2_on_a_usage_problem(t
 
 
 def test_list_names_every_check_with_its_kind(capsys):
+    """`--list` prints one line per registered check, with unique ids that include the first signature and the last runtime check."""
     assert main(["--list"]) == 0
     listing = capsys.readouterr().out
     assert len(listing.splitlines()) == len(REGISTRY) and "PK-V" in listing and "RT-8" in listing
@@ -221,6 +250,7 @@ def test_list_names_every_check_with_its_kind(capsys):
 
 
 def test_only_runs_one_check_or_one_group(tmp_path):
+    """`--only` selects a single check by id or a whole group by name, and the report holds just those."""
     out = tmp_path / "r"
     assert main(["package", str(ES), "--only", "PK-9", "--only", "SIGNATURE", "--out", str(out)]) == 0
     assert [r["id"] for r in json.loads((tmp_path / "r.json").read_text())["results"]] == ["PK-9", "PK-S"]
@@ -243,11 +273,15 @@ def serve(loaded_apps, monkeypatch):
 
 
 def runtime(services, **kwargs):
+    """Runs the runtime checks against `services` for the sample package URL and returns (context, results)."""
     ctx = RuntimeContext(services, URL, **kwargs)
     return ctx, run(ctx)
 
 
 def test_the_platform_passes_every_runtime_check_with_a_sample_package(mesh, serve):
+    """A sample package passes all eight runtime checks (onboard, run, usage, reports, configuration, fault, terminate, delete) against the
+    in-process platform.
+    """
     serve()
     ctx, results = runtime(mesh)
     assert failures(results) == {}
@@ -256,6 +290,7 @@ def test_the_platform_passes_every_runtime_check_with_a_sample_package(mesh, ser
 
 
 def test_a_run_removes_what_it_made_so_a_second_run_of_the_same_package_passes_too(mesh, serve):
+    """A run removes the instance it made and leaves the package deleting, so the same package can be run a second time."""
     serve()
     for _ in range(2):
         assert failures(runtime(mesh)[1]) == {}
@@ -266,6 +301,7 @@ def test_a_run_removes_what_it_made_so_a_second_run_of_the_same_package_passes_t
 
 
 def test_keep_leaves_the_package_onboarded_and_the_instance_removed(mesh, serve):
+    """With `keep` the package stays onboarded (AVAILABLE) while the instance is still removed."""
     serve()
     assert failures(runtime(mesh, keep=True)[1]) == {}
     assert mesh["rapp-mgmt"].get("/instances").json()["items"] == []
@@ -273,12 +309,14 @@ def test_keep_leaves_the_package_onboarded_and_the_instance_removed(mesh, serve)
 
 
 def test_each_signed_sample_runs_through_the_platform(mesh, serve):
+    """Each of the signed sample packages passes the runtime checks."""
     for csar in sorted(SAMPLES.glob("*.csar")):
         serve(csar.read_bytes())
         assert failures(runtime(mesh)[1]) == {}, csar.name
 
 
 def test_the_autonomy_mode_asked_for_is_the_one_the_instance_has(mesh, serve):
+    """A run asked for ASSIST mode passes, so the instance has the mode the run asked for."""
     serve()
     assert failures(runtime(mesh, autonomy_mode="ASSIST")[1]) == {}
 
@@ -306,6 +344,7 @@ def break_one(mesh, service, rule):
 
 
 def test_a_package_that_onboarding_refuses_fails_rt_1_with_its_reason_and_skips_the_rest(mesh, serve, monkeypatch):
+    """A package Onboarding refuses fails RT-1 with its reason and every other runtime check is skipped saying what it needs."""
     serve(unsigned(lambda f: f.__setitem__("manifest.yaml", b"a: [unclosed\n")))
     _, results = runtime(mesh)
     assert outcome(results)["RT-1"] == FAIL and "FAILED" in failures(results)["RT-1"]
@@ -314,6 +353,9 @@ def test_a_package_that_onboarding_refuses_fails_rt_1_with_its_reason_and_skips_
 
 
 def test_the_trust_policy_of_the_platform_shows_in_rt_1(mesh, serve, monkeypatch, tmp_path):
+    """When the platform requires signed packages with a trust store, an unsigned package fails RT-1 with the platform's own reason, so the kit
+    sees the platform's policy.
+    """
     serve(unsigned())
     (tmp_path / "other.pub").write_bytes(cs.generate_keypair()[1])
     monkeypatch.setenv("ONBOARDING_TRUST_STORE", str(tmp_path))
@@ -323,6 +365,7 @@ def test_the_trust_policy_of_the_platform_shows_in_rt_1(mesh, serve, monkeypatch
 
 
 def test_an_instance_that_never_runs_fails_rt_2_and_the_run_still_cleans_up(mesh, serve):
+    """An instance that never reaches RUNNING fails RT-2, and the run still terminates and deletes it."""
     serve()
 
     def rule(verb, path, response):
@@ -334,6 +377,7 @@ def test_an_instance_that_never_runs_fails_rt_2_and_the_run_still_cleans_up(mesh
 
 
 def test_a_usage_registration_that_is_missing_fails_rt_3(mesh, serve):
+    """A platform that lists no usage registration for the package fails RT-3 with the count."""
     serve()
 
     def rule(verb, path, response):
@@ -343,6 +387,7 @@ def test_a_usage_registration_that_is_missing_fails_rt_3(mesh, serve):
 
 
 def test_reports_that_are_acknowledged_and_not_kept_fail_rt_4(mesh, serve):
+    """Reports the platform acknowledges but does not return when read back fail RT-4."""
     serve()
 
     def rule(verb, path, response):
@@ -352,6 +397,7 @@ def test_reports_that_are_acknowledged_and_not_kept_fail_rt_4(mesh, serve):
 
 
 def test_a_configuration_that_is_not_what_was_written_fails_rt_5(mesh, serve):
+    """A configuration that reads back differently from what was written fails RT-5."""
     serve()
 
     def rule(verb, path, response):
@@ -361,6 +407,7 @@ def test_a_configuration_that_is_not_what_was_written_fails_rt_5(mesh, serve):
 
 
 def test_a_warning_fault_that_faults_the_instance_fails_rt_6(mesh, serve):
+    """A warning-level fault that moves the instance to FAULTED fails RT-6, since a warning must leave it RUNNING."""
     serve()
 
     def rule(verb, path, response):
@@ -370,6 +417,7 @@ def test_a_warning_fault_that_faults_the_instance_fails_rt_6(mesh, serve):
 
 
 def test_a_terminate_that_leaves_the_workload_or_the_usage_fails_rt_7(mesh, serve):
+    """A terminate whose teardown report shows a failed usage stop fails RT-7 and not RT-8."""
     serve()
 
     def rule(verb, path, response):
@@ -382,6 +430,7 @@ def test_a_terminate_that_leaves_the_workload_or_the_usage_fails_rt_7(mesh, serv
 
 
 def test_an_instance_that_survives_its_deletion_fails_rt_8(mesh, serve):
+    """A delete that does not answer 204 fails RT-8."""
     serve()
 
     def rule(verb, path, response):
@@ -391,6 +440,7 @@ def test_an_instance_that_survives_its_deletion_fails_rt_8(mesh, serve):
 
 
 def test_a_platform_that_does_not_answer_is_a_failure_with_the_reason_not_a_crash(mesh, serve):
+    """A platform that cannot be reached is a failed check that names the error, not an exception."""
     serve()
 
     class Down:
@@ -403,6 +453,7 @@ def test_a_platform_that_does_not_answer_is_a_failure_with_the_reason_not_a_cras
 
 
 def test_the_runtime_command_writes_both_report_files(mesh, serve, tmp_path, capsys):
+    """The `runtime` command writes the JSON and Markdown reports and exits 0 when all eight checks pass."""
     serve()
     out = tmp_path / "rt"
     assert main(["runtime", "--package-url", URL, "--direct", "--out", str(out)], services=mesh) == 0
@@ -413,12 +464,18 @@ def test_the_runtime_command_writes_both_report_files(mesh, serve, tmp_path, cap
 
 
 def test_the_runtime_command_needs_a_way_to_reach_the_platform(capsys):
+    """The `runtime` command exits 2 without a way to reach the platform, and when `--direct` and `--r1` are given together, and says to give
+    `--r1`.
+    """
     assert main(["runtime", "--package-url", URL]) == 2
     assert main(["runtime", "--package-url", URL, "--direct", "--r1", "http://x"]) == 2
     assert "give --r1" in capsys.readouterr().err
 
 
 def test_the_default_clients_are_built_from_the_gateway_or_the_module_names(monkeypatch):
+    """Without injected services the command builds its clients from `--r1` (module paths under the gateway, with the given header) or, with
+    `--direct`, from a per-module URL template.
+    """
     import conformance.rapp.__main__ as cli
     seen = []
     monkeypatch.setattr(cli, "run", lambda ctx, only=None: seen.append(ctx.services) or [])

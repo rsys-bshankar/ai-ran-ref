@@ -24,7 +24,8 @@ export function Outcome({ record: r }: { record: DecisionRecord }) {
         ["Requested by", r.requestedBy],
         ["Config job", r.jobId ? <button key="j" type="button" className="btn ghost" onClick={() => setJob(true)}><Id value={r.jobId} /></button> : <span className="muted">none was made</span>],
         ["Approval request", r.approvalId ? <button key="a" type="button" className="btn ghost" onClick={() => setApproval(true)}><Id value={r.approvalId} /></button> : <span className="muted">not held for approval</span>],
-        ["Approved by", r.approvedBy],
+        // two-person approval: a record of a request that needed two people carries `approvers` (in order); one without the field reads as before
+        [r.approvers ? "Approvers (two were needed)" : "Approved by", r.approvers ? (r.approvers.length ? r.approvers.join(", ") : "none before it ended") : r.approvedBy],
         ["Decided by", r.decidedBy ? `${r.decidedBy} (${formatTime(r.decidedAt)})` : null],
       ]} />
       {job && r.jobId && <ConfigJobDrawer id={r.jobId} onClose={() => setJob(false)} />}

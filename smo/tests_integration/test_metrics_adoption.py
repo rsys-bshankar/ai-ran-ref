@@ -6,6 +6,7 @@ from smo_shared.metrics import MetricsMiddleware
 
 
 def test_every_loaded_service_has_the_metrics_middleware_and_route(loaded_apps):
+    """Every service has the metrics middleware and a `/metrics` route."""
     missing = [name for name, main in loaded_apps.items()
                if not any(m.cls is MetricsMiddleware for m in main.app.user_middleware)
                or "/metrics" not in {getattr(r, "path", None) for r in main.app.routes}]
@@ -13,6 +14,7 @@ def test_every_loaded_service_has_the_metrics_middleware_and_route(loaded_apps):
 
 
 def test_r1_termination_does_not_proxy_a_modules_metrics(loaded_apps, monkeypatch):
+    """The gateway does not proxy `/<module>/metrics` (404 NO_ROUTE, without a token check or a forward) and answers its own `/metrics` itself."""
     r1 = loaded_apps["r1-termination"]
 
     async def must_not_be_asked(request):

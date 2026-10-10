@@ -23,10 +23,14 @@ export interface CampaignSelector { entityType?: string | null; vendorName?: str
 export interface Campaign extends CampaignRow {
   requestedBy: string; selector: CampaignSelector | null; elements: string[]; waveSize: number; wavePauseSeconds: number; gateMaxNewAlarms: number;
   onGateFailure: "halt" | "rollback"; haltedDetail: string | null; nextWaveAt: string | null; finishedAt: string | null; events: CampaignEvent[];
+  /** MGT-15.6: seconds after which a job still running is failed (null: no timeout); absent from an older RAN NF OAM. */
+  jobTimeoutSeconds?: number | null;
+  /** MGT-15.7: a rollback undoes every wave at once (`all`) or the last wave first (`reverse`); absent from an older RAN NF OAM (= all). */
+  rollbackOrder?: "all" | "reverse";
 }
 
 /** One element's job in a wave of the report; `revert` is the state of the job that undid it, when there is one. */
-export interface WaveJob { managedElementRef: string; jobId: string; phase: string; status: string; revert: string | null }
+export interface WaveJob { managedElementRef: string; jobId: string; phase: string; status: string; revert: string | null; /** MGT-15.6: failed because it outlived the job timeout */ timedOut?: boolean }
 
 /** `GET /software-campaigns/{id}/report`: the campaign, its totals, each wave's elements and jobs, and what needs attention. */
 export interface CampaignReport extends Campaign {
@@ -46,7 +50,7 @@ export interface SwmJob {
 
 /** What each halted reason means, in words. */
 export const HALTED_MEANING: Record<string, string> = {
-  GATE_FAILED: "The health gate failed after a wave",
+  GATE_FAILED: "The health gate failed after a wave (a software job failed or timed out, or more new critical or major alarms than allowed)",
   WAVE_PAUSE: "Waiting between waves",
   OPERATOR_HALT: "Halted by an operator",
 };

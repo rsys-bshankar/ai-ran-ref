@@ -15,21 +15,27 @@ NOON = T0 + datetime.timedelta(days=3, hours=12)
 
 
 def _records(measurements):
+    """Wraps sample measurements as DME-style records for the given element."""
     return [{"payload": {"managedElementRef": "gnb", **m}} for m in measurements]
 
 
 @pytest.fixture(scope="module")
 def trained():
+    """A model trained once on 72 hours of explored history, shared by the tests of this file."""
     return TrainingLogic.train(_records(P.history(P.NEIGHBOURS, P.LAYERS, T0, 72)), P.LAYERS)
 
 
 def _state(model, faults, settings=None):
+    """Builds the per-cell inference state at noon (a window an hour earlier and the current one) for the given faults and settings."""
     ms = [m for t in (NOON - datetime.timedelta(hours=1), NOON)
           for m in P.measurements(P.NEIGHBOURS, P.LAYERS, settings, faults, t)]
     return {c: InferenceLogic.infer(model, c, s) for c, s in by_cell(_records(ms)).items()}
 
 
 def test_the_load_model_scores_and_moves_load():
+    """The sample load model gives a hotspot a high score, and a priority or CIO step moves load from the source to its neighbours and raises the
+    handover failures of a 6 dB CIO.
+    """
     base = P.measurements(P.NEIGHBOURS, P.LAYERS, None, {"401": "HOTSPOT"}, NOON)
     c401 = next(m["values"] for m in base if m["cellId"] == "401")
     assert score(c401) > 75 and neighbours(c401) == ["402", "411"] and ho_fail_rate(c401, "402") < 2
@@ -43,6 +49,9 @@ def test_the_load_model_scores_and_moves_load():
 
 
 def test_training_recovers_the_transfer(trained):
+    """Training recovers the transfer per CIO dB and per priority step that the load model was built with, learns the morning ramp, and refuses
+    history with no steering.
+    """
     model, metrics = trained
     assert abs(model.transfer["CONNECTED"] - P.CIO_TRANSFER) < 0.006
     assert abs(model.transfer["IDLE"] - P.IDLE_TRANSFER) < 0.012
@@ -53,6 +62,7 @@ def test_training_recovers_the_transfer(trained):
 
 
 def test_validation_and_artifact_round_trip(trained):
+    """The trained model passes validation on its own history and an artifact round trip gives an equal model."""
     model, _ = trained
     passed, metrics = ValidationLogic.validate(model, _records(P.history(P.NEIGHBOURS, P.LAYERS, T0, 72)), P.LAYERS)
     assert passed and metrics["rmse"] <= ValidationLogic.MAX_RMSE
@@ -60,6 +70,9 @@ def test_validation_and_artifact_round_trip(trained):
 
 
 def test_the_plan_offloads_a_hotspot_to_the_least_loaded_neighbour(trained):
+    """The planner steers only the hotspot, keeps the target at or below its capacity limit, and finds no eligible target when every neighbour
+    would end above it.
+    """
     model, _ = trained
     state = _state(model, {"401": "HOTSPOT"})
     cands = {c: EmulationLogic.candidates_for(c, P.NEIGHBOURS[c], P.LAYERS) for c in state}
@@ -74,6 +87,9 @@ def test_the_plan_offloads_a_hotspot_to_the_least_loaded_neighbour(trained):
 
 
 def test_hysteresis_and_release(trained):
+    """Between the release and act scores nothing changes, below release the steering in force is stepped back, and with nothing to release there
+    is no change.
+    """
     model, _ = trained
     state = {"401": {"score": 60, "forecast": 60}, "402": {"score": 30, "forecast": 30}}
     release = {"401": [{"knob": "IDLE", "layer": "F2100", "ref": "NRFreqRelation=401-F2100", "from": 6, "to": 5}]}
@@ -85,6 +101,7 @@ def test_hysteresis_and_release(trained):
 
 
 def test_emulation(trained):
+    """Emulation passes on hotspot and healthy twin clusters with at least 90 % correct steering and no false action."""
     model, _ = trained
     sim = []
     for cl, spec in {"dt1": ("HOTSPOT", "a"), "dt2": ("HOTSPOT", "c"), "dt3": ("HEALTHY", "a")}.items():

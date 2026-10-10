@@ -20,16 +20,16 @@ Data: the intent summary columns are filled for the intents that exist, from the
 intent whose reports never named a conflict. `data_job.last_delivery_at` is filled with the time of the job's newest `data_record`. No job declares an
 interval yet, so `late_after` stays NULL. Training progress has no history to fill. The downgrade drops the index and the nine columns.
 
-Revision ID: 0035
-Revises: 0034
+Revision ID: 0037
+Revises: 0036
 """
 import json
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0035"
-down_revision = "0034"
+revision = "0037"
+down_revision = "0036"
 branch_labels = None
 depends_on = None
 

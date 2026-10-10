@@ -1,3 +1,11 @@
+"""The tables of DME (Data Management and Exposure): producers, the data types they offer, the many-to-many link between them, type subscriptions, data jobs, data offers, the
+records a producer ingests and the audit trail of mediated O1 actions.
+
+Used by `main.py` only, and migrated by `migrations/` (the ORM models must match it: `scripts/check_migration_matches_models.py`). `DELIVERY_METHODS`, `SOURCE_DOMAINS` and
+`LIFECYCLE_STAGES` are the allowed values the routes check; the columns hold plain strings, so the database does not enforce them. The design record is `HISTORY.md` section 7 (DME against the
+real ICS API) and `docs/ARCHITECTURE.md` (DME).
+"""
+
 import datetime
 import uuid
 
@@ -37,6 +45,10 @@ class DMEProducer(Base):
 
 
 class DMEType(Base):
+    """A registered data type, identified by (namespace, name, version), which is unique. It carries the JSON schema that a data job's production definition must satisfy
+    (`data_production_schema`) and, when the producer declared them, the source domain (LIVE_RAN or DIGITAL_TWIN) and source context. The producers that support the type are
+    in `DMEProducerType`, not here.
+    """
     __tablename__ = "dme_type"
     __table_args__ = (UniqueConstraint("namespace", "name", "version"),)
 
@@ -94,6 +106,9 @@ class DMETypeSubscription(Base):
 
 
 class DMEDeliverySchema(Base):
+    """A delivery schema of a type (id, kind and JSON schema). Nothing in this module reads or writes it; the table exists in the database schema and is removed with its type
+    (ON DELETE CASCADE).
+    """
     __tablename__ = "dme_delivery_schema"
 
     delivery_schema_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -103,6 +118,9 @@ class DMEDeliverySchema(Base):
 
 
 class DataJob(Base):
+    """One consumer's request for data of a type: how it is delivered (mode and method), the production definition checked against the type's schema, who asked (`consumer_id`, an rApp id or
+    `DME_FRAMEWORK`), its status and the AI/ML lifecycle stage it is for. Deleted with its type (ON DELETE CASCADE) and by the terminate routes.
+    """
     __tablename__ = "data_job"
 
     data_job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -116,8 +134,8 @@ class DataJob(Base):
     # Wave 3: which AI/ML lifecycle stage this job's data is for — drives
     # the Digital-Twin-excluded-from-inference eligibility check in main.py.
     lifecycle_stage: Mapped[str | None] = mapped_column(String)
-    # GUI-9.8 (revision 0035): delivery health. `expected_interval_seconds` is how often the consumer expects data (declared on the job, optional);
-    # `last_delivery_at` is when a producer last delivered a record for the job (POST /data-jobs/{id}/records; revision 0035 filled it from
+    # GUI-9.8 (revision 0037): delivery health. `expected_interval_seconds` is how often the consumer expects data (declared on the job, optional);
+    # `last_delivery_at` is when a producer last delivered a record for the job (POST /data-jobs/{id}/records; revision 0037 filled it from
     # data_record); `late_after` is when the job turns LATE, two intervals after the last delivery (or after the job was declared, before the first
     # one), kept as a column so `GET /data-jobs?late=` is a plain comparison in SQL. All null for a job that declares no interval.
     expected_interval_seconds: Mapped[int | None] = mapped_column(Integer)
@@ -126,6 +144,9 @@ class DataJob(Base):
 
 
 class DataOffer(Base):
+    """A producer's offer to deliver data of a type: the delivery methods offered, the one the framework committed to (the first), where to announce availability and where to tell the
+    producer the offer ended. Deleted with its type (ON DELETE CASCADE) and by the terminate route.
+    """
     __tablename__ = "data_offer"
 
     offer_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

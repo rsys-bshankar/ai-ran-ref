@@ -1,7 +1,8 @@
 /** Configuration page (route /configuration, BRIEF §4e features 3 and 11, handoff `Configuration.dc.html`): every write to the RAN, staged in
  * waves with an alarm gate and an optional KPI guard, and the data that makes a write possible. Tabs (hash): Config jobs (tiles, the paged job
  * list with halted first, the selected job's waves and controls), New job, Vendors & schemas, Endpoint trust (pinned SSH host keys) and Element
- * onboarding. Only the visible tab's boxes load. Layout only: the boxes are `sections/`, their data `data/queries.ts`. Sections: README.md. */
+ * onboarding (MGT-14.6/14.7: the onboarding templates, each element's onboarding, and who is told when one fails; the watcher box is the
+ * Software page's `LifecycleWatchers`, shared because one subscription covers onboarding and campaign failures). Only the visible tab's boxes load. Layout only: the boxes are `sections/`, their data `data/queries.ts`. Sections: README.md. */
 import { PageHeader, Tabs, useHashTab } from "../../components/ui";
 import { count, useSummary } from "../../data/summary";
 import { SectionBoundary } from "../../kit/SectionBoundary";
@@ -12,8 +13,10 @@ import { ElementOnboarding } from "./sections/ElementOnboarding";
 import { HostKeys } from "./sections/HostKeys";
 import { JobList } from "./sections/JobList";
 import { NewJobForm } from "./sections/NewJobForm";
+import { OnboardingTemplates } from "./sections/OnboardingTemplates";
 import { StagedJob } from "./sections/StagedJob";
 import { Vendors } from "./sections/Vendors";
+import { LifecycleWatchers } from "../software/sections/LifecycleWatchers";
 import "./configuration.css";
 
 const TABS = ["jobs", "new", "vendors", "trust", "onboarding"] as const;
@@ -49,7 +52,11 @@ export function Configuration() {
         <SectionBoundary id="configuration.schemas"><CmSchemas /></SectionBoundary>
       </div>}
       {tab === "trust" && <SectionBoundary id="configuration.trust"><HostKeys /></SectionBoundary>}
-      {tab === "onboarding" && <SectionBoundary id="configuration.onboarding"><ElementOnboarding /></SectionBoundary>}
+      {tab === "onboarding" && <>
+        <SectionBoundary id="configuration.templates"><OnboardingTemplates /></SectionBoundary>
+        <SectionBoundary id="configuration.onboarding"><ElementOnboarding /></SectionBoundary>
+        <SectionBoundary id="configuration.watchers"><LifecycleWatchers section="configuration.watchers" /></SectionBoundary>
+      </>}
     </>
   );
 }

@@ -34,6 +34,9 @@ def _client_major(tool: str) -> int:
 
 @pytest.fixture(scope="module")
 def admin():
+    """An autocommit engine on the server named by SMO_TEST_POSTGRES_URL; skips the module when pg_dump, pg_restore or psql is older than the
+    server, because pg_dump refuses to dump a newer server.
+    """
     engine = create_engine(ADMIN_URL, future=True, isolation_level="AUTOCOMMIT")
     with engine.connect() as connection:
         server_major = int(connection.execute(text("SHOW server_version_num")).scalar()) // 10000
@@ -50,6 +53,7 @@ def _url_for(database: str) -> str:
 
 @pytest.fixture
 def databases(admin):
+    """Two fresh empty databases (a source and a destination) created for one test and dropped, with their connections forced closed, afterwards."""
     names = [f"bk_{kind}_{uuid.uuid4().hex[:8]}" for kind in ("src", "dst")]
     with admin.connect() as connection:
         for name in names:
@@ -85,6 +89,9 @@ def _rows(database: str) -> dict:
 
 
 def _seed(database: str) -> None:
+    """Fills a migrated database with rows that are hard to round-trip: module identities whose secret has quotes and non-ASCII characters, and a
+    periodic-run row.
+    """
     engine = create_engine(_url_for(database), future=True)
     with engine.begin() as connection:
         for module, invoker in (("aimgf", "inv-1"), ("nfo", "inv-2"), ("sme", "inv-3")):
@@ -99,6 +106,9 @@ def _run(script: Path, *args: str, database: str, **kwargs):
 
 
 def test_a_backup_restores_into_an_empty_database_with_the_same_content(databases, tmp_path):
+    """A backup file is private (mode 0600), leaves no `.partial` file, and restores into an empty database with every row identical, including the
+    secret with quotes and non-ASCII characters.
+    """
     src, dst = databases
     _psql_file(src, MIGRATION)
     _seed(src)
@@ -117,6 +127,9 @@ def test_a_backup_restores_into_an_empty_database_with_the_same_content(database
 
 
 def test_a_restore_replaces_what_is_there_so_it_can_be_repeated_over_a_live_database(databases, tmp_path):
+    """Restoring over a database that has since drifted (a row deleted, one added) gives back exactly the backed-up content, so a restore can be
+    repeated.
+    """
     src, dst = databases
     _psql_file(src, MIGRATION)
     _seed(src)
@@ -136,6 +149,7 @@ def test_a_restore_replaces_what_is_there_so_it_can_be_repeated_over_a_live_data
 
 
 def test_restore_refuses_without_yes_and_changes_nothing(databases, tmp_path):
+    """Without `--yes` the restore script exits 2, names the flag and touches nothing, because a restore replaces the database."""
     src, dst = databases
     _psql_file(src, MIGRATION)
     _seed(src)
@@ -147,6 +161,7 @@ def test_restore_refuses_without_yes_and_changes_nothing(databases, tmp_path):
 
 
 def test_a_broken_backup_file_is_refused_in_one_transaction_leaving_the_database_as_it_was(databases, tmp_path):
+    """A truncated backup file fails the restore and leaves the database exactly as it was: the restore runs in one transaction."""
     src, dst = databases
     _psql_file(src, MIGRATION)
     _seed(src)
@@ -163,6 +178,7 @@ def test_a_broken_backup_file_is_refused_in_one_transaction_leaving_the_database
 
 
 def test_a_failed_backup_leaves_no_file_behind(databases, tmp_path):
+    """A backup of a database that does not exist fails and leaves neither the dump nor its `.partial` file."""
     src, _ = databases
     dump = tmp_path / "none.dump"
     env = {**os.environ, "SMO_DATABASE_URL": _url_for("no_such_database_for_the_backup_test")}
@@ -172,6 +188,7 @@ def test_a_failed_backup_leaves_no_file_behind(databases, tmp_path):
 
 
 def test_the_password_is_not_on_the_command_line(databases, tmp_path):
+    """While a backup runs, no `pg_dump` or `pg_restore` process has the database password in its arguments, where a process listing would show it."""
     src, _ = databases
     _psql_file(src, MIGRATION)
     password = make_url(ADMIN_URL).password

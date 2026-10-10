@@ -26,7 +26,7 @@ from smo_shared import scope as authz_scope
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error
 
-from . import alarm_query, scoping
+from . import alarm_query, msac, scoping
 from .models import Alarm, ManagedEntity
 
 router = APIRouter()
@@ -62,8 +62,8 @@ def set_site_cluster(managed_element_ref: str, body: SiteClusterBody, db: Sessio
     return {"managedElementRef": me.managed_element_ref, "siteCluster": me.site_cluster}
 
 
-def _element_alarm_summary(request: Request, region: str | None, site_cluster: str | None = None):
-    """A subquery with one row per managed element the caller may see (narrowed to `region` and `site_cluster` when given): its `region`, `site_cluster`, the counts of its
+def _element_alarm_summary(request: Request, db: Session, region: str | None, site_cluster: str | None = None):
+    """A subquery with one row per managed element the caller may see (its scope claim, and MGT-2.6 its access rules; narrowed to `region` and `site_cluster` when given): its `region`, `site_cluster`, the counts of its
     open `critical`, `major` and all open alarms, and `worst_rank`, the best (lowest) rank among its open graded alarms (NULL when it has none)."""
     rank = alarm_query.severity_rank()
     open_alarms = select(Alarm.managed_element_ref.label("ref"),
@@ -77,6 +77,7 @@ def _element_alarm_summary(request: Request, region: str | None, site_cluster: s
                   func.coalesce(open_alarms.c.open_alarms, 0).label("open_alarms"), open_alarms.c.worst_rank) \
         .outerjoin(open_alarms, open_alarms.c.ref == ManagedEntity.managed_element_ref)
     stmt = scoping.scoped_to_elements(stmt, scoping.request_scope(request), ManagedEntity.managed_element_ref)
+    stmt = msac.readable(stmt, db, request, ManagedEntity.managed_element_ref)
     if region:
         stmt = stmt.where(ManagedEntity.region == region)
     if site_cluster:
@@ -92,7 +93,7 @@ def fleet_health(request: Request, group_by: Literal["region", "site_cluster"] =
     critical or major alarm. worstSeverity: the worst graded severity of an open alarm in the group, or null. healthScore: 100 x (elements - unhealthy)
     / elements over all the groups, one decimal, null when there are no elements. `region` narrows to one region and `site_cluster` (PR-GUI-9.3) to one
     site cluster; the caller's scope claim applies."""
-    elements = _element_alarm_summary(request, region, site_cluster)
+    elements = _element_alarm_summary(request, db, region, site_cluster)
     key = elements.c[group_by]
     unhealthy = func.sum(case((elements.c.worst_rank <= UNHEALTHY_RANK, 1), else_=0))           # NULL worst_rank (no graded open alarm) counts 0
     rows = db.execute(select(key.label("key"), func.count().label("elements"), unhealthy.label("unhealthy"), func.min(elements.c.worst_rank).label("worst"))
@@ -109,7 +110,7 @@ def worst_elements(request: Request, limit: int = Query(10, ge=1, le=100), regio
     """PR-GUI-9.8: the elements with open alarms, worst first: `[{managedElementRef, region, siteCluster, critical, major, openAlarms}]` ranked by open
     critical alarms, then open major, then all open alarms (then the reference), in one SQL query. An element with no open alarm is not listed.
     `region` narrows to one region and `site_cluster` (PR-GUI-9.3) to one site cluster; the caller's scope claim applies."""
-    elements = _element_alarm_summary(request, region, site_cluster)
+    elements = _element_alarm_summary(request, db, region, site_cluster)
     rows = db.execute(select(elements).where(elements.c.open_alarms > 0)
                       .order_by(elements.c.critical.desc(), elements.c.major.desc(), elements.c.open_alarms.desc(), elements.c.managed_element_ref)
                       .limit(limit)).all()
@@ -121,9 +122,10 @@ def worst_elements(request: Request, limit: int = Query(10, ge=1, le=100), regio
 def fleet_scopes(request: Request, db: Session = Depends(get_session)):
     """PR-GUI-9.3: the places the console's scope picker offers: `{"regions": [{"region", "elements", "siteClusters": [{"siteCluster", "elements"}]}]}`,
     one entry per region with its element count and its site clusters (each with its count), regions and clusters by name with `null` (not set)
-    last. Elements without a region are the region `null`; without a cluster, the cluster `null`. One SQL GROUP BY; the caller's scope claim applies."""
+    last. Elements without a region are the region `null`; without a cluster, the cluster `null`. One SQL GROUP BY; the caller's scope claim and access rules (MGT-2.6) apply."""
     stmt = scoping.scoped_to_elements(select(ManagedEntity.region, ManagedEntity.site_cluster, func.count().label("n")),
                                       scoping.request_scope(request), ManagedEntity.managed_element_ref)
+    stmt = msac.readable(stmt, db, request, ManagedEntity.managed_element_ref)          # MGT-2.6: only the elements the caller may read
     rows = db.execute(stmt.group_by(ManagedEntity.region, ManagedEntity.site_cluster)).all()
     regions: dict[str | None, dict] = {}
     for row in rows:

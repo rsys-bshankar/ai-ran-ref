@@ -2,7 +2,7 @@
   "components": {
     "schemas": {
       "ApprovalPolicy": {
-        "description": "What happens to a request nobody decided within `timeoutSeconds` (a minute to a week, default an hour): `EXPIRE` (the default) lapses it,\n`REJECT` has the platform reject it. Neither writes anything; there is no option that approves by itself.",
+        "description": "What happens to a request nobody decided within `timeoutSeconds` (a minute to a week, default an hour): `EXPIRE` (the default) lapses it,\n`REJECT` has the platform reject it. Neither writes anything; there is no option that approves by itself.\n\n`requiredApprovals` (default 1, one approval, as before) may be 2: the request then needs two different people to approve it (the first approval keeps it waiting,\nthe requester's own never counts, one rejection ends it). Stored and pushed only when it is 2, so a policy that does not use it is exactly what it was.",
         "properties": {
           "onTimeout": {
             "default": "EXPIRE",
@@ -12,6 +12,15 @@
             ],
             "title": "Ontimeout",
             "type": "string"
+          },
+          "requiredApprovals": {
+            "default": 1,
+            "enum": [
+              1,
+              2
+            ],
+            "title": "Requiredapprovals",
+            "type": "integer"
           },
           "timeoutSeconds": {
             "default": 3600,

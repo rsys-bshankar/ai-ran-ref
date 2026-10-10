@@ -1,5 +1,6 @@
 /** Software page (route /software, BRIEF §4e feature 2, handoff `Software.dc.html`): RAN software campaigns in waves with an alarm gate.
- * Tabs (hash): Campaigns (tiles, the paged list, the selected campaign's detail with its controls and events, and the elements of one wave),
+ * Tabs (hash): Campaigns (tiles, the paged list, the selected campaign's detail with its controls and events, the elements of one wave, and
+ * who is told when a campaign halts or a rollback fails),
  * Element jobs (every per-element software job, flow 19) and New campaign (dry run, then start). Layout only: the boxes are `sections/`, their
  * data `data/queries.ts`; the selected campaign, wave and state filter live in the URL. Sections and limits: README.md. */
 import { PageHeader, Tabs, useHashTab } from "../../components/ui";
@@ -11,6 +12,7 @@ import { CampaignElements } from "./sections/CampaignElements";
 import { CampaignList } from "./sections/CampaignList";
 import { CampaignTiles } from "./sections/CampaignTiles";
 import { ElementJobs } from "./sections/ElementJobs";
+import { LifecycleWatchers } from "./sections/LifecycleWatchers";
 import { NewCampaignForm } from "./sections/NewCampaignForm";
 import "./software.css";
 
@@ -40,6 +42,7 @@ export function Software() {
             <SectionBoundary id="software.elements"><CampaignElements /></SectionBoundary>
           </div>
         </div>
+        <SectionBoundary id="software.watchers"><LifecycleWatchers section="software.watchers" /></SectionBoundary>
       </>}
       {tab === "jobs" && <SectionBoundary id="software.jobs"><ElementJobs /></SectionBoundary>}
       {tab === "new" && <SectionBoundary id="software.new"><NewCampaignForm onStarted={(id) => { select(id); setTab("campaigns"); }} /></SectionBoundary>}

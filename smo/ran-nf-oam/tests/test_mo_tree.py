@@ -13,23 +13,26 @@ from smo_shared.testing import make_test_engine
 
 from app import mo_tree
 from app.main import app
-from app.models import (ElementOnboarding, OnboardingTemplate, SoftwareCampaign, Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, ManagedObject, MsacAccessRule, MsacIdentity, MsacRole,
+from app.models import (ElementOnboarding, LifecycleSubscription, OnboardingTemplate, SoftwareCampaign, Alarm, CMSchemaCache, CMSnapshot, ManagedEntity, ManagedObject, MsacAccessRule, MsacIdentity, MsacRole,
                         O1AdaptorEndpoint, O1AdaptorHostKey, VendorCapability, WriteConfigJob, WriteConfigSubChange)
 
 
 @pytest.fixture
 def db_session_factory():
+    """Fixture: a SQLite session factory with the tables the tree and registration need, and foreign keys switched on so ON DELETE CASCADE behaves as in Postgres.
+    """
     engine = make_test_engine()
     event.listen(engine, "connect", lambda dbapi, record: dbapi.execute("PRAGMA foreign_keys=ON"))   # so ON DELETE CASCADE is enforced as in Postgres
     Base.metadata.create_all(engine, tables=[
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
         WriteConfigSubChange.__table__, CMSnapshot.__table__, VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__,
-        MsacAccessRule.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__, ManagedObject.__table__, OnboardingTemplate.__table__, ElementOnboarding.__table__, SoftwareCampaign.__table__, O1AdaptorHostKey.__table__])
+        MsacAccessRule.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__, ManagedObject.__table__, OnboardingTemplate.__table__, ElementOnboarding.__table__, LifecycleSubscription.__table__, SoftwareCampaign.__table__, O1AdaptorHostKey.__table__])
     return sessionmaker(bind=engine)
 
 
 @pytest.fixture
 def client(db_session_factory):
+    """Fixture: a TestClient of the app with `get_session` overridden to a session from `db_session_factory`; the override is removed afterwards."""
     def override():
         session = db_session_factory()
         try:
@@ -43,6 +46,7 @@ def client(db_session_factory):
 
 
 def _register(client, ref, function=None):
+    """Registers an NETCONF endpoint for `ref` (and optionally a managed function) through the route and asserts 201."""
     body = {"managedElementRef": ref, "adaptorUri": "http://adaptor:8000/edit-config", "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF",
             "entityType": "O-DU"}
     if function:
@@ -52,6 +56,8 @@ def _register(client, ref, function=None):
 
 
 def test_how_dns_are_formed():
+    """The DN helpers build the root, target and ancestor DNs for flat refs, DN refs and function refs, and a flat function id has no class to hang under.
+    """
     assert mo_tree.root_dn("ME-1") == "ManagedElement=ME-1"
     assert mo_tree.root_dn("SubNetwork=A,ManagedElement=ME-2") == "SubNetwork=A,ManagedElement=ME-2"
     assert mo_tree.target_dn("ME-1", None) == "ManagedElement=ME-1"
@@ -64,6 +70,7 @@ def test_how_dns_are_formed():
 
 
 def test_registering_an_element_puts_its_root_and_its_function_in_the_tree(client):
+    """Registering an element adds its root, and the function it was registered with with its ancestors, as `registry` nodes."""
     _register(client, "ME-1", "GNBDUFunction=1,NRCellDU=101")
     _register(client, "ME-2")
     cell = client.get("/managed-objects/ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101").json()
@@ -74,6 +81,7 @@ def test_registering_an_element_puts_its_root_and_its_function_in_the_tree(clien
 
 
 def test_children_are_the_direct_ones_ordered_and_paged(client, db_session_factory):
+    """The children route lists only direct children, ordered, with paging, and an empty list for a leaf."""
     _register(client, "ME-1", "GNBDUFunction=1,NRCellDU=102")
     db = db_session_factory()
     for ident in ("101", "100", "103"):
@@ -90,6 +98,7 @@ def test_children_are_the_direct_ones_ordered_and_paged(client, db_session_facto
 
 
 def test_the_subtree_is_nested_depth_limited_and_capped(client, db_session_factory, monkeypatch):
+    """The subtree is nested, honours `depth` (0 and 1 and a 422 above the maximum) and is cut at the node cap with `truncated` set."""
     _register(client, "ME-1", "GNBDUFunction=1,NRCellDU=101")
     db = db_session_factory()
     mo_tree.ensure(db, "ME-1", "ManagedElement=ME-1,GNBDUFunction=1,NRCellDU=101,NRCellRelation=7", "walk")
@@ -111,12 +120,14 @@ def test_the_subtree_is_nested_depth_limited_and_capped(client, db_session_facto
 
 
 def test_an_unknown_dn_is_a_404_on_all_three_routes(client):
+    """A DN that is not in the tree is 404 MANAGED_OBJECT_NOT_FOUND on the node, children and subtree routes."""
     for suffix in ("", "/children", "/subtree"):
         resp = client.get(f"/managed-objects/ManagedElement=nope{suffix}")
         assert resp.status_code == 404 and "MANAGED_OBJECT_NOT_FOUND" in resp.text
 
 
 def test_a_dn_keyed_element_is_its_own_root_and_objects_go_with_their_element(client, db_session_factory):
+    """An element registered by DN is its own root with its ancestors above it, and deleting the element removes its nodes (cascade)."""
     _register(client, "SubNetwork=A,ManagedElement=ME-9", "GNBDUFunction=1")
     assert client.get("/managed-objects/SubNetwork=A,ManagedElement=ME-9,GNBDUFunction=1").json()["parentDn"] == "SubNetwork=A,ManagedElement=ME-9"
     assert client.get("/managed-objects/SubNetwork=A").json()["managedElementRef"] == "SubNetwork=A,ManagedElement=ME-9"
@@ -128,6 +139,7 @@ def test_a_dn_keyed_element_is_its_own_root_and_objects_go_with_their_element(cl
 
 
 def test_registering_twice_does_not_duplicate_and_ensure_is_idempotent(client, db_session_factory):
+    """Adding a node that exists again does not duplicate it."""
     _register(client, "ME-1", "GNBDUFunction=1")
     db = db_session_factory()
     before = db.query(ManagedObject).count()
@@ -138,6 +150,8 @@ def test_registering_twice_does_not_duplicate_and_ensure_is_idempotent(client, d
 
 
 def test_a_registry_row_is_not_swept_away_by_a_walk_and_promotes_the_walk_rows_above_it(db_session_factory):
+    """A walk may drop walked nodes the server no longer reports, but a node an operator registered stays, and registering below a walked node promotes the walked ancestors so the walk cannot remove them.
+    """
     db = db_session_factory()
     db.add(ManagedEntity(managed_element_ref="ME-1", entity_type="O-DU", o1_protocol="NETCONF"))
     db.flush()

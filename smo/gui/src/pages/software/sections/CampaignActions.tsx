@@ -14,7 +14,7 @@ const LOOK: Record<CampaignAction, { label: string; tone: "primary" | "default" 
 };
 
 /** The buttons of one campaign, or nothing in a state that takes no action. */
-export function CampaignActions({ campaign }: { campaign: Pick<Campaign, "campaignId" | "status" | "haltedReason" | "nextWaveAt" | "wave"> }) {
+export function CampaignActions({ campaign }: { campaign: Pick<Campaign, "campaignId" | "status" | "haltedReason" | "nextWaveAt" | "wave" | "rollbackOrder"> }) {
   const actions = campaignActions(campaign);
   if (actions.length === 0) return null;
   return (
@@ -25,7 +25,9 @@ export function CampaignActions({ campaign }: { campaign: Pick<Campaign, "campai
           : action === "rollback" && campaign.wave > 0 ? `Roll back waves 1–${campaign.wave}` : look.label;
         return (
           <ActionButton key={action} label={label} tone={look.tone}
-            confirm={force ? "The pause between waves has not elapsed. Start the next wave now?" : look.confirm}
+            confirm={force ? "The pause between waves has not elapsed. Start the next wave now?"
+              : action === "rollback" ? `Roll back this campaign? Every element it upgraded gets a revert software job, ${campaign.rollbackOrder === "reverse" ? "the last wave first, then each earlier wave" : "all at once"}. It is refused while a job of the campaign is still running.`
+              : look.confirm}
             action={{ method: "POST", path: campaignPath(campaign.campaignId, action), json: { force }, success: look.success }} />
         );
       })}

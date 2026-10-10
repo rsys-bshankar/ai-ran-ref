@@ -20,6 +20,8 @@ LAT = {"type": "number", "range": [[-90.0, 90.0]], "fractionDigits": 4}
     ({"type": "array"}, [1, 2]), ({"type": "object"}, {"a": 1}), ({"type": "any"}, object()), ({}, 3),
 ])
 def test_an_acceptable_value_has_no_problem(entry, value):
+    """Each YANG leaf type accepts the values it should (including integer-valued strings, bounds, enum members and an unconstrained type), so a valid CM write is not refused.
+    """
     assert check_value(entry, value) is None
 
 
@@ -38,16 +40,20 @@ def test_an_acceptable_value_has_no_problem(entry, value):
     ({"type": "array"}, "x", "is not a list"), ({"type": "object"}, [], "is not an object"),
 ])
 def test_an_unacceptable_value_names_its_problem(entry, value, reason):
+    """A value outside the type, range, length, pattern, fraction digits or enum is refused with the exact reason text that ends up in the rejection.
+    """
     assert check_value(entry, value) == reason
 
 
 def test_a_pattern_python_cannot_read_is_skipped_not_guessed_at():
+    """A YANG pattern that Python's re cannot compile is skipped, while a readable pattern in the same entry is still enforced."""
     entry = {"type": "string", "pattern": ["\\p{L}+(", "[a-z]+"]}
     assert check_value(entry, "abc") is None
     assert check_value(entry, "ABC") == "does not match the pattern [a-z]+"
 
 
 def test_every_pattern_must_match():
+    """When a leaf has several patterns, a value must match all of them (YANG semantics), and the first one it fails is named."""
     entry = {"type": "string", "pattern": ["[A-F]+", ".{2}"]}
     assert check_value(entry, "AB") is None
     assert check_value(entry, "ABC") == "does not match the pattern .{2}"

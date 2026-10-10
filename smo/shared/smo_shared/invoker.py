@@ -55,11 +55,17 @@ def invoker_id(request: Request) -> str | None:
 
 
 def get_originator() -> str | None:
+    """The rApp the request being handled is for, from the context variable `apply_invoker_context`'s middleware sets; None outside a request or when
+    nobody is being acted for.
+    """
     return _current_originator.get()
 
 
 @contextmanager
 def on_own_account() -> Iterator[None]:
+    """Context manager: inside the block `get_originator()` is None, so `R1Client` adds no `X-R1-On-Behalf-Of` to onward calls. The previous value is
+    restored on exit, also when the block raises.
+    """
     token = _current_originator.set(None)
     try:
         yield
@@ -68,6 +74,12 @@ def on_own_account() -> Iterator[None]:
 
 
 def apply_invoker_context(app: FastAPI) -> None:
+    """Installs the HTTP middleware that records `originator_of(request.headers)` in a context variable for the duration of each request and resets it
+    afterwards.
+
+    Called by `correlation.apply_correlation_id`, so a module does not call it itself. The context variable is what `R1Client` reads to stamp
+    `X-R1-On-Behalf-Of` on calls made while handling the request.
+    """
     @app.middleware("http")
     async def _invoker_context_middleware(request: Request, call_next):
         token = _current_originator.set(originator_of(request.headers))

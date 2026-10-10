@@ -60,8 +60,8 @@ class Intent(Base):
     intent_report_reference: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     intent_utility_formula_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("intent_utility_formula.intent_utility_formula_id", ondelete="SET NULL"))
-    # GUI-9.8 (revision 0035): what the newest reports say, kept on the row so `GET /intents` can filter on it in SQL (the reports are JSON). Written
-    # by `main._apply_report` with every report this module stores; revision 0035 filled them for the intents that existed before. `fulfilment_percent`
+    # GUI-9.8 (revision 0037): what the newest reports say, kept on the row so `GET /intents` can filter on it in SQL (the reports are JSON). Written
+    # by `main._apply_report` with every report this module stores; revision 0037 filled them for the intents that existed before. `fulfilment_percent`
     # and `fulfilled` come from the newest fulfilment report (null: none yet); `in_conflict` from the newest report that carried conflict reports.
     fulfilment_percent: Mapped[float | None] = mapped_column(Float)
     fulfilled: Mapped[bool | None] = mapped_column(Boolean)

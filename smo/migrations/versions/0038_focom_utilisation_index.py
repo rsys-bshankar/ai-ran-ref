@@ -7,13 +7,13 @@
 
 Expand only: one index that changes no query's answer; the previous release neither knows nor needs it. No data is changed. The downgrade drops it.
 
-Revision ID: 0036
-Revises: 0035
+Revision ID: 0038
+Revises: 0037
 """
 from alembic import op
 
-revision = "0036"
-down_revision = "0035"
+revision = "0038"
+down_revision = "0037"
 branch_labels = None
 depends_on = None
 

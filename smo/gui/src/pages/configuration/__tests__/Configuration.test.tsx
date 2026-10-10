@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Tests of the Configuration page (pages/configuration) against a fake BFF: the job list shows halted jobs first, a staged job's detail
  * shows its waves, pause and controls only to a role that may use them, the tabs (vendors and schemas, endpoint trust, element onboarding)
- * render their server lists, "Run KPI check" posts the job's guard (operator), an admin pins and removes a host key, onboarding's Apply is
+ * render their server lists, "Run KPI check" posts the job's guard (operator), an admin pins and removes a host key, onboarding's Apply (through its dialog) is
  * role-gated and posts, a new job dry-runs, the key-paste parser, and the wave-state rule. Run:
  * `npx vitest run src/pages/configuration`. */
 import { act } from "react";
@@ -156,7 +156,7 @@ describe("Configuration page", () => {
     expect(parseKeyInput("AAAAB3", "ssh-rsa")).toEqual({ type: "ssh-rsa", blob: "AAAAB3" });
   });
 
-  // Apply shows only to an operator, asks first, and posts to the element's apply route.
+  // Apply shows only to an operator, opens the apply dialog, and posts to the element's apply route.
   it("gates the onboarding Apply by role", async () => {
     window.location.hash = "#onboarding";
     const viewer = await open("viewer");
@@ -164,9 +164,10 @@ describe("Configuration page", () => {
     expect(byText(viewer.container, "button", "Apply")).toBeNull();
     cleanup();
     window.location.hash = "#onboarding";
-    vi.stubGlobal("confirm", () => true);
     const op = await open("operator");
     await click(byText(op.container, "button", "Apply")!);
+    await settle();
+    await click(byText(document.querySelector("[role=dialog]")!, "button", "Apply")!);           // the apply dialog (software version) sends it
     await settle();
     expect(op.calls.find((c) => c.method === "POST")!.path).toBe("/smo/ran-nf-oam/element-onboarding/du-9/apply");
   });

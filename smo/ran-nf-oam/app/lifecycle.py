@@ -18,7 +18,13 @@ ended the health gate runs (the hook of MGT-5.3, `HEALTH_GATES`): a failed job, 
 started, fails it. A failed gate halts the campaign (`onGateFailure` "halt", the operator continues, aborts or rolls back) or undoes what was done ("rollback"). A pause between
 waves (`wavePauseSeconds`) is a halt with a time, continued by the sweep (`advance_due`, run by the worker). The jobs are the existing ones, advanced as before by
 `POST /software-management-jobs/{id}/advance` (in this build the adaptor's report, MGT-15 does not change that); a job that belongs to a campaign tells its campaign, which
-decides what comes next. A rollback is one revert job per completed job (`rollback_of`). `GET /software-campaigns/{id}/report` is the outcome per wave and per element.
+decides what comes next. A rollback is one revert job per completed job (`rollback_of`), all at once or, with `rollbackOrder` "reverse", the last wave first and each earlier
+wave when the one after it has ended (MGT-15.7). A campaign made with `jobTimeoutSeconds` has its running jobs failed by the sweep when their wave (or rollback step) is that old
+(`expire_jobs`); one made without never is. `GET /software-campaigns/{id}/report` is the outcome per wave and per element.
+
+**Notifications** (`/lifecycle-subscriptions`, MGT-14.7 and MGT-15.6). A subscriber (admin-registered URL, through the transactional outbox) is told `ONBOARDING_FAILED` when an
+element's onboarding ends FAILED, `CAMPAIGN_HALTED` when a campaign halts for a failed gate or by an operator (not for the routine pause between waves) and
+`CAMPAIGN_ROLLBACK_FAILED` when a rollback ends with a revert job failed. With no subscription nothing is enqueued.
 """
 
 import datetime
@@ -28,7 +34,7 @@ import re
 import uuid
 from typing import Any, Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import func, select
@@ -38,13 +44,15 @@ from sqlalchemy.orm.exc import StaleDataError
 from smo_shared.db import get_session
 from smo_shared.errors import FrameworkError, framework_error, illegal_transition_error
 from smo_shared.idempotency import idempotent
+from smo_shared.outbox import enqueue
 from smo_shared.pagination import PageLimit, PageOffset, paginate
 from smo_shared.statemachine import IllegalTransition
 from smo_shared.timeutil import as_utc
+from smo_shared.webhook import is_safe_webhook_destination
 
 from . import scoping
 from .ldn import check_ref
-from .models import Alarm, ElementOnboarding, ManagedEntity, OnboardingTemplate, SoftwareCampaign, SoftwareManagementJob, WriteConfigSubChange
+from .models import Alarm, ElementOnboarding, LifecycleSubscription, ManagedEntity, OnboardingTemplate, SoftwareCampaign, SoftwareManagementJob, WriteConfigSubChange
 from .statemachine import (
     CAMPAIGN_FSM,
     ONBOARDING_FSM,
@@ -65,6 +73,7 @@ log = logging.getLogger("ran-nf-oam")
 ONBOARDING_TEMPLATE_NOT_FOUND = ("ONBOARDING_TEMPLATE_NOT_FOUND", 404)
 ELEMENT_ONBOARDING_NOT_FOUND = ("ELEMENT_ONBOARDING_NOT_FOUND", 404)
 SOFTWARE_CAMPAIGN_NOT_FOUND = ("SOFTWARE_CAMPAIGN_NOT_FOUND", 404)
+LIFECYCLE_SUBSCRIPTION_NOT_FOUND = ("LIFECYCLE_SUBSCRIPTION_NOT_FOUND", 404)
 
 MAX_CAMPAIGN_ELEMENTS = 5000
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
@@ -94,6 +103,65 @@ def _raise_alarm(db: Session, ref: str, source_id: str, severity: str, alarm_typ
         db.add(Alarm(source_alarm_id=source_id, managed_element_ref=ref, severity=severity, alarm_type=alarm_type, probable_cause=cause, specific_problem=problem))
 
 
+# ---------------------------------------------------------------- notifications (MGT-14.7, MGT-15.6)
+
+# The body of POST /lifecycle-subscriptions: where to send the notices (`callbackUri`, 1 to 2000 characters; whether it is an acceptable destination is checked by the route, not here)
+# and which events, a list of the three event names (an unknown name is a 422; empty means all three). Unknown fields are refused. It has no docstring on purpose: a
+# docstring would be published in docs/openapi.
+class LifecycleSubscriptionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    callbackUri: str = Field(min_length=1, max_length=2000)
+    events: list[Literal["ONBOARDING_FAILED", "CAMPAIGN_HALTED", "CAMPAIGN_ROLLBACK_FAILED"]] = Field(default_factory=list, description="narrow to these events; empty means all three")
+
+
+def _subscription_view(sub: LifecycleSubscription) -> dict:
+    return {"subscriptionId": str(sub.subscription_id), "callbackUri": sub.callback_uri, "events": sub.events or [], "createdAt": _stamp(sub.created_at)}
+
+
+@router.post("/lifecycle-subscriptions", status_code=201)
+def subscribe_to_lifecycle_events(body: LifecycleSubscriptionRequest, db: Session = Depends(get_session)):
+    """MGT-14.7/15.6: be told (a POST to `callbackUri`, through the outbox) when an element's onboarding fails (`ONBOARDING_FAILED`), a software campaign halts
+    (`CAMPAIGN_HALTED`: a failed gate or an operator's halt, not the routine pause between waves) or its rollback fails (`CAMPAIGN_ROLLBACK_FAILED`). `events`
+    narrows it, empty means all three. A destination the SSRF guard refuses is a 422 here rather than a silent drop later."""
+    if not is_safe_webhook_destination(body.callbackUri):
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="callbackUri is not an acceptable destination")
+    sub = LifecycleSubscription(callback_uri=body.callbackUri, events=sorted(set(body.events)))
+    db.add(sub)
+    db.commit()
+    return _subscription_view(sub)
+
+
+@router.get("/lifecycle-subscriptions")
+def list_lifecycle_subscriptions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Answers the page envelope (`items`, `limit`, `offset` and `total` or `hasMore`) of the subscriptions, oldest first, each as `_subscription_view` shows it: the callback, the events
+    # (an empty list means all three) and when it was made. An empty page when nobody subscribed. Reads only; no write, no commit and no outbox row.
+    page = paginate(db, select(LifecycleSubscription).order_by(LifecycleSubscription.created_at), limit, offset)
+    return {**page, "items": [_subscription_view(s) for s in page["items"]]}
+
+
+@router.delete("/lifecycle-subscriptions/{subscription_id}", status_code=204)
+def unsubscribe_from_lifecycle_events(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Deletes the subscription and commits, answering 204 with no body; notices already in the outbox for it are still delivered. An id that does not exist is a 404
+    # LIFECYCLE_SUBSCRIPTION_NOT_FOUND (and nothing is written); an id that is not a UUID is a 422 from the path validation.
+    sub = db.get(LifecycleSubscription, subscription_id)
+    if sub is None:
+        raise framework_error(LIFECYCLE_SUBSCRIPTION_NOT_FOUND, detail=f"no subscription {subscription_id}")
+    db.delete(sub)
+    db.commit()
+    return Response(status_code=204)
+
+
+def _notify_lifecycle(db: Session, event_type: str, href: str, fields: dict) -> None:
+    """One outbox row per subscriber that wants `event_type`, in the transaction that records the event, so the notice exists exactly when the failure or halt does and
+    is sent only after the commit. Nothing is enqueued, and nothing is read but one empty query, when nobody subscribed. The fields are the platform's own
+    wording (a reason code, a count, an element reference), never an exception's text."""
+    event = {"href": href, "eventType": event_type, **fields, "occurredAt": _now().isoformat()}
+    for sub in db.scalars(select(LifecycleSubscription)).all():
+        if not sub.events or event_type in sub.events:
+            enqueue(db, sub.callback_uri, event)
+
+
+
 # ---------------------------------------------------------------- onboarding templates (MGT-14.1)
 
 class TemplateChange(BaseModel):
@@ -109,6 +177,8 @@ class TemplateChange(BaseModel):
         return check_ref(value)
 
 
+# Request body of `PUT /onboarding-templates/{name}`: the element type (and optionally vendor) the template is for, the CM changes to apply (1 to 200), and the software baseline with its two switches.
+# `requireBaseline` without a `softwareBaseline` is refused by the model validator.
 class OnboardingTemplateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     entityType: str = Field(min_length=1, max_length=100)
@@ -161,6 +231,7 @@ def put_onboarding_template(name: str, body: OnboardingTemplateRequest, db: Sess
 
 @router.get("/onboarding-templates")
 def list_onboarding_templates(entity_type: str | None = None, limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Paged list, optionally only the templates of one `entity_type`. Reads only.
     stmt = select(OnboardingTemplate)
     if entity_type:
         stmt = stmt.where(OnboardingTemplate.entity_type == entity_type)
@@ -170,6 +241,7 @@ def list_onboarding_templates(entity_type: str | None = None, limit: int = PageL
 
 @router.get("/onboarding-templates/{name}")
 def get_onboarding_template(name: str, db: Session = Depends(get_session)):
+    # 404 ONBOARDING_TEMPLATE_NOT_FOUND for an unknown name, and also for a name that is not shaped like a template name.
     return _template_view(_template_or_404(db, name))
 
 
@@ -243,6 +315,8 @@ def _onboarding_view(row: ElementOnboarding) -> dict:
 
 
 def _onboarding_or_404(db: Session, ref: str, request: Request | None = None) -> ElementOnboarding:
+    """The onboarding row of an element, or 404 ELEMENT_ONBOARDING_NOT_FOUND. When `request` is given the caller's scope is checked first (403 SCOPE_DENIED), so an out-of-scope element is refused before its row is looked up.
+    """
     if request is not None:
         scoping.require_elements(db, scoping.request_scope(request), [ref])          # PR-SEC-10: 403 for an element outside the caller's scope
     row = db.get(ElementOnboarding, ref)
@@ -252,11 +326,16 @@ def _onboarding_or_404(db: Session, ref: str, request: Request | None = None) ->
 
 
 def _fail(db: Session, row: ElementOnboarding, detail: str) -> None:
+    """Ends an apply as FAILED. Rolls back the caller's open transaction first, so nothing the failed attempt left uncommitted is kept, and reloads the row, then moves it with APPLY_FAILED, keeps the reason, raises a major alarm (once while it stands), queues the `ONBOARDING_FAILED` notices and commits, all in the one transaction that records the failure.
+    """
     db.rollback()
     db.refresh(row)
     row.status = ONBOARDING_FSM.fire(OnboardingState(row.status), OnboardingEvent.APPLY_FAILED)
     row.detail, row.updated_at = detail[:1000], _now()
     _raise_alarm(db, row.managed_element_ref, f"onboarding:{row.managed_element_ref}", "major", "PROCESSING_ERROR_ALARM", "ONBOARDING_FAILED", detail[:200])
+    _notify_lifecycle(db, "ONBOARDING_FAILED", f"/ran-nf-oam/element-onboarding/{row.managed_element_ref}",
+                      {"managedElementRef": row.managed_element_ref, "templateName": row.template_name,
+                       "configJobId": str(row.config_job_id) if row.config_job_id else None, "detail": row.detail})
     db.commit()
 
 
@@ -341,12 +420,14 @@ def on_first_heartbeat(db: Session, managed_element_ref: str) -> None:
         log.exception("onboarding of %s: the automatic apply failed", managed_element_ref)
 
 
+# Request body of `POST /element-onboarding/{ref}/select`: an optional template to use instead of the best match, and the software version the element runs.
 class SelectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     template: str | None = Field(default=None, description="a template to use instead of the best match")
     softwareVersion: str | None = Field(default=None, min_length=1, max_length=100)
 
 
+# Request body of `POST /element-onboarding/{ref}/apply`: who applies the template, and optionally the software version the element runs (for the baseline check).
 class ApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     requestedBy: str = Field(min_length=1, max_length=200)
@@ -372,6 +453,7 @@ def list_element_onboarding(request: Request, status: Literal["DISCOVERED", "NO_
 
 @router.get("/element-onboarding/{managed_element_ref}")
 def get_element_onboarding(managed_element_ref: str, request: Request, db: Session = Depends(get_session)):
+    # 403 SCOPE_DENIED outside the caller's scope; 404 ELEMENT_ONBOARDING_NOT_FOUND when the element was never matched (select a template first).
     return _onboarding_view(_onboarding_or_404(db, managed_element_ref, request))
 
 
@@ -417,6 +499,7 @@ class CampaignSelector(BaseModel):
         return self
 
 
+# Request body of `POST /software-campaigns`. Exactly one of `managedElementRefs` and `selector` is given (the model validator refuses both or neither) and a repeated reference is dropped, keeping the first. `waveSize` omitted puts every element in one wave.
 class CampaignRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     requestedBy: str = Field(min_length=1, max_length=200)
@@ -428,10 +511,13 @@ class CampaignRequest(BaseModel):
     wavePauseSeconds: int = Field(default=0, ge=0)
     gateMaxNewAlarms: int = Field(default=0, ge=0)
     onGateFailure: Literal["halt", "rollback"] = "halt"
+    jobTimeoutSeconds: int | None = Field(default=None, ge=1, le=7 * 86400, description="MGT-15.7: a software job still running this long after its wave (or rollback step) started is failed by the sweep; absent: no timeout")
+    rollbackOrder: Literal["all", "reverse"] = Field(default="all", description="MGT-15.7: `all` starts every revert job at once; `reverse` undoes the last wave first and the next only when it has ended")
     dryRun: bool = False
 
     @model_validator(mode="after")
     def _elements_or_selector(self):
+        """Model validator: exactly one of the two ways to name elements, and a named list de-duplicated in order."""
         if (self.managedElementRefs is None) == (self.selector is None):
             raise ValueError("name the elements (managedElementRefs) or select them (selector), one of the two")
         if self.managedElementRefs is not None:
@@ -439,16 +525,25 @@ class CampaignRequest(BaseModel):
         return self
 
 
+# Request body of the halt, continue, abort and rollback routes of a campaign: who asks, and for `continue` whether to go on although the pause between waves has not elapsed.
 class CampaignAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
     requestedBy: str = Field(min_length=1, max_length=200)
     force: bool = False                       # continue: go on although the pause has not elapsed
 
 
-def _log(c: SoftwareCampaign, event: str, detail: str | None = None, wave: int | None = None, by: str | None = None) -> None:
-    """The campaign's event log (reassigned: a JSON column does not track an in-place change)."""
+def _log(c: SoftwareCampaign, event: str, detail: str | None = None, wave: int | None = None, by: str | None = None, job: uuid.UUID | None = None) -> None:
+    """The campaign's event log (reassigned: a JSON column does not track an in-place change). `job` is set on the one event that is about a job (JOB_TIMED_OUT)."""
     entry = {"at": _now().isoformat(), "event": event, "wave": wave if wave is not None else c.current_wave, "detail": detail, "by": by}
+    if job is not None:
+        entry["job"] = str(job)
     c.wave_log = [*c.wave_log, entry]
+
+
+def _campaign_event(db: Session, c: SoftwareCampaign, event_type: str, reason: str | None, detail: str | None) -> None:
+    """MGT-15.6: tell the subscribers of `event_type` (see `_notify_lifecycle`)."""
+    _notify_lifecycle(db, event_type, f"/ran-nf-oam/software-campaigns/{c.campaign_id}",
+                      {"campaignId": str(c.campaign_id), "name": c.name, "status": c.status, "wave": c.current_wave, "waveCount": c.wave_count, "reason": reason, "detail": detail})
 
 
 def _wave_elements(c: SoftwareCampaign, wave: int) -> list[str]:
@@ -457,6 +552,8 @@ def _wave_elements(c: SoftwareCampaign, wave: int) -> list[str]:
 
 
 def _jobs(db: Session, c: SoftwareCampaign, wave: int | None = None, reverts: bool = False) -> list[SoftwareManagementJob]:
+    """The software jobs of a campaign, by wave then element: its own jobs, or with `reverts` the revert jobs (those with `rollback_of`); one wave when `wave` is given.
+    """
     stmt = select(SoftwareManagementJob).where(SoftwareManagementJob.campaign_id == c.campaign_id)
     stmt = stmt.where(SoftwareManagementJob.rollback_of.is_not(None) if reverts else SoftwareManagementJob.rollback_of.is_(None))
     if wave is not None:
@@ -469,6 +566,8 @@ def _in_flight(job: SoftwareManagementJob) -> bool:
 
 
 def _start_wave(db: Session, c: SoftwareCampaign, wave: int) -> None:
+    """Makes `wave` the current wave and starts one software job per element of it (flushed, not committed: the caller's transaction commits the wave with the state change that led to it). The wave clock for `jobTimeoutSeconds` restarts, and any pause is cleared.
+    """
     c.current_wave, c.wave_started_at, c.next_wave_at = wave, _now(), None
     for ref in _wave_elements(c, wave):
         start_software_job(db, ref, campaign_id=c.campaign_id, campaign_wave=wave, software_version=c.software_version)
@@ -485,6 +584,8 @@ def _gate_failed_jobs(db: Session, c: SoftwareCampaign, jobs: list[SoftwareManag
 
 
 def _gate_new_alarms(db: Session, c: SoftwareCampaign, jobs: list[SoftwareManagementJob], started: datetime.datetime) -> str | None:
+    """Health gate: fails when more critical or major alarms than `gateMaxNewAlarms` were raised, since the wave started, on the elements of the wave. Returns the reason, or None.
+    """
     elements = {j.managed_element_ref for j in jobs}
     raised = db.scalar(select(func.count()).select_from(Alarm).where(
         Alarm.managed_element_ref.in_(elements), Alarm.raised_at >= started, Alarm.severity.in_(("critical", "major")))) or 0
@@ -502,11 +603,15 @@ def _finish(c: SoftwareCampaign) -> None:
     _log(c, "COMPLETED")
 
 
-def _halt(c: SoftwareCampaign, reason: str, detail: str | None, next_at: datetime.datetime | None = None, by: str | None = None) -> None:
+def _halt(db: Session, c: SoftwareCampaign, reason: str, detail: str | None, next_at: datetime.datetime | None = None, by: str | None = None) -> None:
+    """Moves a RUNNING campaign to HALTED with a reason, logs it and queues the `CAMPAIGN_HALTED` notice, except for `WAVE_PAUSE`, the routine pause between waves. `next_at` is when a pause ends. The caller commits.
+    """
     c.status = CAMPAIGN_FSM.fire(CampaignState(c.status), CampaignEvent.HALT)
     c.halted_reason, c.halted_detail, c.next_wave_at = reason, detail, next_at
     _log(c, "HALTED", f"{reason}{': ' + detail if detail else ''}", by=by)
     log.warning("software campaign %s halted after wave %s of %s: %s %s", c.campaign_id, c.current_wave, c.wave_count, reason, detail or "")
+    if reason != "WAVE_PAUSE":                                                # the pause between waves is routine, not news
+        _campaign_event(db, c, "CAMPAIGN_HALTED", reason, detail)
 
 
 def _undone(reverts: list[SoftwareManagementJob]) -> dict[uuid.UUID, str]:
@@ -520,21 +625,41 @@ def _undone(reverts: list[SoftwareManagementJob]) -> dict[uuid.UUID, str]:
     return state
 
 
-def _start_rollback(db: Session, c: SoftwareCampaign, why: str, by: str | None = None) -> None:
-    """MGT-15.3: one revert job per completed job that is not undone (or whose revert failed). Nothing to undo ends the campaign ROLLED_BACK at once."""
-    undone = _undone(_jobs(db, c, reverts=True))
-    targets = [j for j in _jobs(db, c) if j.status == SwmState.COMPLETED.value and undone.get(j.job_id) not in ("COMPLETED", "IN_PROGRESS")]
-    c.status = CAMPAIGN_FSM.fire(CampaignState(c.status), CampaignEvent.ROLLBACK)
-    c.halted_reason, c.halted_detail, c.next_wave_at, c.finished_at = None, None, None, None
-    _log(c, "ROLLBACK_STARTED", f"{why}; {len(targets)} job(s) to undo", by=by)
+def _revert_targets(db: Session, c: SoftwareCampaign, reverts: list[SoftwareManagementJob]) -> list[SoftwareManagementJob]:
+    """The completed jobs that are not undone (and have no revert running): what a rollback still has to revert."""
+    undone = _undone(reverts)
+    return [j for j in _jobs(db, c) if j.status == SwmState.COMPLETED.value and undone.get(j.job_id) not in ("COMPLETED", "IN_PROGRESS")]
+
+
+def _start_reverts(db: Session, c: SoftwareCampaign, targets: list[SoftwareManagementJob]) -> int:
+    """Start the revert jobs. `rollbackOrder` "all": every target at once. "reverse" (MGT-15.7): only the targets of the last wave that has any, so the waves are undone
+    last to first and the next one starts when this one has ended. The jobs' clock for `jobTimeoutSeconds` starts now."""
+    if c.rollback_order == "reverse" and targets:
+        last = max(j.campaign_wave or 0 for j in targets)
+        targets = [j for j in targets if (j.campaign_wave or 0) == last]
+        _log(c, "ROLLBACK_WAVE_STARTED", f"{len(targets)} job(s)", wave=last)
+    if targets:
+        c.wave_started_at = _now()
     for job in targets:
         start_software_job(db, job.managed_element_ref, campaign_id=c.campaign_id, campaign_wave=job.campaign_wave, rollback_of=job.job_id)
     db.flush()
-    if not targets:
+    return len(targets)
+
+
+def _start_rollback(db: Session, c: SoftwareCampaign, why: str, by: str | None = None) -> None:
+    """MGT-15.3: one revert job per completed job that is not undone (or whose revert failed), all at once or last wave first (`rollbackOrder`). Nothing to undo ends
+    the campaign ROLLED_BACK at once."""
+    targets = _revert_targets(db, c, _jobs(db, c, reverts=True))
+    c.status = CAMPAIGN_FSM.fire(CampaignState(c.status), CampaignEvent.ROLLBACK)
+    c.halted_reason, c.halted_detail, c.next_wave_at, c.finished_at = None, None, None, None
+    _log(c, "ROLLBACK_STARTED", f"{why}; {len(targets)} job(s) to undo", by=by)
+    if not _start_reverts(db, c, targets):
         _progress_rollback(db, c)
 
 
 def _progress_rollback(db: Session, c: SoftwareCampaign) -> None:
+    """When the revert jobs started so far have all ended: ROLLBACK_FAILED if one failed (nothing further is undone: the waves before it stay as they are), else the
+    next step of a reverse rollback, else ROLLED_BACK."""
     reverts = _jobs(db, c, reverts=True)
     if any(_in_flight(r) for r in reverts):
         return
@@ -543,6 +668,9 @@ def _progress_rollback(db: Session, c: SoftwareCampaign) -> None:
     if failed:
         c.status = CAMPAIGN_FSM.fire(CampaignState(c.status), CampaignEvent.ROLLBACK_FAILED)
         _log(c, "ROLLBACK_FAILED", f"{len(failed)} revert job(s) failed")
+        _campaign_event(db, c, "CAMPAIGN_ROLLBACK_FAILED", "ROLLBACK_FAILED", f"{len(failed)} revert job(s) failed")
+    elif c.rollback_order == "reverse" and _start_reverts(db, c, _revert_targets(db, c, reverts)):
+        return
     else:
         c.status = CAMPAIGN_FSM.fire(CampaignState(c.status), CampaignEvent.ROLLBACK_DONE)
         c.finished_at = _now()
@@ -569,14 +697,14 @@ def _progress_wave(db: Session, c: SoftwareCampaign) -> None:
             if c.on_gate_failure == "rollback":
                 _start_rollback(db, c, failure)
             else:
-                _halt(c, "GATE_FAILED", failure)
+                _halt(db, c, "GATE_FAILED", failure)
             return
         _log(c, "GATE_PASSED", f"{len(jobs)} job(s) completed")
         if c.current_wave >= c.wave_count:
             _finish(c)
             return
         if c.wave_pause_seconds > 0:
-            _halt(c, "WAVE_PAUSE", None, _now() + datetime.timedelta(seconds=c.wave_pause_seconds))
+            _halt(db, c, "WAVE_PAUSE", None, _now() + datetime.timedelta(seconds=c.wave_pause_seconds))
             return
         _start_wave(db, c, c.current_wave + 1)
 
@@ -603,7 +731,26 @@ def on_job_advanced(db: Session, campaign_id: uuid.UUID) -> None:
         log.info("software campaign %s was moved by another request; the sweep will catch up", campaign_id)
 
 
+def expire_jobs(db: Session, c: SoftwareCampaign) -> int:
+    """MGT-15.7: fail the software jobs of a running (or rolling-back) campaign that are still going when `jobTimeoutSeconds` has passed since their wave, or their
+    rollback step, started. The adaptor never reported, so the job is failed in the phase it was in; the campaign then decides as for any failed job (the gate halts
+    or rolls back; a failed revert ends the rollback ROLLBACK_FAILED). A late report for such a job is refused as an illegal transition. Returns the number failed.
+    A campaign made without `jobTimeoutSeconds` is never touched."""
+    if c.job_timeout_seconds is None or c.wave_started_at is None or c.status not in (CampaignState.RUNNING.value, CampaignState.ROLLING_BACK.value):
+        return 0
+    if _now() < as_utc(c.wave_started_at) + datetime.timedelta(seconds=c.job_timeout_seconds):
+        return 0
+    jobs = _jobs(db, c, c.current_wave) if c.status == CampaignState.RUNNING.value else _jobs(db, c, reverts=True)
+    stuck = [j for j in jobs if j.status == SwmState.IN_PROGRESS.value]
+    for job in stuck:
+        job.status = SOFTWARE_MANAGEMENT_FSM.fire(SwmState(job.status), SwmEvent.PHASE_FAILED)
+        _log(c, "JOB_TIMED_OUT", f"{job.managed_element_ref} did not report within {c.job_timeout_seconds} s (phase {job.phase})", wave=job.campaign_wave, job=job.job_id)
+    return len(stuck)
+
+
 def _resume(db: Session, c: SoftwareCampaign, by: str | None) -> None:
+    """Moves a HALTED campaign to RUNNING and goes on. After a failed gate or a pause the current wave's gate has been answered (passed, or overridden by the operator), so the next wave starts, or the campaign finishes when it was the last; then `progress` runs whatever the jobs now allow. `by` is who continued it (the sweep passes 'sweep'). The caller commits.
+    """
     reason = c.halted_reason
     c.status = CAMPAIGN_FSM.fire(CampaignState.HALTED, CampaignEvent.RESUME)
     c.halted_reason, c.halted_detail, c.next_wave_at = None, None, None
@@ -626,10 +773,15 @@ def advance_due(db: Session) -> list[dict]:
         moved.append(_summary(c))
     for c in db.scalars(select(SoftwareCampaign).where(SoftwareCampaign.status.in_((CampaignState.RUNNING.value, CampaignState.ROLLING_BACK.value)))).all():
         before = (c.status, c.current_wave, len(c.wave_log))
-        progress(db, c)
-        if (c.status, c.current_wave, len(c.wave_log)) != before:
-            db.commit()
-            moved.append(_summary(c))
+        try:
+            expire_jobs(db, c)                                                 # MGT-15.7: a job that never reported fails, and the campaign decides as for any failed job
+            progress(db, c)
+            if (c.status, c.current_wave, len(c.wave_log)) != before:
+                db.commit()
+                moved.append(_summary(c))
+        except StaleDataError:                                                 # a job reported (or an operator acted) while the sweep looked: the next sweep sees it
+            db.rollback()
+            log.info("software campaign %s was moved by another request during the sweep; the next sweep catches up", c.campaign_id)
     return moved
 
 
@@ -640,7 +792,7 @@ def _summary(c: SoftwareCampaign) -> dict:
 def _view(c: SoftwareCampaign) -> dict:
     return {**_summary(c), "name": c.name, "requestedBy": c.requested_by, "softwareVersion": c.software_version, "selector": c.selector, "elements": c.elements,
             "waveSize": c.wave_size, "wavePauseSeconds": c.wave_pause_seconds, "gateMaxNewAlarms": c.gate_max_new_alarms, "onGateFailure": c.on_gate_failure,
-            "haltedDetail": c.halted_detail, "nextWaveAt": _stamp(c.next_wave_at), "createdAt": _stamp(c.created_at), "finishedAt": _stamp(c.finished_at),
+            "jobTimeoutSeconds": c.job_timeout_seconds, "rollbackOrder": c.rollback_order, "haltedDetail": c.halted_detail, "nextWaveAt": _stamp(c.next_wave_at), "createdAt": _stamp(c.created_at), "finishedAt": _stamp(c.finished_at),
             "events": c.wave_log}
 
 
@@ -700,7 +852,7 @@ def create_software_campaign(body: CampaignRequest, request: Request, db: Sessio
     c = SoftwareCampaign(name=body.name, requested_by=body.requestedBy, status=CampaignState.PENDING.value, software_version=body.softwareVersion,
                          selector=body.selector.model_dump(exclude_none=True) if body.selector else None, elements=elements, wave_size=body.waveSize,
                          wave_count=wave_count, wave_pause_seconds=body.wavePauseSeconds, gate_max_new_alarms=body.gateMaxNewAlarms,
-                         on_gate_failure=body.onGateFailure, wave_log=[], created_at=_now())
+                         on_gate_failure=body.onGateFailure, job_timeout_seconds=body.jobTimeoutSeconds, rollback_order=body.rollbackOrder, wave_log=[], created_at=_now())
     db.add(c)
     db.flush()
     c.status = CAMPAIGN_FSM.fire(CampaignState.PENDING, CampaignEvent.START)
@@ -736,6 +888,7 @@ def list_software_campaigns(request: Request, status: Literal["PENDING", "RUNNIN
 
 @router.get("/software-campaigns/{campaign_id}")
 def get_software_campaign(campaign_id: uuid.UUID, request: Request, db: Session = Depends(get_session)):
+    # The campaign with its elements, settings and event log. 404 SOFTWARE_CAMPAIGN_NOT_FOUND for an unknown campaign and for one with an element outside the caller's scope.
     return _view(_campaign_or_404(db, campaign_id, request))
 
 
@@ -770,10 +923,11 @@ def halt_software_campaign(campaign_id: uuid.UUID, body: CampaignAction, request
     pause becomes an operator halt; one halted for another reason stays as it is. Any other state is 409."""
     c = _campaign_or_404(db, campaign_id, request)
     if c.status == CampaignState.RUNNING.value:
-        _halt(c, "OPERATOR_HALT", f"halted by {body.requestedBy}", by=body.requestedBy)
+        _halt(db, c, "OPERATOR_HALT", f"halted by {body.requestedBy}", by=body.requestedBy)
     elif c.status == CampaignState.HALTED.value and c.halted_reason == "WAVE_PAUSE":
         c.halted_reason, c.halted_detail, c.next_wave_at = "OPERATOR_HALT", f"halted by {body.requestedBy}", None
         _log(c, "HALTED", "OPERATOR_HALT", by=body.requestedBy)
+        _campaign_event(db, c, "CAMPAIGN_HALTED", "OPERATOR_HALT", c.halted_detail)
     elif c.status != CampaignState.HALTED.value:
         raise illegal_transition_error(IllegalTransition(CampaignState(c.status), CampaignEvent.HALT), f"software campaign {campaign_id}")
     db.commit()
@@ -817,6 +971,7 @@ def software_campaign_report(campaign_id: uuid.UUID, request: Request, db: Sessi
     counts = {"completed": 0, "failed": 0, "inProgress": 0, "reverted": 0}
     attention: list[dict] = []
     started: set[str] = set()
+    timed_out = {e["job"] for e in c.wave_log if e.get("event") == "JOB_TIMED_OUT" and e.get("job")}           # MGT-15.7: only a campaign with a timeout has any
     for wave in range(1, c.wave_count + 1):
         entries = []
         for job in _jobs(db, c, wave):
@@ -824,9 +979,11 @@ def software_campaign_report(campaign_id: uuid.UUID, request: Request, db: Sessi
             revert = undone.get(job.job_id)
             counts["completed" if job.status == SwmState.COMPLETED.value else "failed" if job.status == SwmState.FAILED.value else "inProgress"] += 1
             counts["reverted"] += revert == "COMPLETED"
-            entries.append({"managedElementRef": job.managed_element_ref, "jobId": str(job.job_id), "phase": job.phase, "status": job.status, "revert": revert})
+            entries.append({"managedElementRef": job.managed_element_ref, "jobId": str(job.job_id), "phase": job.phase, "status": job.status, "revert": revert,
+                            **({"timedOut": True} if str(job.job_id) in timed_out else {})})
             if job.status == SwmState.FAILED.value:
-                attention.append({"managedElementRef": job.managed_element_ref, "problem": f"software job failed in phase {job.phase}"})
+                attention.append({"managedElementRef": job.managed_element_ref,
+                                  "problem": f"software job timed out in phase {job.phase}: the element did not report" if str(job.job_id) in timed_out else f"software job failed in phase {job.phase}"})
             elif revert == "FAILED":
                 attention.append({"managedElementRef": job.managed_element_ref, "problem": "the revert job failed"})
         waves.append({"wave": wave, "elements": _wave_elements(c, wave), "started": bool(entries), "jobs": entries})

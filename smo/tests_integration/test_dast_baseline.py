@@ -23,14 +23,17 @@ NUCLEI = "\n".join([
 
 
 def test_testssl_reports_low_and_above_only():
+    """Only testssl findings of severity low and above are reported, as `<id> <severity>`."""
     assert set(dast.testssl_findings(TESTSSL)) == {"cipherlist_3DES_IDEA low", "chain_of_trust high"}
 
 
 def test_nuclei_reports_low_and_above_only():
+    """Only nuclei findings of severity low and above are reported."""
     assert set(dast.nuclei_findings(NUCLEI)) == {"http-missing-security-headers low"}
 
 
 def test_zap_reports_low_and_above_only():
+    """Only ZAP alerts with risk low and above are reported, keyed by plugin id."""
     report = json.dumps({"site": [{"alerts": [
         {"pluginid": "10021", "name": "X-Content-Type-Options", "riskcode": "1", "instances": [{"uri": "http://g/a"}]},
         {"pluginid": "10049", "name": "Storable content", "riskcode": "0"},
@@ -40,6 +43,7 @@ def test_zap_reports_low_and_above_only():
 
 
 def test_a_finding_the_baseline_does_not_accept_is_new_and_an_unused_entry_is_stale():
+    """A finding the baseline does not list is new, and a baseline entry that matches no finding is stale, so a fixed finding's entry is removed."""
     found = dast.testssl_findings(TESTSSL)
     new, stale = dast.compare(found, {"chain_of_trust high": "dev CA", "gone high": "was fixed"})
     assert set(new) == {"cipherlist_3DES_IDEA low"}
@@ -47,11 +51,13 @@ def test_a_finding_the_baseline_does_not_accept_is_new_and_an_unused_entry_is_st
 
 
 def test_baseline_keys_take_wildcards():
+    """Baseline keys may use `*` wildcards to accept a family of findings."""
     new, stale = dast.compare(dast.testssl_findings(TESTSSL), {"cipherlist_* low": "legacy clients", "chain_of_trust *": "dev CA"})
     assert not new and not stale
 
 
 def test_exit_status_is_one_for_a_new_finding(tmp_path):
+    """The command exits 1 when a finding is not in the baseline and 0 when all are accepted."""
     report, baseline = tmp_path / "t.json", tmp_path / "b.json"
     report.write_text(TESTSSL)
     baseline.write_text(json.dumps({"_comment": "x", "chain_of_trust high": "dev CA"}))
@@ -61,6 +67,7 @@ def test_exit_status_is_one_for_a_new_finding(tmp_path):
 
 
 def test_committed_baselines_are_objects_of_reasons():
+    """Each committed baseline file is a JSON object whose every value is a non-empty reason string."""
     for name in ("testssl-baseline.json", "nuclei-baseline.json", "zap-baseline.json"):
         data = json.loads((SMO / "security" / name).read_text())
         assert isinstance(data, dict)

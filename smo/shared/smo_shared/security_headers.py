@@ -16,6 +16,10 @@ HEADERS = {
 
 
 def apply_security_headers(app: FastAPI) -> None:
+    """Installs an HTTP middleware that adds the headers in `HEADERS` to every response.
+
+    `setdefault` is used, so a route that sets one of these headers itself keeps its own value. Installed by `apply_correlation_id`.
+    """
     @app.middleware("http")
     async def _security_headers_middleware(request: Request, call_next):
         response = await call_next(request)

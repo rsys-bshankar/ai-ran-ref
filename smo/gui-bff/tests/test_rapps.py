@@ -80,6 +80,8 @@ def smo():
 
 @pytest.fixture
 def app(smo):
+    """The BFF on an in-memory database with the real gateway talking to `FakeRapps`; the database is kept as `app.state.test_db` so tests can read the audit log and pins.
+    """
     cfg = Settings(r1_url=R1, jwt_secret="test-secret", cookie_secure=False, admin_password=PASSWORDS["admin"],
                    operator_password=PASSWORDS["operator"], viewer_password=PASSWORDS["viewer"])
     db = Database("sqlite://")
@@ -96,10 +98,13 @@ def op_url(instance, route):
 # ------------------------------------------------------------------ the directory
 
 def test_the_directory_needs_a_session(app):
+    """The directory is 401 without a session."""
     assert TestClient(app).get("/api/rapps").status_code == 401
 
 
 def test_the_directory_lists_every_instance_with_its_package_and_never_its_address(app):
+    """The directory joins each instance with its package's name, version and vendor, says whether an operator API is registered but never shows its address or the declaration, and lists the owners and states present.
+    """
     body = login(app, "viewer").get("/api/rapps").json()
     assert body["total"] == 4 and body["limit"] == 50 and body["offset"] == 0
     by_id = {r["instanceId"]: r for r in body["items"]}
@@ -111,6 +116,8 @@ def test_the_directory_lists_every_instance_with_its_package_and_never_its_addre
 
 
 def test_search_filters_by_name_version_owner_and_ids_without_regard_to_case(app):
+    """`search` matches name, version, owner, instance id and package id case-insensitively, and a blank search matches everything.
+    """
     c = login(app, "viewer")
     names = lambda **q: sorted(r["name"] + ":" + r["state"] for r in c.get("/api/rapps", params=q).json()["items"])   # noqa: E731
     assert names(search="energy") == ["Energy Saving:RUNNING"] * 2 + ["Energy Saving:UNDEPLOYED"]
@@ -123,6 +130,7 @@ def test_search_filters_by_name_version_owner_and_ids_without_regard_to_case(app
 
 
 def test_state_owner_has_page_and_pinned_filters_combine(app):
+    """The state, owner, `hasPage` and `pinned` filters work alone and together, ignoring case and surrounding spaces in text."""
     c = login(app, "viewer")
     get = lambda **q: c.get("/api/rapps", params=q).json()   # noqa: E731
     assert [r["instanceId"] for r in get(state="faulted")["items"]] == [I_FAULT]
@@ -134,6 +142,8 @@ def test_state_owner_has_page_and_pinned_filters_combine(app):
 
 
 def test_the_directory_pages_in_a_stable_order(app):
+    """Pages follow a fixed order (name, version, id), so consecutive pages neither repeat nor miss an instance, and a limit outside 1-500 is 422.
+    """
     c = login(app, "viewer")
     first = c.get("/api/rapps", params={"limit": 2}).json()
     second = c.get("/api/rapps", params={"limit": 2, "offset": 2}).json()
@@ -144,12 +154,14 @@ def test_the_directory_pages_in_a_stable_order(app):
 
 
 def test_the_directory_says_so_when_the_smo_cannot_be_asked(app, smo):
+    """When rApp Management is unreachable the directory is 502 R1_UNREACHABLE rather than an empty list."""
     smo.rapp_mgmt_down = True
     resp = login(app, "viewer").get("/api/rapps")
     assert resp.status_code == 502 and resp.json()["title"] == "R1_UNREACHABLE"
 
 
 def test_pages_beyond_the_first_are_read(app, smo):
+    """The directory keeps reading pages of 500 while the SMO says there are more."""
     many = [{"instanceId": str(uuid.uuid4()), "packageId": P_PLAIN, "state": "RUNNING", "autonomyMode": "SHADOW", "operatorApiBase": None} for _ in range(3)]
     calls = []
     original = smo.rapps
@@ -166,6 +178,8 @@ def test_pages_beyond_the_first_are_read(app, smo):
 
 
 def test_a_rapp_onboarded_after_the_index_was_read_shows_with_its_name_at_once(app, smo, monkeypatch):
+    """A package missing from the cached index is read again (once the refresh interval has passed), so a rApp onboarded at run time shows with its name instead of a blank.
+    """
     from app import rapps
     c = login(app, "viewer")
     assert c.get("/api/rapps").json()["total"] == 4                                    # the package index is now cached
@@ -184,6 +198,7 @@ def test_a_rapp_onboarded_after_the_index_was_read_shows_with_its_name_at_once(a
 # ------------------------------------------------------------------ one rApp
 
 def test_one_rapp_carries_its_declaration_and_what_the_user_may_do(app):
+    """One rApp returns its declaration and `canChange`, which is true for operator and admin and false for a viewer."""
     viewer = login(app, "viewer").get(f"/api/rapps/{I_RUN}").json()
     assert viewer["declarationState"] == "declared" and viewer["declaration"] == EXAMPLE and viewer["readOnly"] is False
     assert viewer["canChange"] is False and viewer["name"] == "Energy Saving" and viewer["operatorApiRegistered"] is True
@@ -192,16 +207,19 @@ def test_one_rapp_carries_its_declaration_and_what_the_user_may_do(app):
 
 
 def test_a_rapp_without_a_declaration_has_a_generic_page_only(app):
+    """A package with no operator page has `declarationState` none, no declaration and no change right."""
     body = login(app, "operator").get(f"/api/rapps/{I_FAULT}").json()
     assert body["declarationState"] == "none" and body["declaration"] is None and body["canChange"] is False and body["hasPage"] is False
 
 
 def test_a_read_only_declaration_cannot_change(app, smo):
+    """A read-only declaration reports `readOnly` and `canChange` false even for an admin."""
     smo.packages[0]["aiCapabilities"] = {"operatorUi": {"version": 1, "readOnly": True, "panels": [EXAMPLE["panels"][0]]}}
     body = login(app, "admin").get(f"/api/rapps/{I_RUN}").json()
     assert body["readOnly"] is True and body["canChange"] is False
 
 
+# Each row is a stored `operatorUi` value that is not the validated shape; the rApp must be reported as `unreadable` with no declaration and no change right.
 @pytest.mark.parametrize("stored", [{"operatorUi": "text"}, {"operatorUi": {"panels": "no"}}, {"operatorUi": {"panels": [1]}}, {"operatorUi": None}])
 def test_a_stored_declaration_that_is_not_readable_is_reported_and_gives_no_page(app, smo, stored):
     smo.packages[0]["aiCapabilities"] = stored
@@ -210,12 +228,14 @@ def test_a_stored_declaration_that_is_not_readable_is_reported_and_gives_no_page
 
 
 def test_an_unknown_or_malformed_instance_is_404(app):
+    """An unknown instance id, or a value that is not a UUID, is 404 NO_SUCH_RAPP."""
     c = login(app, "viewer")
     assert c.get(f"/api/rapps/{uuid.uuid4()}").status_code == 404
     assert c.get("/api/rapps/not-a-uuid").json()["title"] == "NO_SUCH_RAPP"
 
 
 def test_the_declaration_is_cached_briefly(app, smo):
+    """Repeated page and proxy calls for one package read its onboarding status from the SMO only once."""
     c = login(app, "viewer")
     for _ in range(3):
         c.get(f"/api/rapps/{I_RUN}")
@@ -226,6 +246,8 @@ def test_the_declaration_is_cached_briefly(app, smo):
 # ------------------------------------------------------------------ the proxy
 
 def test_a_declared_read_goes_through_the_gateway_with_only_the_declared_query(app, smo):
+    """A declared read reaches the gateway's `/rapps/<id>/operator/...` path with the BFF's token, no cookie and only the declared query, with the fixed value replacing the browser's.
+    """
     resp = login(app, "viewer").get(op_url(I_RUN, f"/instances/{I_RUN}/dashboard"), params={"points": "1", "x": "y"})
     assert resp.status_code == 200 and resp.json() == {"cells": [], "done": True}
     sent = smo.operator_calls[0]
@@ -235,6 +257,7 @@ def test_a_declared_read_goes_through_the_gateway_with_only_the_declared_query(a
 
 
 def test_a_viewer_cannot_press_a_change_button_and_nothing_is_sent(app, smo):
+    """A viewer's change calls are 403 FORBIDDEN and nothing reaches the gateway."""
     c = login(app, "viewer")
     resp = c.post(op_url(I_RUN, f"/instances/{I_RUN}/evaluate"))
     assert resp.status_code == 403 and resp.json()["title"] == "FORBIDDEN"
@@ -243,6 +266,8 @@ def test_a_viewer_cannot_press_a_change_button_and_nothing_is_sent(app, smo):
 
 
 def test_an_undeclared_route_is_refused_for_every_role_and_audited(app, smo):
+    """Undeclared routes, an instance that is not the open page and an encoded traversal are 403 UNDECLARED_ROUTE for every role, never sent, and each refusal is audited as DENIED.
+    """
     for who in ("viewer", "operator", "admin"):
         c = login(app, who)
         for method, route in (("POST", f"/instances/{I_RUN}/lifecycle/train"), ("GET", f"/instances/{I_RUN}/lifecycle/train"), ("POST", f"/instances/{I_RUN}/start"),
@@ -254,11 +279,14 @@ def test_an_undeclared_route_is_refused_for_every_role_and_audited(app, smo):
 
 
 def test_a_declaration_the_rapp_does_not_have_means_no_route_at_all(app, smo):
+    """A rApp with no declaration has no callable operator route, whatever the role."""
     resp = login(app, "admin").get(op_url(I_FAULT, f"/instances/{I_FAULT}/dashboard"))
     assert resp.status_code == 403 and resp.json()["title"] == "UNDECLARED_ROUTE" and smo.operator_calls == []
 
 
 def test_a_change_by_an_operator_is_audited_before_and_after_with_the_session_user_filled_in(app, smo):
+    """A change sends only the declared inputs and fixed values with `{user}` filled from the session, and writes a `requested` audit row before the call and a `done` row with the status after it.
+    """
     resp = login(app, "operator").post(op_url(I_RUN, f"/instances/{I_RUN}/cells/C1/override"), json={"operator": "mallory", "reason": "evil", "x": 1})
     assert resp.status_code == 200
     sent = smo.operator_calls[0]
@@ -271,6 +299,7 @@ def test_a_change_by_an_operator_is_audited_before_and_after_with_the_session_us
 
 
 def test_the_outcome_of_a_refused_or_failed_change_is_audited_too(app, smo):
+    """When the rApp refuses the change, its answer is relayed unchanged and the status appears in the second audit row."""
     smo.operator_answer = httpx.Response(409, json={"detail": "busy"})
     resp = login(app, "operator").post(op_url(I_RUN, f"/instances/{I_RUN}/evaluate"))
     assert resp.status_code == 409 and resp.json() == {"detail": "busy"}                       # the rApp's own answer, relayed
@@ -278,6 +307,8 @@ def test_the_outcome_of_a_refused_or_failed_change_is_audited_too(app, smo):
 
 
 def test_an_unreachable_gateway_still_leaves_both_audit_entries_and_no_exception_text(app, smo):
+    """If the gateway cannot be reached the answer is 502 R1_UNREACHABLE without the exception text, and both audit rows are still written.
+    """
     smo.operator_error = httpx.ConnectError("secret internal detail")
     resp = login(app, "operator").post(op_url(I_RUN, f"/instances/{I_RUN}/evaluate"))
     assert resp.status_code == 502 and resp.json()["title"] == "R1_UNREACHABLE" and "secret" not in resp.text
@@ -286,12 +317,16 @@ def test_an_unreachable_gateway_still_leaves_both_audit_entries_and_no_exception
 
 
 def test_the_gateways_not_registered_answer_is_passed_on_for_the_page_to_explain(app, smo):
+    """The gateway's OPERATOR_API_NOT_REGISTERED answer is passed on so the page can explain that the rApp has no operator API.
+    """
     smo.operator_answer = httpx.Response(404, json={"title": "OPERATOR_API_NOT_REGISTERED", "status": 404})
     resp = login(app, "viewer").get(op_url(I_RUN, f"/instances/{I_RUN}/dashboard"))
     assert resp.status_code == 404 and resp.json()["title"] == "OPERATOR_API_NOT_REGISTERED"
 
 
 def test_a_body_is_checked_against_the_action_and_a_bad_one_is_never_sent(app, smo):
+    """A body that breaks the declared inputs (range, missing, not JSON, not an object, over the size limit) is refused with 422, 400 or 413 and never forwarded; a good one is forwarded with only the declared fields.
+    """
     smo.packages[0]["aiCapabilities"] = {"operatorUi": {"version": 1, "panels": [{
         "id": "a", "title": "A", "kind": "actions", "actions": [{"id": "set", "label": "Set", "method": "POST", "path": "/instances/{instanceId}/set", "success": "ok",
                                                                     "inputs": [{"name": "level", "label": "L", "type": "integer", "min": 1, "max": 5, "required": True}],
@@ -307,6 +342,7 @@ def test_a_body_is_checked_against_the_action_and_a_bad_one_is_never_sent(app, s
 
 
 def test_a_read_only_rapp_refuses_every_change_even_for_an_admin(app, smo):
+    """On a read-only rApp a change is 403 RAPP_READ_ONLY for an admin too, while reads still pass."""
     smo.packages[0]["aiCapabilities"] = {"operatorUi": {"version": 1, "readOnly": True, "panels": [EXAMPLE["panels"][0]]}}
     c = login(app, "admin")
     resp = c.post(op_url(I_RUN, f"/instances/{I_RUN}/evaluate"))
@@ -316,11 +352,13 @@ def test_a_read_only_rapp_refuses_every_change_even_for_an_admin(app, smo):
 
 
 def test_the_instance_in_the_route_is_the_page_that_is_open(app, smo):
+    """A call on the page of one instance cannot name another instance's routes (403 UNDECLARED_ROUTE)."""
     resp = login(app, "viewer").get(op_url(I_RUN, f"/instances/{I_NOPAGE}/dashboard"))
     assert resp.status_code == 403 and resp.json()["title"] == "UNDECLARED_ROUTE"
 
 
 def test_a_change_needs_the_csrf_token_when_the_session_is_a_cookie(app, smo):
+    """A change through a cookie session without the CSRF header is 403 and nothing is sent."""
     c = login(app, "operator")
     del c.headers["X-CSRF-Token"]
     assert c.post(op_url(I_RUN, f"/instances/{I_RUN}/evaluate")).status_code == 403
@@ -328,12 +366,14 @@ def test_a_change_needs_the_csrf_token_when_the_session_is_a_cookie(app, smo):
 
 
 def test_the_rapps_response_headers_never_carry_cookies_or_hop_by_hop_fields(app, smo):
+    """Set-Cookie and hop-by-hop headers from the rApp are removed from the answer, ordinary headers pass."""
     smo.operator_answer = httpx.Response(200, json={}, headers={"Set-Cookie": "x=1", "Connection": "close", "X-Rapp": "y"})
     resp = login(app, "viewer").get(op_url(I_RUN, f"/instances/{I_RUN}/dashboard"))
     assert "set-cookie" not in resp.headers and resp.headers["x-rapp"] == "y"
 
 
 def test_an_unknown_instance_in_a_proxy_call_is_404(app, smo):
+    """A proxy call naming an instance that does not exist is 404 and sends nothing."""
     resp = login(app, "operator").post(op_url(uuid.uuid4(), "/instances/x/evaluate"))
     assert resp.status_code == 404 and smo.operator_calls == []
 
@@ -341,6 +381,8 @@ def test_an_unknown_instance_in_a_proxy_call_is_404(app, smo):
 # ------------------------------------------------------------------ pins
 
 def test_pins_are_per_user_idempotent_and_limited_to_five(app, smo):
+    """Pins are per user, pinning twice counts once, the sixth is 409 PIN_LIMIT, unpinning is idempotent and frees a place, and the pins list shows names with the oldest first.
+    """
     extra = [{"instanceId": str(uuid.uuid4()), "packageId": P_PLAIN, "state": "RUNNING", "autonomyMode": "SHADOW", "operatorApiBase": None} for _ in range(3)]
     smo.instances += extra
     ids = [I_RUN, I_FAULT, I_GONE, I_NOPAGE, extra[0]["instanceId"]]
@@ -359,12 +401,14 @@ def test_pins_are_per_user_idempotent_and_limited_to_five(app, smo):
 
 
 def test_pinning_an_unknown_or_malformed_instance_is_404(app):
+    """A pin of an unknown instance or of a value that is not a UUID is 404 and stores nothing."""
     c = login(app, "viewer")
     assert c.put(f"/api/me/pins/{uuid.uuid4()}").status_code == 404 and c.put("/api/me/pins/x").status_code == 404
     assert c.get("/api/me/pins").json()["items"] == []
 
 
 def test_a_pin_of_an_instance_that_was_deleted_is_dropped_when_the_pins_are_read(app, smo):
+    """A pin of an instance that no longer exists is removed when the pins are read, and stays removed."""
     c = login(app, "viewer")
     c.put(f"/api/me/pins/{I_RUN}")
     c.put(f"/api/me/pins/{I_GONE}")
@@ -375,6 +419,7 @@ def test_a_pin_of_an_instance_that_was_deleted_is_dropped_when_the_pins_are_read
 
 
 def test_pins_survive_the_smo_being_down_without_names(app, smo):
+    """When the SMO cannot be asked the pins come back without names and none is dropped; the names return when it is back."""
     c = login(app, "viewer")
     c.put(f"/api/me/pins/{I_RUN}")
     smo.rapp_mgmt_down = True
@@ -385,6 +430,7 @@ def test_pins_survive_the_smo_being_down_without_names(app, smo):
 
 
 def test_deleting_a_user_removes_the_pins(app, smo):
+    """Deleting a user deletes their pins."""
     admin = login(app, "admin")
     assert admin.post("/api/admin/users", json={"username": "temp", "password": "temp-pass-1", "role": "viewer"}).status_code == 201
     temp = TestClient(app)

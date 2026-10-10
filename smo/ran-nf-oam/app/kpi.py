@@ -63,6 +63,7 @@ def normalise_counters(formula: str, counters: list[dict] | None) -> list[dict]:
 
 @dataclass
 class Sample:
+    """One measurement of one counter for one cell at one time, read from a stored PM file."""
     element: str
     cell: str
     counter: str
@@ -75,10 +76,14 @@ def _as_utc(value: datetime.datetime) -> datetime.datetime:
 
 
 def load_samples(db: Session, counters: set[str], start: datetime.datetime, end: datetime.datetime,
-                 element: str | None = None, cell: str | None = None, scope: Scope | None = None) -> tuple[list[Sample], int, bool]:
+                 element: str | None = None, cell: str | None = None, scope: Scope | None = None,
+                 exclude: list[str] | None = None) -> tuple[list[Sample], int, bool]:
     """(samples in [start, end) of the counters asked for, files read, whether more files than the bound were left unread). `scope` (PR-SEC-10.6) limits the files
-    to those of the elements a caller with that claim may touch: a KPI over "all" is then over its elements, not the network's."""
+    to those of the elements a caller with that claim may touch: a KPI over "all" is then over its elements, not the network's. `exclude` (MGT-2.6) leaves out the
+    files of those elements (the ones a caller's access rules do not let it read)."""
     stmt = scoped_to_elements(select(PMFile), scope, PMFile.managed_element_ref).order_by(PMFile.file_ready_time.desc())
+    if exclude:
+        stmt = stmt.where(PMFile.managed_element_ref.not_in(exclude))
     if element:
         stmt = stmt.where(PMFile.managed_element_ref == element)
     files = db.scalars(stmt.limit(MAX_FILES + 1)).all()
@@ -108,6 +113,8 @@ def load_samples(db: Session, counters: set[str], start: datetime.datetime, end:
 
 
 def _combine(aggregation: str, samples: list[Sample]) -> float | None:
+    """The aggregation (sum, avg, min, max, count, or last by timestamp) of one counter's samples in a group; None when the group has no sample of it.
+    """
     if not samples:
         return None
     values = [s.value for s in samples]
@@ -125,6 +132,8 @@ def _combine(aggregation: str, samples: list[Sample]) -> float | None:
 
 
 def _group_key(db: Session, group_by: str, sample: Sample, guards: dict) -> tuple:
+    """The key of the group a sample belongs to for `group_by`: (element, cell), (element,), () for all, or the cell's guard attribute (`sectorGroup`, `incidentZone`; 'unassigned' when the cell has none). `guards` caches each element's cell guards across the samples of one computation so the registry is read once per element.
+    """
     if group_by == "cell":
         return (sample.element, sample.cell)
     if group_by == "element":
@@ -139,6 +148,8 @@ def _group_key(db: Session, group_by: str, sample: Sample, guards: dict) -> tupl
 
 
 def _group_view(group_by: str, key: tuple) -> dict:
+    """The `group` object of a result item for a group key: the element and cell refs, the element ref, `{}` for all, or `{group_by: value}` for a guard attribute.
+    """
     if group_by == "cell":
         return {"managedElementRef": key[0], "cellId": key[1]}
     if group_by == "element":
@@ -149,11 +160,11 @@ def _group_view(group_by: str, key: tuple) -> dict:
 
 
 def compute(db: Session, definition: KpiDefinition, start: datetime.datetime, end: datetime.datetime, group_by: str = "cell",
-            element: str | None = None, cell: str | None = None, scope: Scope | None = None) -> dict:
+            element: str | None = None, cell: str | None = None, scope: Scope | None = None, exclude: list[str] | None = None) -> dict:
     """The KPI over [start, end), one item per group. A group with no samples of a needed counter, or whose formula is undefined (a division by
     zero), has `value` null and says which (`NO_DATA`, `UNDEFINED`)."""
     table = definition.counters
-    samples, scanned, truncated = load_samples(db, {c["counter"] for c in table}, start, end, element, cell, scope)
+    samples, scanned, truncated = load_samples(db, {c["counter"] for c in table}, start, end, element, cell, scope, exclude)
     grouped: dict[tuple, list[Sample]] = {}
     guards: dict = {}
     for sample in samples:

@@ -166,6 +166,10 @@ def _paginate(db, stmt, limit: int, offset: int) -> dict:
     # `db` is a real sqlalchemy.orm.Session (db.py's own Database.session()) —
     # left untyped here since this module's own `Session` name (below) is a
     # different, unrelated RBAC dataclass.
+    """Runs `stmt` as one page of `{items, total, limit, offset}` (or `{items, limit, offset, hasMore}` when the caller sent `?total=false`).
+    `limit` is the `_PageSize` the `PageLimit` dependency produced; a plain int means "with total". Without a total the query reads one row more than `limit`,
+    which is how `hasMore` is known without a count. Returns ORM rows in `items`; the caller maps them to JSON.
+    """
     n = int(limit)
     if getattr(limit, "with_total", True):
         total = db.scalar(select(func.count()).select_from(stmt.subquery()))
@@ -260,6 +264,9 @@ def _write_initial_password(path: str, password: str) -> None:
 
 @dataclass
 class Session:
+    """The authenticated caller of one request, as `current_session` builds it: the user (role read from the user table on this request), the CSRF value
+    inside the token, and whether the credential came in a cookie (and so needs the CSRF header on unsafe methods) or as a Bearer token.
+    """
     user: User
     csrf: str | None
     via_cookie: bool
@@ -267,6 +274,13 @@ class Session:
 
 def create_app(cfg: Settings = default_settings, db: Database | None = None, gateway: R1Gateway | None = None,
                oidc_transport: httpx.BaseTransport | None = None) -> FastAPI:
+    """Builds the FastAPI application: validates the sign-in configuration, then defines every route as a closure over `cfg`, the database and the gateway.
+    Raises ValueError, so the process stops at start, for a configuration that would lock everybody out or cannot work: `GUI_LOGIN_MODE=oidc` without OIDC enabled,
+    local login off without OIDC, a one-time-code key shorter than 32 characters, `GUI_ADMIN_MFA_REQUIRED` without a key; `build_signer` and `OidcConfig.from_settings` raise for a
+    bad signing key or provider. `db`, `gateway` and `oidc_transport` are injected by tests; in production they are None and the lifespan creates the database and the
+    R1 gateway on start-up, seeds the first users and, when `GUI_JWT_SECRET` was not set, adopts the signing key stored in the database so every instance agrees.
+    Nothing is written at import of this function; the module-level `app` below is the one that is served.
+    """
     if cfg.login_mode == "oidc" and not cfg.oidc_enabled:
         raise ValueError("GUI_LOGIN_MODE=oidc needs GUI_OIDC_ENABLED=true (and the provider's settings): with the local form closed and no provider, nobody could sign in")
     # GUI_LOGIN_MODE=local: OIDC is not offered even when it is configured (and not even built, so a stale provider setting cannot stop the start)
@@ -479,6 +493,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.post("/api/login")
     def login(body: LoginRequest, response: Response):
+        # Status codes: 200 with the session cookies and `{username, role, csrfToken, ...}`; 200 with `{mfaRequired, challenge, expiresIn}` when the account has an enrolled
+        # one-time code (no session yet; the challenge goes to POST /api/login/totp); 401 INVALID_CREDENTIALS (an unknown, inactive or wrong-password account looks the same);
+        # 429 TOO_MANY_ATTEMPTS while the account is locked; 403 LOCAL_LOGIN_DISABLED, LOGIN_MODE_OIDC_ONLY or BREAK_GLASS_NEEDS_TOTP; 503 TOTP_KEY_UNAVAILABLE when the account
+        # has a one-time code and the server has no key to check it. Failures are counted per username; the counter is cleared only when the sign-in completes.
         if not cfg.local_login_enabled:
             return _problem(403, "LOCAL_LOGIN_DISABLED", "sign in through the identity provider")
         user = check_credentials(body.username, body.password)
@@ -499,6 +517,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.post("/api/login/totp")
     def login_totp(body: TotpLoginRequest, response: Response):
+        # The second step of POST /api/login. The challenge is checked before anything else (signature, purpose, expiry), then the lockout, then that the user is still
+        # active with the same token version and that the challenge row is still unspent; the code is checked next and the challenge is spent last, so a wrong code does not
+        # burn it. Status codes: 200 as for /api/login (plus `recoveryCodesLeft` after a recovery code); 401 CHALLENGE_INVALID or INVALID_CODE; 429 TOO_MANY_ATTEMPTS;
+        # 403 for the login-mode refusals; 503 TOTP_KEY_UNAVAILABLE.
         claims = decode_jwt(body.challenge, challenge_key())
         if claims is None or claims.get("use") != CHALLENGE_USE or not isinstance(claims.get("jti"), str) or not isinstance(claims.get("sub"), str):
             return _problem(401, "CHALLENGE_INVALID", "the sign-in took too long or did not start here: enter the password again")
@@ -568,6 +590,9 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.post("/api/logout")
     def logout(request: Request, response: Response):
+        # Needs no valid session on purpose: it ends whatever token it is given (cookie or Bearer) and always clears both cookies, answering 200 `{status}`. When the token
+        # decodes and carries a `jti`, the session is recorded as revoked in the shared database, so a copy of the token stops working on every instance. For an OIDC user whose
+        # provider publishes an end-session endpoint the answer also carries `endSessionUrl`. A token that does not decode writes no audit row.
         auth = request.headers.get("authorization", "")
         token = auth[7:].strip() if auth.lower().startswith("bearer ") else request.cookies.get(SESSION_COOKIE, "")
         claims = signer.decode(token)
@@ -596,6 +621,9 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.get("/api/oidc/login")
     def oidc_login():
+        # Starts an OIDC sign-in: 404 OIDC_DISABLED when OIDC is not configured; otherwise 302 to the provider with state, nonce and a PKCE challenge, the pending sign-in stored
+        # in the database and a random binding value set in the httpOnly `smo_oidc` cookie. A discovery failure, or too many sign-ins already pending, redirects to /login with
+        # an `oidc_error` code instead (303) and writes an OIDC_LOGIN_FAILED audit row.
         if oidc is None:
             return _problem(404, "OIDC_DISABLED")
         state, nonce, verifier, binding = (secrets.token_urlsafe(32), secrets.token_urlsafe(32), secrets.token_urlsafe(64), secrets.token_urlsafe(24))
@@ -638,6 +666,10 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.get("/api/oidc/callback")
     def oidc_callback(request: Request, code: str | None = None, state: str | None = None, error: str | None = None):
+        # Finishes an OIDC sign-in. Order: the pending sign-in is consumed first (deleted, so a replayed callback finds nothing), then the binding cookie is compared in
+        # constant time with the stored hash (a callback opened in another browser fails), then a provider error, then the code exchange and the ID-token checks, then the
+        # group-to-role mapping. Every failure is a 303 redirect to /login?oidc_error=<code> (never the provider's own text) with an audit row; success is a 303 to / with the
+        # session cookies. A person whose groups no longer map to any role has their existing sessions ended (token version bumped) before the refusal.
         if oidc is None:
             return _problem(404, "OIDC_DISABLED")
         pending = app.state.db.consume_oidc_login(state, time.time()) if state else None
@@ -710,6 +742,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.get("/api/me/totp")
     def totp_status(session: Session = Depends(current_session)):
+        # The one-time-code state of the signed-in user for the account page: `available` (the server has a key), `enrolled`, `pending` and `recoveryCodesLeft`.
+        # An OIDC user is reported as not available with the reason "identity provider", because the provider asks for the second factor. Read only; 200.
         username = session.user.username
         if username.startswith(OIDC_PREFIX):
             return {"available": False, "enrolled": False, "pending": False, "recoveryCodesLeft": 0, "recoveryCodes": [], "reason": "identity provider"}
@@ -793,6 +827,9 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.post("/api/me/password")
     def change_own_password(body: ChangePasswordRequest, response: Response, session: Session = Depends(current_session)):
+        # Changes the signed-in user's own password after checking the current one: 400 INVALID_CREDENTIALS when it is wrong. Bumping `token_version` ends every other session
+        # of the user at once; the response carries a fresh CSRF token, and for a cookie session the new cookies replace the old. The new password length is validated by the
+        # request model (422). There is no lockout on the current-password check here. Audit: PASSWORD_CHANGED.
         with app.state.db.session() as s:
             user = s.get(GuiUser, session.user.username)
             if not verify_password(body.currentPassword, user.password_hash):
@@ -821,6 +858,9 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.get("/api/modules/status")
     async def modules_status(session: Session = Depends(current_session)):
+        # Probes every module's /health through R1 in parallel (R1 itself directly), each with the short `GUI_HEALTH_TIMEOUT_SECONDS`, and for a module that is live also its
+        # /ready and /version. Always 200: an unreachable module, a missing SMO token or an older build without /version shows up as `healthy: false`, `error` or null fields
+        # in that module's entry, never as a failed request. Any signed-in role may call it. Writes nothing.
         gw: R1Gateway = app.state.gateway
 
         async def get(module: str, route: str) -> httpx.Response:
@@ -872,6 +912,11 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.api_route("/api/smo/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     async def proxy(full_path: str, request: Request, session: Session = Depends(current_session)):
+        # The only road from the browser to the SMO. Order: `decide()` (rbac.py) checks the role against the first matching rule, and a call with no rule or too low a role is
+        # 403 FORBIDDEN and audited as DENIED; then the rule's query and JSON overrides are applied (a caller cannot override a forced value; a body that must be rewritten has to
+        # be a JSON object, else 400 INVALID_BODY); then the request is sent to R1 with the BFF's own token, forwarding only `content-type` and `accept`. Upstream answers are
+        # returned as they are minus hop-by-hop, length, encoding, Set-Cookie and server headers. 502 SMO_AUTH_FAILED when no SME token could be obtained, 502 R1_UNREACHABLE when
+        # R1 did not answer. Only mutating methods write an audit row (PROXY, with the upstream status); reads are not audited.
         path = "/" + full_path
         query: dict[str, list[str]] = {}
         for k, v in request.query_params.multi_items():
@@ -960,6 +1005,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.get("/api/admin/users")
     def list_users(session: Session = Depends(require_admin)):
+        # Admin only (403 for other roles). Every local and OIDC user ordered by username, with the one-time-code enrolment of all of them read in one query. Read only.
         with app.state.db.session() as s:
             enrolled = app.state.db.totp_enrolled_users()
             activity = app.state.db.user_activity(SIGN_IN_ACTIONS)        # one grouped query for every user
@@ -967,6 +1013,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.post("/api/admin/users", status_code=201)
     def create_user(body: CreateUserRequest, session: Session = Depends(require_admin)):
+        # Admin only. 400 INVALID_USERNAME when the name does not match `USERNAME_RE` (which also keeps local names out of the `oidc:` namespace), 409 USER_EXISTS, 201 with the
+        # user otherwise. The starting `token_version` is random on purpose, so a deleted and re-created name cannot revive the old person's unexpired token. Audit: USER_CREATED.
         if not USERNAME_RE.match(body.username):
             return _problem(400, "INVALID_USERNAME", "2-32 chars: lowercase letter first, then a-z 0-9 _ . -")
         with app.state.db.session() as s:
@@ -984,6 +1032,9 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.patch("/api/admin/users/{username}")
     def update_user(username: str, body: UpdateUserRequest, session: Session = Depends(require_admin)):
+        # Admin only; changes the fields sent. 404 NO_SUCH_USER; 409 OIDC_USER for a password or break-glass change on an identity-provider user; 409 LAST_ADMIN when the change
+        # would demote or deactivate the only active admin. Deactivating or resetting a password bumps `token_version` (every session of that user ends); a role change does not
+        # need to, because the role is read from the table on each request. The whole change is one commit. Audit: USER_UPDATED with the list of changes.
         with app.state.db.session() as s:
             user = s.get(GuiUser, username)
             if user is None:
@@ -1017,6 +1068,8 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     @app.delete("/api/admin/users/{username}", status_code=204)
     def delete_user(username: str, session: Session = Depends(require_admin)):
+        # Admin only. 409 CANNOT_DELETE_SELF; 409 LAST_ADMIN for the only active admin; 204 also for a user that does not exist (the call is idempotent). The user row and its
+        # failed-login counter go in one transaction; the one-time-code data and pins are removed right after, in their own transactions. Audit rows that name the user are kept.
         if username == session.user.username:
             return _problem(409, "CANNOT_DELETE_SELF")
         with app.state.db.session() as s:
@@ -1143,6 +1196,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
     return app
 
 
+# Hashed once at import: `check_credentials` verifies against it for an unknown user name, so that branch costs one scrypt as a known user does.
 _DUMMY_HASH = hash_password(secrets.token_urlsafe(16))
 
 app = create_app()

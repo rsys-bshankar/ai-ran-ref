@@ -18,7 +18,9 @@ const row = (n: number, extra: Record<string, unknown> = {}) => ({
   state: "RUNNING", autonomyMode: "SHADOW", hasPage: n < 3, operatorApiRegistered: n === 1, pinned: false, ...extra,
 });
 
-/** A fake BFF serving a three-rApp directory (search-filtered) and no pins; `overrides` replaces routes. */
+/**
+ * Starts the fake BFF with three rApps (search is applied on the name), an empty pin list, the pin route and the directory's owners and states; `overrides` adds or replaces routes.
+ */
 function directory(overrides: Record<string, unknown> = {}) {
   return fakeBff({
     "GET /rapps": (c: Call) => ({ items: [row(1), row(2), row(3)].filter((r) => !c.query.get("search") || r.name.includes(c.query.get("search")!)), total: 3, limit: 25, offset: 0, owners: ["Acme", "Beta"], states: ["RUNNING"] }),
@@ -29,7 +31,7 @@ function directory(overrides: Record<string, unknown> = {}) {
 }
 
 describe("RappDirectory", () => {
-  // pins down: lists every rApp with a link to its own page and says which declare a page
+  // Every rApp is listed with a link to its own page, and the list says which of them declare a page.
   it("lists every rApp with a link to its own page and says which declare a page", async () => {
     directory();
     const { container } = await mountWith(<RappDirectory />);
@@ -44,7 +46,7 @@ describe("RappDirectory", () => {
     expect(container.textContent).toContain("3 rApps");
   });
 
-  // pins down: searches after a short pause, sends the filters, and offers the owners and states the BFF reports
+  // Typing searches after a short pause rather than on each key, the filters are sent as chosen, and the owners and states offered are the ones the BFF reports.
   it("searches after a short pause, sends the filters, and offers the owners and states the BFF reports", async () => {
     const calls = directory();
     const { container } = await mountWith(<RappDirectory />);
@@ -62,7 +64,7 @@ describe("RappDirectory", () => {
     expect(calls.filter((c) => c.path === "/rapps").at(-1)!.query.get("state")).toBe("RUNNING");
   });
 
-  // pins down: says so when nothing matches
+  // A search with no match says so.
   it("says so when nothing matches", async () => {
     directory({ "GET /rapps": { items: [], total: 0, limit: 25, offset: 0, owners: [], states: [] } });
     const { container } = await mountWith(<RappDirectory />);
@@ -70,7 +72,7 @@ describe("RappDirectory", () => {
     expect(container.textContent).toContain("No rApp instances yet");
   });
 
-  // pins down: pins and unpins with the star
+  // The star pins and unpins a rApp through the BFF.
   it("pins and unpins with the star", async () => {
     const calls = directory({ "GET /rapps": { items: [row(1), row(2, { pinned: true })], total: 2, limit: 25, offset: 0, owners: [], states: [] }, [`DELETE /me/pins/${row(2).instanceId}`]: { status: 204 } });
     const { container } = await mountWith(<RappDirectory />);
@@ -83,7 +85,7 @@ describe("RappDirectory", () => {
     expect(calls.some((c) => c.method === "DELETE" && c.path === `/me/pins/${row(2).instanceId}`)).toBe(true);
   });
 
-  // pins down: at five pins the unpinned rows cannot be pinned (the BFF refuses a sixth too)
+  // At the pin limit the unpinned rows cannot be pinned (the BFF refuses a sixth too), while the pinned ones can still be unpinned.
   it("at five pins the unpinned rows cannot be pinned (the BFF refuses a sixth too)", async () => {
     const five = [1, 2, 3, 4, 5].map((n) => row(n, { pinned: true }));
     directory({ "GET /me/pins": { max: 5, items: five }, "GET /rapps": { items: [...five.slice(0, 1), row(6)], total: 2, limit: 25, offset: 0, owners: [], states: [] } });
@@ -95,7 +97,7 @@ describe("RappDirectory", () => {
     expect((container.querySelector("button[aria-label='Unpin rApp 1']") as HTMLButtonElement).disabled).toBe(false);
   });
 
-  // pins down: shows the BFF's error
+  // A failed directory read shows the BFF's error.
   it("shows the BFF's error", async () => {
     directory({ "GET /rapps": { status: 502, body: { title: "R1_UNREACHABLE", detail: "R1 Termination did not answer" } } });
     const { container } = await mountWith(<RappDirectory />);
@@ -105,7 +107,7 @@ describe("RappDirectory", () => {
 });
 
 describe("the sidebar's pinned rApps", () => {
-  // pins down: lists the pins under the one rApps entry, each linking to its page
+  // The pinned rApps are listed under the one rApps menu entry, each linking to its page.
   it("lists the pins under the one rApps entry, each linking to its page", async () => {
     fakeBff({ "GET /me/pins": { max: 5, items: [row(1, { pinned: true }), row(2, { pinned: true, name: null })] } });
     const { container } = await mountWith(<PinnedRapps />);
@@ -114,7 +116,7 @@ describe("the sidebar's pinned rApps", () => {
     expect(links.map((a) => [a.textContent, a.getAttribute("href")])).toEqual([["↳rApp 1", `/rapps/${IID}`], ["↳0b9f3f1e…", `/rapps/${row(2).instanceId}`]]);
   });
 
-  // pins down: draws nothing without pins or when the pins cannot be read
+  // Without pins, or when the pins cannot be read, the sidebar shows no pin list.
   it("draws nothing without pins or when the pins cannot be read", async () => {
     fakeBff({ "GET /me/pins": { items: [] } });
     expect((await mountWith(<PinnedRapps />)).container.querySelector("ul")).toBeNull();
@@ -123,7 +125,7 @@ describe("the sidebar's pinned rApps", () => {
     expect((await mountWith(<PinnedRapps />)).container.querySelector("ul")).toBeNull();
   });
 
-  // pins down: the sidebar has one rApps entry and no entry of a single rApp
+  // The menu has one rApps entry and no entry for a single rApp, so a new rApp needs no GUI build.
   it("the sidebar has one rApps entry and no entry of a single rApp", () => {
     const labels = NAV.map((n) => n.label);
     expect(labels.filter((l) => l === "rApps")).toHaveLength(1);

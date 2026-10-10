@@ -32,7 +32,7 @@ export function DecisionTable({ query, selected, onSelect }: DecisionTableProps)
           { header: "Model", render: (r) => r.modelVersion ?? <span className="muted">—</span> },
           { header: "Rationale", render: (r) => <span className="small">{r.rationale ?? <span className="muted">none given</span>}</span> },
           { header: "Changes", render: (r) => r.changeCount },
-          { header: "Approved by", render: (r) => r.approvedBy ?? <span className="muted">—</span> },
+          { header: "Approved by", render: (r) => (r.approvers?.length ? r.approvers.join(", ") : r.approvedBy ?? <span className="muted">—</span>) },
         ]} />
     </Card>
   );

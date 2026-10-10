@@ -1,5 +1,6 @@
 /** Section `approvals.queue` (tab "Waiting"): the requests waiting for a person, one card each with what it would change, why, and a lapse
- * countdown bar (the share of its waiting time left, from `createdAt` → `expiresAt`). Paged on the server without a count (the count comes from the
+ * countdown bar (the share of its waiting time left, from `createdAt` → `expiresAt`) and, for a request that needs two people, how many
+ * approvals it has (`approvalProgress`). Paged on the server without a count (the count comes from the
  * summary); the first request is selected for the detail panel when nothing is. */
 import { useEffect, useState } from "react";
 
@@ -8,7 +9,7 @@ import { Card, Id } from "../../../components/ui";
 import { Meter } from "../../../kit/Meter";
 import { Pager } from "../../../kit/Pager";
 import { QueryState } from "../../../kit/states";
-import { describeElements, formatTime, timeLeft } from "../../../lib/domain";
+import { approvalProgress, describeElements, formatTime, timeLeft } from "../../../lib/domain";
 import { usePreferences } from "../../../shell/ThemeProvider";
 import { lapseShare, useWaiting } from "../data/queries";
 import { useNow } from "../data/useNow";
@@ -48,6 +49,8 @@ function QueueCard({ approval: a, now, selected, onOpen }: { approval: Approval;
       </div>
       <div className="small" title={a.managedElements.join(", ")}>{a.changeCount} on {describeElements(a.managedElements)}</div>
       <div className="small">{a.decision?.rationale ?? <span className="muted">no rationale given</span>}</div>
+      {/* two-person approval (#401): "1 of 2 approvals"; a request that needs one (or a RAN NF OAM that sends neither field) reads "one needed" */}
+      <div className="small" data-approvals>{approvalProgress(a) ?? <span className="muted">one needed</span>}</div>
       {share !== null && <Meter parts={[{ key: "time left", value: Math.round(share * 100), tone }]} total={100} label={`${Math.round(share * 100)} % of its waiting time left`} />}
       <div className="row between wrap small">
         <span title={formatTime(a.expiresAt)}>{timeLeft(a.expiresAt, now)} <span className="muted">({a.onTimeout === "REJECT" ? "rejected" : "expires"})</span></span>

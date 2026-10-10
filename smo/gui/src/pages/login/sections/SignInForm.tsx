@@ -13,7 +13,11 @@ import { loginErrorMessage, recoveryLeftText, type LoginChallenge } from "../../
 import { oidcErrorMessage, oidcLoginHref } from "../../../lib/oidc";
 import { useAuthConfig } from "../data/queries";
 
-/** The sign-in form and its code step. */
+/**
+ * The sign-in form and its code step. The first step posts the username and password through `AuthProvider.login`; an answer with a challenge opens the code step, a session
+ * opens the app. A spent challenge (CHALLENGE_INVALID) or a lock-out (429) sends the user back to the password step. With `GUI_LOGIN_MODE=oidc` the password form is hidden
+ * behind a small "Break-glass sign-in" link that appears only when the backend says a break-glass account exists. After a recovery code is spent, a toast says how many are left.
+ */
 export function SignInForm() {
   const { login, loginWithCode } = useAuth();
   const toast = useToast();

@@ -1,3 +1,10 @@
+"""The SQLAlchemy tables of RAN NF OAM: the O1 endpoint and managed-entity registries, alarms and PM files, CM write jobs and their snapshots, the MSAC access-control tables, software jobs and campaigns, onboarding, KPI definitions and the rApp safeguard, approval and decision-record tables.
+
+Used by `main.py`, `lifecycle.py`, `msac.py`, `vendors.py`, `scoping.py` and the worker tasks; nothing here has behaviour beyond column defaults. The unit tests build their SQLite schema from these classes, while Postgres gets its schema from the Alembic revisions in `migrations/versions/`, so a column added here needs a revision there
+(`scripts/check_migration_matches_models.py` compares the two, and `migrations/table_owners.json` names the owner of each table; no foreign key may cross a module boundary).
+A table with `Versioned` has a `row_version` column: a concurrent update of the same row fails with 409 `CONCURRENT_MODIFICATION` instead of overwriting it.
+"""
+
 import datetime
 import uuid
 
@@ -9,6 +16,8 @@ from smo_shared.versioning import Versioned
 
 
 class O1AdaptorEndpoint(Base):
+    """One registered O1 adaptor, at most one per managed element: where its CM is reached (`adaptor_uri` and `transport`), the name of the credential used to reach it (never the secret), the MnS services it declares (NULL: its vendor's) and its heartbeat-driven health.
+    """
     __tablename__ = "o1_adaptor_endpoint"
 
     endpoint_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -60,6 +69,8 @@ class ManagedObject(Base):
 
 
 class ManagedEntity(Base):
+    """A managed element (or function) known to the SMO, keyed by `managed_element_ref`: its vendor and O1 protocol, its adaptor endpoint, the per-cell guard attributes rApps read, and the region and tenant that scope claims are checked against (NULL: visible to unscoped callers only).
+    """
     __tablename__ = "managed_entity"
 
     managed_element_ref: Mapped[str] = mapped_column(String, primary_key=True)
@@ -81,6 +92,8 @@ class ManagedEntity(Base):
 
 
 class Alarm(Base):
+    """A fault record on a managed element (TS 28.532 / 28.111 AlarmRecord fields). `severity` is stored lower-case, and clearing an alarm sets it to `cleared` and fills `cleared_at` and `clear_user_id`, rather than using a separate state column; `source_alarm_id` is the adaptor's own id of the alarm.
+    """
     __tablename__ = "alarm"
 
     alarm_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -90,7 +103,7 @@ class Alarm(Base):
     severity: Mapped[str] = mapped_column(String, nullable=False)  # this build's own wire name for 3GPP's perceivedSeverity
     ack_state: Mapped[str] = mapped_column(String, nullable=False, default="UNACKNOWLEDGED")
     correlation_group: Mapped[str | None] = mapped_column(String)
-    # PR-GUI-9.4: indexed for the time filters, the hourly buckets and the keyset order of the alarm console (revision 0034)
+    # PR-GUI-9.4: indexed for the time filters, the hourly buckets and the keyset order of the alarm console (revision 0036)
     raised_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC), index=True)
     # HISTORY.md §5: standard 3GPP TS 28.532 FaultMnS NotifyNewAlarm
     # fields (per oam's own stndDefined-r16-notify-new-alarm.json VES template)
@@ -119,7 +132,7 @@ class Alarm(Base):
     # "last mutated" timestamp, set whenever ack_state or severity changes).
     ack_user_id: Mapped[str | None] = mapped_column(String)
     # PR-GUI-9.8: when the alarm was acknowledged (the first ack of the current acknowledged state; NULL while unacknowledged, and for an
-    # alarm acknowledged before revision 0034). Mean time to acknowledge (`GET /alarms/stats`) is computed from it.
+    # alarm acknowledged before revision 0036). Mean time to acknowledge (`GET /alarms/stats`) is computed from it.
     acknowledged_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     changed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -136,6 +149,7 @@ class MsacIdentity(Base):
 
 
 class MsacRole(Base):
+    """A TS 28.319 Role: a unique name and the ids of its AccessRules. Evaluation is in `msac.authorize`."""
     __tablename__ = "msac_role"
 
     role_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -144,6 +158,8 @@ class MsacRole(Base):
 
 
 class MsacAccessRule(Base):
+    """A TS 28.319 AccessRule: a `data_node_selector` (an absolute DN path with `*` wildcards), the operations it covers, and whether it ALLOWs or DENYs them (DENY wins).
+    """
     __tablename__ = "msac_access_rule"
 
     rule_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -275,6 +291,9 @@ class RAppApprovalPolicy(Base):
     on_timeout: Mapped[str] = mapped_column(String, nullable=False, default="EXPIRE", server_default="EXPIRE")
     set_by: Mapped[str | None] = mapped_column(String)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+    # How many different people must approve a request before the job is made: 1 (a single approval, as before) or 2 (two distinct approvers; the requester's own
+    # approval never counts). Revision 0034.
+    required_approvals: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
 
 class RAppActionApproval(Base):
@@ -302,6 +321,11 @@ class RAppActionApproval(Base):
     # PR-SEC-10.4: the scope claim of the requester when the request was parked ({"regions": [...], "tenants": [...]}; NULL: unscoped), checked again against
     # the targets as they are when the request is approved
     requester_scope: Mapped[dict | None] = mapped_column(JSON(none_as_null=True))
+    # Revision 0034: the number of distinct approvers the policy asked for when the request was parked (a later change of the policy does not change what a
+    # waiting request needs), and the approvals given so far, `[{"by", "at", "reason"}]` in the order given (NULL while there are none; a request that needs one
+    # approval keeps its single approver in `decided_by`, as before). Changed only under the row lock of a decision.
+    required_approvals: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    approvals: Mapped[list | None] = mapped_column(JSON(none_as_null=True))
 
 
 class ApprovalSubscription(Base):
@@ -310,6 +334,17 @@ class ApprovalSubscription(Base):
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     callback_uri: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+class LifecycleSubscription(Base):
+    """MGT-14.7, MGT-15.6: who is told (a POST to `callback_uri`, through the outbox) when an element's onboarding fails (`ONBOARDING_FAILED`), a software campaign
+    halts (`CAMPAIGN_HALTED`) or its rollback fails (`CAMPAIGN_ROLLBACK_FAILED`). `events` narrows it to those types; empty means all three."""
+    __tablename__ = "lifecycle_subscription"
+
+    subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    callback_uri: Mapped[str] = mapped_column(String, nullable=False)
+    events: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
 
 
@@ -337,6 +372,9 @@ class RAppDecisionRecord(Base):
     correlation_id: Mapped[str | None] = mapped_column(String)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     audit_seq: Mapped[int | None] = mapped_column(BigInteger().with_variant(Integer, "sqlite"))     # NULL until the chain entry is written (a moment after the commit)
+    # Revision 0034: who approved, in the order given, when the request needed two approvals. NULL for every other record, which then hashes exactly as it did
+    # before this column existed (the hash covers `approvers` only when it is set).
+    approvers: Mapped[list | None] = mapped_column(JSON(none_as_null=True))
 
 
 class FileSubscription(Base):
@@ -350,6 +388,8 @@ class FileSubscription(Base):
 
 
 class CMSchemaCache(Base):
+    """A loaded CM schema, keyed by (schema_name, revision): its location and type and the class descriptor that CM writes are checked against (`vendors.schema_problems`). The schemas bundled in `app/cm_schemas/` are not rows here.
+    """
     __tablename__ = "cm_schema_cache"
 
     schema_name: Mapped[str] = mapped_column(String, primary_key=True)
@@ -383,6 +423,8 @@ class VendorCapability(Base):
 
 
 class WriteConfigJob(Versioned, Base):
+    """A CM write job (`POST /config-jobs`): who asked, its state (`JobState`), the staged-rollout settings and progress (waves, pause, gate), the rollback link, the KPI guard declared with it, and the rApp invoker id that rate limits and job ownership use. Its changes are the `write_config_sub_change` rows.
+    """
     __tablename__ = "write_config_job"
 
     job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -420,6 +462,8 @@ class WriteConfigJob(Versioned, Base):
 
 
 class WriteConfigSubChange(Base):
+    """One attribute change of a job on one element or function: the edit-config `operation`, its outcome (`status`, `rejection_reason` as a stable code and `rejection_detail` as the adaptor's text), the dispatch attempts made, and its position and wave in the job.
+    """
     __tablename__ = "write_config_sub_change"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -446,6 +490,8 @@ class WriteConfigSubChange(Base):
 
 
 class PMSubscription(Base):
+    """A PM subscription: the registration of this service as a DME producer of one counter type for an element, with the delivery method and optional granularity period.
+    """
     __tablename__ = "pm_subscription"
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -465,6 +511,7 @@ class PMSubscription(Base):
 
 
 class FMSubscription(Base):
+    """An FM subscription: the registration of this service as a DME producer of the element's fault records."""
     __tablename__ = "fm_subscription"
 
     # HISTORY.md OI-6.7: unlike PM (subscribe_pm registers RAN NF
@@ -481,6 +528,8 @@ class FMSubscription(Base):
 
 
 class SoftwareManagementJob(Versioned, Base):
+    """A software job on one element (`SwmState`, with the `phase` of download, install, activate kept as a separate column). A job made by a software campaign carries the campaign, its wave and, for an undo, the job it reverses.
+    """
     __tablename__ = "software_management_job"
 
     job_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -551,6 +600,10 @@ class SoftwareCampaign(Versioned, Base):
     wave_pause_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     gate_max_new_alarms: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     on_gate_failure: Mapped[str] = mapped_column(String, nullable=False, default="halt", server_default="halt")
+    # MGT-15.7: NULL = no timeout (a wave waits for every job, as before); seconds a wave's (or a rollback step's) jobs may take before the sweep fails those still running.
+    # `rollback_order`: "all" starts every revert job at once (as before), "reverse" the last wave first and the next only when the one before it has ended.
+    job_timeout_seconds: Mapped[int | None] = mapped_column(Integer)
+    rollback_order: Mapped[str] = mapped_column(String, nullable=False, default="all", server_default="all")
     wave_started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     next_wave_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     halted_reason: Mapped[str | None] = mapped_column(String)

@@ -1,5 +1,8 @@
 """Tenant and region authorization (smo_shared/scope.py, docs/adr/0005-tenant-region-authorization.md): the claim, the semantic table, the header, and what an SMO
-module passes on when it acts for an rApp."""
+module passes on when it acts for an rApp.
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_scope.py -q
+"""
 
 import itertools
 
@@ -17,12 +20,14 @@ from smo_shared.scope import DENY_ALL, ON_BEHALF_SCOPE_HEADER, SCOPE_HEADER, Sco
 
 
 def S(regions=None, tenants=None):
+    """Helper: a Scope from lists of regions and tenants (None means that axis is not restricted)."""
     return Scope(regions=None if regions is None else frozenset(regions), tenants=None if tenants is None else frozenset(tenants))
 
 
 # ---- the claim
 
 def test_a_claim_is_parsed_per_axis_and_an_empty_one_is_no_claim():
+    """A claim restricts only the axes it names, and an empty or missing claim means no claim."""
     assert scope.from_claim({"regions": ["eu-west"]}) == S(regions=["eu-west"])
     assert scope.from_claim({"tenants": ["acme", "globex"]}) == S(tenants=["acme", "globex"])
     assert scope.from_claim({"regions": ["a"], "tenants": ["b"]}) == S(["a"], ["b"])
@@ -30,6 +35,8 @@ def test_a_claim_is_parsed_per_axis_and_an_empty_one_is_no_claim():
     assert scope.from_claim({}) is None and scope.from_claim(None) is None
 
 
+# Table: claims that must be refused (wrong types, empty or duplicate values, bad characters, over-long values or lists, unknown axes); the error text
+# never repeats the input.
 @pytest.mark.parametrize("claim", [
     [], "eu", 3, {"regions": []}, {"regions": "eu"}, {"regions": ["eu", "eu"]}, {"regions": [""]}, {"regions": [" eu"]}, {"regions": ["-eu"]},
     {"regions": ["a" * 101]}, {"regions": [1]}, {"regions": ["eu west"]}, {"regions": ["eu\n"]}, {"regions": [f"r{i}" for i in range(101)]},
@@ -42,12 +49,14 @@ def test_a_claim_that_is_not_valid_is_refused_with_a_fixed_message(claim):
 
 
 def test_the_largest_valid_claim_and_the_longest_value_are_accepted():
+    """A claim of 100 values and a 100 character value are accepted, so the limits are inclusive."""
     assert scope.from_claim({"regions": [f"r{i}" for i in range(100)]}) is not None
     assert scope.from_claim({"tenants": ["a" * 100]}) == S(tenants=["a" * 100])
     assert scope.valid_value("eu-west-1") and scope.valid_value("tenant:acme/1@x+y") and not scope.valid_value(None) and not scope.valid_value("")
 
 
 def test_the_claim_round_trips_sorted_and_only_with_the_axes_that_restrict():
+    """A scope encodes to a compact sorted claim naming only the axes that restrict, and decodes back to the same scope."""
     assert scope.to_claim(S(["b", "a"], None)) == {"regions": ["a", "b"]}
     assert scope.to_claim(S(None, ["t"])) == {"tenants": ["t"]}
     assert scope.to_claim(None) is None and scope.to_claim(Scope()) is None
@@ -57,6 +66,9 @@ def test_the_claim_round_trips_sorted_and_only_with_the_axes_that_restrict():
 
 
 def test_a_header_that_cannot_be_read_permits_nothing_and_no_header_is_no_claim():
+    """A scope header that is damaged or invalid denies everything, while no header (or `{}`) is no claim; even absurd nesting is a refusal, not an
+    error.
+    """
     assert scope.decode(None) is None and scope.decode("") is None
     for damaged in ("not json", "[]", '{"regions":[]}', '{"regions":"x"}', '{"tenants":["a b"]}', '{"cells":["c"]}', '{"regions":["' + "a" * 200 + '"]}'):
         assert scope.decode(damaged) == DENY_ALL, damaged
@@ -68,6 +80,7 @@ def test_a_header_that_cannot_be_read_permits_nothing_and_no_header_is_no_claim(
 # ---- the semantic table (docs/adr/0005 section "Semantics")
 
 def test_the_semantic_table():
+    """Checks scope.permits against an independently written rule for every combination of caller scope, target region and target tenant."""
     regions, tenants = [None, "eu", "us"], [None, "acme", "globex"]
     callers = {"unscoped": None, "eu": S(["eu"]), "acme": S(tenants=["acme"]), "eu+acme": S(["eu"], ["acme"]), "eu,us": S(["eu", "us"]),
                "eu+acme,globex": S(["eu"], ["acme", "globex"])}
@@ -83,6 +96,9 @@ def test_the_semantic_table():
 
 
 def test_the_rows_that_matter():
+    """The cases of the ADR table that are easy to get wrong: unscoped callers see everything, a target with no region is hidden from a
+    region-restricted caller, both axes must match, matching is exact.
+    """
     assert scope.permits(None, None, None)                                 # unscoped sees an unscoped target
     assert scope.permits(None, "eu", "acme")                               # ... and a scoped one: nothing changes on upgrade
     assert not scope.permits(S(["eu"]), None, "acme")                      # a target with no region is not for a caller that restricts regions
@@ -107,6 +123,7 @@ class _Row(_Base):
 
 
 def test_the_query_form_gives_the_same_answer_as_permits_for_every_row():
+    """The SQL filter and the denied condition select exactly the rows that permits allows and refuses, for every kind of caller."""
     engine = create_engine("sqlite://")
     _Base.metadata.create_all(engine)
     rows = [(f"{r}-{t}", r, t) for r, t in itertools.product([None, "eu", "us"], [None, "acme", "globex"])]
@@ -122,6 +139,7 @@ def test_the_query_form_gives_the_same_answer_as_permits_for_every_row():
 
 
 def test_a_caller_covers_what_it_hands_out_and_never_more():
+    """A caller can hand out only a scope no wider than its own on every axis; no claim is the widest and DENY_ALL covers only itself."""
     assert scope.covers(None, None) and scope.covers(None, S(["eu"]))                      # an unscoped caller may hand out anything
     assert scope.covers(S(["eu", "us"]), S(["eu"])) and scope.covers(S(["eu"]), S(["eu"]))
     assert not scope.covers(S(["eu"]), None)                                                # no claim is the widest
@@ -133,6 +151,7 @@ def test_a_caller_covers_what_it_hands_out_and_never_more():
 
 
 def test_a_claim_from_introspection_that_is_damaged_permits_nothing():
+    """A malformed claim in a token introspection answer becomes DENY_ALL rather than being ignored."""
     assert scope.from_introspection(None) is None and scope.from_introspection({}) is None
     assert scope.from_introspection({"regions": ["eu"]}) == S(["eu"])
     assert scope.from_introspection({"regions": []}) == DENY_ALL and scope.from_introspection("x") == DENY_ALL
@@ -146,6 +165,9 @@ MODULE_FOR_RAPP = {**MODULE, ON_BEHALF_OF_HEADER: "es-client", ON_BEHALF_SCOPE_H
 
 
 def test_the_claim_that_applies_is_the_callers_own_or_the_one_a_module_passed_on():
+    """The claim in force is the rApp's own, or the one an internal module passed on for it; an rApp's own on-behalf header and an unstamped request
+    are not believed.
+    """
     assert scope.scope_of(RAPP) == S(["eu"])
     assert scope.scope_of(MODULE_FOR_RAPP) == S(tenants=["acme"])               # DME's call for an rApp is limited as the rApp is
     assert scope.scope_of(MODULE) is None                                       # a module on its own account is unscoped
@@ -159,6 +181,7 @@ def test_the_claim_that_applies_is_the_callers_own_or_the_one_a_module_passed_on
 
 
 def test_the_claim_of_a_request_is_read_from_its_headers():
+    """request_scope reads the claim in force from a request's headers."""
     from types import SimpleNamespace
     assert scope.request_scope(SimpleNamespace(headers=RAPP)) == S(["eu"])
     assert scope.request_scope(SimpleNamespace(headers=MODULE_FOR_RAPP)) == S(tenants=["acme"])
@@ -167,12 +190,16 @@ def test_the_claim_of_a_request_is_read_from_its_headers():
 
 @pytest.fixture
 def service():
+    """A test service with correlation and invoker context installed and a route that records the originator's scope and the headers R1Client would
+    send onward; returns the client and the record.
+    """
     app = FastAPI()
     apply_correlation_id(app)
     sent = {}
 
     @app.get("/inside")
     def inside():
+        # Test route recording the originator's scope and the onward headers; not part of any published API.
         sent["scope"] = scope.get_originator_scope()
         sent["headers"] = r1_client.R1Client(bearer_token="t")._headers()
         return {}
@@ -181,6 +208,7 @@ def service():
 
 
 def test_r1client_passes_the_rapps_claim_on_beside_its_id(service):
+    """R1Client sends the rApp's scope claim beside its id on onward calls."""
     client, sent = service
     client.get("/inside", headers=RAPP)
     assert sent["scope"] == S(["eu"])
@@ -188,6 +216,7 @@ def test_r1client_passes_the_rapps_claim_on_beside_its_id(service):
 
 
 def test_the_claim_holds_across_modules_and_is_not_invented(service):
+    """The claim is passed on across modules and is not invented when a module acts for nobody or for an unscoped rApp."""
     client, sent = service
     client.get("/inside", headers=MODULE_FOR_RAPP)
     assert sent["headers"][ON_BEHALF_SCOPE_HEADER] == '{"tenants":["acme"]}'
@@ -199,6 +228,7 @@ def test_the_claim_holds_across_modules_and_is_not_invented(service):
 
 
 def test_a_claim_that_was_damaged_stays_a_refusal_when_passed_on(service):
+    """A damaged claim stays DENY_ALL when R1Client passes it on, so it cannot become unrestricted at the next hop."""
     client, sent = service
     client.get("/inside", headers={**RAPP, SCOPE_HEADER: "garbage"})
     assert sent["scope"] == DENY_ALL

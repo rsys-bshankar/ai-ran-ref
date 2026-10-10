@@ -6,6 +6,8 @@
 # By default this brings its own Postgres and generates its own secrets. To use a Postgres you run, set postgres.enabled=false and postgres.external.*,
 # and create the password Secret yourself (secrets.existingSecret). See deploy/helm/smo/README.md.
 
+# Where the SMO images are pulled from: <registry>/<prefix><name>:<tag>. `<name>` is a module's `image` below, and the names are the ones scripts/release_images.py
+# publishes (tests_integration/test_helm_chart.py checks that). The database image is set under `postgres` and is not affected by pullPolicy.
 image:
   registry: ghcr.io/rsys-bshankar/ai-ran-smo   # <registry>/<prefix><name>:<tag>, as the release workflow publishes them
   prefix: smo-
@@ -129,12 +131,22 @@ gui:
   # (public-previous-1.pem, ...) and name them in `env` as GUI_JWT_PREVIOUS_KEY_FILES: /run/gui-jwt/public-previous-1.pem. GUI_JWT_ALGORITHM goes in `env`.
   jwtKeySecretRef: {}
 
+# RAN NF OAM's own settings that need a Secret (SB-7.8). Everything else of the module goes in modules.ran-nf-oam.env.
+#   vesPasswordSecretRef  the password of the VES event listener (POST /ves/eventListener/v7), from a Secret of your own ({name: ves-listener, key: ves-password}; the key
+#                         defaults to ves-password). Only that key is mounted, read-only, at /run/ves/password and named by RAN_NF_OAM_VES_PASSWORD_FILE, so the password
+#                         is not an environment value that anyone who can read the Deployment sees. The listener exists only with a password (it answers 404 without one),
+#                         so setting this turns the listener ON; empty (the default) changes nothing. The user name stays in `modules.ran-nf-oam.env`
+#                         (RAN_NF_OAM_VES_USERNAME, default ves). Setting this and RAN_NF_OAM_VES_PASSWORD(_FILE) in env fails the render (a password given twice is a 503).
+ranNfOam:
+  vesPasswordSecretRef: {}
+
 # Where each module keeps files (Onboarding's packages, the GUI backend's database). With persistence off they are emptyDirs and are lost
 # when the pod goes.
 persistence:
   enabled: true
   storageClassName: ""
 
+# Ingress objects for the operator GUI and for the R1 gateway, each rendered only when its host is set; off by default (templates/ingress.yaml).
 ingress:
   enabled: false
   className: ""
@@ -195,7 +207,7 @@ mtls:
 podDisruptionBudget:
   enabled: false
   minAvailable: 1
-autoscaling:
+autoscaling:           # a HorizontalPodAutoscaler for every service module that has no volume; `replicas` is then left to it (templates/pdb-hpa.yaml)
   enabled: false
   minReplicas: 2
   maxReplicas: 6
@@ -215,7 +227,7 @@ tracing:
 observability:
   tempo:
     enabled: false
-    image: grafana/tempo:2.8.2
+    image: grafana/tempo:2.10.8
     resources:
       requests: { cpu: 50m, memory: 128Mi }
       limits: { memory: 512Mi }
@@ -283,16 +295,18 @@ moduleDefaults:
     requests: { cpu: 50m, memory: 128Mi }
     limits: { memory: 512Mi }
 
-# The modules. `image` is the image name after the prefix (smo-<image>); the services are named by the key.
+# The modules. `image` is the image name after the prefix (smo-<image>); the services are named by the key. An entry sets only what differs from moduleDefaults
+# above; a worker entry is the same image as its service started with `kind: worker`. tests_integration/test_helm_chart.py checks that this list, each module's
+# image, secrets and environment agree with docker-compose.yml, so a service added to one is added to the other.
 modules:
-  r1-termination: { image: r1-termination, databaseRole: r1-termination, enrollment: false, scratch: /srv/scratch, env: { R1_KILL_SWITCH_SCHEMA: ran_nf_oam, R1_RATE_STORE: memory, R1_INTROSPECTION_CACHE_SECONDS: "0", R1_INTROSPECTION_CACHE_MAX_ENTRIES: "10000" }, resources: { requests: { cpu: 50m, memory: 192Mi }, limits: { memory: 512Mi } } }   # CPU-bound at about one core per 39 requests/s: values-sized.yaml asks for 500m, scale by replicas (docs/SIZING.md)
+  r1-termination: { image: r1-termination, databaseRole: r1-termination, enrollment: false, scratch: /srv/scratch, env: { R1_KILL_SWITCH_SCHEMA: ran_nf_oam, R1_RATE_STORE: memory, R1_INTROSPECTION_CACHE_SECONDS: "30", R1_INTROSPECTION_CACHE_MAX_ENTRIES: "10000" }, resources: { requests: { cpu: 50m, memory: 192Mi }, limits: { memory: 512Mi } } }   # CPU-bound at about one core per 39 requests/s: values-sized.yaml asks for 500m, scale by replicas (docs/SIZING.md)
   sme: { image: sme, databaseRole: sme, resources: { requests: { cpu: 50m, memory: 480Mi }, limits: { memory: 768Mi } } }   # the largest module: 361 MiB at its peak (docs/SIZING.md); values-sized.yaml asks for 250m
   dme: { image: dme, databaseRole: dme }
   onboarding: { image: onboarding, databaseRole: onboarding, persistence: { mountPath: /srv/packages, size: 5Gi } }
   rapp-mgmt: { image: rapp-mgmt, databaseRole: rapp-mgmt, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   ran-nf-oam: { image: ran-nf-oam, databaseRole: ran-nf-oam, env: { R1_GATEWAY_URL: "http://r1-termination:8000", SAFEGUARD_REFUSAL_RETENTION_DAYS: "0" } }
   # the same image as a worker: the periodic work of RAN NF OAM (PR-MSG-4). Run more than one if you like.
-  ran-nf-oam-worker: { image: ran-nf-oam, databaseRole: ran-nf-oam, kind: worker, env: { R1_GATEWAY_URL: "http://r1-termination:8000", SAFEGUARD_REFUSAL_RETENTION_DAYS: "0", SMO_RETENTION_ALARMS_DAYS: "0", SMO_RETENTION_PM_FILES_DAYS: "0" } }   # retention: days to keep, 0 = forever; the periods proposed for production are in values-production.yaml (docs/RETENTION.md)
+  ran-nf-oam-worker: { image: ran-nf-oam, databaseRole: ran-nf-oam, kind: worker, env: { R1_GATEWAY_URL: "http://r1-termination:8000", SAFEGUARD_REFUSAL_RETENTION_DAYS: "0", SMO_RETENTION_ALARMS_DAYS: "0", SMO_RETENTION_PM_FILES_DAYS: "0", SMO_RETENTION_APPROVALS_DAYS: "0", SMO_RETENTION_DECISION_RECORDS_DAYS: "0" } }   # retention: days to keep, 0 = forever; the periods proposed for production are in values-production.yaml (docs/RETENTION.md)
   mock-o1-adaptor: { image: mock-o1-adaptor, database: false, enrollment: false, mtls: "off", env: { MOCK_O1_OAM_URL: "http://ran-nf-oam:8000" } }
   nfo: { image: nfo, databaseRole: nfo, env: { R1_GATEWAY_URL: "http://r1-termination:8000" } }
   focom: { image: focom, databaseRole: focom }

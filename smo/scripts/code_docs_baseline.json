@@ -41,12 +41,12 @@
       "tests_without_docstring": 0
     },
     "dme": {
-      "files_without_description": 1,
-      "functions_without_description": 30,
-      "items_requiring_description": 61,
-      "source_files": 4,
-      "tests": 100,
-      "tests_without_docstring": 55
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 64,
+      "source_files": 5,
+      "tests": 106,
+      "tests_without_docstring": 0
     },
     "focom": {
       "files_without_description": 0,
@@ -65,7 +65,7 @@
       "tests_without_docstring": 0
     },
     "gui": {
-      "files_without_description": 2,
+      "files_without_description": 0,
       "functions_without_description": 0,
       "items_requiring_description": 0,
       "source_files": 3,
@@ -74,19 +74,19 @@
     },
     "gui-bff": {
       "files_without_description": 0,
-      "functions_without_description": 95,
-      "items_requiring_description": 256,
+      "functions_without_description": 0,
+      "items_requiring_description": 257,
       "source_files": 32,
-      "tests": 361,
-      "tests_without_docstring": 272
+      "tests": 366,
+      "tests_without_docstring": 0
     },
     "gui/src": {
-      "files_without_description": 27,
-      "functions_without_description": 81,
-      "items_requiring_description": 731,
-      "source_files": 356,
-      "tests": 414,
-      "tests_without_docstring": 135
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 770,
+      "source_files": 366,
+      "tests": 466,
+      "tests_without_docstring": 0
     },
     "intent-service": {
       "files_without_description": 0,
@@ -107,8 +107,8 @@
     "migrations": {
       "files_without_description": 0,
       "functions_without_description": 0,
-      "items_requiring_description": 54,
-      "source_files": 38,
+      "items_requiring_description": 58,
+      "source_files": 40,
       "tests": 0,
       "tests_without_docstring": 0
     },
@@ -185,20 +185,20 @@
       "tests_without_docstring": 0
     },
     "ran-nf-oam": {
-      "files_without_description": 1,
-      "functions_without_description": 243,
-      "items_requiring_description": 529,
-      "source_files": 61,
-      "tests": 622,
-      "tests_without_docstring": 516
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 561,
+      "source_files": 65,
+      "tests": 704,
+      "tests_without_docstring": 0
     },
     "rapp-mgmt": {
-      "files_without_description": 1,
-      "functions_without_description": 27,
-      "items_requiring_description": 99,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 101,
       "source_files": 14,
-      "tests": 141,
-      "tests_without_docstring": 90
+      "tests": 146,
+      "tests_without_docstring": 0
     },
     "sa-smos": {
       "files_without_description": 0,
@@ -210,48 +210,48 @@
     },
     "samples": {
       "files_without_description": 0,
-      "functions_without_description": 2,
+      "functions_without_description": 0,
       "items_requiring_description": 5,
       "source_files": 1,
       "tests": 0,
       "tests_without_docstring": 0
     },
     "samples/coverage-optimization-rapp": {
-      "files_without_description": 1,
-      "functions_without_description": 51,
-      "items_requiring_description": 101,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 103,
       "source_files": 18,
       "tests": 40,
-      "tests_without_docstring": 40
+      "tests_without_docstring": 0
     },
     "samples/energy-saving-rapp": {
-      "files_without_description": 1,
-      "functions_without_description": 46,
-      "items_requiring_description": 93,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 95,
       "source_files": 18,
       "tests": 51,
-      "tests_without_docstring": 44
+      "tests_without_docstring": 0
     },
     "samples/mobility-optimization-rapp": {
-      "files_without_description": 1,
-      "functions_without_description": 50,
-      "items_requiring_description": 85,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 88,
       "source_files": 18,
       "tests": 38,
-      "tests_without_docstring": 38
+      "tests_without_docstring": 0
     },
     "samples/traffic-steering-rapp": {
-      "files_without_description": 1,
-      "functions_without_description": 51,
-      "items_requiring_description": 99,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 101,
       "source_files": 18,
       "tests": 44,
-      "tests_without_docstring": 44
+      "tests_without_docstring": 0
     },
     "scripts": {
       "files_without_description": 0,
-      "functions_without_description": 2,
-      "items_requiring_description": 380,
+      "functions_without_description": 0,
+      "items_requiring_description": 381,
       "source_files": 79,
       "tests": 0,
       "tests_without_docstring": 0
@@ -281,12 +281,12 @@
       "tests_without_docstring": 0
     },
     "shared": {
-      "files_without_description": 2,
-      "functions_without_description": 201,
-      "items_requiring_description": 351,
+      "files_without_description": 0,
+      "functions_without_description": 0,
+      "items_requiring_description": 352,
       "source_files": 81,
       "tests": 513,
-      "tests_without_docstring": 497
+      "tests_without_docstring": 0
     },
     "sme": {
       "files_without_description": 0,
@@ -306,11 +306,11 @@
     },
     "tests_integration": {
       "files_without_description": 0,
-      "functions_without_description": 90,
+      "functions_without_description": 0,
       "items_requiring_description": 151,
       "source_files": 83,
-      "tests": 576,
-      "tests_without_docstring": 484
+      "tests": 585,
+      "tests_without_docstring": 0
     }
   }
 }

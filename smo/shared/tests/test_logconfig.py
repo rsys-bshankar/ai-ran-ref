@@ -1,5 +1,8 @@
 
-"""smo_shared.logconfig — structured logs, access log, redaction, LOG_LEVEL (PR-OBS-1)."""
+"""smo_shared.logconfig — structured logs, access log, redaction, LOG_LEVEL (PR-OBS-1).
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_logconfig.py -q
+"""
 
 import io
 import json
@@ -41,6 +44,7 @@ def lines(buffer) -> list[dict]:
 # ---------------------------------------------------------------- the format
 
 def test_each_record_is_exactly_one_json_object_on_one_line(stream):
+    """A record with newlines, quotes and non-ASCII text is still exactly one parseable JSON line with an ISO-8601 millisecond timestamp."""
     log = logging.getLogger("t")
     log.info("first")
     log.warning("two\nlines and \"quotes\" and ünïcode")
@@ -52,23 +56,27 @@ def test_each_record_is_exactly_one_json_object_on_one_line(stream):
 
 
 def test_every_record_carries_the_service_name(stream):
+    """Every record names the service it came from."""
     logging.getLogger("t").info("x")
     assert lines(stream)[0]["service"] == "svc"
 
 
 def test_the_service_defaults_to_the_container_module(monkeypatch):
+    """Without an explicit service name the formatter uses the container's MODULE."""
     monkeypatch.setenv("MODULE", "nfo")
     record = logging.LogRecord("n", logging.INFO, "f", 1, "m", (), None)
     assert json.loads(JsonFormatter().format(record))["service"] == "nfo"
 
 
 def test_extra_fields_become_keys_and_an_unserialisable_one_does_not_break_the_line(stream):
+    """Fields passed as `extra` become JSON keys, and a value JSON cannot encode is written as text instead of breaking the line."""
     logging.getLogger("t").info("deployed", extra={"deploymentId": "d-1", "count": 3, "thing": object()})
     entry = lines(stream)[0]
     assert entry["deploymentId"] == "d-1" and entry["count"] == 3 and entry["thing"].startswith("<object")
 
 
 def test_an_exception_is_one_field_not_extra_lines(stream):
+    """A logged traceback goes into one `exception` field, keeping the one-line-per-record rule."""
     try:
         raise ValueError("bad input")
     except ValueError:
@@ -80,6 +88,7 @@ def test_an_exception_is_one_field_not_extra_lines(stream):
 # ---------------------------------------------------------------- the request context
 
 def make_app(stream) -> TestClient:
+    """Helper: a test client for an app with request logging and correlation ids installed and a templated route, a 503 route and a /health probe."""
     app = FastAPI()
     install_logging(app)
     apply_correlation_id(app)
@@ -87,33 +96,40 @@ def make_app(stream) -> TestClient:
 
     @app.get("/models/{model_id}")
     def model(model_id: str):
+        # Test route with a path parameter, to check that the access line logs the template; not part of any published API.
         log.info("looking up the model")
         return {"id": model_id}
 
     @app.get("/boom")
     def boom():
+        # Test route answering 503; not part of any published API.
         raise HTTPException(status_code=503, detail="down")
 
     @app.get("/health")
     def health():
+        # Test probe route, logged at DEBUG; not part of any published API.
         return {"status": "healthy"}
 
     return TestClient(app)
 
 
 def test_a_record_inside_a_request_carries_its_correlation_id(stream):
+    """A log line written by a handler carries the request's correlation id without the handler passing it."""
     make_app(stream).get("/models/7", headers={"X-Correlation-ID": "corr-123"})
     inside = [e for e in lines(stream) if e["logger"] == "app.handler"]
     assert inside and inside[0]["correlationId"] == "corr-123"
 
 
 def test_a_request_without_one_gets_a_generated_id_and_the_access_line_has_it(stream):
+    """The access line carries the generated correlation id that is also returned in the response header."""
     response = make_app(stream).get("/models/7")
     access = [e for e in lines(stream) if e["logger"] == "smo.access"][0]
     assert access["correlationId"] == response.headers["X-Correlation-ID"]
 
 
 def test_the_access_line_has_method_route_template_status_and_duration_but_not_the_raw_path_or_query(stream):
+    """The access line has method, route template, status and duration and nothing from the raw path or query string, which may hold an id or a token.
+    """
     make_app(stream).get("/models/secret-looking-id-42?token=abc123&x=1")
     access = [e for e in lines(stream) if e["logger"] == "smo.access"]
     assert len(access) == 1                                    # one line per request
@@ -125,6 +141,7 @@ def test_the_access_line_has_method_route_template_status_and_duration_but_not_t
 
 
 def test_an_unknown_path_is_logged_as_unmatched_and_a_5xx_is_an_error(stream):
+    """An unmatched path is logged as route `unmatched` at INFO, and a 5xx answer is logged at ERROR."""
     client = make_app(stream)
     client.get("/no/such/route")
     client.get("/boom")
@@ -134,6 +151,7 @@ def test_an_unknown_path_is_logged_as_unmatched_and_a_5xx_is_an_error(stream):
 
 
 def test_probes_are_debug_so_the_default_level_hides_them(stream):
+    """Probe requests are logged at DEBUG, so at the default INFO level they do not fill the log."""
     client = make_app(stream)
     configure_logging("svc", stream=stream, environ={})            # INFO
     client.get("/health")
@@ -147,6 +165,8 @@ def test_probes_are_debug_so_the_default_level_hides_them(stream):
 SEEDED = ["hunter2", "s3cr3t-value", "abcdefghijklmnop.qrs.tuv", "sk_live_0123456789", "p@ss-from-url", "cookie-value-9"]
 
 
+# Table: log messages containing a secret in each form the redactor must catch (password=, JSON password, client_secret:, Authorization Bearer in two
+# quoting styles, a bare Bearer token, api_key=, a password in a URL, access_token=). None of the seeded secret values may appear in the output.
 @pytest.mark.parametrize("text", [
     "login failed password=hunter2 for admin",
     'body {"password": "hunter2", "user": "a"}',
@@ -166,17 +186,20 @@ def test_a_seeded_secret_never_reaches_the_output(stream, text):
 
 
 def test_non_secret_text_is_left_alone():
+    """Redaction does not touch ordinary text, including words that merely contain a secret-looking word."""
     assert redact_text("created deployment d-1 for cell 101 with passenger count 3") == \
         "created deployment d-1 for cell 101 with passenger count 3"
     assert redact_text("token limit reached") == "token limit reached"
 
 
 def test_printf_arguments_are_redacted_too(stream):
+    """A secret passed as a %s argument is redacted, not only one written into the message."""
     logging.getLogger("t").warning("grant for %s failed: %s", "client-a", "password=hunter2")
     assert "hunter2" not in stream.getvalue()
 
 
 def test_extra_fields_are_redacted_by_name_and_inside(stream):
+    """Extra fields are redacted by their name and inside nested values, while harmless fields are kept."""
     logging.getLogger("t").info("call", extra={
         "password": "hunter2", "Authorization": "Bearer abcdefghijklmnop.qrs.tuv", "headers": {"cookie": "cookie-value-9", "accept": "json"},
         "note": "sent api_key=sk_live_0123456789", "ok": "plain"})
@@ -187,6 +210,7 @@ def test_extra_fields_are_redacted_by_name_and_inside(stream):
 
 
 def test_a_secret_in_an_exception_message_or_traceback_is_redacted(stream):
+    """A secret in a logged exception's message or traceback does not reach the output."""
     try:
         raise RuntimeError("could not connect with password=hunter2")
     except RuntimeError:
@@ -195,6 +219,7 @@ def test_a_secret_in_an_exception_message_or_traceback_is_redacted(stream):
 
 
 def test_uvicorn_and_third_party_loggers_go_through_the_same_redaction(stream):
+    """Records from uvicorn and other libraries pass through the same JSON format and redaction."""
     logging.getLogger("uvicorn.error").error("bad header Authorization: Bearer abcdefghijklmnop.qrs.tuv")
     logging.getLogger("some.library").warning("retry with token=sk_live_0123456789")
     out = stream.getvalue()
@@ -204,6 +229,7 @@ def test_uvicorn_and_third_party_loggers_go_through_the_same_redaction(stream):
 
 # ---------------------------------------------------------------- LOG_LEVEL and setup
 
+# Table: (LOG_LEVEL, a level that must be hidden, a level that must be shown); an empty value means the default INFO.
 @pytest.mark.parametrize("value,hidden,shown", [("ERROR", "warning", "error"), ("warning", "info", "warning"),
                                                   ("DEBUG", None, "debug"), ("", "debug", "info")])
 def test_log_level_from_the_environment(value, hidden, shown):
@@ -223,6 +249,7 @@ def test_log_level_from_the_environment(value, hidden, shown):
 
 
 def test_an_unknown_level_falls_back_to_info_and_says_so():
+    """An unrecognised LOG_LEVEL means INFO plus a warning line naming the bad value."""
     root = logging.getLogger()
     saved_handlers, saved_level = list(root.handlers), root.level
     buffer = io.StringIO()
@@ -237,6 +264,7 @@ def test_an_unknown_level_falls_back_to_info_and_says_so():
 
 
 def test_configuring_twice_leaves_one_handler_and_does_not_double_every_line(stream):
+    """configure_logging is idempotent: a second call replaces its own handler, so each record is written once."""
     configure_logging("svc", stream=stream, environ={"LOG_LEVEL": "DEBUG"})
     marked = [h for h in logging.getLogger().handlers if getattr(h, "_smo_json_handler", False)]
     assert len(marked) == 1
@@ -245,6 +273,7 @@ def test_configuring_twice_leaves_one_handler_and_does_not_double_every_line(str
 
 
 def test_handlers_that_are_not_ours_are_left_alone(stream):
+    """configure_logging removes only its own handler, not handlers installed by others."""
     other = logging.NullHandler()
     logging.getLogger().addHandler(other)
     try:
@@ -255,9 +284,11 @@ def test_handlers_that_are_not_ours_are_left_alone(stream):
 
 
 def test_uvicorns_plain_text_access_log_is_turned_off_and_its_error_log_is_rerouted(stream):
+    """uvicorn's plain-text access log is disabled (the middleware replaces it) and its error log goes through the root JSON handler."""
     assert logging.getLogger("uvicorn.access").disabled is True
     assert logging.getLogger("uvicorn.error").handlers == [] and logging.getLogger("uvicorn.error").propagate is True
 
 
 def test_the_middleware_and_filter_are_exported():
+    """The access-log middleware and the redaction filter are importable from the module."""
     assert AccessLogMiddleware and RedactionFilter

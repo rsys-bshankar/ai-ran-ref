@@ -45,6 +45,7 @@ def _within(value, intervals) -> bool:
 
 
 def _as_integer(value) -> int | None:
+    """The integer a value stands for, or None: an int, an integer-valued float, or an integer-valued string; a boolean is never an integer."""
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
@@ -57,6 +58,7 @@ def _as_integer(value) -> int | None:
 
 
 def _as_decimal(value) -> Decimal | None:
+    """The finite Decimal a number or numeric string stands for, or None (a boolean, a non-numeric string, NaN and infinity are not numbers)."""
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         return None
     try:
@@ -67,6 +69,8 @@ def _as_decimal(value) -> Decimal | None:
 
 
 def check_value(entry: dict, value) -> str | None:
+    """None when `value` satisfies the descriptor `entry`, otherwise the reason to put after `attr=value` (for example 'is out of range 0..100'). An `enum` decides first, whatever the type; then the checks of the module description for the entry's `type` (default `any`, which accepts everything). The first failed check is the one reported.
+    """
     kind = entry.get("type", "any")
     if entry.get("enum"):  # an enumeration is its list, whatever type its members have
         return None if value in entry["enum"] else f"is not one of {entry['enum']}"

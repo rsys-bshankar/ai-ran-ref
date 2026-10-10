@@ -21,6 +21,9 @@ PASS_RATE = 0.9
 
 
 def candidates_for(cell: str, nbrs: list[str], layers: dict[str, str]) -> list[dict]:
+    """The steering moves open to a cell in emulation: a connected-mode move for every neighbour, and an idle-mode move for every layer other than
+    its own that has a neighbour.
+    """
     out: list[dict] = [{"knob": "CONNECTED", "target": t} for t in nbrs]
     for layer in sorted({layers[t] for t in nbrs if layers.get(t) and layers[t] != layers.get(cell)}):
         out.append({"knob": "IDLE", "layer": layer, "targets": [t for t in nbrs if layers.get(t) == layer]})
@@ -28,6 +31,12 @@ def candidates_for(cell: str, nbrs: list[str], layers: dict[str, str]) -> list[d
 
 
 def emulate(model: SteeringModel, records: list[dict]) -> tuple[bool, dict]:
+    """Replays the planner over every window of every Digital Twin cluster and returns (passed, metrics).
+
+    Windows in which not every cell has a reading are skipped. A window with a forecast-congested hotspot counts and is correct when the hotspot
+    steers and no target is predicted above its capacity limit; a healthy window the planner steers in is a false action. Passes when there is
+    at least one counted window, the accuracy is at least PASS_RATE and there is no false action.
+    """
     clusters: dict[str, list[dict]] = defaultdict(list)
     for r in records:
         clusters[r.get("payload", r).get("cluster", "default")].append(r)

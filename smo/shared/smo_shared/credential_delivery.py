@@ -34,6 +34,9 @@ class DeliveryFailed(RuntimeError):
 
 
 def mode(environ=os.environ) -> str:
+    """Returns "kubernetes" or "none" from `RAPP_CREDENTIAL_DELIVERY`; any other value (including a typo) means "none", so delivery is never on by
+    accident.
+    """
     value = environ.get(MODE_ENV, "none").strip().lower()
     return value if value in ("none", "kubernetes") else "none"
 
@@ -43,6 +46,11 @@ def object_name(instance_id) -> str:
 
 
 def _client(environ=os.environ) -> tuple[httpx.Client, str]:
+    """Builds the HTTPS client for the in-cluster Kubernetes API and returns it with the namespace to write into.
+
+    Raises DeliveryFailed when the pod lacks any of the four settings or cannot read its service-account token. The CA file is used for verification
+    (`verify=ca_file`); there is no insecure fallback.
+    """
     host, port = environ.get("KUBERNETES_SERVICE_HOST"), environ.get("KUBERNETES_SERVICE_PORT", "443")
     namespace = environ.get("RAPP_K8S_NAMESPACE")
     token_file, ca_file = environ.get("RAPP_K8S_TOKEN_FILE"), environ.get("RAPP_K8S_CA_FILE")

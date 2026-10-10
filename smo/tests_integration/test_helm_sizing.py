@@ -58,6 +58,7 @@ def test_the_defaults_fit_a_small_cluster():
 
 
 def test_the_sized_profile_only_names_what_the_chart_has_and_keeps_limits_above_requests():
+    """The sized values file names only modules the chart has, every memory limit is at least its request and no CPU limit is set (docs/SIZING.md)."""
     values, sized = _values(), _sized()
     assert set(sized["modules"]) <= set(values["modules"])
     merged = _merge(values, sized)
@@ -69,6 +70,7 @@ def test_the_sized_profile_only_names_what_the_chart_has_and_keeps_limits_above_
 
 
 def test_the_totals_in_the_sizing_document_are_the_totals_of_the_sized_profile():
+    """The CPU and memory totals docs/SIZING.md quotes are the totals of the sized profile."""
     cpu, mem = _totals(_merge(_values(), _sized()))
     text = (DOCS / "SIZING.md").read_text()
     assert f"about {cpu / 1000:.1f} cores and {mem / 1024:.1f} GiB" in text, (cpu, mem)

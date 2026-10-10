@@ -10,6 +10,7 @@ from app.netconf_client import build_edit_config_rpc, build_get_config_rpc, send
 
 
 def test_build_edit_config_rpc_embeds_target_and_attributes():
+    """The edit-config RPC carries the message id, the target element, each attribute as a child element, and an explicit merge operation."""
     rpc = build_edit_config_rpc("msg-1", "ME-1", {"adminState": "UNLOCKED"})
     assert 'message-id="msg-1"' in rpc
     assert 'ref="ME-1"' in rpc
@@ -38,6 +39,7 @@ ERROR_REPLY = ('<rpc-reply message-id="msg-1" xmlns="urn:ietf:params:xml:ns:netc
 
 
 def _send(monkeypatch, reply=None, raises=None):
+    """Runs `send_edit_config` against a fake HTTP post that returns `reply` or raises `raises`."""
     def fake_post(url, content=None, headers=None, timeout=None):
         if raises:
             raise raises
@@ -47,6 +49,7 @@ def _send(monkeypatch, reply=None, raises=None):
 
 
 def test_send_edit_config_true_on_ok_reply(monkeypatch):
+    """An `<ok/>` reply makes the result truthy with no reason."""
     result = _send(monkeypatch, FakeResponse(200, OK_REPLY))
     assert bool(result) is True and result.reason is None
 
@@ -68,12 +71,15 @@ def test_send_edit_config_failure_reasons(monkeypatch, reply, raises, reason, re
 
 
 def test_function_ref_addresses_the_managed_function():
+    """A managed function ref is sent as `function-ref` on the managed object in both edit-config and get-config, so a per-cell change does not land on the element.
+    """
     rpc = build_edit_config_rpc("m", "gnb-1", {"administrativeState": "LOCKED"}, managed_function_ref="NRCellDU=101")
     assert '<managed-object ref="gnb-1" function-ref="NRCellDU=101" operation="merge">' in rpc
     assert '<managed-object ref="gnb-1" function-ref="NRCellDU=101"/>' in build_get_config_rpc("m", "gnb-1", "NRCellDU=101")
 
 
 def test_send_get_config_reads_the_managed_object(monkeypatch):
+    """A get-config reply is turned into an attribute dict, and an rpc-error reply gives None."""
     data = ('<rpc-reply message-id="m" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0"><data>'
             '<managed-object ref="gnb-1" function-ref="NRCellDU=101"><administrativeState>LOCKED</administrativeState>'
             '</managed-object></data></rpc-reply>')

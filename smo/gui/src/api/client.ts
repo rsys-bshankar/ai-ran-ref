@@ -1,9 +1,21 @@
-// The SPA's only transport: same-origin calls to the BFF under /api.
-// Session auth rides on the BFF's httpOnly cookie; every unsafe method also
-// echoes the readable CSRF cookie back as X-CSRF-Token (double submit).
+/**
+ * The SPA's only transport: same-origin calls to the BFF under /api (never to R1 Termination or a module directly).
+ *
+ * Session authentication rides on the BFF's httpOnly cookie, which this code cannot read; every unsafe method (POST, PUT, PATCH, DELETE)
+ * also echoes the readable CSRF cookie back as the X-CSRF-Token header (double submit). `api` turns every non-2xx answer into an
+ * `ApiError` with one readable line (`describeError`); `smo` is `api` under the BFF's /smo proxy to one SMO module.
+ * Used by `api/hooks.ts`, `api/rapps.ts`, `auth/AuthContext.tsx` and the pages that call the BFF directly.
+ */
 
+/**
+ * Query parameters of a call: a scalar, or an array of scalars that is sent as a repeated key; `buildQuery` drops null, undefined and empty values.
+ */
 export type Query = Record<string, string | number | boolean | null | undefined | Array<string | number>>;
 
+/**
+ * A failed BFF call: the HTTP status, the one-line `title` and optional `detail` that `describeError` read from the answer, and the parsed body.
+ * `message` is "title: detail" (or the title alone), which the toasts and error boxes show as is.
+ */
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -18,6 +30,10 @@ export class ApiError extends Error {
 export const CSRF_COOKIE = "smo_csrf";
 const UNSAFE = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+/**
+ * Returns the decoded value of cookie `name` from a `document.cookie`-style string, or undefined when it is absent.
+ * Splits each pair on the first "=" only, so a value that itself contains "=" survives (base64 padding).
+ */
 export function readCookie(cookieString: string, name: string): string | undefined {
   for (const part of cookieString.split(";")) {
     const [k, ...rest] = part.trim().split("=");
@@ -64,6 +80,9 @@ export function describeError(status: number, body: unknown): { title: string; d
   return { title: `HTTP ${status}` };
 }
 
+/**
+ * What `api` and `smo` accept: the HTTP method (default GET), the query, a JSON body (`json`, which also sets the content type) or a raw `body`, and an abort signal.
+ */
 export interface RequestOptions {
   method?: string;
   query?: Query;
@@ -74,6 +93,12 @@ export interface RequestOptions {
   headers?: Record<string, string>;
 }
 
+/**
+ * Calls the BFF at `/api<path>` and returns the parsed JSON (or the raw text for a non-JSON answer, or undefined for an empty one).
+ * Throws `ApiError` for any non-2xx answer. An unsafe method carries the CSRF header when the cookie is present. A 401 on any path other
+ * than the two sign-in routes also fires the window event `smo:unauthorized`, which `AuthProvider` answers by dropping the session so the app
+ * returns to the login page; a wrong password on /login must not trigger that, hence the exclusion.
+ */
 export async function api<T = unknown>(path: string, opts: RequestOptions = {}): Promise<T> {
   const method = (opts.method ?? "GET").toUpperCase();
   const headers: Record<string, string> = { Accept: "application/json", ...opts.headers };
@@ -95,6 +120,7 @@ export async function api<T = unknown>(path: string, opts: RequestOptions = {}):
     try { parsed = JSON.parse(text); } catch { /* keep text */ }
   }
   if (!resp.ok) {
+    // The sign-in routes answer 401 for a wrong password or code; that is an ordinary form error, not an expired session.
     if (resp.status === 401 && path !== "/login" && path !== "/login/totp") window.dispatchEvent(new Event("smo:unauthorized"));
     const { title, detail } = describeError(resp.status, parsed);
     throw new ApiError(resp.status, title, detail, parsed);

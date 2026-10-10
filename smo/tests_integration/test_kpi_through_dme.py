@@ -8,11 +8,17 @@ T0 = datetime.datetime(2026, 10, 1, 12, 0, tzinfo=datetime.UTC)
 
 
 def ok(resp, *codes):
+    """Asserts the response status is one of `codes` (200, 201, 202 or 204 by default), with the status and body as the failure message, and
+    returns the decoded body (None when empty).
+    """
     assert resp.status_code in (codes or (200, 201, 202, 204)), f"{resp.status_code}: {resp.text}"
     return resp.json() if resp.content else None
 
 
 def test_a_seeded_kpi_is_published_to_dme_and_an_rapp_reads_it(mesh):
+    """A KPI computed from stored PM files is published to DME: the first publication only registers the type (no reader yet), and once a data job
+    exists the next one delivers one record per group, which a consumer reads with the KPI name, value, unit, group and sample count.
+    """
     oam, dme = mesh["ran-nf-oam"], mesh["dme"]
     ok(oam.post("/o1-adaptor-endpoints", json={"managedElementRef": ME, "adaptorUri": "http://mock-o1-adaptor:8000/edit-config",
                                                "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF", "entityType": "O-DU", "vendorName": "mock-vendor"}))

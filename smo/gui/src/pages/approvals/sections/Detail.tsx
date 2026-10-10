@@ -1,5 +1,5 @@
-/** Section `approvals.detail`: one request — title, status, countdown to its lapse, the facts, then the impact tiles, the config diff, why the
- * rApp asks and the decision box. `ApprovalDetailPanel` is the page's right-hand panel; `ApprovalDrawer` is the same content in a drawer, used by
+/** Section `approvals.detail`: one request — title, status, countdown to its lapse, the facts, then the impact tiles, the config diff, the
+ * approvals so far of a request that needs two people (`Votes`), why the rApp asks and the decision box. `ApprovalDetailPanel` is the page's right-hand panel; `ApprovalDrawer` is the same content in a drawer, used by
  * the Decided tab and by the Decisions page (a decision record's approval request). */
 import { useState } from "react";
 
@@ -14,6 +14,7 @@ import { ChangeDiff } from "./ChangeDiff";
 import { DecisionBox } from "./DecisionBox";
 import { ImpactTiles } from "./ImpactTiles";
 import { Rationale } from "./Rationale";
+import { Votes } from "./Votes";
 
 /** The content of one request, wherever it is shown. */
 export function ApprovalBody({ id }: { id: string }) {
@@ -28,6 +29,7 @@ export function ApprovalBody({ id }: { id: string }) {
       <Header approval={data} onJob={setJob} />
       <ImpactTiles approval={data} />
       <ChangeDiff approval={data} />
+      <Votes approval={data} />
       <Rationale approval={data} record={record.data?.[0]} />
       <DecisionBox key={data.approvalId} approval={data} />
       {job && <ConfigJobDrawer id={job} onClose={() => setJob(null)} />}
@@ -54,6 +56,7 @@ function Header({ approval: a, onJob }: { approval: ApprovalDetail; onJob: (id: 
         ["Requested by", a.requestedBy],
         ["Asked", formatTime(a.createdAt)],
         [pending ? "Lapses" : "Decided", pending ? `${formatTime(a.expiresAt)} (${timeLeft(a.expiresAt, now)}), then it ${a.onTimeout === "REJECT" ? "is rejected" : "expires"}` : `${formatTime(a.decidedAt)} by ${a.decidedBy ?? "—"}`],
+        ["Approvals", (a.requiredApprovals ?? 1) > 1 ? `${a.approvals?.length ?? 0} of ${a.requiredApprovals} (two different people must approve)` : null],
         ["Reason", a.decisionReason],
         ["Refused as", a.refusalCode],
         ["Config job", a.jobId ? <button key="j" type="button" className="btn ghost" onClick={() => onJob(a.jobId!)}><Id value={a.jobId} /></button> : null],

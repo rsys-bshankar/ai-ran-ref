@@ -14,6 +14,11 @@ def _band(model: MobilityModel, rate: float) -> str:
 
 
 def validate(model: MobilityModel, records: list[dict], holdout_fraction: float = 0.25) -> tuple[bool, dict]:
+    """Scores the model on the latest `holdout_fraction` of each relation's history and returns (passed, metrics).
+
+    Passes when the share of windows whose predicted ACT / HOLD / HEALTHY band matches the band of the next hour is at least PASS_THRESHOLD and
+    the RMSE is at most MAX_RMSE. Returns (False, {"reason": ...}) when no window has both neighbours.
+    """
     rows = []
     for series in by_relation(records).values():
         cut = int(len(series) * (1 - holdout_fraction))

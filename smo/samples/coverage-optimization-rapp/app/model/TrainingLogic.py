@@ -13,6 +13,9 @@ HOUR = datetime.timedelta(hours=1)
 
 
 def _reach_step(series: Series, t: datetime.datetime) -> tuple[float, float] | None:
+    """The (uptilt, power step) a cell took between the window at `t` and the one an hour later, from their CM snapshots; None when either window
+    or either setting is missing.
+    """
     before, after = at(series, t), at(series, t + HOUR)
     if before is None or after is None:
         return None
@@ -45,6 +48,7 @@ def transitions(records: list[dict]) -> list[tuple[list[float], dict[str, float]
 
 
 def fit(rows) -> tuple[dict, float]:
+    """Least-squares fit of the three problem classes on the feature rows: returns the 12 sensitivities and the RMSE over all rows."""
     sens = {k: [round(w, 4) for w in solve_least_squares([f for f, _ in rows], [d[k] for _, d in rows])]
             for k in PROBLEM_KEYS}
     errors = [sum(w * x for w, x in zip(sens[k], f)) - d[k] for f, d in rows for k in PROBLEM_KEYS]
@@ -52,6 +56,9 @@ def fit(rows) -> tuple[dict, float]:
 
 
 def train(records: list[dict], version: str = "1.0.0") -> tuple[CoverageModel, dict]:
+    """Trains the model on the history and returns it with its metrics; raises ValueError (the route answers 422 TRAINING_FAILED) when fewer than 8
+    windows have a tilt or power change, because the sensitivities cannot be told apart then.
+    """
     rows = transitions(records)
     moved = [r for r in rows if any(r[0])]
     if len(moved) < 8:

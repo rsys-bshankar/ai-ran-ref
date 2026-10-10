@@ -44,7 +44,7 @@ const render = () => mount(
   </QueryClientProvider>,
 );
 
-/** Types a username and password and submits the form. */
+/** Types a username and password into the form, submits it and waits for the answer. */
 const fill = async (container: HTMLElement, user: string, password: string) => {
   const inputs = container.querySelectorAll<HTMLInputElement>("input");
   await type(inputs[0], user);
@@ -56,7 +56,7 @@ const fill = async (container: HTMLElement, user: string, password: string) => {
 const SESSION = { username: "ana", role: "viewer", csrfToken: "c", local: true, totpEnrolled: true, mfaEnrolmentRequired: false };
 
 describe("Login", () => {
-  // the default deployment shows the password form and neither an SSO button nor a break-glass link
+  // With nothing else switched on, the page is the plain password form with no single-sign-on button.
   it("is the password form alone when nothing else is on", async () => {
     backend({ localLogin: true, oidc: { enabled: false } });
     const { container } = await render();
@@ -66,7 +66,7 @@ describe("Login", () => {
     expect(byText(container, "button", "Break-glass sign-in")).toBeNull();
   });
 
-  // a right password for an enrolled account leads to the code step, which posts the challenge and the cleaned code
+  // A right password for an account with a one-time code opens the code step, and a right code signs in; the password is not kept.
   it("goes to the one-time code after a right password, and signs in with it", async () => {
     const calls = backend({ localLogin: true, oidc: { enabled: false } }, {
       login: () => ({ body: { mfaRequired: true, challenge: "chal.enge.token", expiresIn: 300 } }),
@@ -83,7 +83,7 @@ describe("Login", () => {
     expect(calls.find((c) => c.path === "/login/totp")?.body).toEqual({ challenge: "chal.enge.token", code: "123456" });
   });
 
-  // a wrong code keeps the user on the code step with the backend's reason
+  // A wrong code is explained and the user stays on the code step.
   it("says a wrong code is wrong and stays on the code step", async () => {
     backend({ localLogin: true, oidc: { enabled: false } }, {
       login: () => ({ body: { mfaRequired: true, challenge: "c.c.c", expiresIn: 300 } }),
@@ -99,7 +99,7 @@ describe("Login", () => {
     expect(container.textContent).toMatch(/Enter the 6-digit code/);
   });
 
-  // a spent challenge drops back to the password step instead of leaving a dead code form
+  // A spent challenge or a lock-out returns to the password step, because the code step can no longer succeed.
   it("goes back to the password when the challenge is spent or the account is locked", async () => {
     backend({ localLogin: true, oidc: { enabled: false } }, {
       login: () => ({ body: { mfaRequired: true, challenge: "c.c.c", expiresIn: 300 } }),
@@ -115,7 +115,7 @@ describe("Login", () => {
     expect(container.querySelector("[role=alert]")?.textContent).toMatch(/Enter your password again/);
   });
 
-  // Back on the code step returns to the password form
+  // Back leads from the code step to the password form without an error left behind.
   it("returns from the code step to the password with Back", async () => {
     backend({ localLogin: true, oidc: { enabled: false } }, { login: () => ({ body: { mfaRequired: true, challenge: "c.c.c", expiresIn: 300 } }) });
     const { container } = await render();
@@ -125,7 +125,7 @@ describe("Login", () => {
     expect(container.querySelector("input[type=password]")).not.toBeNull();
   });
 
-  // oidc mode hides the form until the break-glass link is used, and that form still signs in
+  // In oidc-only mode the provider's button is the only sign-in, and the password form sits behind the break-glass link.
   it("shows only the provider's button when the mode is oidc, and the form behind a break-glass link", async () => {
     const calls = backend({ localLogin: false, loginMode: "oidc", breakGlass: true, oidc: { enabled: true, providerName: "Keycloak", loginUrl: "/api/oidc/login" } }, {
       login: () => ({ body: { mfaRequired: true, challenge: "c.c.c", expiresIn: 300 } }),
@@ -142,7 +142,7 @@ describe("Login", () => {
     expect(container.textContent).toMatch(/Enter the 6-digit code/);
   });
 
-  // with no break-glass account there is no way to the password form at all
+  // With oidc-only mode and local login off altogether, no password form and no break-glass link appear.
   it("shows no form and no link when the mode is oidc and local login is off altogether", async () => {
     backend({ localLogin: false, loginMode: "oidc", breakGlass: false, oidc: { enabled: true, providerName: "Keycloak", loginUrl: "/api/oidc/login" } });
     const { container } = await render();
@@ -152,7 +152,7 @@ describe("Login", () => {
     expect(byText(container, "a", "Sign in with Keycloak")).not.toBeNull();
   });
 
-  // signing in with a recovery code warns how many are left
+  // After a recovery code is used, the user is warned how many are left (an error tone when few remain).
   it("warns, after a recovery code, how many are left", async () => {
     backend({ localLogin: true, oidc: { enabled: false } }, {
       login: () => ({ body: { mfaRequired: true, challenge: "c.c.c", expiresIn: 300 } }),

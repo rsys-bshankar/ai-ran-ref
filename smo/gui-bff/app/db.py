@@ -28,6 +28,9 @@ class Base(DeclarativeBase):
 
 
 class GuiUser(Base):
+    """A local GUI account (table `gui_user`): username, password hash, role, `active`, and the `token_version` that ends every session of the user when bumped.
+    `break_glass` marks the one kind of local account that may sign in when `GUI_LOGIN_MODE=oidc`.
+    """
     __tablename__ = "gui_user"
 
     username: Mapped[str] = mapped_column(String, primary_key=True)
@@ -225,7 +228,16 @@ class ExportChunk(Base):
 
 
 class Database:
+    """The BFF's own store (SQLAlchemy over SQLite by default, any SQLAlchemy URL in production), shared by every instance of the BFF.
+    Every method opens its own short session and commits before it returns; none leaves a transaction open. State that several instances must agree on (failed-login counts,
+    revoked sessions, OIDC sign-ins in flight, one-time-code steps, pins) is kept here, not in memory, and the multi-row races are settled with a conditional
+    UPDATE or DELETE and its row count, or with a primary-key insert that may lose to another instance.
+    """
     def __init__(self, url: str):
+        """Builds the engine and session factory for `url`, creates the missing tables and adds the missing columns.
+        SQLite gets `check_same_thread=False` (FastAPI runs routes on a thread pool) and, for an in-memory URL, a `StaticPool` so every session sees the one in-memory database.
+        `create_all` is retried because instances starting together on one shared database race on check-then-create; a persistent failure on the last attempt is raised.
+        """
         kwargs: dict = {"future": True}
         if url.startswith("sqlite"):
             kwargs["connect_args"] = {"check_same_thread": False}
@@ -309,6 +321,9 @@ class Database:
         raise RuntimeError(f"could not store or read the setting {key!r}")
 
     def login_locked(self, username: str, max_failures: int, window_seconds: float, now: float) -> bool:
+        """True when `username` has `max_failures` or more failures counted within the last `window_seconds` (all times are unix seconds, `now` supplied by the caller).
+        Unknown names are counted like real ones, so the answer never reveals whether the account exists. Read only.
+        """
         with self.session() as s:
             row = s.get(LoginFailure, username)
             return row is not None and row.count >= max_failures and now - row.first_failed_at < window_seconds
@@ -350,6 +365,8 @@ class Database:
                 s.rollback()
 
     def session_revoked(self, jti: str) -> bool:
+        """True when the session token id `jti` was ended by a logout (and its row has not yet been pruned). Read only; a token still holds `jti` until it expires.
+        """
         with self.session() as s:
             return s.get(RevokedSession, jti) is not None
 
@@ -389,6 +406,8 @@ class Database:
             return (row is not None and row.confirmed, row is not None and not row.confirmed)
 
     def totp_enrolled_users(self) -> set[str]:
+        """The usernames with a confirmed one-time-code secret (an enrolment still waiting for its first code does not count). Read only.
+        """
         with self.session() as s:
             return set(s.scalars(select(GuiUserTotp.username).where(GuiUserTotp.confirmed.is_(True))).all())
 
@@ -458,10 +477,13 @@ class Database:
         return [(i + 1, at) for i, at in enumerate(used)]
 
     def recovery_codes_left(self, username: str) -> int:
+        """The number of unused recovery codes of `username` (0 when the user has none). Read only."""
         with self.session() as s:
             return s.scalar(select(func.count()).select_from(GuiRecoveryCode).where(GuiRecoveryCode.username == username, GuiRecoveryCode.used_at.is_(None))) or 0
 
     def replace_recovery_codes(self, username: str, recovery_hashes: list[str]) -> None:
+        """Deletes all of the user's recovery codes and stores `recovery_hashes` (keyed hashes, never the codes) in their place, in one transaction.
+        """
         with self.session() as s:
             s.execute(delete(GuiRecoveryCode).where(GuiRecoveryCode.username == username))
             s.add_all(GuiRecoveryCode(username=username, code_hash=h) for h in recovery_hashes)
@@ -477,12 +499,17 @@ class Database:
             return removed.rowcount > 0
 
     def create_challenge(self, jti: str, username: str, expires_at: float, now: float) -> None:
+        """Records the second step of a sign-in: the challenge `jti` for `username`, valid until `expires_at` (unix seconds).
+        Challenges already past `now` are deleted in the same transaction, which is the only place they are cleaned up.
+        """
         with self.session() as s:
             s.execute(delete(LoginChallenge).where(LoginChallenge.expires_at <= now))
             s.add(LoginChallenge(jti=jti, username=username, expires_at=expires_at))
             s.commit()
 
     def challenge_pending(self, jti: str, username: str, now: float) -> bool:
+        """True when challenge `jti` exists, belongs to `username` and has not expired. Read only: it does not spend the challenge (`consume_challenge` does).
+        """
         with self.session() as s:
             row = s.get(LoginChallenge, jti)
             return row is not None and row.username == username and row.expires_at > now
@@ -496,6 +523,8 @@ class Database:
             return done.rowcount == 1
 
     def clear_login_failures(self, username: str) -> None:
+        """Forgets the failed-login counter of `username` (after a successful sign-in or an admin's unlock); a no-op when there is none.
+        """
         with self.session() as s:
             s.execute(delete(LoginFailure).where(LoginFailure.username == username))
             s.commit()
@@ -546,11 +575,13 @@ class Database:
             return "added"
 
     def remove_pin(self, username: str, instance_id: str) -> None:
+        """Unpins `instance_id` for `username`; a no-op when it was not pinned."""
         with self.session() as s:
             s.execute(delete(RappPin).where(RappPin.username == username, RappPin.instance_id == instance_id))
             s.commit()
 
     def remove_all_pins(self, username: str) -> None:
+        """Drops every pin of `username` (used when the account is deleted)."""
         with self.session() as s:
             s.execute(delete(RappPin).where(RappPin.username == username))
             s.commit()

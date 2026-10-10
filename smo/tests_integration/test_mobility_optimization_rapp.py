@@ -31,6 +31,10 @@ def _decisions(mesh, iid, **params):
 # ---------------------------------------------------------------- MRO-01..13, MRO-20
 
 def test_mro01_to_mro13_lifecycle_dmro_bounded_cio_steps_and_kpi_confirmation(mesh, loaded_apps, monkeypatch):
+    """MRO-01 to MRO-13 end to end: onboarding and datasets; training, validation, emulation, promotion; the DMRO bounds imposed on the gNB and
+    read back; too-late failures raising and too-early lowering the CIO through Intent, the O1-CM handler and DME; and the KPI-verified
+    confirmation.
+    """
     out = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"})["rapp"]
     iid, model_id = out["instanceId"], out["modelId"]
     inst = ok(mesh[RAPP].get(f"/instances/{iid}"))
@@ -100,6 +104,9 @@ def test_mro01_to_mro13_lifecycle_dmro_bounded_cio_steps_and_kpi_confirmation(me
 # ---------------------------------------------------------------- MRO-14, MRO-15
 
 def test_mro14_ping_pong_and_wrong_cell_lower_and_mro15_kpi_degradation_reverts(mesh, loaded_apps, monkeypatch):
+    """MRO-14: ping-pong lowers the CIO by 2 dB and wrong-cell failures by 1 dB. MRO-15: a relation that got worse after its change is reverted
+    through DME, read back, while the other relation's fix is confirmed.
+    """
     iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"})["rapp"]["instanceId"]
     gen = loaded_apps[RAPP].producer
     clock = Clock(mesh, loaded_apps).hour(hours=2, r201_202="WRONG_CELL", r201_203="HEALTHY", r202_203="HEALTHY",
@@ -125,6 +132,9 @@ def test_mro14_ping_pong_and_wrong_cell_lower_and_mro15_kpi_degradation_reverts(
 # ---------------------------------------------------------------- MRO-16
 
 def test_mro16_guards_block_ho_disallowed_protected_cells_and_thin_samples(mesh, loaded_apps, monkeypatch):
+    """MRO-16: handover not allowed, an emergency or incident-zone cell at either end and thin samples each block a relation, every blocking guard
+    is recorded, and no CIO is written.
+    """
     iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"},
                    guards={"204": {"cellClass": "EMERGENCY"}, "202": {"incidentZone": "flood-7"}})["rapp"]["instanceId"]
     ok(mesh["ran-nf-oam"].post("/config-jobs", json={"requestedBy": "noc", "scope": "cell", "changes": [
@@ -145,6 +155,9 @@ def test_mro16_guards_block_ho_disallowed_protected_cells_and_thin_samples(mesh,
 # ---------------------------------------------------------------- MRO-17
 
 def test_mro17_coordination_with_the_energy_saving_rapp(mesh, loaded_apps, monkeypatch):
+    """MRO-17: a relation towards a cell the EnergySaving rApp has asleep or in PRE_SLEEP is held, one towards an awake cell is tuned, and after
+    EnergySaving wakes the cell the relation waits out the after-wake window.
+    """
     es_iid = es.ready(mesh, loaded_apps, monkeypatch)
     relations = [{"relation": "102-101", "source": "102", "target": "101"},
                  {"relation": "104-103", "source": "104", "target": "103"},
@@ -174,6 +187,9 @@ def test_mro17_coordination_with_the_energy_saving_rapp(mesh, loaded_apps, monke
 # ---------------------------------------------------------------- MRO-18
 
 def test_mro18_shadow_recommends_and_assist_needs_approval(mesh, loaded_apps, monkeypatch):
+    """MRO-18: SHADOW recommends and writes nothing; ASSIST waits for approval and enacts after the operator resolves the dispatch, and a rejected
+    dispatch is never enacted.
+    """
     ids = {k: v["instanceId"] for k, v in scenario(mesh, loaded_apps, monkeypatch,
                                                    {"shadow": "SHADOW", "assist": "ASSIST"}).items()}
     clock = Clock(mesh, loaded_apps).hour(**ALL_LATE)
@@ -200,6 +216,7 @@ def test_mro18_shadow_recommends_and_assist_needs_approval(mesh, loaded_apps, mo
 # ---------------------------------------------------------------- MRO-19
 
 def test_mro19_a_failed_or_unverified_cio_write_is_rolled_back(mesh, loaded_apps, monkeypatch):
+    """MRO-19: a CIO write that fails and one that is accepted but never takes are each rolled back to the old CIO."""
     iid = scenario(mesh, loaded_apps, monkeypatch, {"rapp": "AUTONOMOUS"})["rapp"]["instanceId"]
     fault(mesh, "201-203", "RPC_ERROR")
     fault(mesh, "202-203", "IGNORE_WRITE")
@@ -214,6 +231,9 @@ def test_mro19_a_failed_or_unverified_cio_write_is_rolled_back(mesh, loaded_apps
 
 
 def test_the_committed_csar_is_built_from_the_sample_sources():
+    """The committed package is exactly what `samples/build_csar.py` builds from the sample's sources now (signed with the demo key), so a source
+    change without a rebuilt package fails here with the command to run.
+    """
     import importlib.util
     spec = importlib.util.spec_from_file_location("build_csar", SMO_ROOT / "samples" / "build_csar.py")
     builder = importlib.util.module_from_spec(spec)

@@ -191,7 +191,7 @@ class OCloudPerformanceMetric(Base):
 
     A scalar measurement is stored in `value`; an object-valued one in `measurement_value` (and `value` stays null). `job_id` is the string form of a
     `PerformanceJob.job_id`, or null for a record ingested with no job. The index `ix_ocloud_performance_metric_resource_metric_collected`
-    (revision 0036) serves the newest-record-per-resource-and-measurement read of the utilisation routes (`fcaps.py`).
+    (revision 0038) serves the newest-record-per-resource-and-measurement read of the utilisation routes (`fcaps.py`).
     """
     __tablename__ = "ocloud_performance_metric"
     __table_args__ = (Index("ix_ocloud_performance_metric_resource_metric_collected", "resource_ref", "metric_name", "collected_at"),)

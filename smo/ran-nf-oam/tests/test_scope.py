@@ -23,6 +23,7 @@ PLACES = {"ME-1": ("eu", "acme"), "ME-2": ("eu", "globex"), "ME-3": ("us", "acme
 
 
 def claim(**axes) -> str:
+    """The JSON text of a scope claim with the given axes (`regions=[...]`, `tenants=[...]`), as the gateway sends it in the scope header."""
     import json
     return json.dumps(axes, sort_keys=True, separators=(",", ":"))
 
@@ -41,6 +42,7 @@ def no_inline_sending(monkeypatch):
 
 @pytest.fixture
 def places(fleet):
+    """Fixture: puts the four fleet elements in the regions and tenants of `PLACES` and returns the fleet state."""
     with fleet["db"]() as db:
         for ref, (region, tenant) in PLACES.items():
             row = db.get(ManagedEntity, ref)
@@ -66,6 +68,7 @@ def _jobs(fleet):
 # ---- SEC-10.2: region and tenant on the element
 
 def test_an_element_is_registered_with_a_region_and_a_tenant_and_they_can_be_edited(client, db_session_factory):
+    """A region and tenant given at registration are kept and shown, and `PUT .../scope` replaces both (a key left out clears it)."""
     resp = client.post("/o1-adaptor-endpoints", json={"managedElementRef": "ME-9", "adaptorUri": "http://a:9/netconf", "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF",
                                                       "entityType": "O-DU", "region": "eu-west", "tenant": "acme"})
     assert resp.status_code == 201 and (resp.json()["region"], resp.json()["tenant"]) == ("eu-west", "acme")
@@ -79,6 +82,7 @@ def test_an_element_is_registered_with_a_region_and_a_tenant_and_they_can_be_edi
 
 
 def test_an_element_without_a_region_or_tenant_registers_as_before(client):
+    """An element registered without a region or tenant has none, as before."""
     resp = client.post("/o1-adaptor-endpoints", json={"managedElementRef": "ME-8", "adaptorUri": "http://a:9/netconf", "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF",
                                                       "entityType": "O-DU"})
     assert resp.status_code == 201 and resp.json()["region"] is None and resp.json()["tenant"] is None
@@ -86,6 +90,9 @@ def test_an_element_without_a_region_or_tenant_registers_as_before(client):
 
 @pytest.mark.parametrize("value", ["", " eu", "eu west", "-eu", "a" * 101, "eu\n", "é"])
 def test_a_region_or_tenant_that_is_not_valid_is_refused(client, db_session_factory, value):
+    """A region or tenant that is empty, has spaces or a leading dash, is too long or non-ASCII is 422 at registration and on the scope route, and
+    so is an unknown field.
+    """
     body = {"managedElementRef": "ME-7", "adaptorUri": "http://a:9/netconf", "protocolSupport": ["NETCONF"], "o1Protocol": "NETCONF", "entityType": "O-DU"}
     assert client.post("/o1-adaptor-endpoints", json={**body, "region": value}).status_code == 422
     assert client.post("/o1-adaptor-endpoints", json={**body, "tenant": value}).status_code == 422
@@ -97,6 +104,7 @@ def test_a_region_or_tenant_that_is_not_valid_is_refused(client, db_session_fact
 
 
 def test_the_managed_entity_list_can_be_narrowed_by_region_and_tenant(client, places):
+    """The element list can be narrowed by region and tenant, separately or together."""
     refs = lambda **q: [i["managedElementRef"] for i in client.get("/managed-entities", params=q).json()["items"]]      # noqa: E731
     assert refs() == ELEMENTS and refs(region="eu") == ["ME-1", "ME-2"] and refs(tenant="acme") == ["ME-1", "ME-3"] and refs(region="eu", tenant="acme") == ["ME-1"]
 
@@ -111,6 +119,7 @@ def test_an_unscoped_caller_is_unchanged_whatever_the_elements_are(client, place
 
 
 def test_a_scoped_caller_writes_inside_its_scope(client, places):
+    """A scoped caller may write to elements inside its claim, whether the claim restricts the region, the tenant or both."""
     assert _write(client, ["ME-1", "ME-2"], EU).status_code == 202
     assert _write(client, ["ME-1", "ME-3"], ACME).status_code == 202
     assert _write(client, ["ME-1"], EU_ACME).status_code == 202
@@ -118,6 +127,7 @@ def test_a_scoped_caller_writes_inside_its_scope(client, places):
 
 
 def test_one_element_outside_the_scope_refuses_the_whole_job_and_nothing_is_sent(client, places):
+    """One element outside the claim refuses the whole job with 403 SCOPE_DENIED, naming only the element outside, and nothing is recorded or sent."""
     refused = _write(client, ["ME-1", "ME-3"], EU)
     assert refused.status_code == 403 and _title(refused) == "SCOPE_DENIED"
     assert "ME-3" in refused.json()["detail"]["detail"] and "ME-1" not in refused.json()["detail"]["detail"]
@@ -134,6 +144,9 @@ def test_one_element_outside_the_scope_refuses_the_whole_job_and_nothing_is_sent
     (EU, ["ME-NOT-THERE"], "ME-NOT-THERE"),      # not registered: has no region either, and the answer is the same
 ])
 def test_the_refusals(client, places, headers, refs, denied):
+    """Each way of being outside a claim gives the same 403 for the write: another region, another tenant, a mismatch on one axis, an element with
+    no region or tenant, and an element that is not registered.
+    """
     resp = _write(client, refs, headers)
     assert resp.status_code == 403 and _title(resp) == "SCOPE_DENIED" and denied in resp.json()["detail"]["detail"]
     assert places["edits"] == [] and _jobs(places) == 0
@@ -147,6 +160,7 @@ def test_an_unregistered_element_and_an_out_of_scope_one_are_answered_alike(clie
 
 
 def test_a_dry_run_is_refused_the_same_way(client, places):
+    """A dry run is refused for an element outside the scope as a real write is, and is 200 inside it."""
     resp = _write(client, ["ME-3"], EU, dryRun=True)
     assert resp.status_code == 403 and _title(resp) == "SCOPE_DENIED"
     assert _write(client, ["ME-1"], EU, dryRun=True).status_code == 200
@@ -159,6 +173,7 @@ def test_a_refusal_comes_before_every_other_check(client, places):
 
 
 def test_the_refusal_is_recorded_and_announced_like_the_other_safeguards(client, places):
+    """A scope refusal is recorded as a safeguard refusal with code SCOPE_DENIED, and a safeguard subscription can ask for that code."""
     _write(client, ["ME-3"], EU)
     listed = client.get("/safeguard-refusals").json()["items"]
     assert [(r["invokerId"], r["refusal"]) for r in listed] == [("es-client", "SCOPE_DENIED")] and "ME-3" in listed[0]["detail"]
@@ -179,6 +194,7 @@ def test_a_module_acting_for_a_scoped_rapp_is_held_to_the_rapps_scope(client, pl
 
 
 def test_a_damaged_claim_permits_nothing(client, places):
+    """A claim that is not valid JSON or has no usable axis permits nothing: the write is 403 and nothing is sent."""
     for broken in ("not json", "[]", '{"regions":[]}', '{"zones":["x"]}'):
         resp = _write(client, ["ME-1"], {**UNSCOPED, SCOPE_HEADER: broken})
         assert resp.status_code == 403 and _title(resp) == "SCOPE_DENIED", broken
@@ -186,6 +202,7 @@ def test_a_damaged_claim_permits_nothing(client, places):
 
 
 def test_the_scope_is_checked_before_the_rate_limit_counts_the_job(client, places):
+    """A job refused by scope does not use the rApp's hourly job budget."""
     client.put("/rapp-limits/es-client", json={"maxConfigJobsPerHour": 1})
     assert _write(client, ["ME-3"], EU).status_code == 403
     assert _write(client, ["ME-1"], EU).status_code == 202                         # the refused job did not use the budget
@@ -194,7 +211,11 @@ def test_the_scope_is_checked_before_the_rate_limit_counts_the_job(client, place
 # ---- SEC-10.4: rollback
 
 def test_a_rollback_needs_every_element_the_job_wrote_to(client, places):
-    original = _write(client, ["ME-1", "ME-3"], GUI).json()["jobId"]            # an operator wrote to an eu and a us element
+    """A rollback (and its dry run) is refused when the job wrote to an element outside the caller's scope; the refusal names none of them, is
+    recorded, and nothing is written.
+    """
+    allowed = {**UNSCOPED, SCOPE_HEADER: claim(regions=["eu", "us"])}
+    original = _write(client, ["ME-1", "ME-3"], allowed).json()["jobId"]         # the same rApp, with a wider claim, wrote to an eu and a us element (PR-SEC-10.11: its own job)
     before = _jobs(places)
     refused = client.post(f"/config-jobs/{original}/rollback", headers=EU, json={"requestedBy": "es-rapp"})
     assert refused.status_code == 403 and _title(refused) == "SCOPE_DENIED"
@@ -202,12 +223,12 @@ def test_a_rollback_needs_every_element_the_job_wrote_to(client, places):
     assert client.post(f"/config-jobs/{original}/rollback", headers=EU, json={"requestedBy": "es-rapp", "dryRun": True}).status_code == 403
     assert _jobs(places) == before and places["values"]["ME-1"] == "20"
     assert client.get("/safeguard-refusals").json()["items"][0]["refusal"] == "SCOPE_DENIED"
-    allowed = {**UNSCOPED, SCOPE_HEADER: claim(regions=["eu", "us"])}
     assert client.post(f"/config-jobs/{original}/rollback", headers=allowed, json={"requestedBy": "es-rapp"}).status_code == 202
     assert places["values"]["ME-1"] == "10" and places["values"]["ME-3"] == "10"
 
 
 def test_a_rollback_of_an_unknown_job_is_still_a_404(client, places):
+    """A rollback of an unknown job is 404 for a scoped caller too."""
     assert client.post(f"/config-jobs/{uuid.uuid4()}/rollback", headers=EU, json={"requestedBy": "x"}).status_code == 404
 
 
@@ -222,6 +243,9 @@ def _approve(client, approval_id):
 
 
 def test_a_request_is_checked_when_it_is_made_and_the_claim_is_kept_with_it(client, places):
+    """With an approval policy the scope is checked when the request is made (nothing is parked on refusal), and the requester's claim is kept with
+    the parked request.
+    """
     _hold(client)
     refused = _write(client, ["ME-3"], EU)
     assert refused.status_code == 403 and _title(refused) == "SCOPE_DENIED"
@@ -250,6 +274,7 @@ def test_an_element_that_moved_while_the_request_waited_refuses_the_approval(cli
 
 
 def test_an_unscoped_requester_is_not_held_to_a_scope_at_approval(client, places):
+    """A request parked by an unscoped requester is approved and written with no scope check."""
     _hold(client)
     approval_id = _write(client, ["ME-3", "ME-4"], UNSCOPED).json()["approvalId"]
     assert _approve(client, approval_id).status_code == 200 and places["edits"] == ["ME-3", "ME-4"]
@@ -268,6 +293,9 @@ def test_a_requester_scoped_after_the_request_was_parked_is_not_held_to_the_late
 # ---- SEC-10.5: reads of the configuration
 
 def test_the_configuration_is_read_only_inside_the_scope(client, places):
+    """Reading an element's configuration is 403 SCOPE_DENIED outside the scope, including for an unregistered element, and unchanged without a
+    claim.
+    """
     assert client.get("/managed-entities/ME-3/config").status_code == 200                                 # unscoped: as before
     assert client.get("/managed-entities/ME-1/config", headers=EU).status_code == 200
     for ref in ("ME-3", "ME-4", "ME-NOT-THERE"):
@@ -276,6 +304,7 @@ def test_the_configuration_is_read_only_inside_the_scope(client, places):
 
 
 def test_the_history_and_the_diff_of_an_element_are_scoped_too(client, places):
+    """The config history and diff of an element are 403 for a caller whose scope does not cover it."""
     _write(client, ["ME-3"], GUI)
     assert client.get("/managed-entities/ME-3/config-history", headers=EU).status_code == 403
     assert client.get("/managed-entities/ME-3/config-history", headers=ACME).status_code == 200
@@ -285,6 +314,7 @@ def test_the_history_and_the_diff_of_an_element_are_scoped_too(client, places):
 
 
 def test_the_element_views_are_scoped(client, places):
+    """The element list and cell guards show only the elements inside the claim, and reading one outside is 403."""
     assert [i["managedElementRef"] for i in client.get("/managed-entities", headers=EU).json()["items"]] == ["ME-1", "ME-2"]
     assert [i["managedElementRef"] for i in client.get("/managed-entities", headers=EU_ACME).json()["items"]] == ["ME-1"]
     assert client.get("/managed-entities", headers={**UNSCOPED, SCOPE_HEADER: claim(regions=["nowhere"])}).json()["items"] == []
@@ -298,9 +328,13 @@ def test_the_element_views_are_scoped(client, places):
 
 
 def test_the_jobs_a_caller_sees_are_the_ones_inside_its_scope(client, places):
-    inside = _write(client, ["ME-1", "ME-2"], GUI).json()["jobId"]
-    mixed = _write(client, ["ME-1", "ME-3"], GUI).json()["jobId"]
-    outside = _write(client, ["ME-3"], GUI).json()["jobId"]
+    """A caller sees the jobs all of whose elements are inside its scope, in the list and by id; a job touching an outside element, and an unknown
+    id, are the same 404.
+    """
+    wide = {**UNSCOPED, SCOPE_HEADER: claim(regions=["eu", "us"])}                  # the same rApp, with a wider claim: the jobs are its own (PR-SEC-10.11), only the scope hides them
+    inside = _write(client, ["ME-1", "ME-2"], wide).json()["jobId"]
+    mixed = _write(client, ["ME-1", "ME-3"], wide).json()["jobId"]
+    outside = _write(client, ["ME-3"], wide).json()["jobId"]
     listed = lambda headers: {j["jobId"] for j in client.get("/config-jobs", headers=headers).json()["items"]}      # noqa: E731
     assert listed({}) == {inside, mixed, outside} and listed(EU) == {inside}
     assert client.get(f"/config-jobs/{inside}", headers=EU).status_code == 200
@@ -313,6 +347,7 @@ def test_the_jobs_a_caller_sees_are_the_ones_inside_its_scope(client, places):
 # ---- SEC-10.6: alarms and PM
 
 def _alarm(db_factory, ref):
+    """Adds a major alarm on `ref` and returns its id."""
     with db_factory() as db:
         alarm = Alarm(source_alarm_id=f"a-{uuid.uuid4()}", managed_element_ref=ref, severity="major")
         db.add(alarm)
@@ -321,6 +356,7 @@ def _alarm(db_factory, ref):
 
 
 def test_the_alarm_list_is_filtered_to_the_scope_never_refused(client, places):
+    """The alarm list shows only the alarms of elements inside the claim; asking for an outside element gives an empty page, not an error."""
     ids = {ref: _alarm(places["db"], ref) for ref in ELEMENTS}
     seen = lambda headers, **q: {a["managedElementRef"] for a in client.get("/alarms", headers=headers, params=q).json()["items"]}      # noqa: E731
     assert seen({}) == set(ELEMENTS) and seen(UNSCOPED) == set(ELEMENTS)
@@ -331,6 +367,7 @@ def test_the_alarm_list_is_filtered_to_the_scope_never_refused(client, places):
 
 
 def test_the_total_of_a_filtered_page_does_not_count_what_is_hidden(client, places):
+    """The total of a filtered page counts only what the caller may see."""
     for ref in ELEMENTS:
         _alarm(places["db"], ref)
     page = client.get("/alarms", headers=EU).json()
@@ -339,6 +376,7 @@ def test_the_total_of_a_filtered_page_does_not_count_what_is_hidden(client, plac
 
 
 def test_an_alarm_outside_the_scope_cannot_be_acknowledged_or_cleared_and_looks_absent(client, places):
+    """An alarm of an element outside the scope is 404 on acknowledge and clear and is left unchanged, while an unscoped caller can still clear it."""
     hidden, shown = _alarm(places["db"], "ME-3"), _alarm(places["db"], "ME-1")
     for action in (f"/alarms/{hidden}/ack?new_state=ACKNOWLEDGED", f"/alarms/{hidden}/clear"):
         resp = client.patch(action, headers=EU)
@@ -351,6 +389,9 @@ def test_an_alarm_outside_the_scope_cannot_be_acknowledged_or_cleared_and_looks_
 
 
 def test_pm_subscriptions_are_listed_created_and_removed_inside_the_scope_only(client, places, monkeypatch):
+    """PM and FM subscriptions are listed, created and removed only for elements inside the scope; creating for an outside element is 403 and
+    removing one is a silent no-op.
+    """
     monkeypatch.setattr("app.main.R1Client", lambda *a, **k: type("R", (), {"post": lambda self, *a, **k: None})())
     with places["db"]() as db:
         for ref in ("ME-1", "ME-3"):
@@ -375,6 +416,7 @@ def test_pm_subscriptions_are_listed_created_and_removed_inside_the_scope_only(c
 
 
 def test_performance_files_are_listed_and_downloaded_inside_the_scope_only(client, places):
+    """Performance files of elements outside the scope are left out of the list and are 404 on download."""
     ids = {}
     with places["db"]() as db:
         for ref in ("ME-1", "ME-3"):
@@ -418,6 +460,7 @@ def test_a_kpi_is_computed_over_the_elements_inside_the_scope_only(client, place
 
 
 def test_the_endpoint_list_shows_where_each_element_is_and_hides_the_rest_from_a_scoped_caller(client, places):
+    """The endpoint list shows each element's region and tenant and, for a scoped caller, only the endpoints inside its claim."""
     listed = client.get("/o1-adaptor-endpoints").json()["items"]
     assert {e["managedElementRef"]: (e["region"], e["tenant"]) for e in listed} == PLACES
     assert sorted(e["managedElementRef"] for e in client.get("/o1-adaptor-endpoints", headers=EU).json()["items"]) == ["ME-1", "ME-2"]
@@ -425,6 +468,7 @@ def test_the_endpoint_list_shows_where_each_element_is_and_hides_the_rest_from_a
 
 
 def test_refusals_by_scope_are_recorded_once_per_attempt(client, places):
+    """Each refused attempt is recorded once, and refused attempts write no snapshot."""
     for _ in range(3):
         _write(client, ["ME-3"], EU)
     with places["db"]() as db:

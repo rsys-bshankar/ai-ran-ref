@@ -38,6 +38,11 @@ def _now() -> datetime.datetime:
 
 
 class ModuleIdentityRow(Base):
+    """The stored SME invoker identity of one module, shared by all its replicas: one row per `module`, holding the invoker id and the secret as
+    issued.
+
+    The secret is kept in clear because the module must present it to SME's token endpoint (see the module description for the trust this implies).
+    """
     __tablename__ = "module_identity"
 
     module: Mapped[str] = mapped_column(String, primary_key=True)          # the MODULE build arg, e.g. "aimgf"
@@ -59,6 +64,7 @@ class DbIdentityStore:
         return SessionLocal()
 
     def load(self, module: str) -> tuple[str, str] | None:
+        """Returns (invoker id, secret) stored for `module`, or None when no replica has registered one yet."""
         with self._session() as db:
             row = db.get(ModuleIdentityRow, module)
             return (row.invoker_id, row.invoker_secret) if row is not None else None

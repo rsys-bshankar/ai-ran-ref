@@ -1,3 +1,10 @@
+/**
+ * The drawer of one CM write job at RAN NF OAM (polled every 5 s): its status and wave progress, the decision record when an rApp made it (AI-13.4), the Continue/Halt/Abort
+ * buttons of a halted job, the rollback dialog (a preview first, then the rollback, forced only when a value was changed after the job wrote it), the KPI guard settings and result,
+ * and the sub-changes. Used by the pages that show config jobs (Infrastructure → O1 jobs, Configuration, Approvals, Decisions, element onboarding). The wording and the wave rules come from `lib/domain.ts`; the buttons are `ActionButton`s,
+ * so a user whose role may not make the call does not see them.
+ */
+
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -81,6 +88,10 @@ export function ConfigJobDrawer({ id, onClose }: { id: string; onClose: () => vo
 
 /** Undo a job: first a preview (what would be written, and what has changed since the job wrote it), then the rollback. A value that was changed
  * later is only overwritten when the operator says so, by name. */
+/**
+ * Dialog behind "Roll back…": the first step is a dry-run POST that only shows what would be written and which values changed after the job wrote them; the second step
+ * starts the rollback job. The rollback sends `force: true` only when the preview listed later changes, and the button then says "Roll back anyway", so overwriting someone's later change is never silent.
+ */
 function RollbackDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const path = `/ran-nf-oam/config-jobs/${id}/rollback`;
   const preview = useSmoAction();

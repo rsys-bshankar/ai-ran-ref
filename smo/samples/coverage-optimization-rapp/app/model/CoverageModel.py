@@ -62,6 +62,7 @@ def excess(shares: dict[str, float]) -> float:
 
 
 def dominant_problem(shares: dict[str, float]) -> str | None:
+    """The problem class with the largest share, or None when even that is not above the 5 % threshold (the cell is healthy)."""
     worst = max(PROBLEM_KEYS, key=lambda k: shares[k])
     return worst if shares[worst] > THRESHOLD else None
 
@@ -69,6 +70,9 @@ def dominant_problem(shares: dict[str, float]) -> str | None:
 @dataclass
 class CoverageModel:
     # {problem: [ownTilt, ownPower, neighbourTilt, neighbourPower]}; untrained = no effect
+    """The trained model: 12 sensitivities, their fit (RMSE, sample count) and the version. The methods predict the shares after a move set and
+    search the best move set for a cluster; the artifact is this dataclass as JSON.
+    """
     sensitivities: dict = field(default_factory=lambda: {k: [0.0, 0.0, 0.0, 0.0] for k in PROBLEM_KEYS})
     rmse: float = 0.0
     threshold: float = THRESHOLD
@@ -149,6 +153,7 @@ class CoverageModel:
     # ------------------------------------------------------------ artifact
 
     def to_artifact(self) -> bytes:
+        """Serialises the model as a .zip holding one JSON member (`coverage_model.json`), the form stored in MLMR."""
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr(ARTIFACT_MEMBER, json.dumps(asdict(self), indent=1, sort_keys=True))
@@ -156,6 +161,7 @@ class CoverageModel:
 
     @classmethod
     def from_artifact(cls, data: bytes) -> "CoverageModel":
+        """Reads a model back from the bytes `to_artifact` made; raises zipfile.BadZipFile or KeyError for anything else."""
         with zipfile.ZipFile(io.BytesIO(data)) as z:
             return cls.from_dict(json.loads(z.read(ARTIFACT_MEMBER)))
 

@@ -8,10 +8,10 @@ Routes: `/decisions` (`?job=<id>` / `?approval=<id>` narrow it) and `/decisions/
 | --- | --- | --- | --- | --- | --- |
 | decisions.filters | sections/FilterBar.tsx | rApp, outcome, model version, range 1 h / 24 h (default) / 7 d / all, until; "Export…" (operator) | — (builds the query); "Export…" creates a job `POST /api/exports {kind: decisions, since, until, invokerId, disposition, region, siteCluster}` (GUI-9.5b, `components/ExportJobButton.tsx`), followed on `/exports` | — | 0 (1 on click) |
 | decisions.tiles | sections/SummaryTiles.tsx | decisions in 24 h, autonomous, approved by a person, not written | `/api/summary/decisions` | 15 s | 1 call |
-| decisions.table | sections/DecisionTable.tsx | records, keyset-paged (`kit/KeysetTable`, Next / Previous, no count); row click selects | `/ran-nf-oam/decision-records?invoker_id&disposition&model_version&job_id&approval_id&since&until&region&site_cluster&after&limit` (answer `{items, nextCursor, hasMore}`) | 15 s | 1 call per page |
+| decisions.table | sections/DecisionTable.tsx | records ("Approved by" lists both `approvers` of a request that needed two), keyset-paged (`kit/KeysetTable`, Next / Previous, no count); row click selects | `/ran-nf-oam/decision-records?invoker_id&disposition&model_version&job_id&approval_id&since&until&region&site_cluster&after&limit` (answer `{items, nextCursor, hasMore}`) | 15 s | 1 call per page |
 | decisions.chain | sections/DecisionChain.tsx | inputs → model → rationale → config job → approval → verify | — (the selected row) | — | 0 |
 | decisions.integrity | sections/Integrity.tsx | record hash, audit row, VERIFIED / UNCHAINED / MISMATCH | `/ran-nf-oam/decision-records/{id}` | 15 s | 1 call per selected row |
-| decisions.outcome, decisions.why | sections/RecordDetail.tsx | the one-record route: outcome (job and approval drawers), why | same record | — | 0 |
+| decisions.outcome, decisions.why | sections/RecordDetail.tsx | the one-record route: outcome (job and approval drawers; "Approvers (two were needed)" when the record carries `approvers`), why | same record | — | 0 |
 
 ## Known limits
 

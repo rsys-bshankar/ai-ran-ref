@@ -21,6 +21,9 @@ LIVE_START = HISTORY_START + datetime.timedelta(days=HISTORY_DAYS)  # midnight a
 
 
 def ok(resp, *codes):
+    """Asserts the response status is one of `codes` (200, 201, 202 or 204 by default), with the status and body as the failure message, and
+    returns the decoded body (None when empty).
+    """
     assert resp.status_code in (codes or (200, 201, 202, 204)), f"{resp.status_code}: {resp.text}"
     return resp.json() if resp.content else None
 
@@ -60,11 +63,15 @@ def guard(mesh, cell, **guards):
 
 
 def onboard(mesh):
+    """Uploads the sample's package to Onboarding by URL and returns (packageId, the onboarding status)."""
     package = ok(mesh["onboarding"].post("/packages", json={"location": CSAR_URL}))
     return package["packageId"], ok(mesh["onboarding"].get(f"/packages/{package['packageId']}/onboarding-status"))
 
 
 def create_instance(mesh, package_id, mode, actuator="ADMINISTRATIVE_STATE", cells=CELLS):
+    """Creates an rApp Management instance of the sample in `mode` for the managed element and cells with the given actuator, with the rApp's
+    operator API base and a region scope covering those cells; returns the instance id.
+    """
     created = ok(mesh["rapp-mgmt"].post("/instances", json={
         "operatorApiBase": "http://energy-saving-rapp:8000",     # where the gateway's /rapps/{instanceId}/operator/... reaches this rApp (GUI-8.3)
         "packageId": package_id, "autonomyMode": mode,
@@ -103,6 +110,7 @@ def _diurnal(cell, t):
 
 
 def governance(mesh, model_id, *events):
+    """Advances the model through each AIMgF governance event in turn as the operator, with a rationale naming the event."""
     for event in events:
         ok(mesh["aimgf"].post(f"/models/{model_id}/advance", params={"event": event, "decided_by": OPERATOR,
                                                                      "rationale": f"{event} by {OPERATOR}"}))
@@ -168,6 +176,9 @@ class Clock:
 
 
 def evaluate(mesh, instance_id, correlation_id=None):
+    """Runs one closed-loop pass over the instance through the rApp's `evaluate` route, with `correlation_id` as the X-Correlation-ID (the
+    execution id in the audit trail) when given, and returns the answer.
+    """
     headers = {"X-Correlation-ID": correlation_id} if correlation_id else {}
     return ok(mesh["energy-saving-rapp"].post(f"/instances/{instance_id}/evaluate", headers=headers))
 

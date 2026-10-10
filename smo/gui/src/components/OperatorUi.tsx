@@ -1,13 +1,18 @@
-// The generic renderer of the operator page a rApp declares in its package (PR-GUI-8, GUI-8.4; docs/adr/0004-operator-ui-declaration.md; the format and its
-// limits are smo_shared/operator_ui.py, the reading of it is lib/operatorUi.ts).
-//
-//   <DeclaredPage>   the panels, top to bottom: table, keyValues, kpis, chart, actions. A kind this build does not know is a card saying "unsupported panel";
-//                    a panel that throws while drawing is a card saying it could not be drawn. The others are drawn either way.
-//   rowDetail        a click on a table row opens a drawer of blocks: json, keyValues, table, chart. An unknown block is "unsupported block".
-//
-// Everything on the page is text: values and titles are React text nodes, never HTML, a link or an attribute that means something (a badge's colour comes from the
-// state words the GUI already knows, not from the value). The browser calls only the BFF (`/api/rapps/<instance>/operator/...`), which allows exactly the routes
-// the declaration lists; a change button is drawn only when the BFF says the user may change (`canChange`).
+/**
+ * The generic renderer of the operator page a rApp declares in its package (PR-GUI-8, GUI-8.4; docs/adr/0004-operator-ui-declaration.md; the format and its
+ * limits are smo_shared/operator_ui.py, the reading of it is lib/operatorUi.ts).
+ *
+ *   `DeclaredPage`   the panels, top to bottom: table, keyValues, kpis, chart, actions. A kind this build does not know is a card saying "unsupported panel";
+ *                    a panel that throws while drawing is a card saying it could not be drawn. The others are drawn either way.
+ *   rowDetail        a click on a table row opens a drawer of blocks: json, keyValues, table, chart. An unknown block is "unsupported block".
+ *
+ * Everything on the page is text: values and titles are React text nodes, never HTML, a link or an attribute that means something (a badge's colour comes from the
+ * state words the GUI already knows, not from the value). The browser calls only the BFF (`/api/rapps/<instance>/operator/...`), which allows exactly the routes
+ * the declaration lists; a change button is drawn only when the BFF says the user may change (`canChange`).
+ *
+ * The declaration is data from the rApp's package and is read defensively (`obj`, `arr`, `str`, `isObj`): a malformed panel degrades to an "unsupported" card and never throws.
+ * Used by `pages/rapp-detail/sections/DeclaredPages.tsx`; covered by `OperatorUi.test.tsx`.
+ */
 
 import { Component, useState, type ErrorInfo, type FormEvent, type ReactNode } from "react";
 
@@ -29,6 +34,10 @@ const str = (v: unknown): string => (typeof v === "string" ? v : asText(v));
 
 // ---------------------------------------------------------------- the page
 
+/**
+ * Draws every declared panel of one rApp, each inside its own `PanelBoundary`. When the rApp's operator API is not registered it first says so, and the panels that read from it
+ * show a waiting line instead of calling. `canChange` (the BFF's verdict, see `RappPage`) decides whether the change buttons are drawn.
+ */
 export function DeclaredPage({ instanceId, declaration, canChange, operatorApiRegistered }: {
   instanceId: string; declaration: Declaration; canChange: boolean; operatorApiRegistered: boolean;
 }) {
@@ -47,6 +56,9 @@ export function DeclaredPage({ instanceId, declaration, canChange, operatorApiRe
   );
 }
 
+/**
+ * An error boundary around one panel or block: a panel that throws while drawing becomes a card saying so (the cause goes to the console as a warning), and the other panels are unaffected.
+ */
 class PanelBoundary extends Component<{ title: string; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
@@ -56,6 +68,9 @@ class PanelBoundary extends Component<{ title: string; children: ReactNode }, { 
   }
 }
 
+/**
+ * Chooses the component for a panel's `kind` (table, keyValues, kpis, chart, actions); any other kind is drawn as an "unsupported panel" card.
+ */
 function PanelView({ instanceId, panel, canChange, registered }: { instanceId: string; panel: Obj; canChange: boolean; registered: boolean }) {
   const common = { instanceId, panel, registered };
   switch (panel.kind) {
@@ -68,6 +83,9 @@ function PanelView({ instanceId, panel, canChange, registered }: { instanceId: s
   }
 }
 
+/**
+ * The card for a panel or block kind, or a shape, that this build cannot draw; the declaration may be newer than the GUI.
+ */
 function Unsupported({ title, what }: { title: string; what: "panel" | "block" }) {
   return (
     <Card title={title}>
@@ -89,6 +107,10 @@ function useSource(instanceId: string, source: unknown, enabled: boolean, row?: 
   return { read, valid: route !== null && query !== null };
 }
 
+/**
+ * Wraps what depends on a declared read: shows the right line for "operator API not registered", "route cannot be built from the values named", an error
+ * (`OPERATOR_API_NOT_REGISTERED` gets its own wording), loading, and calls `children` with the data once it has arrived.
+ */
 function SourceState({ read, valid, registered = true, children }: {
   read: ReturnType<typeof useOperatorRead>; valid: boolean; registered?: boolean; children: (data: unknown) => ReactNode;
 }) {
@@ -111,6 +133,10 @@ function RefreshButton({ read }: { read: ReturnType<typeof useOperatorRead> }) {
 
 const FORMATS_WITH_TEXT = new Set(["text", "number", "percent", "datetime", "boolean", "list"]);
 
+/**
+ * One value in the declared format: a dash for an empty value, a state badge, an id chip, or text formatted by `formatValue` (number, percent, datetime, boolean, list).
+ * A format this build does not know is shown as plain text, never dropped.
+ */
 function CellValue({ value, format, unit }: { value: unknown; format?: unknown; unit?: unknown }) {
   const f = typeof format === "string" ? format : "text";
   const u = typeof unit === "string" ? unit : undefined;
@@ -133,6 +159,9 @@ function readColumns(value: unknown): Column[] | null {
   return out;
 }
 
+/**
+ * One table cell: a sparkline when the column is declared as one (with its y field), otherwise the formatted value at the column's path.
+ */
 function columnCell(row: unknown, c: Column): ReactNode {
   const value = getPath(row, c.path);
   if (c.format === "sparkline" && c.y) {
@@ -144,6 +173,10 @@ function columnCell(row: unknown, c: Column): ReactNode {
 
 interface Keyed { row: Obj; key: string }
 
+/**
+ * Pairs each row with a React key: the value at the declared `rowKey` path, or the position. A repeated key gets the position appended, so a source that repeats a key
+ * still draws every row.
+ */
 function keyRows(rows: unknown[], rowKey: string | undefined): Keyed[] {
   const seen = new Set<string>();
   return rows.map((r, i) => {
@@ -157,6 +190,10 @@ function keyRows(rows: unknown[], rowKey: string | undefined): Keyed[] {
 
 // ---------------------------------------------------------------- table
 
+/**
+ * A declared table: the rows are read from the declared source, each row can carry the declared row buttons (only when the user may change, and only those whose `when` condition
+ * matches the row), and a row click opens the declared detail drawer. A table whose columns are not all of the known shape is drawn as unsupported.
+ */
 function TablePanel({ instanceId, panel, canChange, registered }: { instanceId: string; panel: Obj; canChange: boolean; registered: boolean }) {
   const { read, valid } = useSource(instanceId, panel.source, registered);
   const [open, setOpen] = useState<Keyed | null>(null);
@@ -191,6 +228,9 @@ function TablePanel({ instanceId, panel, canChange, registered }: { instanceId: 
 
 // ---------------------------------------------------------------- the drawer of a row
 
+/**
+ * The drawer opened by a click on a table row: the declared title (with the row's fields filled in) and the declared blocks.
+ */
 function RowDrawer({ instanceId, detail, row, onClose }: { instanceId: string; detail: Obj; row: Obj; onClose: () => void }) {
   const title = typeof detail.title === "string" ? fillTitle(detail.title, row) : "Details";
   return (
@@ -200,6 +240,9 @@ function RowDrawer({ instanceId, detail, row, onClose }: { instanceId: string; d
   );
 }
 
+/**
+ * One block of a row drawer (json, keyValues, table or chart) under its title, inside its own error boundary; an unknown kind reads "unsupported block".
+ */
 function BlockView({ instanceId, block, row }: { instanceId: string; block: Obj; row: Obj }) {
   const title = str(block.title);
   const body = (() => {
@@ -236,6 +279,9 @@ function useBlockData(instanceId: string, block: Obj, row: Obj) {
   return { fetched, read, valid };
 }
 
+/**
+ * A table block of the row drawer: the rows come from the row itself or, when the block has a `source`, from a list fetched for this row when the drawer opens.
+ */
 function TableBlock({ instanceId, block, row }: { instanceId: string; block: Obj; row: Obj }) {
   const { fetched, read, valid } = useBlockData(instanceId, block, row);
   const columns = readColumns(block.columns);
@@ -256,6 +302,9 @@ function ChartBlock({ instanceId, block, row }: { instanceId: string; block: Obj
 
 // ---------------------------------------------------------------- key values
 
+/**
+ * The label and value pairs of a key/values panel or block, read from `data` by each item's path; an item without a string path is skipped, and an empty list shows a dash.
+ */
 function ItemsList({ items, data }: { items: unknown[]; data: unknown }) {
   const rows: [ReactNode, ReactNode][] = [];
   for (const it of items) {
@@ -265,6 +314,9 @@ function ItemsList({ items, data }: { items: unknown[]; data: unknown }) {
   return rows.length ? <KeyValue items={rows} /> : <p className="muted">—</p>;
 }
 
+/**
+ * A declared key/values panel: the items are read from the declared source (an item with no string path makes the panel unsupported).
+ */
 function KeyValuesPanel({ instanceId, panel, registered }: { instanceId: string; panel: Obj; registered: boolean }) {
   const { read, valid } = useSource(instanceId, panel.source, registered);
   if (!Array.isArray(panel.items) || panel.items.some((i) => !isObj(i) || typeof i.path !== "string")) return <Unsupported title={str(panel.title)} what="panel" />;
@@ -277,6 +329,10 @@ function KeyValuesPanel({ instanceId, panel, registered }: { instanceId: string;
 
 // ---------------------------------------------------------------- KPI tiles
 
+/**
+ * A declared panel of KPI tiles. A tile takes its value either from the panel's source (`path`) or from the rApp instance's latest performance report (`kpi`); a tile must have exactly one
+ * of the two, otherwise the panel is unsupported. The performance report is fetched only when some tile needs it. A value that is not a number shows a dash.
+ */
 function KpisPanel({ instanceId, panel, registered }: { instanceId: string; panel: Obj; registered: boolean }) {
   const tiles = arr(panel.tiles);
   const needsSource = tiles.some((t) => isObj(t) && typeof t.path === "string");
@@ -316,6 +372,9 @@ function KpisPanel({ instanceId, panel, registered }: { instanceId: string; pane
 type ChartSpec = Obj & { type: "line" | "bar"; points: string; x: string; y: string };
 const chartSpecOk = (spec: Obj): spec is ChartSpec => (spec.type === "line" || spec.type === "bar") && typeof spec.points === "string" && typeof spec.x === "string" && typeof spec.y === "string";
 
+/**
+ * A declared chart panel (line or bar) over a list read from the declared source; a chart spec without the type, points, x and y fields is unsupported.
+ */
 function ChartPanel({ instanceId, panel, registered }: { instanceId: string; panel: Obj; registered: boolean }) {
   const { read, valid } = useSource(instanceId, panel.source, registered);
   if (!chartSpecOk(panel)) return <Unsupported title={str(panel.title)} what="panel" />;
@@ -335,6 +394,11 @@ function ChartFrom({ spec, data }: { spec: Obj; data: unknown }) {
 const W = 560, H = 200, PAD = { l: 48, r: 10, t: 10, b: 26 };
 const MAX_DRAWN = 500;
 
+/**
+ * Draws one or more series as an SVG line or bar chart with three y ticks, the first and last x labels and a tooltip per point. Draws at most the last 500 points per series
+ * (`MAX_DRAWN`), shows the point dots only up to 60 points and reports `extra` series that were not drawn. Bars start from zero; lines are scaled to the data range.
+ * The figure's name lists the series for screen readers.
+ */
 export function SeriesChart({ type, series, extra = 0, unit, label }: { type: "line" | "bar"; series: Series[]; extra?: number; unit?: string; label?: string }) {
   const drawn = series.map((s) => ({ ...s, points: s.points.slice(-MAX_DRAWN) })).filter((s) => s.points.length > 0);
   if (drawn.length === 0) return <p className="muted">no data</p>;
@@ -386,6 +450,9 @@ export function SeriesChart({ type, series, extra = 0, unit, label }: { type: "l
 
 // ---------------------------------------------------------------- actions
 
+/**
+ * The declared action buttons of an actions panel. Without the permission to change it shows a line naming the actions that need the operator role instead of the buttons.
+ */
 function ActionsPanel({ instanceId, panel, canChange }: { instanceId: string; panel: Obj; canChange: boolean; registered: boolean }) {
   const actions = arr(panel.actions).filter(isObj);
   if (actions.length === 0) return <Unsupported title={str(panel.title)} what="panel" />;
@@ -421,6 +488,10 @@ function DeclaredButton({ instanceId, action, row }: { instanceId: string; actio
   );
 }
 
+/**
+ * The form a declared action asks before it is sent: one field per declared input (checkbox, choice or text/number, with the declared limits). The values are checked by
+ * `readInputs` (lib/operatorUi.ts) and the action is sent only when no field has an error.
+ */
 function InputsDialog({ title, inputs, pending, onClose, onSend }: { title: string; inputs: InputSpec[]; pending: boolean; onClose: () => void; onSend: (body: Obj) => void }) {
   const [values, setValues] = useState<Record<string, string | boolean | undefined>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});

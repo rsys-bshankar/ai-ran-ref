@@ -1,5 +1,8 @@
 """smo_shared.outbox — enqueue in the caller's transaction, send after commit, recover after a crash (PR-MSG-1.3, 1.4).
-Runs on file SQLite and, with `SMO_TEST_POSTGRES_URL`, on real Postgres."""
+Runs on file SQLite and, with `SMO_TEST_POSTGRES_URL`, on real Postgres.
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_outbox.py -q
+"""
 
 import datetime
 import os
@@ -19,6 +22,9 @@ T0 = datetime.datetime(2026, 1, 1, 12, 0, tzinfo=datetime.UTC)
 
 @pytest.fixture(params=["sqlite", "postgres"])
 def engine(request, tmp_path):
+    """A database with only the notification_outbox table, on file SQLite and, when SMO_TEST_POSTGRES_URL is set, on Postgres too (skipped otherwise);
+    dropped afterwards.
+    """
     if request.param == "postgres":
         if not os.environ.get("SMO_TEST_POSTGRES_URL"):
             pytest.skip("SMO_TEST_POSTGRES_URL not set")
@@ -51,11 +57,13 @@ def network(monkeypatch):
 
 
 def rows(engine):
+    """Helper: every outbox row, oldest first, read in a fresh session."""
     with Session(engine) as db:
         return db.scalars(select(NotificationOutbox).order_by(NotificationOutbox.created_at)).all()
 
 
 def test_enqueue_inserts_in_the_callers_transaction_and_a_rollback_removes_it(engine, network):
+    """The row is part of the caller's transaction: visible after a flush, gone after a rollback, and nothing is sent."""
     with Session(engine) as db:
         enqueue(db, "http://consumer/cb", {"n": 1})
         db.flush()
@@ -65,6 +73,7 @@ def test_enqueue_inserts_in_the_callers_transaction_and_a_rollback_removes_it(en
 
 
 def test_nothing_is_sent_before_the_commit(engine, network):
+    """A notification is sent only after the transaction commits, never at flush time, so a consumer is never told about a change that rolls back."""
     with Session(engine) as db:
         enqueue(db, "http://consumer/cb", {"n": 1})
         db.flush()
@@ -74,6 +83,7 @@ def test_nothing_is_sent_before_the_commit(engine, network):
 
 
 def test_a_commit_sends_what_it_enqueued_and_marks_it_sent(engine, network):
+    """Committing sends the rows that transaction enqueued, in order, and marks them SENT after one attempt."""
     with Session(engine) as db:
         enqueue(db, "http://a/cb", {"n": 1}, module="dme")
         enqueue(db, "http://b/cb", {"n": 2}, module="dme")
@@ -83,6 +93,7 @@ def test_a_commit_sends_what_it_enqueued_and_marks_it_sent(engine, network):
 
 
 def test_a_commit_that_enqueued_nothing_sends_nothing(engine, network):
+    """The commit hook does nothing for a transaction that enqueued nothing."""
     with Session(engine) as db:
         db.execute(select(1))
         db.commit()
@@ -90,6 +101,7 @@ def test_a_commit_that_enqueued_nothing_sends_nothing(engine, network):
 
 
 def test_a_destination_the_ssrf_guard_refuses_is_dropped_at_enqueue(engine, network):
+    """A metadata address, a missing destination and a file:// URL are not stored: enqueue returns None."""
     with Session(engine) as db:
         assert enqueue(db, "http://169.254.169.254/latest", {"n": 1}) is None
         assert enqueue(db, None, {"n": 1}) is None
@@ -99,12 +111,14 @@ def test_a_destination_the_ssrf_guard_refuses_is_dropped_at_enqueue(engine, netw
 
 
 def test_the_module_defaults_to_the_containers_module(engine, network, monkeypatch):
+    """Without an explicit module, a row is labelled with the container's MODULE."""
     monkeypatch.setenv("MODULE", "sme")
     with Session(engine) as db:
         assert enqueue(db, "http://a/cb", {}).module == "sme"
 
 
 def test_a_crash_between_commit_and_send_leaves_a_pending_row_that_a_later_drain_sends(engine, network, monkeypatch):
+    """A process that dies after the commit leaves a PENDING row, which a later full drain (the worker's sweep) delivers."""
     monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")           # the process "dies" before any inline send
     with Session(engine) as db:
         enqueue(db, "http://consumer/cb", {"n": 1})
@@ -117,6 +131,9 @@ def test_a_crash_between_commit_and_send_leaves_a_pending_row_that_a_later_drain
 
 
 def test_a_crash_during_the_send_is_retried_once_the_lease_runs_out(engine, network, monkeypatch):
+    """A row claimed by a process that died mid-send stays leased (not re-sent) until the lease expires, then another drain sends it: delivery is at
+    least once.
+    """
     def die(destination, payload, method="POST"):
         raise SystemExit("process killed mid-send")
 
@@ -134,6 +151,7 @@ def test_a_crash_during_the_send_is_retried_once_the_lease_runs_out(engine, netw
 
 
 def test_an_unreachable_destination_is_retried_with_backoff_and_then_dead(engine, network):
+    """No answer counts an attempt and waits for the backoff, and after MAX_ATTEMPTS the row is DEAD and no longer drained."""
     network.behaviour["status"] = None
     with Session(engine) as db:
         enqueue(db, "http://down/cb", {"n": 1})
@@ -153,6 +171,7 @@ def test_an_unreachable_destination_is_retried_with_backoff_and_then_dead(engine
 
 
 def test_a_5xx_is_retried_and_a_4xx_is_not(engine, network):
+    """A 503 leaves the row PENDING for retry, while a 404 counts as delivered because a retry would not change it."""
     network.behaviour["status"] = 503
     with Session(engine) as db:
         enqueue(db, "http://flaky/cb", {})
@@ -167,6 +186,7 @@ def test_a_5xx_is_retried_and_a_4xx_is_not(engine, network):
 
 
 def test_two_drains_never_send_the_same_row_twice(engine, network, monkeypatch):
+    """Four drains racing over 20 rows send each row exactly once: the atomic claim stops duplicates."""
     monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
     with Session(engine) as db:
         for n in range(20):
@@ -182,6 +202,7 @@ def test_two_drains_never_send_the_same_row_twice(engine, network, monkeypatch):
 
 
 def test_the_inline_drain_never_fails_the_callers_commit(engine, network, monkeypatch):
+    """If the inline drain raises, the caller's commit still succeeds and the row stays PENDING."""
     def broken(*args, **kwargs):
         raise RuntimeError("the outbox is broken")
 
@@ -193,6 +214,7 @@ def test_the_inline_drain_never_fails_the_callers_commit(engine, network, monkey
 
 
 def test_a_full_drain_removes_old_sent_rows_only(engine, network, monkeypatch):
+    """A full drain deletes SENT rows older than the retention time and keeps recent ones for the delivery log."""
     monkeypatch.setenv("SMO_OUTBOX_SENT_RETENTION_SECONDS", "3600")
     with Session(engine) as db:
         enqueue(db, "http://consumer/cb", {})
@@ -205,6 +227,7 @@ def test_a_full_drain_removes_old_sent_rows_only(engine, network, monkeypatch):
 
 
 def test_the_pending_ids_do_not_leak_across_a_rollback(engine, network):
+    """After a rollback the next commit sends only what it enqueued itself, not rows from the rolled-back work."""
     with Session(engine) as db:
         enqueue(db, "http://gone/cb", {})
         db.rollback()
@@ -234,6 +257,7 @@ def deletes(monkeypatch):
 
 
 def test_a_delete_row_is_sent_as_a_delete_after_the_commit_and_never_as_a_post(engine, network, deletes):
+    """A row with method DELETE is sent as an HTTP DELETE after the commit, stores an empty payload and is never sent as a POST."""
     with Session(engine) as db:
         enqueue(db, "http://producer/jobs/1", {}, module="dme", method="DELETE")
         assert deletes == []                                          # nothing before the commit
@@ -244,6 +268,7 @@ def test_a_delete_row_is_sent_as_a_delete_after_the_commit_and_never_as_a_post(e
 
 
 def test_a_row_without_a_method_is_a_post(engine, network, deletes):
+    """The default method is POST and the payload is the JSON body."""
     with Session(engine) as db:
         assert enqueue(db, "http://consumer/x", {"a": 1}, module="dme").method == "POST"
         db.commit()
@@ -251,11 +276,13 @@ def test_a_row_without_a_method_is_a_post(engine, network, deletes):
 
 
 def test_an_unknown_method_is_refused_at_enqueue(engine):
+    """A method other than POST or DELETE raises ValueError at enqueue."""
     with Session(engine) as db, pytest.raises(ValueError):
         enqueue(db, "http://producer/jobs/1", {}, method="PUT")
 
 
 def test_a_delete_row_that_rolls_back_is_never_sent_and_an_unreachable_one_is_retried_then_dead(engine, network, deletes):
+    """DELETE rows follow the same rules as POST rows: nothing is sent on rollback, and an unreachable destination is retried and then DEAD."""
     with Session(engine) as db:
         enqueue(db, "http://producer/jobs/2", {}, module="dme", method="DELETE")
         db.rollback()

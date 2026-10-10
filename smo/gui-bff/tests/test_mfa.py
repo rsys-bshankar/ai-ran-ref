@@ -31,6 +31,7 @@ KEY = "k" * 40
 RFC6238_SECRET = b"12345678901234567890"      # the SHA-1 test key of RFC 6238 appendix B
 
 
+# The table is the SHA-1 test vectors of RFC 6238 appendix B: a time (seconds) and the 8-digit code the standard gives for it.
 @pytest.mark.parametrize("at, expected", [(59, "94287082"), (1111111109, "07081804"), (1111111111, "14050471"), (1234567890, "89005924"),
                                           (2000000000, "69279037"), (20000000000, "65353130")])
 def test_rfc6238_sha1_test_vectors(at, expected):
@@ -38,6 +39,8 @@ def test_rfc6238_sha1_test_vectors(at, expected):
 
 
 def test_rfc4226_appendix_d_vectors():
+    """The HOTP implementation reproduces the first four 6-digit values of RFC 4226 appendix D, so the code every authenticator app computes matches ours.
+    """
     assert [totp.hotp(RFC6238_SECRET, n) for n in range(4)] == ["755224", "287082", "359152", "969429"]
 
 
@@ -45,6 +48,8 @@ SECRET = base64.b32encode(RFC6238_SECRET).decode().rstrip("=")
 
 
 def test_window_is_one_step_either_side_of_now():
+    """A code is accepted for the previous, current and next 30 s step and refused two steps away (clock drift is tolerated, but only a little).
+    """
     now = 1_700_000_000.0
     for offset, accepted in [(-2, False), (-1, True), (0, True), (1, True), (2, False)]:
         code = totp.code_at(SECRET, now + offset * 30)
@@ -52,6 +57,8 @@ def test_window_is_one_step_either_side_of_now():
 
 
 def test_a_step_is_accepted_once():
+    """Once a step has been used, the same code, or an older one, is refused, while the next step's code is still accepted (replay protection).
+    """
     now = 1_700_000_000.0
     code = totp.code_at(SECRET, now)
     step = totp.verify(SECRET, code, now, None)
@@ -62,23 +69,30 @@ def test_a_step_is_accepted_once():
 
 
 def test_malformed_codes_are_refused_without_error():
+    """Wrong-length, non-digit, non-ASCII-digit and embedded-newline codes give None rather than an exception, and surrounding spaces are tolerated.
+    """
     for code in ["", "12345", "1234567", "abcdef", "12 34 5", "１２３４５６", "123456\n7"]:
         assert totp.verify(SECRET, code, 1_700_000_000.0, None) is None
     assert totp.verify(SECRET, " " + totp.code_at(SECRET, 1_700_000_000.0) + " ", 1_700_000_000.0, None) is not None
 
 
 def test_secret_is_160_bits_of_base32():
+    """Each new secret is 32 base32 characters (160 bits) and different from the others."""
     secrets_seen = {totp.new_secret() for _ in range(20)}
     assert len(secrets_seen) == 20 and all(re.fullmatch(r"[A-Z2-7]{32}", s) for s in secrets_seen)
 
 
 def test_provisioning_uri_follows_the_key_uri_format():
+    """The otpauth:// URI percent-encodes the label and carries secret, issuer, digits, period and algorithm as the authenticator apps expect.
+    """
     uri = totp.provisioning_uri("SMO Console", "ana@x", "ABCDEFGH")
     assert uri.startswith("otpauth://totp/SMO%20Console%3Aana%40x?")
     assert "secret=ABCDEFGH" in uri and "issuer=SMO%20Console" in uri and "digits=6" in uri and "period=30" in uri and "algorithm=SHA1" in uri
 
 
 def test_the_secret_is_encrypted_and_bound_to_its_user_and_key():
+    """A stored secret does not contain the plain secret, differs on every encryption, and decrypts only for the same user and key; tampering and unknown formats raise TotpKeyError.
+    """
     sealed = totp.encrypt_secret(KEY, "ana", SECRET)
     assert SECRET not in sealed and sealed.startswith("v1:")
     assert totp.encrypt_secret(KEY, "ana", SECRET) != sealed                  # a fresh nonce each time
@@ -91,6 +105,8 @@ def test_the_secret_is_encrypted_and_bound_to_its_user_and_key():
 
 
 def test_recovery_codes_are_distinct_unambiguous_and_hash_by_user_and_key():
+    """Recovery codes are ten distinct strings without look-alike characters, recognised however they are typed, and their hash depends on the user and the key and does not contain the code.
+    """
     codes = totp.new_recovery_codes()
     assert len(codes) == 10 and len(set(codes)) == 10
     assert all(re.fullmatch(r"[a-hj-km-np-z2-9]{4}(-[a-hj-km-np-z2-9]{4}){3}", c) for c in codes)
@@ -106,6 +122,8 @@ def test_recovery_codes_are_distinct_unambiguous_and_hash_by_user_and_key():
 # ---------------------------------------------------------------- settings
 
 def test_settings_read_the_mode_and_the_key(monkeypatch, tmp_path):
+    """`Settings` reads the login mode, the admin-MFA switch and the one-time-code key (inline or from a file) and refuses both forms at once, an unreadable file and an unknown mode.
+    """
     for var in ("GUI_LOGIN_MODE", "GUI_TOTP_KEY", "GUI_TOTP_KEY_FILE", "GUI_ADMIN_MFA_REQUIRED", "GUI_TOTP_ISSUER"):
         monkeypatch.delenv(var, raising=False)
     cfg = Settings()
@@ -131,6 +149,8 @@ def test_settings_read_the_mode_and_the_key(monkeypatch, tmp_path):
 
 
 def build(db, smo=None, **over):
+    """Builds a BFF app on `db` with the usual test settings plus the one-time-code key, and any `Settings` field in `over`; the users are seeded first.
+    """
     base = dict(r1_url=R1, jwt_secret="test-secret", cookie_secure=False, admin_password=PASSWORDS["admin"], operator_password=PASSWORDS["operator"],
                 viewer_password=PASSWORDS["viewer"], totp_key=KEY)
     base.update(over)
@@ -140,6 +160,8 @@ def build(db, smo=None, **over):
 
 
 def test_start_up_refuses_what_would_lock_everyone_out_or_weaken_the_key(db):
+    """`create_app` raises for the configurations that would leave nobody able to sign in or would accept a one-time-code key shorter than 32 characters.
+    """
     with pytest.raises(ValueError, match="GUI_LOGIN_MODE=oidc needs GUI_OIDC_ENABLED"):
         build(db, login_mode="oidc")
     with pytest.raises(ValueError, match="GUI_ADMIN_MFA_REQUIRED=true needs GUI_TOTP_KEY"):
@@ -154,6 +176,8 @@ def test_start_up_refuses_what_would_lock_everyone_out_or_weaken_the_key(db):
 
 @pytest.fixture
 def clock(monkeypatch):
+    """A movable clock: patches `time.time` so a test can advance past a 30 s step (a code works once) or past the challenge lifetime; `advance(seconds)` moves it.
+    """
     class Clock:
         offset = 0.0
 
@@ -177,12 +201,16 @@ def app(db, clock):
 
 
 def password_login(app, username, **extra):
+    """Posts the user's password and returns the client and the raw response, without asserting a status, so a test can see a challenge or a refusal.
+    """
     client = TestClient(app)
     resp = client.post("/api/login", json={"username": username, "password": PASSWORDS[username]})
     return client, resp
 
 
 def session(app, username):
+    """Signs `username` in with the password (the account must have no one-time code) and returns a client with the CSRF header set.
+    """
     client, resp = password_login(app, username)
     assert resp.status_code == 200 and "csrfToken" in resp.json(), resp.text
     client.headers["X-CSRF-Token"] = resp.json()["csrfToken"]
@@ -206,6 +234,8 @@ def enrol(app, clock, username):
 
 
 def sign_in_with_code(app, clock, username, secret):
+    """Signs in an enrolled account through both steps with the current code, returns the client with the CSRF header set, and moves the clock on so the next code is a new step.
+    """
     client, resp = password_login(app, username)
     assert resp.json().get("mfaRequired") is True, resp.text
     done = client.post("/api/login/totp", json={"challenge": resp.json()["challenge"], "code": current_code(secret)})
@@ -222,6 +252,7 @@ def actions(db):
 # ---------------------------------------------------------------- enrolment (SEC-7.1)
 
 def test_enrolment_is_refused_without_a_key(db, clock):
+    """Without `GUI_TOTP_KEY` enrolment is 503 TOTP_UNAVAILABLE and the status says one-time codes are not available."""
     app = build(db, totp_key="")
     client = session(app, "viewer")
     resp = client.post("/api/me/totp/begin")
@@ -230,6 +261,8 @@ def test_enrolment_is_refused_without_a_key(db, clock):
 
 
 def test_a_secret_is_not_active_until_a_first_valid_code(app, db, clock):
+    """A new secret stays pending (a password alone still signs in) until the user types one valid code, and only then are the recovery codes issued.
+    """
     client = session(app, "viewer")
     begun = client.post("/api/me/totp/begin").json()
     assert begun["account"] == "viewer" and begun["issuer"] == "SMO Operator Console"
@@ -251,6 +284,8 @@ def test_a_secret_is_not_active_until_a_first_valid_code(app, db, clock):
 
 
 def test_the_secret_is_stored_encrypted_and_the_recovery_codes_hashed(app, db, clock):
+    """In the database the secret is ciphertext that decrypts under the key and the recovery codes are only their keyed hashes.
+    """
     secret, codes = enrol(app, clock, "operator")
     with db.session() as s:
         row = s.get(GuiUserTotp, "operator")
@@ -264,6 +299,8 @@ def test_the_secret_is_stored_encrypted_and_the_recovery_codes_hashed(app, db, c
 
 
 def test_a_second_enrolment_needs_a_reset_and_a_new_begin_replaces_a_pending_one(app, clock):
+    """Starting again replaces a pending secret (the old one no longer confirms), but an enrolled user must be reset by an admin first (409).
+    """
     client = session(app, "viewer")
     first = client.post("/api/me/totp/begin").json()["secret"]
     second = client.post("/api/me/totp/begin").json()["secret"]
@@ -275,6 +312,7 @@ def test_a_second_enrolment_needs_a_reset_and_a_new_begin_replaces_a_pending_one
 
 
 def test_confirm_without_begin_and_twice(app, clock):
+    """Confirming with nothing pending, or a second time, is 409 NO_ENROLMENT_IN_PROGRESS."""
     client = session(app, "viewer")
     assert client.post("/api/me/totp/confirm", json={"code": "123456"}).json()["title"] == "NO_ENROLMENT_IN_PROGRESS"
     secret = client.post("/api/me/totp/begin").json()["secret"]
@@ -284,6 +322,8 @@ def test_confirm_without_begin_and_twice(app, clock):
 
 
 def test_wrong_confirm_codes_count_towards_the_lockout(app, db):
+    """Wrong codes typed during enrolment count towards the same lockout as wrong passwords: the sixth try is 429 and the password login is locked too.
+    """
     client = session(app, "viewer")
     client.post("/api/me/totp/begin")
     assert [client.post("/api/me/totp/confirm", json={"code": "000000"}).status_code for _ in range(6)] == [400] * 5 + [429]
@@ -291,6 +331,7 @@ def test_wrong_confirm_codes_count_towards_the_lockout(app, db):
 
 
 def test_enrolment_routes_need_a_session(app):
+    """Status, begin and confirm are 401 without a session."""
     client = TestClient(app)
     assert client.get("/api/me/totp").status_code == 401
     assert client.post("/api/me/totp/begin").status_code == 401
@@ -298,6 +339,8 @@ def test_enrolment_routes_need_a_session(app):
 
 
 def test_an_oidc_user_has_no_local_second_factor(app, db):
+    """An identity-provider user is told one-time codes are not available, cannot start an enrolment (409) and is never asked to enrol.
+    """
     from app.main import UNUSABLE_HASH
     from app.security import issue_jwt
     with db.session() as s:
@@ -315,6 +358,8 @@ def test_an_oidc_user_has_no_local_second_factor(app, db):
 # ---------------------------------------------------------------- the second step (SEC-7.2)
 
 def test_password_alone_makes_no_session_for_an_enrolled_account(app, db, clock):
+    """For an enrolled account the password step returns only a challenge: no cookie, and the challenge is not accepted as a session, as cookie or Bearer token.
+    """
     secret, _ = enrol(app, clock, "operator")
     client, resp = password_login(app, "operator")
     body = resp.json()
@@ -331,6 +376,7 @@ def test_password_alone_makes_no_session_for_an_enrolled_account(app, db, clock)
 
 
 def test_the_right_code_completes_the_sign_in(app, db, clock):
+    """The correct code with the challenge gives a working session and an audit row saying the sign-in used password and code."""
     secret, _ = enrol(app, clock, "operator")
     client = sign_in_with_code(app, clock, "operator", secret)
     assert client.get("/api/me").json()["username"] == "operator"
@@ -340,6 +386,8 @@ def test_the_right_code_completes_the_sign_in(app, db, clock):
 
 
 def test_a_wrong_code_is_refused_and_counts_with_the_wrong_passwords(app, db, clock):
+    """Wrong passwords and wrong codes share one budget of five: after them even the right code is 429, and the account unlocks after the lockout period.
+    """
     secret, _ = enrol(app, clock, "operator")
     client = TestClient(app)
     for _ in range(3):
@@ -358,6 +406,8 @@ def test_a_wrong_code_is_refused_and_counts_with_the_wrong_passwords(app, db, cl
 
 
 def test_a_guesser_who_knows_the_password_does_not_get_a_fresh_budget_per_password_round(app, clock):
+    """A correct password does not reset the failure counter, so repeating the password step does not give a new set of code guesses.
+    """
     secret, _ = enrol(app, clock, "operator")
     client = TestClient(app)
     statuses = []
@@ -370,6 +420,7 @@ def test_a_guesser_who_knows_the_password_does_not_get_a_fresh_budget_per_passwo
 
 
 def test_a_code_works_once(app, clock):
+    """A one-time code that signed one session in is refused (INVALID_CODE) for a second sign-in in the same time step."""
     secret, _ = enrol(app, clock, "operator")
     code = current_code(secret)
     first, resp = password_login(app, "operator")
@@ -380,6 +431,7 @@ def test_a_code_works_once(app, clock):
 
 
 def test_the_challenge_expires_after_five_minutes(app, clock):
+    """A challenge older than its five-minute lifetime is refused with CHALLENGE_INVALID even with a right code."""
     secret, _ = enrol(app, clock, "operator")
     client, resp = password_login(app, "operator")
     clock.advance(CHALLENGE_TTL_SECONDS + 1)
@@ -388,6 +440,7 @@ def test_the_challenge_expires_after_five_minutes(app, clock):
 
 
 def test_the_challenge_is_single_use(app, clock):
+    """Once a challenge has completed a sign-in it cannot be used again."""
     secret, _ = enrol(app, clock, "operator")
     client, resp = password_login(app, "operator")
     challenge = resp.json()["challenge"]
@@ -398,6 +451,8 @@ def test_the_challenge_is_single_use(app, clock):
 
 
 def test_the_challenge_is_bound_to_its_user(app, db, clock):
+    """A challenge whose payload was edited to name another user, garbage, or a challenge whose stored row belongs to someone else, is refused.
+    """
     secret, _ = enrol(app, clock, "operator")
     other_secret, _ = enrol(app, clock, "viewer")
     _, resp = password_login(app, "operator")
@@ -417,6 +472,7 @@ def test_the_challenge_is_bound_to_its_user(app, db, clock):
 
 
 def test_a_session_token_is_not_a_challenge(app, clock):
+    """A session token presented as a login challenge is refused: the two are signed with different keys."""
     secret, _ = enrol(app, clock, "operator")
     client = sign_in_with_code(app, clock, "operator", secret)
     session_cookie = client.cookies.get("smo_session")
@@ -425,6 +481,7 @@ def test_a_session_token_is_not_a_challenge(app, clock):
 
 
 def test_a_password_change_or_a_deactivation_between_the_steps_ends_the_sign_in(app, clock):
+    """Resetting the password or deactivating the account between the two steps invalidates the challenge in flight."""
     secret, _ = enrol(app, clock, "operator")
     admin = session(app, "admin")
     _, resp = password_login(app, "operator")
@@ -437,11 +494,14 @@ def test_a_password_change_or_a_deactivation_between_the_steps_ends_the_sign_in(
 
 
 def test_a_wrong_code_on_a_sign_in_that_never_started(app):
+    """A made-up challenge is 401 and a body without a code is 422."""
     assert TestClient(app).post("/api/login/totp", json={"challenge": "x.y.z", "code": "123456"}).status_code == 401
     assert TestClient(app).post("/api/login/totp", json={"challenge": "x"}).status_code == 422
 
 
 def test_a_stored_secret_that_cannot_be_read_fails_closed(db, clock):
+    """When the key is wrong or missing, an enrolled account gets 503 and no session, by form login and by token grant, rather than falling back to the password alone.
+    """
     app = build(db)
     secret, _ = enrol(app, clock, "operator")
     other = build(db, totp_key="j" * 40)
@@ -457,6 +517,8 @@ def test_a_stored_secret_that_cannot_be_read_fails_closed(db, clock):
 # ---------------------------------------------------------------- recovery codes (SEC-7.3)
 
 def test_a_recovery_code_signs_in_once_and_says_how_many_are_left(app, db, clock):
+    """A recovery code (in any casing or spacing) signs in once, reports how many are left, is audited, and cannot be used again.
+    """
     secret, codes = enrol(app, clock, "operator")
     client, resp = password_login(app, "operator")
     done = client.post("/api/login/totp", json={"challenge": resp.json()["challenge"], "code": codes[0].upper()})
@@ -487,6 +549,7 @@ def test_the_status_says_which_recovery_code_slots_are_used_and_never_a_code(app
 
 
 def test_a_wrong_recovery_code_counts_as_a_failure(app, clock):
+    """Wrong recovery codes count towards the lockout like wrong one-time codes."""
     enrol(app, clock, "operator")
     client, resp = password_login(app, "operator")
     wrong = "abcd-efgh-jkmn-pqrs"
@@ -495,6 +558,8 @@ def test_a_wrong_recovery_code_counts_as_a_failure(app, clock):
 
 
 def test_new_recovery_codes_replace_the_old_ones_and_need_a_current_code(app, db, clock):
+    """Regenerating recovery codes needs a current one-time code (not a recovery code), replaces all old codes, and is audited; a user without a secret gets 409.
+    """
     secret, old = enrol(app, clock, "operator")
     client = sign_in_with_code(app, clock, "operator", secret)
     assert client.post("/api/me/totp/recovery-codes", json={"code": "000000"}).status_code == 400
@@ -512,6 +577,8 @@ def test_new_recovery_codes_replace_the_old_ones_and_need_a_current_code(app, db
 # ---------------------------------------------------------------- the password grant is not a way round
 
 def test_the_token_grant_asks_an_enrolled_account_for_its_code(app, clock):
+    """The password grant for an enrolled account needs the `otp` field (a one-time or recovery code), so it is not a way round the second factor; accounts without a code are unchanged.
+    """
     secret, codes = enrol(app, clock, "operator")
     form = {"grant_type": "password", "username": "operator", "password": PASSWORDS["operator"]}
     client = TestClient(app)
@@ -532,6 +599,8 @@ def test_the_token_grant_asks_an_enrolled_account_for_its_code(app, clock):
 
 @pytest.fixture
 def oidc_app(db, clock):
+    """A factory for a BFF app with OIDC enabled against `FakeIdp` and the one-time-code key set; `make(**over)` changes settings such as the login mode.
+    """
     def make(**over):
         cfg = make_cfg(totp_key=KEY, **over)
         seed_users(db, cfg)
@@ -541,6 +610,8 @@ def oidc_app(db, clock):
 
 
 def test_mode_oidc_closes_the_password_login_to_every_account_but_break_glass(oidc_app, db):
+    """With `GUI_LOGIN_MODE=oidc` a correct password is refused with 403 LOGIN_MODE_OIDC_ONLY (form and token grant), wrong passwords still give 401, and OIDC itself still works.
+    """
     app = oidc_app(login_mode="oidc")
     config = TestClient(app).get("/api/auth/config").json()
     assert config == {"localLogin": False, "loginMode": "oidc", "breakGlass": True, "oidc": {"enabled": True, "providerName": "Keycloak", "loginUrl": "/api/oidc/login"}}
@@ -556,6 +627,8 @@ def test_mode_oidc_closes_the_password_login_to_every_account_but_break_glass(oi
 
 
 def test_mode_oidc_without_local_login_has_no_break_glass(oidc_app):
+    """With the local form switched off as well, the sign-in page is told there is no break-glass way in and every password login is refused.
+    """
     app = oidc_app(login_mode="oidc", local_login_enabled=False)
     config = TestClient(app).get("/api/auth/config").json()
     assert config["localLogin"] is False and config["breakGlass"] is False
@@ -563,6 +636,7 @@ def test_mode_oidc_without_local_login_has_no_break_glass(oidc_app):
 
 
 def test_mode_local_does_not_offer_oidc_even_when_it_is_configured(oidc_app):
+    """With `GUI_LOGIN_MODE=local` OIDC is not offered and its login route is 404 although the provider is configured."""
     app = oidc_app(login_mode="local")
     config = TestClient(app).get("/api/auth/config").json()
     assert config == {"localLogin": True, "loginMode": "local", "breakGlass": False, "oidc": {"enabled": False}}
@@ -571,18 +645,21 @@ def test_mode_local_does_not_offer_oidc_even_when_it_is_configured(oidc_app):
 
 
 def test_mode_local_ignores_a_provider_that_is_half_configured(db):
+    """In local mode an incomplete provider setting cannot stop the start, because the OIDC client is not built."""
     cfg = make_cfg(login_mode="local", oidc_issuer="")
     seed_users(db, cfg)
     create_app(cfg, db=db, gateway=R1Gateway(R1, db, transport=httpx.MockTransport(FakeSmo().handler)))
 
 
 def test_mode_both_is_the_default_and_changes_nothing(app):
+    """With no mode set the sign-in page offers the local form and no provider."""
     assert TestClient(app).get("/api/auth/config").json() == {"localLogin": True, "loginMode": "both", "breakGlass": False, "oidc": {"enabled": False}}
 
 
 # ---------------------------------------------------------------- break-glass (SEC-7.7)
 
 def flag_break_glass(app, username="admin", on=True):
+    """Has the admin set or clear the break-glass flag on `username` through the admin route and returns the user view."""
     admin = session(app, "admin")
     resp = admin.patch(f"/api/admin/users/{username}", json={"breakGlass": on})
     assert resp.status_code == 200, resp.text
@@ -590,6 +667,8 @@ def flag_break_glass(app, username="admin", on=True):
 
 
 def test_a_break_glass_account_without_a_code_cannot_sign_in(app, db, clock):
+    """A break-glass account that has no one-time code enrolled is refused (403 BREAK_GLASS_NEEDS_TOTP) by form login and token grant, and the refusal is audited.
+    """
     view = flag_break_glass(app, "operator")
     assert view["breakGlass"] is True and view["totpEnrolled"] is False
     _, resp = password_login(app, "operator")
@@ -599,6 +678,8 @@ def test_a_break_glass_account_without_a_code_cannot_sign_in(app, db, clock):
 
 
 def test_break_glass_signs_in_with_password_and_code_when_the_mode_is_oidc(oidc_app, db, clock, caplog):
+    """A flagged account signs in with password and code even when the mode is oidc; the sign-in is audited as BREAK_GLASS_LOGIN and logged as a warning, and unflagged accounts stay refused.
+    """
     app = oidc_app(login_mode="oidc")
     # the flag is set by an admin: the admin's own session comes from the token grant of a break-glass admin, so set the flag directly the first time
     with db.session() as s:
@@ -636,6 +717,8 @@ def enrol_direct(app, db, username, clock):
 
 
 def test_a_break_glass_sign_in_by_recovery_code_and_by_token_grant_is_audited_too(oidc_app, db, clock):
+    """Break-glass sign-ins by token grant and by recovery code are audited as BREAK_GLASS_LOGIN, and the recovery code use is audited.
+    """
     app = oidc_app(login_mode="oidc")
     with db.session() as s:
         s.get(GuiUser, "admin").break_glass = True
@@ -651,6 +734,8 @@ def test_a_break_glass_sign_in_by_recovery_code_and_by_token_grant_is_audited_to
 
 
 def test_the_flag_is_dropped_between_the_steps(oidc_app, db, clock):
+    """If the break-glass flag is removed between the password and the code step, the second step is refused under the oidc mode.
+    """
     app = oidc_app(login_mode="oidc")
     with db.session() as s:
         s.get(GuiUser, "admin").break_glass = True
@@ -665,6 +750,7 @@ def test_the_flag_is_dropped_between_the_steps(oidc_app, db, clock):
 
 
 def test_the_break_glass_flag_belongs_to_local_accounts_and_shows_in_the_user_list(app, db):
+    """The flag cannot be set on an identity-provider user, shows in the user list, and each change is audited."""
     from app.main import UNUSABLE_HASH
     with db.session() as s:
         s.add(GuiUser(username="oidc:abc", password_hash=UNUSABLE_HASH, role="viewer"))
@@ -681,6 +767,8 @@ def test_the_break_glass_flag_belongs_to_local_accounts_and_shows_in_the_user_li
 # ---------------------------------------------------------------- GUI_ADMIN_MFA_REQUIRED (SEC-7.8)
 
 def test_an_admin_without_a_code_reaches_only_enrolment(db, clock):
+    """With `GUI_ADMIN_MFA_REQUIRED` an admin with no one-time code gets 403 MFA_ENROLMENT_REQUIRED on every route except the enrolment ones, and is let in after enrolling.
+    """
     app = build(db, admin_mfa_required=True)
     admin = session(app, "admin")
     me = admin.get("/api/me")
@@ -697,6 +785,8 @@ def test_an_admin_without_a_code_reaches_only_enrolment(db, clock):
 
 
 def test_the_gate_is_for_local_admins_only(db, clock):
+    """The enrolment gate does not apply to operators or to identity-provider users, whose provider asks for the second factor.
+    """
     app = build(db, admin_mfa_required=True)
     # the other roles are not asked ...
     operator = session(app, "operator")
@@ -713,6 +803,7 @@ def test_the_gate_is_for_local_admins_only(db, clock):
 
 
 def test_the_gate_is_off_by_default(app):
+    """Without the switch an admin needs no one-time code."""
     admin = session(app, "admin")
     assert admin.get("/api/me").json()["mfaEnrolmentRequired"] is False
     assert admin.get("/api/admin/users").status_code == 200
@@ -721,6 +812,8 @@ def test_the_gate_is_off_by_default(app):
 # ---------------------------------------------------------------- admin actions (SEC-7.5)
 
 def test_an_admin_ends_every_session_of_a_user(app, db):
+    """Revoking a user's sessions ends all their cookie sessions and tokens at once, leaves other users alone, lets the user sign in again, is audited, and is 404 for an unknown user.
+    """
     first, second = session(app, "operator"), session(app, "operator")
     bearer = TestClient(app).post("/api/token", data={"grant_type": "password", "username": "operator", "password": PASSWORDS["operator"]}).json()["access_token"]
     other = session(app, "viewer")
@@ -738,6 +831,7 @@ def test_an_admin_ends_every_session_of_a_user(app, db):
 
 
 def test_revoking_ends_a_sign_in_half_done(app, clock):
+    """A challenge issued before the revocation can no longer finish a sign-in."""
     secret, _ = enrol(app, clock, "operator")
     _, resp = password_login(app, "operator")
     session(app, "admin").post("/api/admin/users/operator/revoke-sessions")
@@ -745,6 +839,8 @@ def test_revoking_ends_a_sign_in_half_done(app, clock):
 
 
 def test_an_admin_resets_a_lost_device(app, db, clock):
+    """Resetting removes the secret, recovery codes and open challenges, the user then signs in with the password alone, the reset is audited and idempotent, and a new enrolment is possible.
+    """
     secret, codes = enrol(app, clock, "operator")
     assert password_login(app, "operator")[1].json()["mfaRequired"] is True
     admin = session(app, "admin")
@@ -763,6 +859,7 @@ def test_an_admin_resets_a_lost_device(app, db, clock):
 
 
 def test_deleting_a_user_deletes_the_secret_and_the_recovery_codes(app, db, clock):
+    """Deleting a user also deletes their one-time-code secret and recovery codes."""
     enrol(app, clock, "operator")
     assert session(app, "admin").delete("/api/admin/users/operator").status_code == 204
     with db.session() as s:
@@ -784,6 +881,8 @@ def test_every_admin_route_is_admin_only(app):
 
 
 def test_the_enrolment_routes_are_for_any_signed_in_user_and_only_them(app):
+    """The one-time-code routes are exactly status, begin, confirm and new recovery codes, so a new route there must be a deliberate change (they are open to any signed-in role).
+    """
     paths = {(m, r.path) for r in app.routes if getattr(r, "path", "").startswith("/api/me/totp") for m in r.methods}
     assert paths == {("GET", "/api/me/totp"), ("POST", "/api/me/totp/begin"), ("POST", "/api/me/totp/confirm"), ("POST", "/api/me/totp/recovery-codes")}
 
@@ -791,6 +890,8 @@ def test_the_enrolment_routes_are_for_any_signed_in_user_and_only_them(app):
 # ---------------------------------------------------------------- nothing secret is written down
 
 def test_no_secret_code_or_recovery_code_reaches_the_log_or_the_audit_trail(db, clock, caplog):
+    """After enrolment, sign-ins with a code, a recovery code and the token grant, neither the log nor the audit rows contain any secret, code, challenge, key or password.
+    """
     caplog.set_level(logging.DEBUG)
     app = build(db)
     client = session(app, "operator")
@@ -822,6 +923,8 @@ def test_no_secret_code_or_recovery_code_reaches_the_log_or_the_audit_trail(db, 
 # ---------------------------------------------------------------- the BFF's own database gains the column
 
 def test_a_database_made_before_gets_the_break_glass_column(tmp_path):
+    """An older BFF database without `break_glass` gets the column added at start (defaulting to false), a second start is harmless, and the previous release's insert still works.
+    """
     url = f"sqlite:///{tmp_path}/old.db"
     engine = create_engine(url)
     with engine.begin() as conn:
@@ -841,6 +944,8 @@ def test_a_database_made_before_gets_the_break_glass_column(tmp_path):
 
 
 def test_challenges_are_cleaned_up_and_spent_once(db):
+    """Writing a challenge removes expired ones, a challenge is pending only for its user and until it expires, and consuming it works exactly once.
+    """
     db.create_challenge("a", "ana", 100.0, 0.0)
     db.create_challenge("b", "bob", 500.0, 200.0)         # writing one removes the expired
     assert not db.challenge_pending("a", "ana", 50.0)

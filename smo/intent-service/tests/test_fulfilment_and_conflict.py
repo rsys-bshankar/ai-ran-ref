@@ -1,5 +1,5 @@
 """GUI-9.8 in the Intent Service: the intent view's `fulfilmentPercent`, `fulfilled` and `inConflict`, kept from the newest reports, and the
-`fulfilled` / `in_conflict` filters of `GET /intents`; plus the percent rule itself (`fulfilment_percent`), which revision 0035 repeats.
+`fulfilled` / `in_conflict` filters of `GET /intents`; plus the percent rule itself (`fulfilment_percent`), which revision 0037 repeats.
 
 Fixtures and builders come from `test_main.py` (`client` on SQLite, `_register_rmih`, `_intent`, `_expectation`); reports are published through
 `POST /intent-reports`. Run: `cd smo/intent-service && PYTHONPATH=.:../shared python -m pytest tests/test_fulfilment_and_conflict.py -q`.

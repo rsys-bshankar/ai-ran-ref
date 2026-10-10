@@ -86,7 +86,7 @@ String identifiers for the Phase 1 concepts, UUIDs for provisioned resources.
 | `resource` | PK `resource_id` (UUID); FK `resource_type_id`, FK `resource_pool_id`; `parent_id` (UUID, not an FK), `description`, `global_asset_id`, `tags`, `groups` | Always created in `pool-0` |
 | `inventory_subscription` | PK `subscription_id`; `callback`, `consumer_subscription_id`, `resource_type_id` (optional filter) | |
 | `ocloud_alarm` | PK `alarm_id`; `resource_ref`, `severity`, `raised_at` | |
-| `ocloud_performance_metric` | PK `id`; `resource_ref`, `metric_name`, `value`, `collected_at`, `job_id`, `measurement_value`, `is_suspect`; index `ix_ocloud_performance_metric_resource_metric_collected` (`resource_ref`, `metric_name`, `collected_at`; revision 0036) | Written by `POST /performance/ingest`; the index serves the newest-record read of the utilisation routes |
+| `ocloud_performance_metric` | PK `id`; `resource_ref`, `metric_name`, `value`, `collected_at`, `job_id`, `measurement_value`, `is_suspect`; index `ix_ocloud_performance_metric_resource_metric_collected` (`resource_ref`, `metric_name`, `collected_at`; revision 0038) | Written by `POST /performance/ingest`; the index serves the newest-record read of the utilisation routes |
 
 ### 2.3 State machines
 

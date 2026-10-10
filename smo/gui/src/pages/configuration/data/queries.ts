@@ -1,10 +1,10 @@
 /** The Configuration page's API knowledge (STRUCTURE.md rule 4): RAN NF OAM's config jobs (`/config-jobs`, `/{id}`, the
  * `continue|halt|abort|rollback|kpi-check` actions), the vendor capability registry (`/vendor-capabilities`), CM schema descriptors
  * (`/cm-schemas`), O1 adaptor endpoints and their pinned SSH host keys (`/o1-adaptor-endpoints`, `/{id}/host-keys`), element onboarding
- * (`/element-onboarding`, `/{me}/select`, `/{me}/apply`) and the KPI definitions a job's KPI guard names. Every write's `requestedBy` (and an
+ * (`/element-onboarding`, `/{me}`, `/{me}/select`, `/{me}/apply`) and its templates (`/onboarding-templates`, MGT-14.6) and the KPI definitions a job's KPI guard names. Every write's `requestedBy` (and an
  * admin's MSAC tier) is set by the GUI BFF from the signed-in user (gui-bff/app/rbac.py). */
 import { POLL, useSmo } from "../../../api/hooks";
-import type { ConfigJob, KpiDef } from "../../../api/types";
+import type { ConfigJob, ElementOnboarding, KpiDef, O1Endpoint, OnboardingTemplate } from "../../../api/types";
 import type { HostKey } from "../../element/data/types";
 import { useUrlParam } from "../../element/data/url";
 
@@ -20,6 +20,28 @@ export const SCHEMAS_PATH = `${BASE}/cm-schemas`;
 export const ENDPOINTS_PATH = `${BASE}/o1-adaptor-endpoints`;
 /** The element onboarding list route (paged, `?status=`, `?software_check=`). */
 export const ONBOARDING_PATH = `${BASE}/element-onboarding`;
+/** The onboarding template routes (MGT-14.6: `GET` list; admin `PUT /{name}` defines or replaces one, `DELETE /{name}` removes it). */
+export const TEMPLATES_PATH = `${BASE}/onboarding-templates`;
+
+/** The path of one onboarding template. */
+export function templatePath(name: string): string {
+  return `${TEMPLATES_PATH}/${encodeURIComponent(name)}`;
+}
+
+/** Every onboarding template (the route is paged; templates are few, one per element type and vendor, so the first 200 are read). */
+export function useTemplates() {
+  return useSmo<OnboardingTemplate[]>(TEMPLATES_PATH, { limit: 200 }, { refetchInterval: POLL.lists });
+}
+
+/** One element's onboarding row, re-read every 5 s while its detail is open (an apply moves it on by itself). */
+export function useOnboardingRow(me: string | null) {
+  return useSmo<ElementOnboarding>(me ? `${ONBOARDING_PATH}/${encodeURIComponent(me)}` : null, undefined, { refetchInterval: POLL.alarms });
+}
+
+/** The registered O1 endpoints (first 200), for choosing an element that has no onboarding row yet; read only when `enabled`. */
+export function useEndpointChoices(enabled: boolean) {
+  return useSmo<O1Endpoint[]>(ENDPOINTS_PATH, { limit: 200 }, { enabled, refetchInterval: POLL.inventory });
+}
 
 /** The path of one job, or of one of its actions. */
 export function jobPath(id: string, action?: "continue" | "halt" | "abort" | "rollback" | "kpi-check"): string {

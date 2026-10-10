@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Parses every mermaid code block in docs/call-flows/*.md with mermaid's
-// own parser — the same check this build's own GitHub PR process has
-// been running by hand from a throwaway scratch script every time a call
-// flow doc changes (a bare `;` inside a Note/message, for one, breaks
-// GitHub's sequence-diagram renderer without breaking anything a human
-// skimming the markdown would notice). Wired into CI (smo-tests.yml's
-// `call-flow-diagrams` job) so this is no longer a step someone has to
-// remember to run locally.
+/**
+ * Parses every mermaid code block in docs/call-flows/*.md with mermaid's own parser. A bare `;` inside a Note or message, for one, breaks GitHub's
+ * sequence-diagram renderer without breaking anything a human skimming the Markdown would notice, so the check runs in CI
+ * (smo-tests.yml, job `call-flow-diagrams`) and can be run locally.
+ *
+ * Usage: `node scripts/validate-call-flow-diagrams.mjs` from `smo/gui` (needs `npm ci` for mermaid and jsdom). Reads the call-flow documents two directories
+ * up from this file. Exit code 0 when every block parses, 1 after printing `FAIL <file> [block n]: <message>` for each block that does not.
+ */
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";

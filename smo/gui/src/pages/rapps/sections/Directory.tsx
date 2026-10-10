@@ -12,7 +12,11 @@ import { Pager } from "../../../kit/Pager";
 /** The default page size. */
 const PAGE = 25;
 
-/** The directory card. */
+/**
+ * Every rApp instance in one searchable directory (PR-GUI-8, GUI-8.4, 8.5). Each row opens the rApp's own page (/rapps/<instance>); the star pins it to the sidebar (at most `MAX_PINS` per user, kept by the GUI backend, so the
+ * star of an unpinned row is disabled at the limit). What a rApp's page shows is declared in its package, so a rApp onboarded at run time is in this list and has its page without a GUI build.
+ * The search text is sent 250 ms after the last keystroke, and changing any filter returns to the first page.
+ */
 export function RappDirectory() {
   const [text, setText] = useState("");
   const [search, setSearch] = useState("");

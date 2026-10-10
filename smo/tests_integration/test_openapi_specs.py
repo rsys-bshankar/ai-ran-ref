@@ -17,11 +17,15 @@ OPENAPI_DIR = SMO_ROOT / "docs" / "openapi"
 
 
 def test_every_module_has_a_committed_openapi_spec(loaded_apps):
+    """Every loaded module has a committed `docs/openapi/<module>.json`."""
     missing = [name for name in loaded_apps if not (OPENAPI_DIR / f"{name}.json").exists()]
     assert missing == []
 
 
 def test_committed_openapi_specs_match_the_live_schema(loaded_apps):
+    """Each committed spec equals the module's live OpenAPI document; a route or model docstring change shows up here, and
+    `scripts/generate_openapi_specs.py` regenerates the files.
+    """
     stale = []
     for name, main_module in loaded_apps.items():
         committed = json.loads((OPENAPI_DIR / f"{name}.json").read_text())

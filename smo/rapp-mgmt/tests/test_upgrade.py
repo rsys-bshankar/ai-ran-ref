@@ -67,6 +67,8 @@ class FakeR1:
 
 @pytest.fixture
 def r1(monkeypatch):
+    """Replaces `R1Client`'s get, post and delete with a `FakeR1` that answers like Onboarding, NFO, SME and DME and records every call in `fake.calls`.
+    """
     fake = FakeR1()
     monkeypatch.setattr(R1Client, "get", lambda self, path, **kw: fake.get(self, path, **kw))
     monkeypatch.setattr(R1Client, "post", lambda self, path, json=None, **kw: fake.post(self, path, json=json, **kw))
@@ -76,6 +78,8 @@ def r1(monkeypatch):
 
 @pytest.fixture
 def db():
+    """A SQLite session with the rApp Management tables (and a stand-in `application_package` table, which belongs to Onboarding) so the instance rows can be written and read.
+    """
     engine = create_engine("sqlite://")
     # application_package lives in the onboarding module, out of scope for this
     # test package — stand in a minimal table so RAppInstance's FK resolves.
@@ -90,6 +94,8 @@ def db():
 
 
 def running_instance(db, package_id=None, **kw) -> RAppInstance:
+    """Adds a RUNNING instance with a client id, an NFO workload and a usage registration (`kw` overrides columns) and returns it flushed.
+    """
     inst = RAppInstance(package_id=package_id or uuid.uuid4(), state=InstanceState.RUNNING, oauth_client_id="cred-123",
                         workload_ref="nf-old", package_usage_registration_id=uuid.uuid4(), **kw)
     db.add(inst)
@@ -98,6 +104,7 @@ def running_instance(db, package_id=None, **kw) -> RAppInstance:
 
 
 def test_create_instance_bootstrap_success(db):
+    """The transition table takes DEPLOYING to RUNNING on BOOTSTRAP_OK."""
     inst = RAppInstance(package_id=uuid.uuid4(), state=InstanceState.DEPLOYING)
     db.add(inst)
     db.flush()
@@ -125,6 +132,7 @@ def test_terminate_is_legal_from_faulted_and_deploying(db, r1, state):
     assert inst.oauth_client_id is None
 
 
+# Each row is a state in which terminate must be refused: UPGRADING (resolve the upgrade first) and UNDEPLOYED (already torn down).
 @pytest.mark.parametrize("state", [InstanceState.UPGRADING, InstanceState.UNDEPLOYED])
 def test_terminate_is_illegal_while_upgrading_or_once_undeployed(db, state):
     with pytest.raises(IllegalTransition):
@@ -156,6 +164,7 @@ def test_start_upgrade_provisions_a_complete_replacement(db, r1):
     assert ("POST", f"/onboarding/packages/{new_package}/usage/start") in r1.calls
 
 
+# Each row is a package state the replacement may not be made from (DEPRECATED, FAILED: 409; unknown: 404). The old instance stays RUNNING with no pending upgrade and nothing is instantiated.
 @pytest.mark.parametrize("package_state,status", [("DEPRECATED", 409), ("FAILED", 409), ("UNKNOWN", 404)])
 def test_start_upgrade_refuses_a_package_that_is_not_deployable(db, r1, package_state, status):
     new_package = uuid.uuid4()
@@ -171,6 +180,7 @@ def test_start_upgrade_refuses_a_package_that_is_not_deployable(db, r1, package_
 
 
 def test_start_upgrade_refuses_a_non_running_instance_before_provisioning(db, r1):
+    """Starting an upgrade of a non-RUNNING instance raises before any R1 call, so no replacement resources are created."""
     old = running_instance(db)
     old.state = InstanceState.FAULTED
     with pytest.raises(IllegalTransition):
@@ -179,6 +189,8 @@ def test_start_upgrade_refuses_a_non_running_instance_before_provisioning(db, r1
 
 
 def test_upgrade_success_commits_and_retires_old_row_like_terminate(db, r1):
+    """Committing an upgrade makes the replacement RUNNING under its own identity and retires the old row like a terminate, in this order: DME and SME deregistration, the old invoker, NFO terminate, usage stop; the teardown is recorded on the replacement and the old row is deleted.
+    """
     old_package = uuid.uuid4()
     new_package = uuid.uuid4()
     old = running_instance(db, package_id=old_package, sme_service_ids=["svc-1"])
@@ -226,6 +238,8 @@ def test_upgrade_commit_of_a_replacement_that_already_bootstrapped(db, r1):
 
 
 def test_upgrade_commit_refused_when_the_replacement_crashed(db, r1):
+    """If the replacement has FAULTED, committing is refused and nothing is released: the old instance stays UPGRADING with its credential.
+    """
     old = running_instance(db)
     new = start_upgrade(db, old, uuid.uuid4())
     new.state = InstanceState.FAULTED
@@ -287,6 +301,7 @@ def test_overdue_upgrade_rolls_back_lazily(db, r1):
 
 
 def test_nfo_terminate_failure_is_recorded_not_raised(db, r1):
+    """A failing NFO terminate during teardown does not stop it; the failure is recorded in `last_teardown`."""
     r1.nfo_delete_status = 503
     old = running_instance(db)
     new = start_upgrade(db, old, uuid.uuid4())
@@ -296,6 +311,7 @@ def test_nfo_terminate_failure_is_recorded_not_raised(db, r1):
 
 
 def test_crash_and_manual_recovery(db, r1):
+    """CRASH takes RUNNING to FAULTED and RECOVER takes FAULTED back to DEPLOYING."""
     inst = running_instance(db)
     s = RAPP_INSTANCE_FSM.fire(InstanceState.RUNNING, InstanceEvent.CRASH, instance=inst)
     assert s == InstanceState.FAULTED

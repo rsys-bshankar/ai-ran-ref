@@ -21,7 +21,7 @@ export function decisionChain(r: DecisionRecord): TimelineItem[] {
       detail: r.jobId ? <>job <Id value={r.jobId} /> · {r.changeCount} change{r.changeCount === 1 ? "" : "s"} on {r.managedElements.join(", ") || "—"}</> : "none was made" },
     { key: "approval", state: r.disposition === "DIRECT" || r.disposition === "ROLLBACK" ? "done" : r.approvedBy ? "done" : notWritten ? "fail" : "todo", title: "Approval",
       detail: r.disposition === "DIRECT" ? "Autonomous: not held for approval"
-        : r.approvedBy ? `approved by ${r.approvedBy}${r.decidedAt ? ` · ${formatTime(r.decidedAt)}` : ""}`
+        : r.approvedBy ? `approved by ${r.approvers?.length ? r.approvers.join(", ") : r.approvedBy}${r.decidedAt ? ` · ${formatTime(r.decidedAt)}` : ""}`
         : r.approvalId ? `${r.disposition.toLowerCase()}${r.decidedBy ? ` by ${r.decidedBy}` : ""}` : "not held for approval" },
     { key: "verify", state: "block", title: "Verify", detail: <span className="gap-note">The decision record does not carry a verification result yet.</span> },
   ];

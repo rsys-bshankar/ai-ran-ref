@@ -15,6 +15,7 @@ def _cell(**kw):
                         "neighbours": ["302", "303"], **kw})
 
 
+# One row per guard: the input that trips it and the guard that must be the only block.
 @pytest.mark.parametrize("kw,guard", [
     ({"guard": {"cellClass": "EMERGENCY"}}, "PROTECTED_CELL"),
     ({"guard": {"incidentZone": "flood-7"}}, "PROTECTED_CELL"),
@@ -27,16 +28,19 @@ def _cell(**kw):
     ({"last_changed_at": T0 - datetime.timedelta(minutes=30)}, "PACING"),
 ])
 def test_each_guard_blocks(kw, guard):
+    """Each guard fires on its own input and on nothing else, so the audit trail names the right reason."""
     result = evaluate_guards(_cell(**kw), T0)
     assert not result["passed"] and [b["guard"] for b in result["blocks"]] == [guard]
 
 
 def test_nothing_blocks_a_healthy_quiet_cell():
+    """A cell that woke 45 minutes ago and was last changed exactly 60 minutes ago is free to move: the pacing window is closed at 60 minutes."""
     assert evaluate_guards(_cell(last_woken=T0 - datetime.timedelta(minutes=45),
                                  last_changed_at=T0 - datetime.timedelta(minutes=60)), T0)["passed"]
 
 
 def test_bounds_close_moves_at_the_limits():
+    """A move that would leave the baseline +- 4 degrees or +- 3 dB band is not offered, and `apply` steps 1 degree or 1 dB."""
     assert allowed_moves(_cell()) == ["DOWNTILT", "UPTILT", "POWER_UP", "POWER_DOWN"]
     assert allowed_moves(_cell(tilt=100)) == ["UPTILT", "POWER_UP", "POWER_DOWN"]      # baseline + 4°
     assert allowed_moves(_cell(tilt=20, power=46)) == ["DOWNTILT", "POWER_DOWN"]       # − 4°, + 3 dB
@@ -44,6 +48,9 @@ def test_bounds_close_moves_at_the_limits():
 
 
 def test_kpi_check_waits_then_confirms_or_degrades():
+    """The KPI check says nothing until an hour of post-change PM exists, then IMPROVED_OR_EQUAL, or DEGRADED when the objective grew by more than
+    0.5.
+    """
     obs = {"at": T0, "preObjective": 10.0}
     state = {"301": {"shares": {"WEAK_COVERAGE": 2, "OVERSHOOT": 8, "PILOT_POLLUTION": 2}}}
     assert kpi_check(obs, state, T0) is None
@@ -53,6 +60,9 @@ def test_kpi_check_waits_then_confirms_or_degrades():
 
 
 def test_plan_cells_reasons():
+    """Every no-move cell gets the right reason code (safety block, helped by another cell's move, no beneficial move) and a moved cell carries its
+    new setting.
+    """
     cells = [_cell(), _cell(cell="302", guard={"cellClass": "EMERGENCY"}), _cell(cell="303"), _cell(cell="304", tilt=100, power=46)]
     ok = {"WEAK_COVERAGE": 2, "OVERSHOOT": 2, "PILOT_POLLUTION": 2}
     state = {"301": {"shares": {**ok, "OVERSHOOT": 12}}, "302": {"shares": {**ok, "PILOT_POLLUTION": 9}},

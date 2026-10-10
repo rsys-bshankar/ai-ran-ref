@@ -21,6 +21,7 @@ def _blocked(ip) -> bool:
 @settings(max_examples=300)
 @given(st.one_of(st.none(), st.text()))
 def test_the_guard_never_raises_and_returns_a_bool(destination):
+    """For any text (or None) the SSRF guard returns a bool and never raises."""
     assert isinstance(is_safe_webhook_destination(destination), bool)
 
 
@@ -28,18 +29,21 @@ def test_the_guard_never_raises_and_returns_a_bool(destination):
 @given(scheme=st.sampled_from(["file", "gopher", "ftp", "data", "javascript", "ws", "wss", "ssh", "ldap", "dict"]),
        rest=st.text(alphabet=st.characters(blacklist_categories=("Cs",)), max_size=40))
 def test_a_non_http_scheme_is_never_allowed(scheme, rest):
+    """No destination with a non-http(s) scheme is ever allowed, whatever follows it."""
     assert is_safe_webhook_destination(f"{scheme}://{rest}") is False
 
 
 @settings(max_examples=300)
 @given(st.ip_addresses(v=4))
 def test_an_ipv4_literal_is_allowed_exactly_when_not_in_a_blocked_range(ip):
+    """An IPv4 literal is allowed exactly when it is not loopback, link-local, multicast, unspecified or reserved."""
     assert is_safe_webhook_destination(f"http://{ip}/cb") is (not _blocked(ip))
 
 
 @settings(max_examples=200)
 @given(st.ip_addresses(v=6))
 def test_an_ipv6_literal_is_allowed_exactly_when_not_in_a_blocked_range(ip):
+    """The same rule for IPv6 literals in brackets."""
     assert is_safe_webhook_destination(f"http://[{ip}]/cb") is (not _blocked(ip))
 
 
@@ -47,4 +51,5 @@ def test_an_ipv6_literal_is_allowed_exactly_when_not_in_a_blocked_range(ip):
 @given(st.sampled_from(["localhost", "LOCALHOST", "LocalHost", "metadata", "METADATA.google.internal"]),
        st.sampled_from(["http", "https"]), st.sampled_from(["", ":80", ":8080"]))
 def test_the_blocked_hostnames_are_refused_in_any_case_and_port(host, scheme, port):
+    """localhost and the metadata host names are refused in any letter case, scheme and port."""
     assert is_safe_webhook_destination(f"{scheme}://{host}{port}/x") is False

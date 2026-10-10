@@ -57,6 +57,9 @@ def _tls() -> dict:
 
 
 def call(verb: str, service: str, path: str, expect=(200, 201, 202, 204), **kw):
+    """Calls a service on port 8000 (https with SMO_MTLS=on) with httpx and returns its JSON (None for an empty body); exits with the status and
+    body when the status is not in `expect`.
+    """
     resp = getattr(httpx, verb)(_url(service, path), timeout=120.0, **_tls(), **kw)
     if resp.status_code not in expect:
         raise SystemExit(f"{verb.upper()} {service}{path} → {resp.status_code}: {resp.text}")
@@ -263,6 +266,7 @@ STEPS = {f"{i:02d}": globals()[f"demo_{i:02d}"] for i in range(12)}
 
 
 def run(step: str, state: dict) -> dict:
+    """Runs one demo step by number, printing the first line of its docstring as the heading, and returns the shared state."""
     fn = STEPS[step]
     print(f"Demo {step} — {fn.__doc__.splitlines()[0]}")
     fn(state)
@@ -270,6 +274,9 @@ def run(step: str, state: dict) -> dict:
 
 
 def main() -> None:
+    """Runs the steps named on the command line (all of them by default), loading the state the previous run saved and saving it after each step so
+    a later run can continue.
+    """
     steps = list(STEPS) if sys.argv[1:] in ([], ["all"]) else sys.argv[1:]
     state = json.load(open(STATE_FILE)) if os.path.exists(STATE_FILE) else {}
     for step in steps:

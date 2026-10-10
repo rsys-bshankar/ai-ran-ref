@@ -18,6 +18,7 @@ ACME = {"schemaName": "acme-nr", "revision": "2.1", "location": "s3://vendors/ac
 
 @pytest.fixture
 def dispatched(monkeypatch):
+    """Fixture: replaces the NETCONF edit with a recorder; returns the list of (element, changes) actually sent."""
     sent = []
     monkeypatch.setattr("app.main.send_edit_config",
                         lambda uri, ref, changes, message_id, operation="merge", **kw: sent.append((ref, changes)) or True)
@@ -45,6 +46,8 @@ def _write(client, me="ME-A", **change):
 # ---------------------------------------------------------------- W9-02 schemas
 
 def test_spec_descriptor_is_bundled_and_custom_schemas_load(client):
+    """The 3GPP TS 28.541 descriptor is bundled and readable, a custom descriptor loads once (a second load is 409 CM_SCHEMA_CONFLICT), an unknown schema is 404 and a malformed descriptor is 422.
+    """
     listed = {(s["schemaName"], s["revision"]): s for s in client.get("/cm-schemas").json()["items"]}
     spec = listed[("3gpp-ts28541-nrnrm", "19.6.0")]
     assert spec["builtin"] and spec["type"] == "OPENAPI_NRM" and spec["classCount"] > 50
@@ -63,6 +66,8 @@ def test_spec_descriptor_is_bundled_and_custom_schemas_load(client):
 # ---------------------------------------------------------------- W9-01 / W9-04 registry
 
 def test_capability_registry_crud_and_defaults(client):
+    """A capability entry gets the defaults (SPEC mode, NETCONF, the bundled spec schema), can be listed and deleted, and a missing own schema, an unknown schema or an unknown service is refused.
+    """
     cap = _vendor(client)
     assert cap["conformanceMode"] == "SPEC" and cap["supportedVendorModes"] == ["O1_NETCONF"]
     assert cap["specSchemaRef"] == {"schemaName": "3gpp-ts28541-nrnrm", "revision": "19.6.0"}
@@ -77,6 +82,8 @@ def test_capability_registry_crud_and_defaults(client):
 
 
 def test_vendor_modes_gate_endpoint_registration_and_are_reported(client):
+    """An endpoint may only use a transport its vendor declared (409 otherwise), `/capabilities` reports the union of declared modes, and an endpoint can narrow its vendor's services but never widen them.
+    """
     _vendor(client, supportedVendorModes=["O1_NETCONF"])
     _vendor(client, "beta", supportedVendorModes=["O1_RESTCONF", "O1_NETCONF"])
     resp = _endpoint(client, protocol="RESTCONF")
@@ -95,6 +102,8 @@ def test_vendor_modes_gate_endpoint_registration_and_are_reported(client):
 # ---------------------------------------------------------------- W9-02 write pre-check
 
 def test_spec_vendor_writes_are_checked_against_the_3gpp_descriptor(client, db_session_factory, dispatched):
+    """For a SPEC vendor a CM write is checked against the bundled descriptor: valid changes dispatch, while an unknown class, attribute or value is 422 and nothing is sent.
+    """
     _vendor(client)
     _endpoint(client)
     ok = _write(client, managedFunctionRef="NRCellDU=1", attributeChanges={"administrativeState": "LOCKED"})
@@ -117,6 +126,7 @@ def test_spec_vendor_writes_are_checked_against_the_3gpp_descriptor(client, db_s
 
 
 def test_own_and_combined_conformance(client, dispatched):
+    """OWN checks against the vendor's descriptor only; COMBINED accepts the spec classes plus the vendor's named additions."""
     client.post("/cm-schemas", json=ACME)
     _vendor(client, "own", conformanceMode="OWN", schemaRef={"schemaName": "acme-nr", "revision": "2.1"})
     _vendor(client, "combo", conformanceMode="COMBINED", schemaRef={"schemaName": "acme-nr", "revision": "2.1"})
@@ -134,6 +144,7 @@ def test_own_and_combined_conformance(client, dispatched):
 
 
 def test_unregistered_vendor_is_unchecked(client, dispatched):
+    """A vendor with no capability entry skips the schema check (the permissive default)."""
     _endpoint(client, vendor="nobody")
     assert _write(client, attributeChanges={"anything": "goes"}).status_code == 202
 
@@ -141,6 +152,8 @@ def test_unregistered_vendor_is_unchecked(client, dispatched):
 # ---------------------------------------------------------------- W9-01 service presence
 
 def test_service_presence_guards(client, dispatched):
+    """An element whose vendor does not implement FM, PM, SWM or PROV is refused (409 O1_SERVICE_NOT_SUPPORTED) on the matching operation and nothing is dispatched.
+    """
     _vendor(client, supportedServices=["HEARTBEAT"])
     _endpoint(client)
     for resp in [
@@ -168,6 +181,8 @@ class _Resp:
 
 
 def test_onboarding_discovers_from_the_registered_adaptor_loads_and_declares(client, monkeypatch, dispatched):
+    """Vendor onboarding reads the capability declaration from the registered adaptor's own origin at a fixed path (never a URL from the request), loads the schemas and declares the capability in one call.
+    """
     declared = {"vendorName": "acme", "supportedServices": ["PROV", "FM"], "supportedVendorModes": ["O1_NETCONF"]}
     fetched = []
     monkeypatch.setattr("app.vendors.get_webhook", lambda uri: fetched.append(uri) or _Resp(200, declared))
@@ -191,6 +206,8 @@ def test_onboarding_discovers_from_the_registered_adaptor_loads_and_declares(cli
 
 
 def test_onboarding_failures(client, monkeypatch):
+    """Onboarding fails cleanly when discovery is unreachable (503), the element is unknown (404), belongs to another vendor or the adaptor names another vendor (422), no services are known (422), or the declaration would strand a registered endpoint.
+    """
     monkeypatch.setattr("app.vendors.get_webhook", lambda uri: None)
     _endpoint(client, me="ME-A")
     _endpoint(client, me="ME-R", vendor="restco", protocol="RESTCONF")
@@ -215,6 +232,7 @@ def test_onboarding_failures(client, monkeypatch):
 # ---------------------------------------------------------------- W9-06 cell guards
 
 def test_cell_guards_set_query_and_delete(client):
+    """Cell guards can be set, queried across elements with filters, and deleted per cell."""
     _endpoint(client, me="ME-A", vendor=None)
     _endpoint(client, me="ME-B", vendor=None)
     put = client.put("/managed-entities/ME-A/cells/1/guards", json={"cellClass": "EMERGENCY", "sectorGroup": "S1",
@@ -242,6 +260,7 @@ def test_cell_guards_set_query_and_delete(client):
 
 
 def test_cm_schemas_total_false_has_no_total_and_a_has_more_flag(client):
+    """`total=false` on the schema list omits the count and says whether more items exist."""
     everything = client.get("/cm-schemas").json()
     assert everything["total"] == len(everything["items"]) >= 1
     page = client.get("/cm-schemas", params={"limit": 1, "total": "false"}).json()

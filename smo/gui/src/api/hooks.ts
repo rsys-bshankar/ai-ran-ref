@@ -1,3 +1,10 @@
+/**
+ * The react-query hooks every page reads and writes SMO modules through: `useSmo` and `useSmoPage` (GET one module path via the BFF's /smo proxy,
+ * cached by path and query so pages share entries, polled every `POLL.lists`) and `useSmoAction` (a lifecycle POST/PUT/PATCH/DELETE with a toast).
+ * Built on `client.ts`; the caches it uses are keyed ["smo", ...] (module reads) and ["bff", ...] (BFF reads such as the user and the pins),
+ * and a successful action invalidates both, because one module's change routinely alters another's state.
+ */
+
 import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from "@tanstack/react-query";
 
 import { useToast } from "../components/Toast";
@@ -50,6 +57,9 @@ export function useSmoPage<T>(path: string | null, query?: Query, opts: Partial<
   });
 }
 
+/**
+ * One lifecycle call for `useSmoAction`: the HTTP method, the path under /smo, optional query and JSON or raw body, and the toast text shown on success.
+ */
 export interface SmoAction {
   method: "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;

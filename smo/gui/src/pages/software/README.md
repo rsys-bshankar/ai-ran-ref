@@ -9,11 +9,12 @@ Route: `/software` (tabs in the hash: `#campaigns`, `#jobs`, `#new`; `?campaign=
 | software.tiles | sections/CampaignTiles.tsx | running · halted (filters the list), completed, rolled back, all with a state meter | `/api/summary/software` (`campaigns.*`) | 15 s | 1 call (shared with the tab count) |
 | software.list | sections/CampaignList.tsx | campaigns, server-paged, state filter | `/ran-nf-oam/software-campaigns?status=&limit=&offset=` | 15 s | 1 call/page |
 | software.detail | sections/CampaignDetail.tsx (+ CampaignActions.tsx, Countdown.tsx) | selector and settings, halted reason (GATE_FAILED / WAVE_PAUSE with countdown / OPERATOR_HALT), Continue / Halt / Roll back / Abort, totals, wave strip, event log | `/software-campaigns/{id}`, `/software-campaigns/{id}/report`; POST `/{id}/continue|halt|abort|rollback` | 5 s / 10 s | 2 calls when a campaign is open |
-| software.elements | sections/CampaignElements.tsx | the elements of one wave, each job linking to `/flows/19?subject=<job>`, each element to `/elements/<me>` | the report (shared) | 10 s | 0 extra |
+| software.elements | sections/CampaignElements.tsx | the elements of one wave, each job linking to `/flows/19?subject=<job>` ("timed out" when the job timeout failed it), each element to `/elements/<me>` | the report (shared) | 10 s | 0 extra |
+| software.watchers | sections/LifecycleWatchers.tsx | who is told when a campaign halts, a rollback fails or an onboarding fails (PR-MGT-14.7, MGT-15.6); admin: Add watcher (callback URL, events) / Remove. Also shown on Configuration → Element onboarding | `/ran-nf-oam/lifecycle-subscriptions`; admin POST, DELETE `/{id}` | 15 s | 1 call |
 | software.jobs | sections/ElementJobs.tsx | every element software job (flow 19), server-paged, element filter | `/software-management-jobs?managed_element_ref=` | 15 s | 1 call/page |
-| software.new | sections/NewCampaignForm.tsx (+ data/form.ts) | selector or element list, wave size, pause, gate, on gate failure; dry run first, then Start | POST `/software-campaigns` (`dryRun: true`, then without); `/vendor-capabilities?limit=100` for vendor suggestions | — | 1 call |
+| software.new | sections/NewCampaignForm.tsx (+ data/form.ts) | selector or element list, wave size, pause, gate, on gate failure, job timeout (MGT-15.6: blank waits, 1 s to 7 days) and rollback order (MGT-15.7: last wave first by default, or all at once); dry run first, then Start | POST `/software-campaigns` (`dryRun: true`, then without); `/vendor-capabilities?limit=100` for vendor suggestions | — | 1 call |
 
-Actions are role-gated (`ActionButton`, `Can`; operator in `gui-bff/app/rbac.py`, which also sets `requestedBy`). Roll back and Abort ask
+Actions are role-gated (`ActionButton`, `Can`; operator in `gui-bff/app/rbac.py`, which also sets `requestedBy`). Roll back (naming the campaign's rollback order) and Abort ask
 first; Continue during an unexpired pause asks and sends `force: true`. `campaignActions` (data/types.ts) mirrors the states the backend accepts.
 
 ## Known limits
@@ -36,3 +37,4 @@ first; Continue during an unexpired pause asks and sends `force: true`. `campaig
 ## Upgrade notes
 
 - v1 (GUI redesign): new page.
+- Merge of main's MGT-15.5 to 15.7 (#402): the pre-redesign Infrastructure → Software campaigns tab is this page; its job timeout, rollback order, "timed out" marking and the failure-notice watchers were added here.

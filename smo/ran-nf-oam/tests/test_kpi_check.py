@@ -16,6 +16,8 @@ NOW = datetime.datetime.now(datetime.UTC)
 
 @pytest.fixture
 def fleet(db_session_factory, monkeypatch):
+    """Fixture: two ACTIVE NETCONF elements whose adaptor read and edit are patched onto an in-memory dict. Returns the state dict (`values`, `edits`, `factory`).
+    """
     db = db_session_factory()
     for ref in ELEMENTS:
         endpoint = O1AdaptorEndpoint(managed_element_ref=ref, adaptor_uri="http://adaptor:9000/netconf", protocol_support=["NETCONF"], health_status="ACTIVE")
@@ -51,6 +53,8 @@ def _pm(fleet, element, minutes_from_job, value):
 
 
 def _job(client, fleet, refs=ELEMENTS):
+    """Makes a config job that sets txPower to 20 on `refs` and stamps its schema-validation time as the moment the KPI windows are measured from; returns the job id and stores the anchor in `fleet['anchor']`.
+    """
     resp = client.post("/config-jobs", json={"requestedBy": "es-rapp", "scope": "cell", "changes": [
         {"managedElementRef": r, "attributeChanges": {"txPower": 20}} for r in refs]})
     assert resp.status_code == 202, resp.text
@@ -74,6 +78,7 @@ def success_kpi(client):
 
 
 def test_a_kpi_that_held_is_ok_and_nothing_is_reverted(client, fleet):
+    """A KPI within the allowed drop is OK for every element and nothing is reverted even when `revert` is asked."""
     job = _job(client, fleet)
     for element in ELEMENTS:
         _pm(fleet, element, -30, 95)
@@ -84,6 +89,8 @@ def test_a_kpi_that_held_is_ok_and_nothing_is_reverted(client, fleet):
 
 
 def test_a_regression_on_one_element_reverts_only_that_element(client, fleet):
+    """A KPI that regressed on one element is reverted there only, by a rollback job that names the original, while the other element keeps its change.
+    """
     job = _job(client, fleet)
     _pm(fleet, "ME-1", -30, 95)
     _pm(fleet, "ME-1", 10, 60)                                                               # 95 -> 60: a 36.8% drop
@@ -100,6 +107,7 @@ def test_a_regression_on_one_element_reverts_only_that_element(client, fleet):
 
 
 def test_a_regression_without_revert_only_reports(client, fleet):
+    """Without `revert` a regression is reported and nothing is written."""
     job = _job(client, fleet, ["ME-1"])
     _pm(fleet, "ME-1", -30, 95)
     _pm(fleet, "ME-1", 10, 60)
@@ -108,6 +116,7 @@ def test_a_regression_without_revert_only_reports(client, fleet):
 
 
 def test_the_direction_says_which_way_is_worse(client, fleet):
+    """`direction` decides whether a rise or a drop is the regression: the same data is OK for 'higher' and REGRESSED for 'lower'."""
     client.put("/kpi-definitions/drops", json={"formula": "100 * lost / n"})
     job = _job(client, fleet, ["ME-1"])
     db = fleet["factory"]()
@@ -122,6 +131,7 @@ def test_the_direction_says_which_way_is_worse(client, fleet):
 
 
 def test_too_little_data_is_never_a_verdict_and_never_a_revert(client, fleet):
+    """A window with no data, or fewer samples than `minSamples`, gives INSUFFICIENT_DATA and nothing is reverted."""
     job = _job(client, fleet, ["ME-1"])
     _pm(fleet, "ME-1", -30, 95)                                                              # nothing after the job yet
     answer = _check(client, job, revert=True).json()
@@ -131,6 +141,7 @@ def test_too_little_data_is_never_a_verdict_and_never_a_revert(client, fleet):
 
 
 def test_a_zero_baseline_has_no_relative_change(client, fleet):
+    """A baseline of zero has no relative change, so the verdict is INSUFFICIENT_DATA with reason BASELINE_ZERO."""
     job = _job(client, fleet, ["ME-1"])
     _pm(fleet, "ME-1", -30, 0)
     _pm(fleet, "ME-1", 10, 50)
@@ -139,6 +150,7 @@ def test_a_zero_baseline_has_no_relative_change(client, fleet):
 
 
 def test_a_revert_that_would_overwrite_a_later_change_is_refused_unless_forced(client, fleet):
+    """If someone changed the value after the job, the revert is 409 CONFIG_CHANGED_SINCE and leaves it; `force` restores anyway."""
     job = _job(client, fleet, ["ME-1"])
     _pm(fleet, "ME-1", -30, 95)
     _pm(fleet, "ME-1", 10, 60)
@@ -150,6 +162,7 @@ def test_a_revert_that_would_overwrite_a_later_change_is_refused_unless_forced(c
 
 
 def test_unknown_job_and_unknown_kpi(client, fleet):
+    """An unknown job or KPI is 404, and an out-of-range window is 422."""
     assert _check(client, __import__("uuid").uuid4()).status_code == 404
     job = _job(client, fleet, ["ME-1"])
     assert _check(client, job, kpi="nope").status_code == 404

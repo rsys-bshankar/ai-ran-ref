@@ -82,6 +82,7 @@ def _in_a_stable_order(stmt):
 
 
 def _envelope(items: Sequence, limit: int, offset: int, total: int | None, has_more: bool | None) -> dict[str, Any]:
+    """Builds the page envelope: `items`, `limit`, `offset`, plus `total` when it was counted and `hasMore` when it was not."""
     out: dict[str, Any] = {"items": items, "limit": int(limit), "offset": offset}
     if total is not None:
         out["total"] = total
@@ -91,6 +92,12 @@ def _envelope(items: Sequence, limit: int, offset: int, total: int | None, has_m
 
 
 def paginate(db: Session, stmt, limit: int, offset: int) -> dict[str, Any]:
+    """Returns one page of the rows `stmt` selects, as the envelope the module description defines.
+
+    The `limit` normally comes from `PageLimit` (a `PageSize` that remembers `?total=false`); a plain int means a counted total. With a total this
+    issues a `COUNT(*)` over the whole statement and then the page; without, one query for `limit + 1` rows. An unordered statement is ordered by
+    the entity's primary key first so pages neither repeat nor skip rows. Items are the raw ORM rows; the caller maps them to its view.
+    """
     n = int(limit)
     if getattr(limit, "with_total", True):
         total = db.scalar(select(func.count()).select_from(stmt.subquery()))

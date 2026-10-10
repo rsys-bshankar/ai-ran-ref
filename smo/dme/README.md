@@ -140,8 +140,8 @@ Cross-module references are bare UUIDs or strings; there are none to other modul
 | `consumer_id` | rAppId, or `DME_FRAMEWORK` for a job the framework itself created against a producer |
 | `status` | set to `ACTIVE` on create; never changed afterwards |
 | `lifecycle_stage` (null) | one of `LIFECYCLE_STAGES` |
-| `expected_interval_seconds` (null) | how often the consumer expects a delivery (`expectedIntervalSeconds`, > 0, optional; `GUI-9.8`, revision `0035`) |
-| `last_delivery_at` (null) | when a producer last delivered a record for the job (`POST /data-jobs/{id}/records`); revision `0035` filled it from the newest `data_record` |
+| `expected_interval_seconds` (null) | how often the consumer expects a delivery (`expectedIntervalSeconds`, > 0, optional; `GUI-9.8`, revision `0037`) |
+| `last_delivery_at` (null) | when a producer last delivered a record for the job (`POST /data-jobs/{id}/records`); revision `0037` filled it from the newest `data_record` |
 | `late_after` (null) | when the job turns LATE: two intervals after `last_delivery_at`, or after the job was (re)declared before its first delivery; null without an interval. A column so the `late` filter is one comparison in SQL |
 
 **`data_offer`**: `offer_id` (PK), `dme_type_id` (FK cascade), `data_delivery_methods_offered` (array; JSON on SQLite), `data_delivery_method_committed` (the first offered method), `data_availability_notification_uri` (null), `data_offer_termination_notification_uri`.
@@ -230,8 +230,8 @@ All routes sit under `/dme`. Lists marked "paged" return `{items, total, limit, 
 | Method | Path | Purpose | Notable errors |
 |---|---|---|---|
 | POST | `/actions` (202) | `{requestedBy, changes[], scope="single-ME", msacRole?, sourceContext?, actionId?, decision?}` (`decision {inputsRef?, modelVersion?, rationale?, actionId?}` is forwarded to RAN NF OAM, which keeps it as the job's decision record, `AI-13`; for an rApp whose changes wait for a person, RAN NF OAM answers `PENDING_APPROVAL` with no job: the action is recorded `PENDING_APPROVAL`, `forwardedJobId` is null and the answer carries `approvalId`, `AI-11`); each change is RAN NF OAM's `WriteConfigRequest.changes` shape (`managedElementRef`, `managedFunctionRef?`, `attributeChanges?`, `operation?`) plus optional `className`. Returns `{actionId, forwardedJobId, status}`; a replayed `actionId` returns 200 `IGNORED`. | 422 `SCHEMA_VALIDATION_FAILED` (empty `changes`); RAN NF OAM's own status and detail, action recorded `REJECTED` |
-| GET | `/actions?managed_element_ref=&requested_by=` | Paged | |
-| GET | `/actions/{id}` | | 404 `DME_ACTION_NOT_FOUND` |
+| GET | `/actions?managed_element_ref=&requested_by=` | Paged. `PR-SEC-10.7`: for a caller with a scope claim, only the actions all of whose elements (the one the record is filed under and each change's own) are inside it; `total` counts what it may see. DME holds no region or tenant, so it asks RAN NF OAM (`GET /ran-nf-oam/managed-entities`, in pages of 500, with the caller's claim passed on by `R1Client`); an unscoped caller asks nobody | 502 `UPSTREAM_FAILED` when RAN NF OAM cannot say (nothing is shown rather than everything) |
+| GET | `/actions/{id}` | One action. `PR-SEC-10.7`: an action that names an element outside the caller's scope is a 404, the same as one that is not there | 404 `DME_ACTION_NOT_FOUND` |
 
 **Other**: `GET /health` (liveness; the GUI BFF probes it).
 
@@ -275,6 +275,7 @@ ProblemDetails `title` / status (see [R1 API conventions](../docs/ARCHITECTURE.m
 - `dme_delivery_schema` has a table and no route.
 - `GET /production-capabilities` and `GET /dme-types` return bare arrays, not the `{items, total, ...}` page shape the other list routes use.
 - An AIMgF feature group with `enableDme` holds a DME data job (consumer `aimgf:feature-group:<name>`), created with the group and terminated with it.
+- **What DME and MLMR still cannot scope (`SEC-10.7`).** The action list is the one DME read that names a managed element, and it is scoped (above). Everything else DME holds, and everything MLMR holds, has no element, region or tenant to match: data types, producers, offers, data jobs and their records (a record's payload may carry a `managedElementRef`, but only a producer's schema says so, and DME does not read payloads), and MLMR's models and repositories. A scoped rApp therefore still reads every data type, job and record DME holds and every model MLMR holds. Closing that is a data-model decision (a tenant on a data type or model, set by the producer or the registrant, or derived from the producer's scope), not a change to the rule. An action that names no element is not shown to a scoped caller. The cost of the action list for a scoped caller is one pass through RAN NF OAM's element list per request, and a full scan of the action table.
 - An unreachable RAN NF OAM during `POST /actions` leaves a `FORWARDED` record that was never forwarded.
 - Digital Twin and live-RAN producers are told apart only by the producer's own declaration.
 
@@ -290,6 +291,7 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 
 | Test file | Covers | Count |
 |---|---|---|
+| `tests/test_scope.py` | `PR-SEC-10.7` (6): an unscoped caller asks RAN NF OAM nothing and sees every action; a scoped caller sees the actions all of whose elements are inside its claim (one element outside, or none named, hides the action), `total`, paging, the element list read in pages of 500; one by id is a 404 like an absent one; RAN NF OAM unable to answer is a 502 and shows nothing; a claim that could not be passed on shows nothing | 6 |
 | `tests/test_main.py` | Producer/type registry: registration, re-registration, second producer, discovery and `data_category` filter, deregistration keeping types, type deletion guard and cascade, producer status | 22 |
 | | Type status from producer health (unreachable, non-2xx, healthy, active job does not override) | 4 |
 | | Type subscriptions and notifications (CRUD, owner filter, registered / deregistered, none when no subscribers, unreachable subscriber) | 9 |
