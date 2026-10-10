@@ -3,14 +3,16 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Query } from "../api/client";
 import { useSmoAction, type SmoAction } from "../api/hooks";
 import { useAuth } from "../auth/AuthContext";
+import { sevClass } from "../kit/Badge";
 import { shortId } from "../lib/domain";
 
 // ---------------------------------------------------------------- layout bits
 
-export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
+export function PageHeader({ title, subtitle, actions, eyebrow }: { title: string; subtitle?: ReactNode; actions?: ReactNode; eyebrow?: ReactNode }) {
   return (
     <header className="page-header">
       <div>
+        {eyebrow && <div className="eyebrow">{eyebrow}</div>}
         <h1>{title}</h1>
         {subtitle && <p className="muted">{subtitle}</p>}
       </div>
@@ -19,12 +21,16 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
   );
 }
 
-export function Card({ title, actions, children, className = "" }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
+export function Card({ title, sub, actions, children, className = "", section }: {
+  title?: ReactNode; sub?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string;
+  /** The box's stable id (STRUCTURE.md rule 3: `alarms.table`), put on the root as `data-section`. */
+  section?: string;
+}) {
   return (
-    <section className={`card ${className}`}>
+    <section className={`card ${className}`} data-section={section}>
       {(title || actions) && (
         <div className="card-head">
-          {title && <h2>{title}</h2>}
+          {title && <div className="col" style={{ gap: 2 }}><h2>{title}</h2>{sub && <span className="sub">{sub}</span>}</div>}
           {actions && <div className="row gap">{actions}</div>}
         </div>
       )}
@@ -33,12 +39,13 @@ export function Card({ title, actions, children, className = "" }: { title?: Rea
   );
 }
 
-export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: ReactNode }[]; value: T; onChange: (t: T) => void }) {
+/** A tab row; a tab's `count` shows as a pill after its label (`tone: "bad"` for one that needs attention). */
+export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: ReactNode; count?: number | null; tone?: "bad" }[]; value: T; onChange: (t: T) => void }) {
   return (
     <div className="tabs" role="tablist">
       {tabs.map((t) => (
-        <button key={t.id} role="tab" aria-selected={value === t.id} className={value === t.id ? "tab active" : "tab"} onClick={() => onChange(t.id)}>
-          {t.label}
+        <button key={t.id} type="button" role="tab" aria-selected={value === t.id} className={value === t.id ? "tab on active" : "tab"} onClick={() => onChange(t.id)}>
+          {t.label}{t.count !== undefined && t.count !== null && <span className={`n${t.tone ? ` ${t.tone}` : ""}`}>{t.count}</span>}
         </button>
       ))}
     </div>
@@ -88,13 +95,21 @@ const TONES: Record<string, string> = {
   APPROVED: "ok", EXPIRED: "muted", REFUSED: "bad", DIRECT: "info", ROLLBACK: "warn", UNCHAINED: "warn", MISMATCH: "bad", PENDING_APPROVAL: "warn",
 };
 
-export function StateBadge({ state }: { state: string | null | undefined }) {
-  if (!state) return <span className="muted">—</span>;
-  return <span className={`badge tone-${TONES[state.toUpperCase()] ?? "muted"}`}>{state}</span>;
+/** The tone of a backend state name ("ok", "warn", "bad", "info", "muted"): the one table every page colours states by. */
+export function toneOf(state: string | null | undefined): string {
+  return TONES[(state ?? "").toUpperCase()] ?? "muted";
 }
 
+/** A state as a badge, coloured by `TONES` (mapped onto the redesign's `.b-*` classes; `tone-*` kept for older selectors). */
+export function StateBadge({ state }: { state: string | null | undefined }) {
+  if (!state) return <span className="muted">—</span>;
+  const tone = toneOf(state);
+  return <span className={`badge b-${tone === "muted" ? "mute" : tone} tone-${tone}`}>{state}</span>;
+}
+
+/** A perceived severity as a solid chip (`.sev-cr` … `.sev-cl`). */
 export function SeverityChip({ severity }: { severity: string }) {
-  return <span className={`sev sev-${severity.toLowerCase()}`}>{severity}</span>;
+  return <span className={`sev sev-${sevClass(severity)} sev-${severity.toLowerCase()}`}>{severity}</span>;
 }
 
 export function Id({ value }: { value: string | null | undefined }) {

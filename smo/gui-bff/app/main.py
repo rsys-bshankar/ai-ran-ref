@@ -24,6 +24,8 @@ Routes (all under /api, which nginx forwards here unchanged, except /.well-known
   GET  /api/rapps[/{instance}]  the rApp directory, and one rApp with the operator page its package declares (rapps.py)
   *    /api/rapps/{instance}/operator/...  a call to the rApp's operator API, only for the routes that declaration lists; changes audited
   GET|PUT|DELETE /api/me/pins   the rApps the user pinned to the sidebar (at most 5)
+  GET|PUT /api/me/preferences   the user's console preferences: theme, text size, accent, start page, rows per page… (preferences.py)
+  GET  /api/summary/{page}      the true counts behind one console page's tiles and badges, cached 5 s and shared (summary.py)
   /api/admin/users[...]         user + role CRUD, break-glass flag, revoke a user's sessions, reset a user's one-time code (admin)
   GET  /api/admin/audit         the append-only audit log (admin)
 """
@@ -50,7 +52,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from .config import Settings, settings as default_settings
-from . import rapps, totp
+from . import preferences, rapps, summary, totp
 from .db import AuditEntry, Database, GuiUser, LoginFailure
 from .oidc import LOGIN_TTL_SECONDS, MAX_PENDING_LOGINS, OidcClient, OidcConfig, OidcError
 from .rbac import MODULES, RULES, Role, Rule, User, decide
@@ -863,6 +865,11 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
 
     rapps.install(app, current_session=current_session, audit=audit, problem=_problem)
 
+    # ------------------------------------------------------------ console preferences and summary counts (GUI redesign)
+
+    preferences.install(app, current_session=current_session)
+    summary.install(app, current_session=current_session, problem=_problem)
+
     # ------------------------------------------------------------ admin
 
     class CreateUserRequest(BaseModel):
@@ -959,6 +966,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
             s.commit()
         app.state.db.reset_totp(username)       # the one-time-code secret, recovery codes and open challenges go with the account (docs/PRIVACY.md)
         app.state.db.remove_all_pins(username)  # so do the rApps the user pinned to the sidebar
+        app.state.db.remove_preferences(username)  # and the console preferences
         audit("USER_DELETED", session.user, detail=username)
         return Response(status_code=204)
 

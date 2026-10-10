@@ -173,6 +173,18 @@ class RappPin(Base):
 MAX_PINS = 5
 
 
+class UserPreference(Base):
+    """A user's console preferences (theme, text size, accent, start page, rows per page, time zone, clock, motion, alarm sound), one JSON object per
+    user (the GUI redesign, BRIEF §4d; validated by app/preferences.py before it is stored). Kept here and not only in the browser, so the console looks
+    the same on every device; the browser keeps a copy just so its first paint is right. A new table, made by `create_all`. An SSO user gets a row the
+    first time they save; until then `GET /api/me/preferences` answers the defaults."""
+    __tablename__ = "gui_user_preference"
+
+    username: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(String, nullable=False)          # JSON text
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+
+
 class Database:
     def __init__(self, url: str):
         kwargs: dict = {"future": True}
@@ -471,3 +483,31 @@ class Database:
             s.execute(delete(RappPin).where(RappPin.username == username))
             s.commit()
 
+    # ------------------------------------------------------------ console preferences (GUI redesign, BRIEF §4d)
+
+    def preferences(self, username: str) -> str | None:
+        """The user's stored preferences as JSON text, or None when they never saved any."""
+        with self.session() as s:
+            row = s.get(UserPreference, username)
+            return row.value if row is not None else None
+
+    def save_preferences(self, username: str, value: str) -> None:
+        """Store (insert or replace) the user's preferences, JSON text already validated by the caller. Two saves at once: the later commit wins."""
+        with self.session() as s:
+            row = s.get(UserPreference, username)
+            if row is None:
+                s.add(UserPreference(username=username, value=value))
+            else:
+                row.value, row.updated_at = value, _now()
+            try:
+                s.commit()
+            except IntegrityError:          # the same user's first save from another request a moment earlier: replace it
+                s.rollback()
+                s.execute(update(UserPreference).where(UserPreference.username == username).values(value=value, updated_at=_now()))
+                s.commit()
+
+    def remove_preferences(self, username: str) -> None:
+        """Forget the user's preferences (they are back on the defaults); used when the user is deleted."""
+        with self.session() as s:
+            s.execute(delete(UserPreference).where(UserPreference.username == username))
+            s.commit()

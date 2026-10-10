@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AI/ML — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="aiml" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Automation" crumb="AI/ML" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">MLMR · AIMgF · MLLF · MLMF</div>
+          <h1 style="margin-top: 6px;">AI/ML models</h1>
+          <p>From registration to governed deployment, with the guard KPI that sends a model back for retraining.</p>
+        </div>
+        <div class="row"><button class="btn">Request training</button><button class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Register model</button></div>
+      </div>
+
+      <div class="tabs" role="tablist"><sc-for list="{{tabs}}" as="t" hint-placeholder-count="6"><button class="{{t.cls}}" role="tab" aria-selected="{{t.sel}}" onClick="{{t.go}}">{{t.label}} <span class="n">{{t.n}}</span></button></sc-for></div>
+      <sc-if value="{{T.training}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.training}}" hint-size="100%,520px"></dc-import></sc-if>
+      <sc-if value="{{T.inference}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.inference}}" hint-size="100%,520px"></dc-import></sc-if>
+      <sc-if value="{{T.features}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.features}}" hint-size="100%,520px"></dc-import></sc-if>
+      <sc-if value="{{T.coord}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.coord}}" hint-size="100%,460px"></dc-import></sc-if>
+      <sc-if value="{{T.registry}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.repos}}" hint-size="100%,400px"></dc-import><dc-import name="ListView" spec="{{S.storages}}" hint-size="100%,400px"></dc-import><dc-import name="ListView" spec="{{S.artifacts}}" hint-size="100%,420px"></dc-import></sc-if>
+      <sc-if value="{{T.mlmf}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.mlmf}}" hint-size="100%,520px"></dc-import></sc-if>
+      <sc-if value="{{T.models}}" hint-placeholder-val="{{true}}">
+
+      <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; overflow-x: auto;">
+        <sc-for list="{{cols}}" as="c" hint-placeholder-count="5">
+          <div style="display: flex; flex-direction: column; gap: 10px; min-width: 190px; padding: 12px; border-radius: 14px; background: var(--rail); border: 1px solid var(--line);">
+            <div class="row between"><span class="eyebrow">{{c.t}}</span><span class="badge b-mute plain">{{c.n}}</span></div>
+            <sc-for list="{{c.cards}}" as="m" hint-placeholder-count="2">
+              <div style="{{m.style}}">
+                <div class="row between"><strong class="small">{{m.name}}</strong><span class="mono xs muted">{{m.v}}</span></div>
+                <span class="xs muted">{{m.use}}</span>
+                <div class="row between"><span class="{{m.bc}}">{{m.state}}</span><span class="mono xs">{{m.metric}}</span></div>
+              </div>
+            </sc-for>
+            <a class="small" href="#" style="margin-top: auto;">+ {{c.more}} more in this stage →</a>
+          </div>
+        </sc-for>
+      </div>
+      <div class="row between wrap" style="margin-top: -6px;"><span class="xs muted">Each column shows the 2 most recently changed; versions of one model are grouped. Click a column to page through its models.</span><div class="row"><label class="search" style="width: 260px; min-height: 34px;"><input aria-label="Find model" placeholder="Find model or version"></label><select class="input" style="width: 170px; min-height: 34px;" aria-label="Used by"><option>Used by: any rApp</option></select></div></div>
+
+      <div class="grid g3">
+        <section class="card s2" aria-labelledby="md-h">
+          <div class="card-h" style="align-items: flex-start;">
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div class="row wrap"><h2 id="md-h" style="font-size: 20px;">coverage-model</h2><span class="mono muted">v3</span><span class="badge b-ok">PROMOTED</span><span class="badge b-volt plain">Runtime ACTIVE</span></div>
+              <span class="small muted">Used by Coverage Optimization · node groups edge-01/gpu-l40</span>
+            </div>
+            <div class="row"><button class="btn btn-sm">Retrain</button><button class="btn btn-sm btn-danger">Deprecate</button></div>
+          </div>
+          <div class="steps">
+            <span class="step done"><i></i>Registered</span><span class="step done"><i></i>Trained</span><span class="step done"><i></i>Validated</span><span class="step done"><i></i>Emulated</span><span class="step done"><i></i>Approved</span><span class="step done"><i></i>Certified</span><span class="step now"><i></i>Promoted</span>
+          </div>
+          <div class="card-h" style="margin-top: 4px;"><div><h3 style="font-size: 14px;">Guard KPI · accuracy</h3><span class="sub">MLMF reports, last 40 · floor 0.85</span></div><span class="badge b-bad">Under floor · retrain triggered</span></div>
+          <svg width="100%" height="190" viewBox="0 0 700 190" preserveAspectRatio="none" role="img" aria-label="Accuracy over the last 40 reports, falling below the 0.85 floor at the end">
+            <line class="gl" x1="40" y1="20" x2="700" y2="20"></line><line class="gl" x1="40" y1="80" x2="700" y2="80"></line><line class="gl" x1="40" y1="140" x2="700" y2="140"></line>
+            <text class="ax" x="0" y="24">0.95</text><text class="ax" x="0" y="84">0.90</text><text class="ax" x="0" y="144">0.85</text>
+            <line class="floor" x1="40" y1="140" x2="700" y2="140"></line>
+            <path class="ar-volt" d="{{area}}"></path>
+            <polyline class="ln-volt" points="{{pts}}"></polyline>
+            <circle cx="700" cy="176" r="5" fill="#ff5d52"></circle>
+          </svg>
+          <div class="grid g4" style="gap: 10px;">
+            <div class="inset"><div class="xs muted">accuracy</div><div class="num t-bad" style="font-size: 20px;">0.82</div></div>
+            <div class="inset"><div class="xs muted">f1Score</div><div class="num" style="font-size: 20px;">0.80</div></div>
+            <div class="inset"><div class="xs muted">inference p95</div><div class="num" style="font-size: 20px;">38 ms</div></div>
+            <div class="inset"><div class="xs muted">inferences · 24 h</div><div class="num" style="font-size: 20px;">1,920</div></div>
+          </div>
+        </section>
+        <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
+          <section class="card" aria-labelledby="tj-h">
+            <div class="card-h"><h2 id="tj-h">Training jobs</h2><a class="small" href="#">14 running →</a></div>
+            <div class="inset" style="display: flex; flex-direction: column; gap: 8px;">
+              <div class="row between"><strong class="small">coverage-model v4</strong><span class="badge b-warn">TRAINING</span></div>
+              <div class="meter"><span class="f-warn" style="width: 58%;"></span></div>
+              <span class="xs muted">epoch 29 / 50 · DME job pm-coverage-15m · ETA 18 min</span>
+            </div>
+            <div class="inset" style="display: flex; flex-direction: column; gap: 6px;">
+              <div class="row between"><strong class="small">load-model v4</strong><span class="badge b-ok">FINISHED</span></div>
+              <span class="xs muted">accuracy 0.93 · validated</span>
+            </div>
+          </section>
+          <section class="card" aria-labelledby="gv-h">
+            <div class="card-h"><h2 id="gv-h">Waiting for governance</h2><a class="small" href="#">6 →</a></div>
+            <div class="callout warn"><div style="display: flex; flex-direction: column; gap: 6px;"><strong class="small">steer-model v1.2 · PENDING_APPROVAL</strong><span class="xs muted">Emulated on twin: congestion −22%, no KPI regressions</span><div class="row"><button class="btn btn-sm btn-primary">Approve</button><button class="btn btn-sm">Review</button></div></div></div>
+          </section>
+          <section class="card" aria-labelledby="ij-h">
+            <div class="card-h"><h2 id="ij-h">Inference</h2><span class="sub">last 5 jobs</span></div>
+            <div class="row" style="gap: 4px;"><span class="badge b-ok plain">COMPLETED</span><span class="badge b-ok plain">COMPLETED</span><span class="badge b-ok plain">COMPLETED</span><span class="badge b-warn plain">RUNNING</span><span class="badge b-bad plain">FAILED</span></div>
+          </section>
+        </div>
+      </div>
+        <section class="card" aria-labelledby="gh-h">
+          <div class="card-h"><div><h2 id="gh-h">coverage-model v3 · governance &amp; lifecycle history</h2><span class="sub">/models/{id}/governance-history · /lifecycle-history · every decision with who and why</span></div><div class="seg" role="group" aria-label="History"><button class="on">Governance</button><button>All transitions</button></div></div>
+          <div class="tbl-box"><table class="tbl">
+            <thead><tr><th>When</th><th>Decision</th><th>From → to</th><th>Decided by</th><th>Rationale</th></tr></thead>
+            <tbody>
+              <tr><td class="mono xs muted">09 Oct 11:02</td><td><span class="badge b-volt plain">PROMOTE</span></td><td class="mono small">CERTIFIED → PROMOTED</td><td class="small">admin-1</td><td class="small">Emulation on twin: weak coverage −8%, no regressions</td></tr>
+              <tr><td class="mono xs muted">09 Oct 10:58</td><td><span class="badge b-ok plain">CERTIFY</span></td><td class="mono small">APPROVED → CERTIFIED</td><td class="small">admin-1</td><td class="small">Meets release checklist v4</td></tr>
+              <tr><td class="mono xs muted">09 Oct 10:41</td><td><span class="badge b-ok plain">APPROVE</span></td><td class="mono small">PENDING_APPROVAL → APPROVED</td><td class="small">admin-2</td><td class="small">Second reviewer</td></tr>
+              <tr><td class="mono xs muted">09 Oct 09:15</td><td><span class="badge b-info plain">SUBMIT_FOR_APPROVAL</span></td><td class="mono small">EMULATED → PENDING_APPROVAL</td><td class="small">admin-1</td><td class="small">—</td></tr>
+              <tr><td class="mono xs muted">08 Oct 17:20</td><td><span class="badge b-info plain">APPROVE_VALIDATION</span></td><td class="mono small">VALIDATED</td><td class="small">operator1</td><td class="small">Validation set accuracy 0.89</td></tr>
+            </tbody>
+          </table></div>
+          <div class="row wrap" style="gap: 8px;"><button class="btn btn-sm btn-danger">Roll back to CERTIFIED</button><button class="btn btn-sm">Deprecate</button><button class="btn btn-sm">Retire</button><span class="xs muted">Each needs a rationale and is recorded here.</span></div>
+        </section>
+      </sc-if>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1440}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const card = (name, v, use, state, bc, metric, hot) => ({ name, v, use, state, bc, metric,
+      style: 'display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:10px;background:var(--surface);border:1px solid ' + (hot ? 'var(--bad)' : 'var(--line)') + ';' });
+    const cols = [
+      { t: 'Registered', n: 61, more: 59, cards: [card('anomaly-model', 'v1', 'Anomaly Watch', 'REGISTERED', 'badge b-info', '—'), card('ho-predict', 'v0.4', 'Mobility Opt.', 'REGISTERED', 'badge b-info', '—')] },
+      { t: 'Training', n: 14, more: 12, cards: [card('coverage-model', 'v4', 'Coverage Opt.', 'TRAINING', 'badge b-warn', '58%'), card('rach-model', 'v2', 'RACH Optimizer', 'TRAINING', 'badge b-warn', '21%')] },
+      { t: 'Validating · emulating', n: 22, more: 20, cards: [card('steer-model', 'v1.2', 'Traffic Steering', 'PENDING_APPROVAL', 'badge b-warn', 'emulated'), card('qoe-model', 'v0.4', 'QoE Predictor', 'VALIDATING', 'badge b-info', '—')] },
+      { t: 'Promoted', n: 197, more: 195, cards: [card('load-model', 'v4', 'Energy Saving', 'PROMOTED', 'badge b-ok', 'acc 0.93'), card('mobility-model', 'v2.3', 'Mobility Opt.', 'PROMOTED', 'badge b-ok', 'acc 0.91')] },
+      { t: 'Active runtime', n: 214, more: 212, cards: [card('coverage-model', 'v3', 'Coverage Opt.', 'ACTIVE', 'badge b-volt', 'acc 0.82', true), card('kpi-forecast', 'v2', 'KPI Reporter', 'ACTIVE', 'badge b-volt', 'mape 4.1%')] }
+    ];
+    const vals = [.93,.92,.94,.93,.92,.93,.91,.92,.92,.91,.92,.90,.91,.91,.90,.91,.90,.89,.90,.89,.90,.89,.88,.89,.88,.88,.87,.88,.87,.87,.86,.87,.86,.86,.85,.86,.85,.84,.83,.82];
+    const y = (v) => 140 - (v - 0.85) * 1200;
+    const pts = vals.map((v, i) => (40 + i * 660 / 39).toFixed(1) + ',' + y(v).toFixed(1)).join(' ');
+    const area = 'M' + pts.split(' ').join(' L') + ' L700 190 L40 190 Z';
+    const tab = (this.state && this.state.tab) || 'models';
+    const defs = [['models', 'Models', '508'], ['training', 'Training jobs', '14 running'], ['inference', 'Inference jobs', '1.2 k / h'], ['features', 'Feature groups', '96'], ['coord', 'Coordination groups', '11'], ['mlmf', 'Performance (MLMF)', '3 breaches'], ['registry', 'Registry', '4 repositories']];
+    const tabs = defs.map(([k, label, n]) => ({ label, n, cls: k === tab ? 'tab on' : 'tab', sel: k === tab ? 'true' : 'false', go: () => this.setState({ tab: k }) }));
+    const T = {}; defs.forEach(([k]) => { T[k] = k === tab; });
+    const S = {
+      training: { title: 'Training jobs', sub: 'MLTF · data from DME jobs · suspend frees the GPU, resume continues from the last checkpoint', search: 'Search job, model, bucket', chips: ['Running'], actions: ['Request training', 'Suspend selected', 'Resume selected', 'Cancel selected'],
+        cols: ['Job', 'Model', 'Status', 'Step', 'DME data job', 'Bucket / measurement', 'Metrics'],
+        rows: [['id:tj-0921', 'a:#|coverage-model v4', 'b:warn:TRAINING', 'epoch 29 / 50', 'id:dj-07', 'm:pm / NRCellDU', 'mu:loss 0.21'], ['id:tj-0919', 'a:#|rach-model v2', 'b:mute:SUSPENDED', 'epoch 6 / 30', 'id:dj-12', 'm:pm / RACH', 'mu:loss 0.48'], ['id:tj-0915', 'a:#|load-model v4', 'b:ok:FINISHED', 'validated', 'id:dj-07', 'm:pm / NRCellDU', 'mu:acc 0.93'], ['id:tj-0910', 'a:#|steer-model v1.2', 'b:ok:FINISHED', 'emulated', 'id:dj-03', 'm:pm / HO', 'mu:acc 0.90'], ['id:tj-0907', 'a:#|qoe-model v0.4', 'b:bad:FAILED', 'data missing', 'id:dj-21', 'm:qoe / video', 'mu:—']],
+        total: '214', note: 'running first', page: '1 / 43' },
+      inference: { title: 'Inference jobs', sub: 'MLEF · results delivered through DME', search: 'Search job, model, target', chips: ['Last 1 h'], actions: ['Request inference'],
+        cols: ['Job', 'Model', 'Runtime', 'Target', 'Status', 'Delivery'],
+        rows: [['id:ij-88101', 'a:#|coverage-model v3', 'id:rt-edge-a-1', 'm:harbour / 140 cells', 'b:ok:COMPLETED', 'mu:DME push 0.4 s'], ['id:ij-88100', 'a:#|load-model v4', 'id:rt-edge-a-2', 'm:metro-a / 812 DUs', 'b:ok:COMPLETED', 'mu:DME push 1.1 s'], ['id:ij-88099', 'a:#|mobility-model v2.3', 'id:rt-core-1', 'm:eu-west', 'b:warn:RUNNING', 'mu:—'], ['id:ij-88097', 'a:#|kpi-forecast v2', 'id:rt-core-2', 'm:eu-west', 'b:ok:COMPLETED', 'mu:DME pull'], ['id:ij-88095', 'a:#|coverage-model v3', 'id:rt-edge-s-1', 'm:stadium', 'b:bad:FAILED', 'mu:runtime unreachable']],
+        total: '1,204', note: 'last 1 h', page: '1 / 241' },
+      features: { title: 'Feature groups', sub: 'what models train on · datalake settings', search: 'Search group or feature', chips: [], actions: ['New feature group'],
+        cols: ['Group', 'Features', 'Source', 'Owner', 'Used by'],
+        rows: [['a:#|cell-load-15m', '14 · prb, rrc, thp…', 'm:pm.nr.cell.15m', 'ran-energy-team', '6 models'], ['a:#|ho-quality', '9 · hoExeFail, pingpong…', 'm:pm.nr.ho.15m', 'ran-mobility', '4 models'], ['a:#|coverage-rf', '11 · rsrp, sinr, tilt…', 'm:mda.coverage-issue', 'ran-coverage', '3 models'], ['a:#|qoe-video', '7 · stall, bitrate…', 'm:qoe.video', 'analytics', '1 model']],
+        total: '96', note: 'by name', page: '1 / 24' },
+      coord: { title: 'Coordination groups', sub: 'models that must not act on the same cells at once', search: 'Search group', chips: [], actions: ['New group'],
+        cols: ['Group', 'Members', 'Use cases', 'Propagation'],
+        rows: [['a:#|energy-vs-coverage', 'load-model v4, coverage-model v3', 'sleep vs tilt', 'b:info:block lower priority'], ['a:#|mobility-steering', 'mobility-model v2.3, steer-model v1.2', 'CIO vs steering', 'b:info:serialise'], ['a:#|rach-load', 'rach-model v2, load-model v4', 'RACH vs sleep', 'b:info:serialise']],
+        total: '11', note: '', page: '1 / 3' },
+      repos: { title: 'Model repositories', sub: 'MLMR · where model versions are registered', search: 'Search repository', chips: [], actions: ['New repository'], cols: ['Repository', 'Models', 'Versions', 'Owner'], rows: [['a:#|ran-optimisation', '212', '688', 'ran-team'], ['a:#|analytics', '61', '140', 'analytics'], ['a:#|partner-vendor-a', '24', '38', 'vendor-a']], total: '4', page: '1 / 1' },
+      storages: { title: 'Storages', sub: 'where artifacts physically live', search: 'Search storage', chips: [], actions: ['Add storage'], cols: ['Storage', 'Profiles', 'Models', 'Used'], rows: [['a:#|s3-eu-west-models', 'onnx, torchscript', '297', 'm:1.8 TB'], ['a:#|edge-cache-metro-a', 'onnx', '42', 'm:120 GB']], total: '3', page: '1 / 1' },
+      artifacts: { title: 'Artifact versions · coverage-model', sub: 'every uploaded artifact, immutable', search: 'Search version', chips: [], actions: ['Upload artifact'], cols: ['Version', 'Artifact', 'Size', 'Uploaded', 'Lifecycle'], rows: [['m:v4', 'a:#|coverage-model-v4.onnx', 'm:84 MB', 'mu:training', 'b:warn:TRAINING'], ['m:v3', 'a:#|coverage-model-v3.onnx', 'm:81 MB', 'mu:09 Oct', 'b:volt:PROMOTED'], ['m:v2', 'a:#|coverage-model-v2.onnx', 'm:79 MB', 'mu:12 Sep', 'b:mute:RETIRED']], total: '6', page: '1 / 2' },
+      mlmf: { title: 'Performance monitoring (MLMF)', sub: 'guard KPI floors · a breach triggers retraining', search: 'Search model or subscription', chips: ['Under floor'], actions: ['New subscription'],
+        cols: ['Subscription', 'Model', 'Guard KPI floor', 'Latest', 'Reported', 'Status'],
+        rows: [['id:sub-1a50', 'a:#|coverage-model v3', 'accuracy ≥ 0.85', 'm:0.82', 'mu:3 min ago', 'b:bad:BREACHED · retrain'], ['id:sub-77e2', 'a:#|qoe-model v0.3', 'f1 ≥ 0.75', 'm:0.71', 'mu:9 min ago', 'b:bad:BREACHED · retrain'], ['id:sub-04d9', 'a:#|rach-model v1', 'accuracy ≥ 0.80', 'm:0.79', 'mu:1 min ago', 'b:bad:BREACHED · retrain'], ['id:sub-5c11', 'a:#|load-model v4', 'accuracy ≥ 0.85', 'm:0.93', 'mu:2 min ago', 'b:ok:OK']],
+        total: '205', note: 'breaching first', page: '1 / 41' }
+    };
+    return { P,  cols, pts, area, tabs, T, S };
+  }
+}
+</script>
+</body>
+</html>

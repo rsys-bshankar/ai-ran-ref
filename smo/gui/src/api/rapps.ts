@@ -1,10 +1,11 @@
 // The BFF's rApp routes (gui-bff/app/rapps.py, PR-GUI-8): the directory, one rApp with its declared page, the declared routes, the user's pins.
-// All keys start with "bff" so the existing `useSmoAction` invalidation (["bff"]) also refreshes them.
+// All keys start with "bff"; `useSmoAction` refreshes the directory, one rApp and the pins after any SMO change (data/keys.ts).
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useToast } from "../components/Toast";
 import { refreshInterval, type Obj } from "../lib/operatorUi";
+import { invalidateAfter } from "../data/keys";
 import { api, ApiError, type Query } from "./client";
 
 export interface RappSummary {
@@ -66,7 +67,8 @@ export function useOperatorAction(instanceId: string) {
     onSuccess: (_data, a) => {
       toast.push({ tone: "success", text: a.success });
       qc.invalidateQueries({ queryKey: ["bff", "rapp-op", instanceId] });
-      qc.invalidateQueries({ queryKey: ["smo"] });
+      // a declared action changes the rApp, and through its config jobs the network: those reads only (SCALE.md P8)
+      void invalidateAfter(qc, "/rapp-mgmt", ["ran-nf-oam"]);
     },
     onError: (err, a) => toast.push({ tone: "error", text: `${a.actionId} failed — ${err.message}` }),
   });
@@ -89,7 +91,7 @@ export function usePinToggle() {
     mutationFn: ({ instanceId, pin }) => api(`/me/pins/${instanceId}`, { method: pin ? "PUT" : "DELETE" }),
     onSuccess: (_d, { pin }) => {
       toast.push({ tone: "success", text: pin ? "Pinned to the sidebar" : "Unpinned" });
-      qc.invalidateQueries({ queryKey: ["bff"] });
+      for (const k of ["pins", "rapps", "rapp"]) qc.invalidateQueries({ queryKey: ["bff", k] });
     },
     onError: (err) => toast.push({ tone: "error", text: err.status === 409 ? `At most ${MAX_PINS} rApps can be pinned: unpin one first` : `Pinning failed — ${err.message}` }),
   });

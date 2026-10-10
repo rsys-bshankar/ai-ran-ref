@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Decisions — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="decisions" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Automation" crumb="Decisions" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">Explainability · audit</div>
+          <h1 style="margin-top: 6px;">Decisions</h1>
+          <p>Why each rApp change was made: the inputs, the model version, its rationale, the job it became and who approved it.</p>
+        </div>
+        <div class="row"><span class="badge b-ok">Hash chain verified · 2.1 M records</span><button class="btn">Export (runs on the server)</button></div>
+      </div>
+
+      <div class="row wrap" style="gap: 10px;">
+        <label class="search" style="flex: 1 1 280px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4"></path></svg><input aria-label="Search decisions" placeholder="Search rationale, cell, job id"></label>
+        <select class="input" style="width: 200px;" aria-label="rApp"><option>All rApps</option></select>
+        <select class="input" style="width: 170px;" aria-label="Outcome"><option>All outcomes</option></select>
+        <select class="input" style="width: 170px;" aria-label="Model version"><option>Any model</option></select>
+        <div class="seg" role="group" aria-label="Range"><button>1 h</button><button class="on">24 h</button><button>7 d</button></div>
+      </div>
+
+      <div class="grid g4">
+        <div class="kpi"><span class="kpi-l">Decisions · 24 h</span><span class="kpi-v">2,416</span><span class="kpi-f">counted on the server</span></div>
+        <div class="kpi"><span class="kpi-l">Autonomous</span><span class="kpi-v">1,782</span><div class="meter"><span class="f-volt" style="width: 74%;"></span></div></div>
+        <div class="kpi"><span class="kpi-l">Approved by a person</span><span class="kpi-v">512</span><div class="meter"><span class="f-info" style="width: 21%;"></span></div></div>
+        <div class="kpi"><span class="kpi-l">Rolled back</span><span class="kpi-v">71</span><div class="meter"><span class="f-warn" style="width: 3%;"></span></div></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+        <section class="card flush">
+          <div class="tbl-box"><table class="tbl">
+            <thead><tr><th>When</th><th>rApp</th><th>Change</th><th>Model</th><th>Approved by</th><th>Outcome</th></tr></thead>
+            <tbody>
+              <sc-for list="{{rows}}" as="r" hint-placeholder-count="9">
+                <tr class="{{r.sel}}" onClick="{{r.go}}" style="cursor: pointer;">
+                  <td class="mono muted">{{r.t}}</td>
+                  <td><strong class="small">{{r.app}}</strong></td>
+                  <td class="small">{{r.ch}}</td>
+                  <td class="mono xs muted">{{r.m}}</td>
+                  <td class="small">{{r.by}}</td>
+                  <td><span class="{{r.oc}}">{{r.o}}</span></td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table></div>
+          <dc-import name="Pager" from="1" to="50" total="2,416" noun="decisions" note="last 24 h · newest first" page="1 / 49" hint-size="100%,56px"></dc-import>
+        </section>
+
+        <section class="card">
+          <div class="card-h"><div style="display: flex; flex-direction: column; gap: 4px;"><span class="row"><span class="id">{{d.id}}</span><span class="{{d.oc}}">{{d.o}}</span></span><h2 style="font-size: 18px;">{{d.ch}}</h2><span class="small muted">{{d.app}} · {{d.t}} · model {{d.m}} · approved by {{d.by}}</span></div></div>
+          <ol class="tl" style="list-style: none; margin: 0; padding: 0;">
+            <li class="tl-i done"><span class="tl-n">1</span><div class="tl-b"><strong class="small">Inputs</strong><span class="xs muted">RSRP p10 −112 dBm · overshoot index 0.34 · PM 15 min</span></div></li>
+            <li class="tl-i done"><span class="tl-n">2</span><div class="tl-b"><strong class="small">Model</strong><span class="xs muted mono">coverage-model v3 · confidence 0.77</span></div></li>
+            <li class="tl-i done"><span class="tl-n">3</span><div class="tl-b"><strong class="small">Rationale</strong><span class="xs muted">Overshoot into cell-11 causes interference; 1° downtilt predicted to cut it by 40%.</span></div></li>
+            <li class="tl-i done"><span class="tl-n">4</span><div class="tl-b"><strong class="small">Config job</strong><span class="xs muted"><span class="id">job-81aa</span> · O1 RESTCONF · applied 02:37:04</span></div></li>
+            <li class="tl-i done"><span class="tl-n">5</span><div class="tl-b"><strong class="small">Approval</strong><span class="xs muted">Autonomous — within safeguards, no person needed</span></div></li>
+            <li class="tl-i fail"><span class="tl-n">!</span><div class="tl-b"><strong class="small">Verify</strong><span class="xs t-bad">Edge throughput on cell-9 fell 9% → VERIFY_FAILED_ROLLED_BACK at 02:52</span></div></li>
+          </ol>
+          <div class="inset" style="display: flex; flex-direction: column; gap: 6px;">
+            <span class="xs muted">Integrity</span>
+            <span class="mono xs" style="overflow-wrap: anywhere;">sha256 9f4c…e1a2 ← prev 03b7…77d0</span>
+            <span class="badge b-ok" style="align-self: flex-start;">Chain intact</span>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const O = { EXECUTED: 'badge b-ok', VERIFIED: 'badge b-ok', REVERTED: 'badge b-warn', REJECTED: 'badge b-bad', SHADOWED: 'badge b-mute', PENDING: 'badge b-warn' };
+    const rows = [
+      ['03:08', 'Energy Saving', 'Sleep cell-2, cell-3 (du-02)', 'load v4', 'autonomous', 'VERIFIED'],
+      ['02:51', 'Mobility Opt.', 'CIO +2 dB × 3 relations', 'mobility v2.3', '—', 'PENDING'],
+      ['02:37', 'Coverage Opt.', 'Downtilt 1° cell-9', 'coverage v3', 'autonomous', 'REVERTED'],
+      ['02:14', 'Traffic Steering', 'Steer 12% idle UEs → cell-5', 'steer v1.1', 'operator1', 'VERIFIED'],
+      ['01:58', 'Energy Saving', 'Wake cell-6 (du-05)', 'load v4', 'shadow', 'SHADOWED'],
+      ['01:22', 'Energy Saving', 'Sleep 3 cells (du-04)', 'load v4', 'admin', 'REJECTED'],
+      ['00:47', 'Mobility Opt.', 'CIO −1 dB cell-11', 'mobility v2.3', 'operator1', 'EXECUTED'],
+      ['23:40', 'Energy Saving', 'Sleep cell-1, cell-2 (du-05)', 'load v4', 'autonomous', 'VERIFIED'],
+      ['22:05', 'Coverage Opt.', 'Power +1 dB cell-14', 'coverage v3', 'operator2', 'VERIFIED']
+    ];
+    const cur = (this.state && this.state.sel !== undefined) ? this.state.sel : 2;
+    const ids = ['dec-2c93a1', 'dec-2c9388', 'dec-2c91e0', 'dec-2c90b4', 'dec-2c8f7d', 'dec-2c8e02', 'dec-2c8c55', 'dec-2c8a10', 'dec-2c8711'];
+    const list = rows.map(([t, app, ch, m, by, o], i) => ({ id: ids[i], t, app, ch, m, by, o, oc: O[o], sel: i === cur ? 'sel' : '', go: () => this.setState({ sel: i }) }));
+    return { P,  rows: list, d: list[cur] };
+  }
+}
+</script>
+</body>
+</html>

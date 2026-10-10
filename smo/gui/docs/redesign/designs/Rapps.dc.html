@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>rApps — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="rapps" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Automation" crumb="rApps" scope="eu-west · all clusters" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">Onboarding · rApp Management</div>
+          <h1 style="margin-top: 6px;">rApps</h1>
+          <p>487 instances of 162 packages · 31 categories · 12 vendors</p>
+        </div>
+        <div class="row"><button class="btn">Create instance</button><button class="btn btn-primary">Onboard package</button></div>
+      </div>
+
+      <div class="tabs" role="tablist"><sc-for list="{{tabs}}" as="t" hint-placeholder-count="4"><button class="{{t.cls}}" role="tab" aria-selected="{{t.sel}}" onClick="{{t.go}}">{{t.label}} <span class="n">{{t.n}}</span></button></sc-for></div>
+      <sc-if value="{{T.packages}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.packages}}" hint-size="100%,520px"></dc-import></sc-if>
+      <sc-if value="{{T.rollouts}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.rollouts}}" hint-size="100%,400px"></dc-import></sc-if>
+      <sc-if value="{{T.directory}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.directory}}" hint-size="100%,520px"></dc-import></sc-if>
+      <sc-if value="{{T.instances}}" hint-placeholder-val="{{true}}">
+
+      <div class="grid g5">
+        <div class="kpi"><span class="kpi-l">Running</span><span class="kpi-v">471</span><div class="meter"><span class="f-ok" style="width: 96.7%;"></span><span class="f-warn" style="width: 2%;"></span><span class="f-bad" style="width: 1.3%;"></span></div><span class="kpi-f">10 upgrading · 6 faulted</span></div>
+        <div class="kpi"><span class="kpi-l">Autonomy mix</span><span class="kpi-v" style="font-size: 26px;">212 · 198 · 77</span><span class="kpi-f">auto · assist · shadow</span></div>
+        <div class="kpi"><span class="kpi-l">Actions · 24 h</span><span class="kpi-v">2,416</span><span class="kpi-f">71 reverted</span></div>
+        <div class="kpi"><span class="kpi-l">Refusals · 24 h</span><span class="kpi-v">122</span><span class="kpi-f">top: rate limit (64)</span></div>
+        <div class="kpi"><span class="kpi-l">Stopped</span><span class="kpi-v">4</span><span class="kpi-f">by admin</span></div>
+      </div>
+
+      <section class="card" aria-labelledby="pin-h" style="gap: 10px;">
+        <div class="card-h"><div><h2 id="pin-h">Pinned &amp; needs attention</h2><span class="sub">your 3 pins, then faulted and upgrading first · max 6 here</span></div><a class="small" href="#">Manage pins</a></div>
+        <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px;">
+          <sc-for list="{{pins}}" as="p" hint-placeholder-count="6">
+            <a href="RappDetail.dc.html" style="{{p.box}}">
+              <div class="row between"><strong class="small" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{p.n}}</strong><span class="xs muted">{{p.pin}}</span></div>
+              <span class="xs muted mono">{{p.scope}}</span>
+              <div class="row between"><span class="{{p.sc}}">{{p.st}}</span><span class="mono xs">{{p.k}}</span></div>
+            </a>
+          </sc-for>
+        </div>
+      </section>
+
+      <div style="display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 16px; align-items: start;">
+        <aside class="card" aria-label="Filters" style="gap: 16px;">
+          <div class="row between"><strong class="small">Filters</strong><a class="xs" href="#">Clear</a></div>
+          <sc-for list="{{facets}}" as="f" hint-placeholder-count="5">
+            <fieldset style="border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px;">
+              <legend class="eyebrow" style="padding: 0 0 6px;">{{f.t}}</legend>
+              <sc-for list="{{f.opts}}" as="o" hint-placeholder-count="4">
+                <label class="row between small" style="gap: 8px;"><span class="row" style="gap: 8px;"><input type="checkbox" checked="{{o.on}}"> {{o.l}}</span><span class="mono xs faint">{{o.c}}</span></label>
+              </sc-for>
+            </fieldset>
+          </sc-for>
+          <a class="xs" href="#">+ owner, vendor, version…</a>
+        </aside>
+
+        <section class="card flush" aria-labelledby="cat-h">
+          <div class="card-h">
+            <div class="row wrap" style="gap: 8px;">
+              <label class="search" style="width: 300px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4"></path></svg><input aria-label="Search instances" placeholder="Search name, id, owner, cell scope"></label>
+              <span class="chip">State: Running ×</span><span class="chip">Mode: Assist ×</span>
+            </div>
+            <div class="row"><select class="input" style="width: 170px;" aria-label="Saved view"><option>View: My assist rApps</option></select><button class="btn btn-sm">Columns</button></div>
+          </div>
+          <div class="row between" style="padding: 10px 18px; background: var(--volt-soft); border-top: 1px solid var(--line);">
+            <span class="small"><strong>3 selected</strong> · <a href="#">select all 198 matching</a></span>
+            <div class="row"><button class="btn btn-sm">Set autonomy…</button><button class="btn btn-sm">Upgrade…</button><button class="btn btn-sm btn-danger">Stop</button></div>
+          </div>
+          <div class="tbl-box"><table class="tbl">
+            <thead><tr><th style="width: 36px;"><input type="checkbox" aria-label="Select page"></th><th>rApp ↓</th><th>Category</th><th>Scope</th><th>State</th><th>Lifecycle</th><th>Mode</th><th>Health</th><th class="r">Actions 24 h</th><th class="r">Refusals</th></tr></thead>
+            <tbody>
+              <sc-for list="{{rows}}" as="r" hint-placeholder-count="10">
+                <tr>
+                  <td><input type="checkbox" aria-label="Select row" checked="{{r.sel}}"></td>
+                  <td><div style="display: flex; flex-direction: column; gap: 2px;"><a href="RappDetail.dc.html" style="color: var(--text);"><strong class="small">{{r.n}}</strong></a><span class="xs muted mono">{{r.v}} · {{r.id}}</span></div></td>
+                  <td class="small muted">{{r.cat}}</td>
+                  <td class="mono xs">{{r.scope}}</td>
+                  <td><span class="{{r.sc}}">{{r.st}}</span></td>
+                  <td><a href="RappDetail.dc.html" style="display: flex; flex-direction: column; gap: 4px; text-decoration: none; color: inherit;"><span class="row" style="gap: 3px;"><sc-for list="{{r.dots}}" as="d" hint-placeholder-count="5"><span style="{{d}}"></span></sc-for></span><span class="xs muted">{{r.lc}}</span></a></td>
+                  <td><span class="badge b-info plain">{{r.mode}}</span></td>
+                  <td><div class="row"><div class="meter" style="width: 64px;"><span class="{{r.hf}}" style="{{r.hw}}"></span></div><span class="xs muted">{{r.h}}</span></div></td>
+                  <td class="r mono">{{r.a}}</td>
+                  <td class="r mono">{{r.rf}}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table></div>
+          <dc-import name="Pager" from="1" to="50" total="198" noun="instances" note="filtered · 487 in scope" page="1 / 4" hint-size="100%,56px"></dc-import>
+        </section>
+      </div>
+      </sc-if>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1300}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const box = (bad) => 'display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;text-decoration:none;color:inherit;background:var(--raised);border:1px solid ' + (bad ? 'rgba(255,93,82,0.55)' : 'var(--line)') + ';';
+    const pins = [
+      ['Energy Saving', '★', 'metro-a · 812 DUs', 'Running', 'badge b-ok', '18.4% saved', false],
+      ['Mobility Opt.', '★', 'eu-west · all', 'Running', 'badge b-ok', 'HO 99.1%', false],
+      ['Coverage Opt.', '★', 'harbour', 'Running', 'badge b-ok', '−6% weak', false],
+      ['Interference Mgmt', '', 'stadium', 'Faulted', 'badge b-bad', '3 faults', true],
+      ['Slice Assurance', '', 'metro-b', 'Faulted', 'badge b-bad', 'DME late', true],
+      ['Traffic Steering', '', 'eu-west · all', 'Upgrading', 'badge b-warn', '1.0.3→1.1.0', false]
+    ].map(([n, pin, scope, st, sc, k, bad]) => ({ n, pin, scope, st, sc, k, box: box(bad) }));
+    const facets = [
+      { t: 'State', opts: [{ l: 'Running', c: 471, on: true }, { l: 'Upgrading', c: 10, on: false }, { l: 'Faulted', c: 6, on: false }] },
+      { t: 'Autonomy', opts: [{ l: 'Autonomous', c: 212, on: false }, { l: 'Assist', c: 198, on: true }, { l: 'Shadow', c: 77, on: false }] },
+      { t: 'Category', opts: [{ l: 'Energy', c: 96, on: false }, { l: 'Mobility', c: 81, on: false }, { l: 'Coverage', c: 64, on: false }, { l: 'Steering', c: 58, on: false }, { l: '+ 27 more', c: '', on: false }] },
+      { t: 'Health', opts: [{ l: 'Healthy', c: 452, on: false }, { l: 'Degraded', c: 29, on: false }, { l: 'Down', c: 6, on: false }] }
+    ];
+    const S = { Running: 'badge b-ok', Upgrading: 'badge b-warn', Faulted: 'badge b-bad' };
+    const rows = [
+      ['Mobility Optimization', '2.0.1', 'd62fcb3e', 'Mobility', 'eu-west/*', 'Running', 92, 431, 3, true],
+      ['Coverage Optimization', '1.0.4', 'ebe8dbf1', 'Coverage', 'harbour', 'Running', 74, 209, 12, true],
+      ['Coverage Optimization', '1.0.4', '0c11a7e2', 'Coverage', 'metro-b', 'Running', 88, 141, 2, true],
+      ['Load Balancing', '3.2.0', '5aa91c04', 'Steering', 'metro-a', 'Running', 95, 120, 0, false],
+      ['Interference Mgmt', '0.9.8', '91b22e70', 'Interference', 'north-ring', 'Running', 90, 98, 1, false],
+      ['Mobility Optimization', '2.0.1', '7e40d118', 'Mobility', 'airport', 'Running', 97, 76, 0, false],
+      ['RACH Optimizer', '1.1.0', 'c3d0e941', 'Access', 'eu-west/*', 'Running', 99, 61, 0, false],
+      ['Coverage Optimization', '1.0.3', '2b7f6a55', 'Coverage', 'river', 'Running', 81, 44, 5, false],
+      ['Neighbour Relation Mgmt', '2.4.1', 'f0a2c8b3', 'Mobility', 'east-ind', 'Running', 100, 39, 0, false],
+      ['QoE Predictor', '0.4.0', '88e1d02c', 'Analytics', 'stadium', 'Running', 93, 0, 0, false]
+    ].map(([n, v, id, cat, scope, st, h, a, rf, sel], i) => {
+      const stage = [3, 1, 3, 3, 2, 3, 3, 4, 3, 3][i];
+      const words = ['Report', 'Fault', 'Recover', 'Running', 'Upgrade ready'];
+      const dots = [0, 1, 2, 3, 4].map((k) => 'width:14px;height:6px;border-radius:3px;background:' + (k < stage ? 'var(--ok)' : k === stage ? 'var(--volt)' : 'var(--line-strong)') + ';');
+      return { n, v, id, cat, scope, st, sc: S[st], mode: 'Assist', h: h + '%', hf: h < 85 ? 'f-warn' : 'f-ok', hw: 'width:' + h + '%', a, rf, sel, dots, lc: '07 · ' + words[stage] };
+    });
+    const tab = (this.state && this.state.tab) || 'instances';
+    const defs = [['instances', 'Instances', '487'], ['packages', 'Packages', '162'], ['rollouts', 'Rollouts', '3'], ['directory', 'Directory & pages', '487']];
+    const tabs = defs.map(([k, label, n]) => ({ label, n, cls: k === tab ? 'tab on' : 'tab', sel: k === tab ? 'true' : 'false', go: () => this.setState({ tab: k }) }));
+    const T = {}; defs.forEach(([k]) => { T[k] = k === tab; });
+    const SP = {
+      packages: { title: 'Packages', sub: 'onboarded CSARs · state, signature, usage', search: 'Search package, version, vendor', chips: ['State: any'], actions: ['Onboard package', 'Prime selected'],
+        cols: ['Package', 'Version', 'State', 'Signature', 'NF descriptor', 'In use by', 'Onboarded'],
+        rows: [['a:RappDetail.dc.html|energy-saving-rapp', 'm:1.2.0', 'b:ok:PRIMED', 'b:ok:verified', 'id:nfd-41a2', '96 instances', 'mu:3 d ago'], ['a:#|energy-saving-rapp', 'm:1.3.0', 'b:info:AVAILABLE', 'b:ok:verified', 'id:nfd-77c0', '0', 'mu:today'], ['a:#|mobility-optimization-rapp', 'm:2.0.1', 'b:ok:PRIMED', 'b:ok:verified', 'id:nfd-0b19', '81 instances', 'mu:6 d ago'], ['a:#|coverage-optimization-rapp', 'm:1.0.3', 'b:mute:DEPRECATED', 'b:ok:verified', 'id:nfd-5512', '2 instances', 'mu:21 d ago'], ['a:#|interference-mgmt', 'm:0.9.8', 'b:ok:PRIMED', 'b:ok:verified', 'id:nfd-9e04', '12 instances', 'mu:9 d ago'], ['a:#|qoe-predictor', 'm:0.4.1', 'b:bad:FAILED', 'b:bad:signature mismatch', 'mu:—', '0', 'mu:1 h ago']],
+        total: '162', note: 'newest first', page: '1 / 27' },
+      rollouts: { title: 'Rollouts', sub: 'upgrades in waves · canary first · roll back any time', search: 'Search rApp or package', chips: ['In progress'], actions: ['New rollout'],
+        cols: ['rApp', 'From', 'To', 'Wave', 'Progress', 'State', 'Started'],
+        rows: [['a:RappDetail.dc.html|Traffic Steering', 'm:1.0.3', 'm:1.1.0', 'canary · 1 of 3', '4 / 58 instances', 'b:warn:UPGRADING', 'mu:12 min ago'], ['a:#|Energy Saving', 'm:1.2.0', 'm:1.3.0', 'wave 2 of 4', '41 / 96', 'b:warn:UPGRADING', 'mu:2 h ago'], ['a:#|Coverage Optimization', 'm:1.0.3', 'm:1.0.4', 'complete', '64 / 64', 'b:ok:COMMITTED', 'mu:yesterday']],
+        total: '3', note: 'in progress first', page: '1 / 1' },
+      directory: { title: 'rApp directory', sub: 'every rApp, its owner and the operator page it declares', search: 'Search rApps', chips: ['Has page'], actions: [],
+        cols: ['rApp', 'Instance', 'Owner', 'Page', 'Autonomy', 'State'],
+        rows: [['a:RappDetail.dc.html|Energy Saving', 'id:2f2e6149', 'ran-energy-team', 'b:volt:declared', 'b:volt:Autonomous', 'b:ok:RUNNING'], ['a:RappDetail.dc.html|Mobility Optimization', 'id:d62fcb3e', 'ran-mobility', 'b:volt:declared', 'b:info:Assist', 'b:ok:RUNNING'], ['a:RappDetail.dc.html|Coverage Optimization', 'id:ebe8dbf1', 'ran-coverage', 'b:volt:declared', 'b:info:Assist', 'b:ok:RUNNING'], ['a:RappDetail.dc.html|Traffic Steering', 'id:7ac1d903', 'ran-traffic', 'b:volt:declared', 'b:mute:Shadow', 'b:warn:UPGRADING'], ['a:RappDetail.dc.html|Interference Mgmt', 'id:91b22e70', 'partner-vendor-a', 'b:mute:none', 'b:info:Assist', 'b:bad:FAULTED']],
+        total: '487', note: 'grouped by category', page: '1 / 98' }
+    };
+    return { P,  pins, facets, rows, tabs, T, S: SP };
+  }
+}
+</script>
+</body>
+</html>

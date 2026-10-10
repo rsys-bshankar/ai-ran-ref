@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Software — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="software" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Network" crumb="Software" scope="eu-west · all clusters" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">RAN NF OAM · software campaigns · O-RAN WG4 software management</div>
+          <h1 style="margin-top: 6px;">Software</h1>
+          <p>Upgrade the RAN in waves. Each wave is gated on new alarms; a failed gate halts or rolls back the campaign, as you choose.</p>
+        </div>
+        <button class="btn btn-primary" onClick="{{toNew}}">New campaign</button>
+      </div>
+
+      <div class="tabs" role="tablist"><sc-for list="{{tabs}}" as="t" hint-placeholder-count="3"><button class="{{t.cls}}" role="tab" aria-selected="{{t.sel}}" onClick="{{t.go}}">{{t.label}} <span class="n">{{t.n}}</span></button></sc-for></div>
+
+      <sc-if value="{{T.campaigns}}" hint-placeholder-val="{{true}}">
+        <div class="grid g4">
+          <div class="kpi"><span class="kpi-l">Running / halted</span><span class="kpi-v">2 · 1</span><span class="kpi-f">1 waiting for you</span></div>
+          <div class="kpi"><span class="kpi-l">Elements on 24.3.x</span><span class="kpi-v">61<small>%</small></span><div class="meter"><span class="f-volt" style="width: 61%;"></span></div></div>
+          <div class="kpi"><span class="kpi-l">Gate failures · 7 d</span><span class="kpi-v">3</span><span class="kpi-f">2 halted · 1 rolled back</span></div>
+          <div class="kpi"><span class="kpi-l">Element jobs failed · 24 h</span><span class="kpi-v">12</span><span class="kpi-f"><a href="Flow19.dc.html">see flow 19</a></span></div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 16px; align-items: start;">
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <sc-for list="{{camps}}" as="c" hint-placeholder-count="5">
+              <button onClick="{{c.go}}" style="{{c.box}}">
+                <div class="row between" style="width: 100%;"><strong class="small">{{c.name}}</strong><span class="{{c.sc}}">{{c.st}}</span></div>
+                <span class="xs muted">{{c.ver}} · {{c.sel}}</span>
+                <div class="meter" style="height: 5px; width: 100%;"><span class="f-ok" style="{{c.w}}"></span></div>
+                <span class="xs muted">{{c.prog}}</span>
+              </button>
+            </sc-for>
+          </div>
+
+          <section class="card">
+            <div class="card-h" style="align-items: flex-start;">
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <div class="row wrap"><span class="id">camp-0412</span><span class="{{cur.sc}}">{{cur.st}}</span><span class="badge b-mute plain">on gate failure: {{cur.onFail}}</span></div>
+                <h2 style="font-size: 20px;">vendor-a DUs → 24.3.1 · eu-west</h2>
+                <span class="small muted">selector vendorName=vendor-a, region=eu-west · 812 elements · wave size 100 · pause 15 min · gate: ≤ 0 new major/critical alarms · requested by operator1</span>
+              </div>
+            </div>
+            <sc-if value="{{cur.halted}}" hint-placeholder-val="{{true}}">
+              <div class="callout bad"><div style="display: flex; flex-direction: column; gap: 6px;"><strong class="small">Halted after wave 3 · GATE_FAILED</strong><span class="xs muted">3 new major alarms (Tx power problem) on wave-3 elements within the observation window. Waves 4–9 not started.</span>
+                <div class="row wrap"><button class="btn btn-sm" onClick="{{cont}}">Continue anyway</button><button class="btn btn-sm btn-danger" onClick="{{rollback}}">Roll back waves 1–3</button><button class="btn btn-sm" onClick="{{abort}}">Abort</button><a class="btn btn-sm" href="Alarms.dc.html">Open the 3 alarms</a></div></div></div>
+            </sc-if>
+            <sc-if value="{{cur.msg}}" hint-placeholder-val="{{false}}"><div class="callout volt" style="padding: 10px 12px;"><span class="small">{{cur.msgText}}</span></div></sc-if>
+            <div class="grid g5" style="gap: 8px;">
+              <div class="inset"><div class="xs muted">Elements</div><div class="num" style="font-size: 20px;">812</div></div>
+              <div class="inset"><div class="xs muted">Started</div><div class="num" style="font-size: 20px;">300</div></div>
+              <div class="inset"><div class="xs muted">Completed</div><div class="num t-ok" style="font-size: 20px;">293</div></div>
+              <div class="inset"><div class="xs muted">Failed</div><div class="num t-bad" style="font-size: 20px;">4</div></div>
+              <div class="inset"><div class="xs muted">Not reached</div><div class="num" style="font-size: 20px;">512</div></div>
+            </div>
+            <div class="eyebrow">Waves</div>
+            <div style="display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px;">
+              <sc-for list="{{cur.waves}}" as="w" hint-placeholder-count="9"><div style="{{w.box}}"><span class="mono xs">W{{w.n}}</span><span class="xs" style="{{w.tc}}">{{w.t}}</span></div></sc-for>
+            </div>
+            <div class="eyebrow">Events</div>
+            <ol class="tl" style="list-style: none; margin: 0; padding: 0;">
+              <li class="tl-i fail"><span class="tl-n">!</span><div class="tl-b"><strong class="small">HALTED · GATE_FAILED</strong><span class="xs muted">03:12 · 3 new alarms after wave 3</span></div></li>
+              <li class="tl-i done"><span class="tl-n">✓</span><div class="tl-b"><strong class="small">WAVE_STARTED · wave 3 · 100 elements</strong><span class="xs muted">02:55</span></div></li>
+              <li class="tl-i done"><span class="tl-n">✓</span><div class="tl-b"><strong class="small">WAVE_PAUSE · 15 min</strong><span class="xs muted">02:38 · then continued automatically</span></div></li>
+              <li class="tl-i done"><span class="tl-n">✓</span><div class="tl-b"><strong class="small">WAVE_STARTED · wave 1 · 100 elements</strong><span class="xs muted">02:00 · by operator1</span></div></li>
+            </ol>
+            <dc-import name="ListView" spec="{{S.elements}}" hint-size="100%,420px"></dc-import>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{T.jobs}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.jobs}}" hint-size="100%,520px"></dc-import></sc-if>
+
+      <sc-if value="{{T.create}}" hint-placeholder-val="{{false}}">
+        <section class="card" style="max-width: 900px;">
+          <div class="card-h"><div><h2>New software campaign</h2><span class="sub">POST /software-campaigns · run a dry run first to see the waves</span></div></div>
+          <div class="grid g2">
+            <label class="field"><span>Name</span><input class="input" value="vendor-b RUs → 3.8.2"></label>
+            <label class="field"><span>Software version</span><input class="input mono" value="3.8.2"></label>
+          </div>
+          <div class="eyebrow">Which elements</div>
+          <div class="seg" role="group" aria-label="Target"><button class="on">Select by attributes</button><button>List elements</button></div>
+          <div class="grid g4">
+            <label class="field"><span>Vendor</span><select class="input"><option>vendor-b</option></select></label>
+            <label class="field"><span>Region</span><select class="input"><option>eu-west</option></select></label>
+            <label class="field"><span>Entity type</span><select class="input"><option>RU</option><option>DU</option></select></label>
+            <label class="field"><span>Tenant</span><select class="input"><option>acme</option></select></label>
+          </div>
+          <div class="eyebrow">Waves and gate</div>
+          <div class="grid g4">
+            <label class="field"><span>Wave size</span><input class="input" value="50"></label>
+            <label class="field"><span>Pause between waves</span><select class="input"><option>15 min</option><option>none</option><option>1 h</option></select></label>
+            <label class="field"><span>Gate: max new alarms</span><input class="input" value="0"></label>
+            <label class="field"><span>On gate failure</span><select class="input"><option>Halt and ask me</option><option>Roll back automatically</option></select></label>
+          </div>
+          <div class="row" style="justify-content: flex-end;"><button class="btn" onClick="{{dry}}">Dry run</button><button class="btn btn-primary">Start campaign</button></div>
+          <sc-if value="{{dryDone}}" hint-placeholder-val="{{false}}"><div class="callout volt"><span class="small"><strong>Dry run:</strong> 640 elements match · 13 waves of 50 (last 40) · about 6 h with 15-min pauses · 0 elements outside your scope · nothing written.</span></div></sc-if>
+        </section>
+      </sc-if>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const st = this.state || {};
+    const tab = st.tab || 'campaigns';
+    const defs = [['campaigns', 'Campaigns', '14'], ['jobs', 'Element jobs', '312 · 24 h'], ['create', 'New campaign', '']];
+    const tabs = defs.map(([k, label, n]) => ({ label, n, cls: k === tab ? 'tab on' : 'tab', sel: k === tab ? 'true' : 'false', go: () => this.setState({ tab: k }) }));
+    const T = {}; defs.forEach(([k]) => { T[k] = k === tab; });
+    const SC = { RUNNING: 'badge b-warn', HALTED: 'badge b-bad', COMPLETED: 'badge b-ok', ROLLING_BACK: 'badge b-warn', ROLLED_BACK: 'badge b-mute', ABORTED: 'badge b-mute', PENDING: 'badge b-info' };
+    const status = st.status || 'HALTED';
+    const camps = [['vendor-a DUs → 24.3.1', '24.3.1', 'vendor-a · eu-west', status, 37, '3 of 9 waves · 300 / 812'], ['vendor-b RUs → 3.8.1', '3.8.1', 'vendor-b · metro-b', 'RUNNING', 62, '5 of 8 waves · 310 / 500'], ['Digital twin → 24.3.1', '24.3.1', 'twin · all', 'COMPLETED', 100, '1 of 1 wave · 40 / 40'], ['vendor-a CUs → 24.2.4', '24.2.4', 'vendor-a · eu-north', 'ROLLED_BACK', 20, 'rolled back after wave 1'], ['vendor-c DUs → 9.1', '9.1', 'vendor-c · apac', 'PENDING', 0, 'starts 22:00']]
+      .map(([name, ver, sel, s, p, prog], i) => ({ name, ver, sel, st: s, sc: SC[s], w: 'width:' + p + '%', prog, go: () => {},
+        box: 'display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:12px;border-radius:12px;cursor:pointer;font:inherit;color:var(--text);text-align:left;background:' + (i === 0 ? 'var(--volt-soft)' : 'var(--surface)') + ';border:1px solid ' + (i === 0 ? 'var(--volt)' : 'var(--line)') + ';' }));
+    const wst = status === 'ROLLING_BACK' || status === 'ROLLED_BACK' ? ['rolled back', 'rolled back', 'rolled back'] : ['done', 'done', status === 'RUNNING' ? 'done' : 'gate failed'];
+    const waves = [];
+    for (let i = 1; i <= 9; i++) {
+      const t = i <= 3 ? wst[i - 1] : (status === 'RUNNING' && i === 4 ? 'running' : status === 'ABORTED' ? 'aborted' : 'not started');
+      const c = t === 'done' ? 'var(--ok)' : t === 'gate failed' ? 'var(--bad)' : t === 'running' ? 'var(--volt)' : 'var(--line-strong)';
+      waves.push({ n: i, t, tc: 'color:' + (t === 'not started' ? 'var(--muted)' : 'var(--text)') + ';', box: 'display:flex;flex-direction:column;gap:4px;padding:8px;border-radius:8px;background:var(--raised);border-top:3px solid ' + c + ';' });
+    }
+    const msgs = { RUNNING: 'Continued by admin · wave 4 started · the gate still applies to waves 4–9', ROLLING_BACK: 'Rolling back waves 1–3 · elements return to 24.2.0', ABORTED: 'Aborted · waves 4–9 will not run · waves 1–3 stay on 24.3.1' };
+    const cur = { st: status, sc: SC[status], onFail: 'halt', halted: status === 'HALTED', msg: status !== 'HALTED', msgText: msgs[status] || '', waves };
+    const S = {
+      elements: { title: 'Elements in this campaign', sub: 'one software job each (flow 19)', search: 'Search element', chips: ['Wave 3'], actions: ['Retry failed'],
+        cols: ['Element', 'Wave', 'Job', 'Phase', 'Status', 'New alarms'],
+        rows: [['a:Element.dc.html|du-221-harbour', '3', 'a:Flow19.dc.html|sw-4410', 'INSTALL', 'b:bad:FAILED', 'sev:mj:2 major'], ['a:Element.dc.html|du-302-harbour', '3', 'a:Flow19.dc.html|sw-4411', 'ACTIVATE', 'b:ok:COMPLETED', 'sev:mj:1 major'], ['a:Element.dc.html|du-118-metro-a', '3', 'a:Flow19.dc.html|sw-4398', 'ACTIVATE', 'b:ok:COMPLETED', 'mu:0'], ['a:Element.dc.html|du-090-metro-a', '2', 'a:Flow19.dc.html|sw-4301', 'ACTIVATE', 'b:ok:COMPLETED', 'mu:0']],
+        total: '300 started', note: 'problems first', page: '1 / 60' },
+      jobs: { title: 'Element software jobs', sub: 'DOWNLOAD → INSTALL → ACTIVATE per element (flow 19)', search: 'Search element or version', chips: ['Last 24 h'], actions: ['New job', 'Retry failed'],
+        cols: ['Job', 'Element', 'Version', 'Phase', 'Status', 'Campaign', 'Started'],
+        rows: [['a:Flow19.dc.html|sw-4410', 'a:Element.dc.html|du-221-harbour', 'm:24.3.1', 'INSTALL', 'b:bad:FAILED', 'id:camp-0412', 'mu:02:58'], ['a:Flow19.dc.html|sw-4502', 'a:Element.dc.html|ru-77b-metro-b', 'm:3.8.1', 'DOWNLOAD', 'b:warn:IN_PROGRESS', 'id:camp-0415', 'mu:03:09'], ['a:Flow19.dc.html|sw-4499', 'a:Element.dc.html|ru-12a-metro-b', 'm:3.8.1', 'ACTIVATE', 'b:ok:COMPLETED', 'id:camp-0415', 'mu:03:01'], ['a:Flow19.dc.html|sw-4380', 'a:Element.dc.html|du-03', 'm:24.2.0', 'ACTIVATE', 'b:ok:COMPLETED', 'mu:—', 'mu:yest.']],
+        total: '312', note: 'failed first', page: '1 / 63' }
+    };
+    return { P, tabs, T, S, camps, cur, dryDone: !!st.dry, dry: () => this.setState({ dry: true }), toNew: () => this.setState({ tab: 'create' }),
+      cont: () => this.setState({ status: 'RUNNING' }), rollback: () => this.setState({ status: 'ROLLING_BACK' }), abort: () => this.setState({ status: 'ABORTED' }) };
+  }
+}
+</script>
+</body>
+</html>

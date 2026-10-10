@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Infrastructure — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="infra" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="Network" crumb="Infrastructure" scope="eu-west · all clusters" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph">
+        <div>
+          <div class="eyebrow">NFO / O2dms · FOCOM / O2ims · O1 · SO SMOS</div>
+          <h1 style="margin-top: 6px;">Infrastructure</h1>
+          <p>18 O-Cloud sites · 61 pools · 1,904 nodes · 3,940 NF deployments in eu-west</p>
+        </div>
+        <div class="row"><button class="btn">Subscribe to inventory</button><button class="btn btn-primary">New service order</button></div>
+      </div>
+
+      <div class="tabs" role="tablist"><sc-for list="{{tabs}}" as="t" hint-placeholder-count="5"><button class="{{t.cls}}" role="tab" aria-selected="{{t.sel}}" onClick="{{t.go}}">{{t.label}} <span class="n">{{t.n}}</span></button></sc-for></div>
+      <sc-if value="{{T.nf}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.nf}}" hint-size="100%,520px"></dc-import></sc-if>
+      <sc-if value="{{T.inv}}" hint-placeholder-val="{{false}}">
+        <section class="card" style="gap: 10px;">
+          <div class="card-h"><div><h2>O-Cloud inventory</h2><span class="sub">FOCOM · O2ims · from where it is to what runs on it · click a level</span></div><div class="row"><button class="btn btn-sm">New provisioning request</button></div></div>
+          <div class="row wrap" style="gap: 6px;">
+            <sc-for list="{{levels}}" as="l" hint-placeholder-count="7"><button onClick="{{l.go}}" style="{{l.box}}"><span class="xs muted">{{l.k}}</span><strong class="num" style="font-size: 18px;">{{l.n}}</strong></button><span class="muted" style="align-self: center;">{{l.arrow}}</span></sc-for>
+          </div>
+        </section>
+        <dc-import name="ListView" spec="{{invSpec}}" hint-size="100%,460px"></dc-import>
+      </sc-if>
+      <sc-if value="{{T.o1}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.o1}}" hint-size="100%,520px"></dc-import><dc-import name="ListView" spec="{{S.jobs}}" hint-size="100%,460px"></dc-import></sc-if>
+      <sc-if value="{{T.orders}}" hint-placeholder-val="{{false}}"><dc-import name="ListView" spec="{{S.orders}}" hint-size="100%,460px"></dc-import></sc-if>
+      <sc-if value="{{T.topo}}" hint-placeholder-val="{{true}}">
+
+      <div style="display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start;">
+        <section class="card" aria-labelledby="map-h">
+          <div class="card-h">
+            <div><h2 id="map-h">TEIV topology</h2><span class="sub">collapsed by level · expand one at a time · at most ~200 nodes on screen</span></div>
+            <div class="row"><label class="search" style="width: 240px; min-height: 34px;"><input aria-label="Jump to node" placeholder="Jump to node, pool, NF…"></label><div class="seg" role="group" aria-label="Colour by"><button class="on">Health</button><button>GPU</button><button>CPU</button></div></div>
+          </div>
+          <div class="row small" style="gap: 6px;"><a href="#">eu-west</a><span class="muted">›</span><a href="#">edge-metro-a</a><span class="muted">›</span><a href="#">pool-gpu-1</a><span class="muted">›</span><strong>node 3ba9fc16</strong></div>
+
+          <div class="eyebrow">O-Cloud sites · 18</div>
+          <div style="display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px;">
+            <sc-for list="{{sites}}" as="s" hint-placeholder-count="9">
+              <a href="#" style="{{s.box}}"><span class="mono xs" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{s.n}}</span><span class="xs muted">{{s.nodes}} nodes</span></a>
+            </sc-for>
+          </div>
+          <span class="xs muted">+ 9 more sites · sorted by worst health</span>
+
+          <div style="display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 14px; padding: 14px; border-radius: 12px; background: var(--rail); border: 1px solid var(--line);">
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div class="eyebrow">edge-metro-a · pools</div>
+              <sc-for list="{{pools}}" as="p" hint-placeholder-count="4">
+                <a href="#" style="{{p.box}}"><div class="row between"><strong class="mono xs">{{p.n}}</strong><span class="{{p.bc}}">{{p.b}}</span></div><span class="xs muted">{{p.t}}</span></a>
+              </sc-for>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+              <div class="row between"><span class="eyebrow">pool-gpu-1 · 64 nodes</span><span class="xs muted">page 1 of 2 · 48 shown</span></div>
+              <div style="display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 4px;">
+                <sc-for list="{{nodes}}" as="n" hint-placeholder-count="48"><a href="#" style="{{n}}" aria-label="node"></a></sc-for>
+              </div>
+              <div class="eyebrow" style="margin-top: 6px;">node 3ba9fc16 · 9 workloads</div>
+              <div class="row wrap" style="gap: 6px;">
+                <span class="chip">coverage-model v3 <span class="badge b-volt plain">ACTIVE</span></span>
+                <span class="chip">ts-rapp-0 <span class="badge b-warn plain">UPDATING</span></span>
+                <span class="chip">es-rapp-14 <span class="badge b-ok plain">RUNNING</span></span>
+                <span class="chip">mro-rapp-6 <span class="badge b-ok plain">RUNNING</span></span>
+                <span class="chip">+ 5 more</span>
+              </div>
+            </div>
+          </div>
+          <div class="legend"><span><i style="background: rgba(60,203,139,0.55);"></i>Healthy</span><span><i style="background: var(--warn);"></i>Degraded</span><span><i style="background: var(--bad);"></i>Unreachable</span><span><i style="background: var(--volt);"></i>Selected</span></div>
+        </section>
+
+        <aside class="card" aria-labelledby="ins-h">
+          <div class="card-h"><div style="display: flex; flex-direction: column; gap: 4px;"><span class="eyebrow">Resource</span><h2 id="ins-h" class="mono" style="font-size: 15px;">3ba9fc16-3e82-432e</h2></div><span class="badge b-ok">Healthy</span></div>
+          <dl class="kv">
+            <dt>Type</dt><dd>gpu-l40 · NVIDIA L40 GPU node</dd>
+            <dt>Pool</dt><dd class="mono">pool-gpu-1</dd>
+            <dt>O-Cloud</dt><dd class="mono">edge-metro-a</dd>
+            <dt>Provisioned by</dt><dd>SO SMOS order <span class="id">so-12</span></dd>
+          </dl>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div><div class="row between small"><span class="muted">GPU</span><span class="mono">63%</span></div><div class="meter" style="margin-top: 6px;"><span class="f-volt" style="width: 63%;"></span></div></div>
+            <div><div class="row between small"><span class="muted">CPU</span><span class="mono">41%</span></div><div class="meter" style="margin-top: 6px;"><span class="f-info" style="width: 41%;"></span></div></div>
+            <div><div class="row between small"><span class="muted">Memory</span><span class="mono">58%</span></div><div class="meter" style="margin-top: 6px;"><span class="f-info" style="width: 58%;"></span></div></div>
+          </div>
+          <div class="row"><button class="btn btn-sm" style="flex: 1;">LCM operations</button><button class="btn btn-sm" style="flex: 1;">Alarms (0)</button></div>
+          <div class="eyebrow">Pool summary</div>
+          <dl class="kv"><dt>Nodes</dt><dd>64 · 61 healthy · 2 degraded · 1 down</dd><dt>GPU used</dt><dd>71% average</dd><dt>Workloads</dt><dd>412</dd></dl>
+        </aside>
+      </div>
+
+      <section class="card flush" aria-labelledby="so-h">
+        <div class="card-h"><div><h2 id="so-h">Service orders · in progress first</h2><span class="sub">SO SMOS multi-step: INFRA → TRAINING → DEPLOY</span></div></div>
+        <div class="tbl-box"><table class="tbl">
+          <thead><tr><th>Order</th><th>Purpose</th><th>Steps</th><th>Requested by</th><th>State</th></tr></thead>
+          <tbody>
+            <tr><td><span class="id">so-27</span></td><td class="small">coverage v4 rollout · 4 clusters</td><td><div class="steps"><span class="step done"><i></i>INFRA</span><span class="step now"><i></i>TRAINING</span><span class="step"><i></i>DEPLOY</span></div></td><td class="small">operator1</td><td><span class="badge b-warn">IN_PROGRESS</span></td></tr>
+            <tr><td><span class="id">so-26</span></td><td class="small">GPU pool expansion · harbour</td><td><div class="steps"><span class="step now"><i></i>INFRA</span></div></td><td class="small">admin</td><td><span class="badge b-warn">IN_PROGRESS</span></td></tr>
+            <tr><td><span class="id">so-25</span></td><td class="small">steer v1.2 · eu-west</td><td><div class="steps"><span class="step done"><i></i>INFRA</span><span class="step done"><i></i>TRAINING</span><span class="step done"><i></i>DEPLOY</span></div></td><td class="small">operator2</td><td><span class="badge b-ok">COMPLETED</span></td></tr>
+          </tbody>
+        </table></div>
+        <dc-import name="Pager" from="1" to="3" total="27" noun="orders" note="in progress first" page="1 / 9" hint-size="100%,56px"></dc-import>
+      </section>
+      </sc-if>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1340}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const bg = { ok: 'rgba(60,203,139,0.18);border:1px solid rgba(60,203,139,0.45);', warn: 'rgba(240,180,60,0.18);border:1px solid var(--warn);', bad: 'rgba(255,93,82,0.18);border:1px solid var(--bad);', sel: 'var(--volt-soft);border:2px solid var(--volt);' };
+    const sites = [['edge-metro-a', 212, 'sel'], ['edge-stadium', 64, 'bad'], ['edge-harbour', 140, 'warn'], ['edge-river', 88, 'warn'], ['edge-metro-b', 180, 'ok'], ['edge-airport', 96, 'ok'], ['core-dc-1', 410, 'ok'], ['core-dc-2', 388, 'ok'], ['edge-campus', 40, 'ok']]
+      .map(([n, nodes, s]) => ({ n, nodes, box: 'display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:8px;text-decoration:none;color:var(--text);min-width:0;background:' + bg[s] }));
+    const pools = [['pool-gpu-1', 'gpu-l40 · 64 nodes', '1 down', 'badge b-bad plain', 'sel'], ['pool-gpu-2', 'gpu-l40 · 48 nodes', 'ok', 'badge b-ok plain', 'ok'], ['pool-cpu-1', 'pserver · 80 nodes', '2 degr.', 'badge b-warn plain', 'warn'], ['pool-cpu-2', 'pserver · 20 nodes', 'ok', 'badge b-ok plain', 'ok']]
+      .map(([n, t, b, bc, s]) => ({ n, t, b, bc, box: 'display:flex;flex-direction:column;gap:4px;padding:8px 10px;border-radius:8px;text-decoration:none;color:var(--text);background:' + bg[s] }));
+    const nodes = [];
+    for (let i = 0; i < 48; i++) {
+      const s = i === 13 ? 'sel' : i === 30 ? 'bad' : (i === 7 || i === 41) ? 'warn' : 'ok';
+      nodes.push('display:block;height:22px;border-radius:4px;background:' + bg[s]);
+    }
+    const tab = (this.state && this.state.tab) || 'topo';
+    const defs = [['topo', 'Topology', '18 sites'], ['nf', 'NF deployments', '3,940'], ['inv', 'O-Cloud inventory', '1,904'], ['o1', 'O1 endpoints & jobs', '4,112'], ['orders', 'Service orders', '27']];
+    const tabs = defs.map(([k, label, n]) => ({ label, n, cls: k === tab ? 'tab on' : 'tab', sel: k === tab ? 'true' : 'false', go: () => this.setState({ tab: k }) }));
+    const T = {}; defs.forEach(([k]) => { T[k] = k === tab; });
+    const S = {
+      nf: { title: 'NF deployments', sub: 'NFO · O2dms · workloads on the O-Cloud', search: 'Search deployment, descriptor, cluster', chips: ['State: any'], actions: ['Instantiate', 'Heal selected'],
+        cols: ['Deployment', 'Descriptor', 'O-Cloud', 'Cluster', 'State', 'Health', 'LCM operation'],
+        rows: [['a:#|es-rapp-14', 'id:nfd-41a2', 'edge-metro-a', 'pool-gpu-1', 'b:ok:RUNNING', 'b:ok:healthy', 'mu:—'], ['a:#|ts-rapp-0', 'id:nfd-0c88', 'edge-metro-a', 'pool-gpu-1', 'b:warn:UPDATING', 'b:ok:healthy', 'mu:upgrade 1.1.0'], ['a:#|coverage-model-v3-rt', 'id:nfd-ml-3', 'edge-harbour', 'pool-gpu-2', 'b:ok:RUNNING', 'b:ok:healthy', 'mu:—'], ['a:#|qoe-rapp-2', 'id:nfd-9e40', 'edge-stadium', 'pool-cpu-1', 'b:bad:ABNORMAL', 'b:bad:crash loop', 'mu:heal requested']],
+        total: '3,940', note: 'problems first', page: '1 / 788' },
+      inv: { title: 'O-Cloud inventory', sub: 'FOCOM · O2ims resource pools and resources', search: 'Search resource, pool, type', chips: [], actions: ['Subscribe to inventory'],
+        cols: ['Resource', 'Kind / class', 'Pool', 'O-Cloud', 'Region / tenant', 'State'],
+        rows: [['a:Infrastructure.dc.html|3ba9fc16-3e82', 'gpu-l40', 'pool-gpu-1', 'edge-metro-a', 'eu-west / acme', 'b:ok:AVAILABLE'], ['a:#|ba46bb50-fc4a', 'gpu-l40', 'pool-gpu-1', 'edge-metro-a', 'eu-west / acme', 'b:bad:NOT READY'], ['a:#|9f01aa2c-77b1', 'pserver', 'pool-cpu-1', 'edge-metro-a', 'eu-west / acme', 'b:warn:DEGRADED'], ['a:#|765b31bd-44f9', 'gpu-l40', 'pool-gpu-2', 'edge-harbour', 'eu-west / acme', 'b:ok:AVAILABLE']],
+        total: '1,904', note: 'by health', page: '1 / 381' },
+      o1: { title: 'O1 endpoints', sub: 'RAN NF OAM · MnS registry · heartbeats', search: 'Search managed element or adaptor', chips: ['Heartbeat late'], actions: ['Discover'],
+        cols: ['Managed element', 'Adaptor', 'Protocols', 'Last heartbeat', 'Health'],
+        rows: [['a:#|du-302-harbour', 'o1-adaptor-h2', 'NETCONF · VES', 'mu:3 min ago', 'b:warn:LATE'], ['a:#|du-09-stadium', 'o1-adaptor-s1', 'NETCONF · VES', 'mu:6 min ago', 'b:bad:UNREACHABLE'], ['a:#|du-77-river', 'o1-adaptor-r1', 'NETCONF · VES', 'mu:52 s ago', 'b:warn:LATE']],
+        total: '23 late of 4,112', note: 'late first', page: '1 / 5' },
+      jobs: { title: 'O1 config jobs', sub: 'writes to the RAN · schema-checked (flow 03)', search: 'Search job', chips: ['Last 24 h'], actions: ['Dry run'],
+        cols: ['Job', 'Requested by', 'Scope', 'Changes', 'Status'],
+        rows: [['a:Flow03.dc.html|81aa…', 'Coverage Optimization', 'm:harbour', '340', 'b:warn:PARTIAL_SUCCESS'], ['a:Flow03.dc.html|7c02…', 'Energy Saving', 'm:metro-a', '24', 'b:ok:APPLIED'], ['a:Flow03.dc.html|6e19…', 'operator1', 'm:du-03', '2', 'b:ok:APPLIED']],
+        total: '2,904', note: 'last 24 h', page: '1 / 581' },
+      orders: { title: 'Service orders', sub: 'SO SMOS multi-step: INFRA → TRAINING → DEPLOY (flow 10)', search: 'Search order', chips: [], actions: ['New service order'],
+        cols: ['Order', 'Purpose', 'Current step', 'Requested by', 'State'],
+        rows: [['a:Flow10.dc.html|so-27', 'coverage v4 rollout · 4 clusters', 'TRAINING → aimgf', 'operator1', 'b:warn:IN_PROGRESS'], ['a:Flow10.dc.html|so-26', 'GPU pool expansion · harbour', 'INFRA → focom', 'admin', 'b:warn:IN_PROGRESS'], ['a:Flow10.dc.html|so-21', 'qoe model rollout', 'TRAINING (failed)', 'operator2', 'b:bad:FAILED'], ['a:Flow10.dc.html|so-25', 'steer v1.2 · eu-west', 'done', 'operator2', 'b:ok:COMPLETED']],
+        total: '27', note: 'in progress first', page: '1 / 6' }
+    };
+    const L = {
+      loc: ['Locations', '6', { title: 'Locations', sub: 'where O-Cloud sites physically are', search: 'Search location', chips: [], actions: ['New location'], cols: ['Location', 'Address', 'Coordinate', 'Sites'], rows: [['a:#|metro-dc-west', 'Hafenstr. 12, Hamburg', 'm:53.54, 9.98', '4'], ['a:#|harbour-edge', 'Kai 3, Hamburg', 'm:53.53, 9.95', '3'], ['a:#|stadium-edge', 'Arena 1, Hamburg', 'm:53.59, 9.90', '1']], total: '6', page: '1 / 2' }],
+      site: ['O-Cloud sites', '18', { title: 'O-Cloud sites', sub: 'one or more per location', search: 'Search site', chips: [], actions: ['New site'], cols: ['Site', 'Location', 'Node clusters', 'Health'], rows: [['a:#|edge-metro-a', 'metro-dc-west', '4', 'b:warn:1 node down'], ['a:#|edge-stadium', 'stadium-edge', '1', 'b:bad:degraded link'], ['a:#|core-dc-1', 'metro-dc-west', '6', 'b:ok:healthy']], total: '18', page: '1 / 4' }],
+      cluster: ['Node clusters', '61', { title: 'Node clusters', sub: 'Kubernetes clusters a deployment manager drives', search: 'Search cluster', chips: [], actions: ['New node cluster'], cols: ['Cluster', 'Type', 'Site', 'Resources', 'Distribution'], rows: [['a:#|pool-gpu-1', 'k8s-gpu', 'edge-metro-a', '64', 'mu:3 control · 61 worker'], ['a:#|pool-cpu-1', 'k8s-cpu', 'edge-metro-a', '80', 'mu:3 control · 77 worker'], ['a:#|pool-gpu-2', 'k8s-gpu', 'edge-harbour', '48', 'mu:3 control · 45 worker']], total: '61', page: '1 / 13' }],
+      cres: ['Cluster resources', '1,904', { title: 'Cluster resources', sub: 'nodes as the cluster sees them', search: 'Search resource', chips: [], actions: [], cols: ['Resource', 'Type', 'Member of', 'Backed by'], rows: [['a:Infrastructure.dc.html|3ba9fc16-3e82', 'gpu-l40 node', 'pool-gpu-1', 'srv-a17'], ['a:#|ba46bb50-fc4a', 'gpu-l40 node', 'pool-gpu-1', 'srv-a18'], ['a:#|9f01aa2c-77b1', 'pserver node', 'pool-cpu-1', 'srv-c02']], total: '1,904', page: '1 / 381' }],
+      ires: ['Infrastructure resources', '2,410', { title: 'Infrastructure resources', sub: 'servers, NICs, accelerators, switches', search: 'Search hardware', chips: [], actions: [], cols: ['Resource', 'Type', 'Linked to', 'Inventory ids'], rows: [['a:#|srv-a17', 'server · 2× L40', 'tor-sw-3', 'm:SN 8832-A17'], ['a:#|tor-sw-3', 'switch', 'srv-a01…a24', 'm:SN 1102-T3'], ['a:#|nic-a17-1', 'SmartNIC', 'srv-a17', 'm:SN 5521-N1']], total: '2,410', page: '1 / 482' }],
+      prov: ['Provisioning requests', '7', { title: 'Provisioning requests', sub: 'template-based infrastructure provisioning (used by flow 10 INFRA steps)', search: 'Search request', chips: [], actions: ['New request'], cols: ['Request', 'Template', 'Version', 'Requested by', 'Status'], rows: [['a:Flow10.dc.html|pr-0021', 'gpu-node-pool', 'm:1.4', 'so-smos (so-26)', 'b:warn:PROVISIONING'], ['a:#|pr-0020', 'cpu-node-pool', 'm:2.1', 'admin', 'b:ok:FULFILLED'], ['a:#|pr-0017', 'gpu-node-pool', 'm:1.3', 'so-smos (so-21)', 'b:bad:FAILED']], total: '7', page: '1 / 2' }],
+      perf: ['Performance jobs', '12', { title: 'O-Cloud performance jobs', sub: 'what FOCOM collects from the infrastructure', search: 'Search job', chips: [], actions: ['New performance job'], cols: ['Job', 'Measurements', 'Resource types', 'Interval', 'State'], rows: [['a:#|pj-01', 'cpuUtil, memUtil, gpuUtil', 'node', '1 min', 'b:ok:ACTIVE'], ['a:#|pj-02', 'linkUtil, errors', 'switch', '5 min', 'b:ok:ACTIVE'], ['a:#|pj-05', 'power', 'server', '15 min', 'b:mute:SUSPENDED']], total: '12', page: '1 / 3' }]
+    };
+    const lv = (this.state && this.state.lv) || 'site';
+    const order = ['loc', 'site', 'cluster', 'cres', 'ires', 'prov', 'perf'];
+    const levels = order.map((k, i) => ({ k: L[k][0], n: L[k][1], arrow: i < 4 ? '›' : (i === 4 ? '·' : ''), go: () => this.setState({ lv: k }),
+      box: 'display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 12px;border-radius:10px;cursor:pointer;font:inherit;color:var(--text);background:' + (lv === k ? 'var(--volt-soft)' : 'var(--raised)') + ';border:1px solid ' + (lv === k ? 'var(--volt)' : 'var(--line)') + ';' }));
+    return { P,  sites, pools, nodes, tabs, T, S, levels, invSpec: L[lv][2] };
+  }
+}
+</script>
+</body>
+</html>

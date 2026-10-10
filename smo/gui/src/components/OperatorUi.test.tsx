@@ -135,7 +135,7 @@ describe("DeclaredPage: panels and values", () => {
     expect(container.querySelector("script, img, b")).toBeNull();
     expect(container.querySelector("h2")?.textContent).toBe("<script>alert(1)</script>");
     expect(container.textContent).toContain("<img src=x onerror=alert(1)>");
-    expect(container.querySelector(".badge")?.className).toBe("badge tone-muted");        // the colour is from the GUI's table of state words, not from the value
+    expect(container.querySelector(".badge")?.className).toBe("badge b-mute tone-muted");        // the colour is from the GUI's table of state words, not from the value
   });
 });
 

@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Element du-03 — AI-RAN SMO</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--volt-text)}a:hover{filter:brightness(1.1)}
+</style>
+</helmet>
+<div data-theme="{{P.theme}}" data-accent="{{P.accent}}" class="shell" style="zoom: {{P.zoom}}; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--text); background: var(--ground);">
+  <dc-import name="Sidebar" active="topology" hint-size="248px,1200px"></dc-import>
+  <div class="main">
+    <dc-import name="Topbar" section="RAN topology" crumb="du-03" scope="eu-west · metro-a" hint-size="100%,64px"></dc-import>
+    <main class="page">
+      <div class="ph" style="align-items: center;">
+        <div class="row" style="gap: 16px;">
+          <span style="width: 56px; height: 56px; border-radius: 14px; display: grid; place-items: center; background: var(--bad-soft); color: var(--bad);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 20V10M8 6a6 6 0 018 0M5 3a10 10 0 0114 0"></path></svg></span>
+          <div>
+            <div class="row wrap"><h1>du-03</h1><span class="badge b-bad">1 critical</span><span class="badge b-warn">heartbeat late</span></div>
+            <p class="row wrap" style="gap: 8px;"><span class="mono">ManagedElement=du-03</span><span>·</span><span>vendor-a · O1 NETCONF</span><span>·</span><span>software 24.2.0</span><span>·</span><span>eu-west / acme</span></p>
+          </div>
+        </div>
+        <div class="row wrap"><a class="btn" href="Topology.dc.html">Neighbours</a><a class="btn" href="Software.dc.html">Upgrade software</a><a class="btn btn-primary" href="Configuration.dc.html">New config job</a></div>
+      </div>
+
+      <div class="tabs" role="tablist"><sc-for list="{{tabs}}" as="t" hint-placeholder-count="4"><button class="{{t.cls}}" role="tab" aria-selected="{{t.sel}}" onClick="{{t.go}}">{{t.label}} <span class="n">{{t.n}}</span></button></sc-for></div>
+
+      <sc-if value="{{T.overview}}" hint-placeholder-val="{{true}}">
+        <div class="grid g4">
+          <div class="kpi hot"><span class="kpi-l">Open alarms</span><span class="kpi-v">4</span><span class="kpi-f">1 critical · LOS cell-7</span></div>
+          <div class="kpi"><span class="kpi-l">Cells</span><span class="kpi-v">3</span><span class="kpi-f">1 guarded COVERAGE_CRITICAL</span></div>
+          <div class="kpi"><span class="kpi-l">Config changes · 24 h</span><span class="kpi-v">6</span><span class="kpi-f">1 rolled back</span></div>
+          <div class="kpi"><span class="kpi-l">Neighbour relations</span><span class="kpi-v">27</span><span class="kpi-f"><span class="t-bad">2 not reciprocal</span></span></div>
+        </div>
+        <div class="grid g3">
+          <div class="s2" style="min-width: 0;"><dc-import name="ListView" spec="{{S.cellsOv}}" hint-size="100%,360px"></dc-import></div>
+          <section class="card"><div class="card-h"><h2>Endpoint</h2><a class="small" href="Configuration.dc.html">Trust &amp; keys →</a></div>
+            <dl class="kv"><dt>O1 adaptor</dt><dd class="mono">o1-adaptor-m3</dd><dt>Protocols</dt><dd>NETCONF/SSH · VES</dd><dt>Last heartbeat</dt><dd class="t-warn">58 s ago</dd><dt>Host key</dt><dd>ssh-ed25519 · pinned by admin</dd><dt>Onboarding</dt><dd><span class="badge b-ok">APPLIED</span></dd></dl>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{T.history}}" hint-placeholder-val="{{false}}">
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+          <section class="card flush">
+            <div class="card-h"><div><h2>Config history</h2><span class="sub">every applied snapshot · pick two to compare</span></div><select class="input" style="width: 180px;" aria-label="Function"><option>All functions</option><option>GNBDUFunction=1</option></select></div>
+            <div class="tbl-box"><table class="tbl">
+              <thead><tr><th>Compare</th><th>When</th><th>Job</th><th>By</th><th>Result</th></tr></thead>
+              <tbody>
+                <sc-for list="{{snaps}}" as="s" hint-placeholder-count="6">
+                  <tr class="{{s.sel}}" onClick="{{s.go}}" style="cursor: pointer;"><td><span class="{{s.pick}}">{{s.mark}}</span></td><td class="mono xs muted">{{s.t}}</td><td><span class="id">{{s.job}}</span></td><td class="small">{{s.by}}</td><td><span class="{{s.rc}}">{{s.r}}</span></td></tr>
+                </sc-for>
+              </tbody>
+            </table></div>
+            <dc-import name="Pager" from="1" to="6" total="184" noun="snapshots" note="newest first" page="1 / 31" hint-size="100%,56px"></dc-import>
+          </section>
+          <section class="card">
+            <div class="card-h"><div><h2>Diff · {{diffFrom}} → {{diffTo}}</h2><span class="sub">/config-history/diff</span></div><button class="btn btn-sm btn-danger">Roll back to {{diffFrom}}</button></div>
+            <div class="diff">
+              <div class="muted">GNBDUFunction=1 / NRCellDU=cell-9</div>
+              <div class="m">-  digitalTilt: 60</div>
+              <div class="p">+  digitalTilt: 70</div>
+              <div class="muted" style="margin-top: 6px;">GNBDUFunction=1 / NRCellDU=cell-9 / NRCellRelation=r-11</div>
+              <div class="m">-  cellIndividualOffset: 0</div>
+              <div class="p">+  cellIndividualOffset: 2</div>
+            </div>
+            <dl class="kv"><dt>Job</dt><dd><a href="Configuration.dc.html">job-81aa</a> · Coverage Optimization</dd><dt>Decision</dt><dd><a href="Decisions.dc.html">dec-2c91e0</a></dd></dl>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{T.mo}}" hint-placeholder-val="{{false}}">
+        <div style="display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 16px; align-items: start;">
+          <section class="card" style="gap: 4px;">
+            <div class="card-h"><h2>Managed objects</h2><button class="btn btn-sm">Refresh from element</button></div>
+            <label class="search" style="min-height: 34px; margin-bottom: 8px;"><input aria-label="Find object" placeholder="Find by class or id"></label>
+            <sc-for list="{{tree}}" as="n" hint-placeholder-count="10">
+              <button onClick="{{n.go}}" style="{{n.style}}"><span class="mono xs" style="width: 14px; color: var(--muted);">{{n.arrow}}</span><span class="mono small">{{n.label}}</span><span class="xs faint" style="margin-left: auto;">{{n.kids}}</span></button>
+            </sc-for>
+          </section>
+          <section class="card">
+            <div class="card-h"><div><span class="eyebrow">{{mo.cls}}</span><h2 class="mono" style="font-size: 15px; margin-top: 4px;">{{mo.dn}}</h2></div><a class="btn btn-sm" href="Configuration.dc.html">Change attributes…</a></div>
+            <div class="tbl-box"><table class="tbl">
+              <thead><tr><th>Attribute</th><th>Value</th><th>Writable</th></tr></thead>
+              <tbody><sc-for list="{{mo.attrs}}" as="a" hint-placeholder-count="6"><tr><td class="mono small">{{a.k}}</td><td class="mono small">{{a.v}}</td><td class="small muted">{{a.w}}</td></tr></sc-for></tbody>
+            </table></div>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{T.guards}}" hint-placeholder-val="{{false}}">
+        <div class="callout volt"><span class="small">Cell guards tell every rApp how carefully to treat a cell. For example, the Energy Saving rApp never sleeps an EMERGENCY or COVERAGE_CRITICAL cell, nor two cells of one sector group at once.</span></div>
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start;">
+          <section class="card flush">
+            <div class="card-h"><h2>Cells and their guards</h2><span class="sub">/managed-entities/du-03/cells/{cell}/guards</span></div>
+            <div class="tbl-box"><table class="tbl">
+              <thead><tr><th>Cell</th><th>Class</th><th>Sector group</th><th>Incident zone</th><th>Neighbours</th><th class="r"></th></tr></thead>
+              <tbody><sc-for list="{{cells}}" as="c" hint-placeholder-count="3"><tr class="{{c.sel}}"><td class="mono small">{{c.id}}</td><td><span class="{{c.cc}}">{{c.cls}}</span></td><td class="mono xs">{{c.sg}}</td><td class="mono xs">{{c.iz}}</td><td class="small">{{c.nb}}</td><td class="r"><button class="btn btn-sm" onClick="{{c.go}}">Edit</button></td></tr></sc-for></tbody>
+            </table></div>
+          </section>
+          <section class="card">
+            <div class="card-h"><h2>Edit guard · {{edit.id}}</h2></div>
+            <label class="field"><span>Cell class</span><div class="seg" role="radiogroup" aria-label="Cell class"><sc-for list="{{classes}}" as="k" hint-placeholder-count="3"><button class="{{k.cls}}" onClick="{{k.go}}">{{k.label}}</button></sc-for></div></label>
+            <label class="field"><span>Sector group</span><input class="input mono" value="{{edit.sg}}"></label>
+            <label class="field"><span>Incident zone</span><input class="input mono" value="{{edit.iz}}"></label>
+            <label class="field"><span>Neighbour cells (one per line)</span><textarea class="input mono" style="min-height: 84px; padding: 8px 12px;">{{edit.nbList}}</textarea></label>
+            <div class="row" style="justify-content: flex-end;"><button class="btn" onClick="{{saveGuard}}">Save guard</button></div>
+            <sc-if value="{{guardSaved}}" hint-placeholder-val="{{false}}"><div class="callout volt" style="padding: 8px 12px;"><span class="small">Saved · rApps read the new guard on their next query.</span></div></sc-if>
+          </section>
+        </div>
+      </sc-if>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1200}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('smo.prefs') || '{}') || {}; } catch (e) {} const sys = (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark'; return { theme: p.theme === 'system' ? sys : (p.theme || 'dark'), accent: p.accent || 'volt', zoom: ({ s: '0.9', m: '1', l: '1.12', xl: '1.25' })[p.size || 'm'] || '1' }; })();
+    const st = this.state || {};
+    const tab = st.tab || 'overview';
+    const defs = [['overview', 'Overview', 'live'], ['history', 'Config history', '184'], ['mo', 'Managed objects', '61'], ['guards', 'Cell guards', '3 cells']];
+    const tabs = defs.map(([k, label, n]) => ({ label, n, cls: k === tab ? 'tab on' : 'tab', sel: k === tab ? 'true' : 'false', go: () => this.setState({ tab: k }) }));
+    const T = {}; defs.forEach(([k]) => { T[k] = k === tab; });
+    const S = { cellsOv: { title: 'Cells', sub: 'state, load and guard', search: 'Search cell', chips: [], actions: [],
+      cols: ['Cell', 'Admin / oper', 'PCI', 'PRB DL', 'Guard', 'Alarms'],
+      rows: [['m:cell-7', 'b:bad:UNLOCKED / DISABLED', 'm:412', 'm:—', 'b:mute:NORMAL', 'sev:cr:Critical'], ['m:cell-8', 'b:ok:UNLOCKED / ENABLED', 'm:413', 'm:71%', 'b:warn:COVERAGE_CRITICAL', 'mu:—'], ['m:cell-9', 'b:ok:UNLOCKED / ENABLED', 'm:414', 'm:64%', 'b:mute:NORMAL', 'sev:mj:Major']],
+      total: '3', note: '', page: '1 / 1' } };
+    const sraw = [['03:41', 'job-91c0', 'sa-smos', 'REVERTED', 'badge b-warn'], ['02:37', 'job-81aa', 'Coverage Opt.', 'APPLIED', 'badge b-ok'], ['01:12', 'job-77e2', 'Mobility Opt.', 'APPLIED', 'badge b-ok'], ['yest. 22:05', 'job-6c18', 'operator2', 'APPLIED', 'badge b-ok'], ['yest. 14:30', 'job-6a02', 'Energy Saving', 'REJECTED', 'badge b-bad'], ['yest. 09:10', 'job-5f90', 'operator1', 'APPLIED', 'badge b-ok']];
+    const a = st.a === undefined ? 2 : st.a, b = st.b === undefined ? 1 : st.b;
+    const snaps = sraw.map(([t, job, by, r, rc], i) => ({ t, job, by, r, rc, sel: (i === a || i === b) ? 'sel' : '', pick: i === a || i === b ? 'badge b-volt plain' : 'badge b-mute plain', mark: i === a ? 'from' : i === b ? 'to' : 'pick',
+      go: () => this.setState(i > b ? { a: i } : { b: i }) }));
+    const open = st.open || { me: true, du: true };
+    const sel = st.mo || 'cell-9';
+    const mk = (id, label, depth, kids, key) => ({ id, label, kids, arrow: key ? (open[key] ? '▾' : '▸') : '·',
+      style: 'display:flex;align-items:center;gap:6px;width:100%;padding:6px 8px 6px ' + (8 + depth * 16) + 'px;border:0;border-radius:6px;cursor:pointer;font:inherit;text-align:left;color:var(--text);background:' + (sel === id ? 'var(--volt-soft)' : 'transparent') + ';',
+      go: () => this.setState(key ? { open: Object.assign({}, open, { [key]: !open[key] }), mo: id } : { mo: id }) });
+    const tree = [mk('me', 'ManagedElement=du-03', 0, '2', 'me')];
+    if (open.me) {
+      tree.push(mk('du', 'GNBDUFunction=1', 1, '3 cells', 'du'));
+      if (open.du) { tree.push(mk('cell-7', 'NRCellDU=cell-7', 2, '9 rel')); tree.push(mk('cell-8', 'NRCellDU=cell-8', 2, '8 rel')); tree.push(mk('cell-9', 'NRCellDU=cell-9', 2, '10 rel')); tree.push(mk('sc', 'NRSectorCarrier=1', 2, '')); }
+      tree.push(mk('cu', 'GNBCUCPFunction=1', 1, '4', 'cu'));
+      if (open.cu) { tree.push(mk('ep', 'EP_F1C=1', 2, '')); tree.push(mk('ncr', 'NRCellCU=cell-7', 2, '')); }
+    }
+    const attrsFor = {
+      'cell-9': ['NRCellDU', 'ManagedElement=du-03,GNBDUFunction=1,NRCellDU=cell-9', [['administrativeState', 'UNLOCKED', 'yes'], ['operationalState', 'ENABLED', 'no'], ['nRPCI', '414', 'yes'], ['arfcnDL', '627264', 'yes'], ['bSChannelBwDL', '100 MHz', 'yes'], ['digitalTilt', '70', 'yes · via config job'], ['cellLocalId', '9', 'no']]],
+      'cell-7': ['NRCellDU', 'ManagedElement=du-03,GNBDUFunction=1,NRCellDU=cell-7', [['administrativeState', 'UNLOCKED', 'yes'], ['operationalState', 'DISABLED', 'no'], ['nRPCI', '412', 'yes'], ['availabilityStatus', 'FAILED', 'no']]],
+      default: ['GNBDUFunction', 'ManagedElement=du-03,GNBDUFunction=1', [['gNBId', '18342', 'no'], ['gNBDUId', '1', 'no'], ['peeParametersList', '1 entry', 'yes']]]
+    };
+    const [cls, dn, attrs] = attrsFor[sel] || attrsFor.default;
+    const mo = { cls, dn, attrs: attrs.map(([k, v, w]) => ({ k, v, w })) };
+    const graw = [['cell-7', 'NORMAL', 'sg-metro-a-12', 'iz-stadium', ['cell-8', 'cell-9', 'du-17/cell-1', 'du-41/cell-3']], ['cell-8', 'COVERAGE_CRITICAL', 'sg-metro-a-12', 'iz-stadium', ['cell-7', 'cell-9', 'du-40/cell-2']], ['cell-9', 'NORMAL', 'sg-metro-a-13', '—', ['cell-7', 'cell-8', '310-410-77', 'cell-5']]];
+    const ed = st.ed === undefined ? 1 : st.ed;
+    const ccl = { NORMAL: 'badge b-mute', COVERAGE_CRITICAL: 'badge b-warn', EMERGENCY: 'badge b-bad' };
+    const cur = st.cls || graw[ed][1];
+    const cells = graw.map(([id, c, sg, iz, nb], i) => ({ id, cls: i === ed ? cur : c, cc: ccl[i === ed ? cur : c], sg, iz, nb: nb.length + ' · ' + nb.slice(0, 2).join(', ') + (nb.length > 2 ? '…' : ''), sel: i === ed ? 'sel' : '', go: () => this.setState({ ed: i, cls: null, guardSaved: false }) }));
+    const edit = { id: graw[ed][0], sg: graw[ed][2], iz: graw[ed][3], nbList: graw[ed][4].join('\n') };
+    const classes = ['NORMAL', 'COVERAGE_CRITICAL', 'EMERGENCY'].map((k) => ({ label: k, cls: cur === k ? 'on' : '', go: () => this.setState({ cls: k, guardSaved: false }) }));
+    return { P, tabs, T, S, snaps, diffFrom: sraw[a][1], diffTo: sraw[b][1], tree, mo, cells, edit, classes, guardSaved: !!st.guardSaved, saveGuard: () => this.setState({ guardSaved: true }) };
+  }
+}
+</script>
+</body>
+</html>

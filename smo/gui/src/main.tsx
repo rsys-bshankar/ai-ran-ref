@@ -7,7 +7,8 @@ import { ApiError } from "./api/client";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { roleAtLeast, type Role } from "./auth/rbac";
 import { mustEnrol } from "./lib/mfa";
-import { Layout } from "./components/Layout";
+import { Layout } from "./shell/Layout";
+import { ThemeProvider, usePreferences } from "./shell/ThemeProvider";
 import { ToastProvider } from "./components/Toast";
 import { Admin } from "./pages/Admin";
 import { Aiml } from "./pages/Aiml";
@@ -25,6 +26,21 @@ import { Rapps } from "./pages/Rapps";
 import { RappDetail } from "./pages/RappDetail";
 import { Safeguards } from "./pages/Safeguards";
 import { Security } from "./pages/Security";
+import { Preferences } from "./pages/preferences";
+import { Topology } from "./pages/topology";
+import { Configuration } from "./pages/configuration";
+import { Software } from "./pages/software";
+import { ElementDetail } from "./pages/element";
+// Self-hosted fonts (the CSP allows fonts from 'self' only): IBM Plex Sans for text, Space Grotesk for headings and numbers, JetBrains Mono for ids.
+import "@fontsource/ibm-plex-sans/latin-400.css";
+import "@fontsource/ibm-plex-sans/latin-500.css";
+import "@fontsource/ibm-plex-sans/latin-600.css";
+import "@fontsource/space-grotesk/latin-500.css";
+import "@fontsource/space-grotesk/latin-600.css";
+import "@fontsource/space-grotesk/latin-700.css";
+import "@fontsource/jetbrains-mono/latin-400.css";
+import "@fontsource/jetbrains-mono/latin-600.css";
+import "@fontsource/jetbrains-mono/latin-700.css";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -37,6 +53,14 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+/** The index route: the Dashboard, or the start page the user chose in Preferences (only on a fresh visit to "/", never a redirect loop). */
+function Home() {
+  const { prefs } = usePreferences();
+  const location = useLocation();
+  const fresh = !(location.state as { stay?: boolean } | null)?.stay && location.key === "default";
+  return fresh && prefs.startPage !== "/" ? <Navigate to={prefs.startPage} replace /> : <Dashboard />;
+}
 
 function RequireAuth({ children, minRole }: { children: ReactNode; minRole?: Role }) {
   const { me, loading } = useAuth();
@@ -54,12 +78,14 @@ createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
         <AuthProvider>
+          <ThemeProvider>
           <BrowserRouter>
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route element={<RequireAuth><Layout /></RequireAuth>}>
-                <Route index element={<Dashboard />} />
+                <Route index element={<Home />} />
                 <Route path="flows" element={<Flows />} />
+                <Route path="flows/:flowId" element={<Flows />} />
                 <Route path="rapps" element={<Rapps />} />
                 <Route path="rapps/:instanceId" element={<RappDetail />} />
                 <Route path="safeguards" element={<Safeguards />} />
@@ -72,12 +98,18 @@ createRoot(document.getElementById("root")!).render(
                 <Route path="policy" element={<Policy />} />
                 <Route path="infrastructure" element={<Infrastructure />} />
                 <Route path="data" element={<Data />} />
+                <Route path="topology" element={<Topology />} />
+                <Route path="configuration" element={<Configuration />} />
+                <Route path="software" element={<Software />} />
+                <Route path="elements/:me" element={<ElementDetail />} />
+                <Route path="preferences" element={<Preferences />} />
                 <Route path="security" element={<Security />} />
                 <Route path="admin" element={<RequireAuth minRole="admin"><Admin /></RequireAuth>} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </BrowserRouter>
+          </ThemeProvider>
         </AuthProvider>
       </ToastProvider>
     </QueryClientProvider>
