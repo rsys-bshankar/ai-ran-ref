@@ -227,7 +227,7 @@ tracing:
 observability:
   tempo:
     enabled: false
-    image: grafana/tempo:2.8.2
+    image: grafana/tempo:2.10.8
     resources:
       requests: { cpu: 50m, memory: 128Mi }
       limits: { memory: 512Mi }
