@@ -79,6 +79,9 @@ def provision_instance(db: Session, package_id: uuid.UUID, configuration: dict |
 
 
 def _step(call) -> str:
+    """Runs one teardown call and returns its outcome as the text stored in `last_teardown`: `DONE` for a 200, 202, 204 or 404 (already gone counts as done), otherwise
+    `FAILED: <exception class or HTTP status>`. It never raises, so one failed release does not stop the others.
+    """
     try:
         resp = call()
     except httpx.HTTPError as exc:

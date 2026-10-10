@@ -47,6 +47,8 @@ def _create(client):
 
 
 def test_bootstrap_pushes_the_declared_limit_under_the_instance_client_id(client, monkeypatch):
+    """When bootstrap completes, the limit the package declares is pushed to RAN NF OAM under the instance's own client id, and the instance goes RUNNING.
+    """
     calls = _wire(monkeypatch, {"configJobsPerHour": 7})
     created = _create(client)
     resp = client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
@@ -55,6 +57,8 @@ def test_bootstrap_pushes_the_declared_limit_under_the_instance_client_id(client
 
 
 def test_every_declared_limit_is_pushed(client, monkeypatch):
+    """All three declared limits (jobs per hour, elements per job, change percent) are mapped to RAN NF OAM's field names in one push.
+    """
     calls = _wire(monkeypatch, {"configJobsPerHour": 7, "maxElementsPerJob": 3, "maxChangePercent": 12.5})
     created = _create(client)
     assert client.post(f"/instances/{created['instanceId']}/bootstrap-complete").status_code == 200
@@ -63,6 +67,7 @@ def test_every_declared_limit_is_pushed(client, monkeypatch):
 
 
 def test_only_the_declared_limits_are_pushed(client, monkeypatch):
+    """A limit the manifest does not declare is not put in the push."""
     calls = _wire(monkeypatch, {"maxElementsPerJob": 2})
     created = _create(client)
     client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
@@ -70,6 +75,7 @@ def test_only_the_declared_limits_are_pushed(client, monkeypatch):
 
 
 def test_a_package_without_limits_makes_no_call(client, monkeypatch):
+    """A package that declares no limits causes no push, and its teardown deletes no limit."""
     calls = _wire(monkeypatch, None)
     created = _create(client)
     assert client.post(f"/instances/{created['instanceId']}/bootstrap-complete").status_code == 200
@@ -78,6 +84,7 @@ def test_a_package_without_limits_makes_no_call(client, monkeypatch):
     assert [p for p in calls["delete"] if "rapp-limits" in p] == []        # teardown has no limit to remove
 
 
+# Each row is a way the limit push fails (500, 404, connection error): bootstrap-complete is 503 and the instance stays DEPLOYING, so a package that declares a limit never runs without it.
 @pytest.mark.parametrize("outcome", [500, 404, httpx.ConnectError("down")])
 def test_a_limit_that_cannot_be_put_in_force_keeps_the_instance_from_running(client, db_session_factory, monkeypatch, outcome):
     _wire(monkeypatch, {"configJobsPerHour": 7}, put_outcome=outcome)
@@ -88,6 +95,8 @@ def test_a_limit_that_cannot_be_put_in_force_keeps_the_instance_from_running(cli
 
 
 def test_bootstrap_can_be_retried_once_the_limit_can_be_pushed(client, monkeypatch):
+    """After a refused push the instance stays DEPLOYING and the same bootstrap call succeeds once RAN NF OAM accepts the limit.
+    """
     _wire(monkeypatch, {"configJobsPerHour": 7}, put_outcome=503)
     created = _create(client)
     assert client.post(f"/instances/{created['instanceId']}/bootstrap-complete").status_code == 503
@@ -96,6 +105,7 @@ def test_bootstrap_can_be_retried_once_the_limit_can_be_pushed(client, monkeypat
 
 
 def test_terminate_removes_the_limit(client, monkeypatch):
+    """Terminating an instance deletes its limit at RAN NF OAM, once."""
     calls = _wire(monkeypatch, {"configJobsPerHour": 7})
     created = _create(client)
     client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
@@ -106,6 +116,8 @@ def test_terminate_removes_the_limit(client, monkeypatch):
 # ---- PR-SEC-14: the instance's own invoker identity at SME
 
 def _wire_invokers(monkeypatch):
+    """Stubs R1 for instance creation (package state, NFO, usage registration) and records every SME invoker registration (`seen["post"]`) and every delete (`seen["delete"]`); each registration answers a numbered invoker id and secret.
+    """
     seen = {"post": [], "delete": []}
 
     def post(self, path, json=None, **kw):
@@ -125,6 +137,8 @@ def _wire_invokers(monkeypatch):
 
 
 def test_an_instance_gets_its_own_sme_invoker_and_that_is_its_client_id(client, monkeypatch):
+    """Creating an instance registers a new invoker at SME (with no enrollment secret, so SME records an rApp) and that invoker's id becomes the instance's client id; the secret is in no create answer.
+    """
     seen = _wire_invokers(monkeypatch)
     created = _create(client)
     registration = next(p for p in seen["post"] if p[0] == "/sme/invoker-registrations")
@@ -134,6 +148,7 @@ def test_an_instance_gets_its_own_sme_invoker_and_that_is_its_client_id(client, 
 
 
 def test_creating_an_instance_fails_if_sme_will_not_register_its_identity(client, monkeypatch):
+    """If SME refuses the registration, create is 503 and nothing is deregistered."""
     seen = _wire_invokers(monkeypatch)
     monkeypatch.setattr("app.main.R1Client.post", lambda self, path, json=None, **kw: FakeR1Response(503, {}) if path == "/sme/invoker-registrations"
                         else FakeR1Response(200, {"nfDeploymentId": "x"}))
@@ -142,6 +157,8 @@ def test_creating_an_instance_fails_if_sme_will_not_register_its_identity(client
 
 
 def test_credentials_are_issued_once_replace_the_invoker_and_are_not_cached(client, db_session_factory, monkeypatch):
+    """Issuing credentials registers a new invoker, deregisters the previous one, stores the new id on the instance, sends `Cache-Control: no-store` and returns the secret; calling again rotates it.
+    """
     seen = _wire_invokers(monkeypatch)
     created = _create(client)
     first = client.post(f"/instances/{created['instanceId']}/credentials")
@@ -157,6 +174,7 @@ def test_credentials_are_issued_once_replace_the_invoker_and_are_not_cached(clie
 
 
 def test_credentials_are_only_issued_while_the_instance_is_deploying(client, monkeypatch):
+    """Credentials are 409 once the instance is RUNNING and 404 for an unknown instance."""
     _wire_invokers(monkeypatch)
     created = _create(client)
     client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
@@ -167,6 +185,8 @@ def test_credentials_are_only_issued_while_the_instance_is_deploying(client, mon
 # ---- AI-10.4: the kill switch as an operator action on an instance
 
 def _wire_kill(monkeypatch, outcome=200):
+    """Adds to `_wire_invokers` a stub for RAN NF OAM's kill-switch PUT that records the call (`seen["put"]`) and answers `outcome` (a status, or an exception to raise).
+    """
     seen = _wire_invokers(monkeypatch)
     seen["put"] = []
 
@@ -181,6 +201,8 @@ def _wire_kill(monkeypatch, outcome=200):
 
 
 def test_killing_an_instance_stops_its_invoker_at_ran_nf_oam(client, monkeypatch):
+    """The kill route puts the switch at RAN NF OAM under the instance's client id with the requester and reason, and returns who stopped it.
+    """
     seen = _wire_kill(monkeypatch)
     created = _create(client)
     resp = client.put(f"/instances/{created['instanceId']}/kill", json={"requestedBy": "alice", "reason": "oscillating"})
@@ -188,6 +210,7 @@ def test_killing_an_instance_stops_its_invoker_at_ran_nf_oam(client, monkeypatch
     assert seen["put"] == [(f"/ran-nf-oam/rapp-kill/{created['oauthClientId']}", {"requestedBy": "alice", "reason": "oscillating"})]
 
 
+# Each row is a failure of the kill call (500, connection error): the route answers 503 saying nothing was changed, never that the instance was stopped.
 @pytest.mark.parametrize("outcome", [500, httpx.ConnectError("down")])
 def test_a_switch_that_could_not_be_thrown_is_reported_not_done(client, monkeypatch, outcome):
     _wire_kill(monkeypatch, outcome)
@@ -197,6 +220,7 @@ def test_a_switch_that_could_not_be_thrown_is_reported_not_done(client, monkeypa
 
 
 def test_lifting_is_idempotent_and_goes_to_the_same_key(client, monkeypatch):
+    """Lifting the kill switch deletes the same key the kill used and answers killed false."""
     seen = _wire_kill(monkeypatch)
     created = _create(client)
     seen["delete"].clear()
@@ -206,6 +230,7 @@ def test_lifting_is_idempotent_and_goes_to_the_same_key(client, monkeypatch):
 
 
 def test_an_unknown_instance_is_404_and_a_terminated_one_has_nothing_to_kill(client, monkeypatch):
+    """Killing an unknown instance, or a terminated one (it has no credential), is 404."""
     _wire_kill(monkeypatch)
     assert client.put(f"/instances/{uuid.uuid4()}/kill", json={"requestedBy": "a"}).status_code == 404
     created = _create(client)
@@ -217,6 +242,8 @@ def test_an_unknown_instance_is_404_and_a_terminated_one_has_nothing_to_kill(cli
 # ---- delivering the credentials to the workload (kubernetes mode)
 
 def _wire_delivery(monkeypatch, fail=False):
+    """Replaces credential delivery with a recorder: `delivered["put"]` holds each (instance, invoker, secret) written for the workload, `delivered["withdrawn"]` each instance whose secret was removed, and with `fail` the delivery raises as a refused Kubernetes API would.
+    """
     from smo_shared import credential_delivery
     delivered = {"put": [], "withdrawn": []}
 
@@ -232,6 +259,8 @@ def _wire_delivery(monkeypatch, fail=False):
 
 
 def test_with_delivery_on_the_secret_goes_to_the_workload_at_create_and_is_not_in_any_answer(client, monkeypatch):
+    """With credential delivery configured, the secret is written to the workload's Secret at create and appears in no API answer.
+    """
     seen = _wire_invokers(monkeypatch)
     delivered = _wire_delivery(monkeypatch)
     created = _create(client)
@@ -242,6 +271,8 @@ def test_with_delivery_on_the_secret_goes_to_the_workload_at_create_and_is_not_i
 
 
 def test_with_delivery_on_rotating_replaces_the_secret_and_answers_with_its_name_not_the_secret(client, monkeypatch):
+    """With delivery on, rotating writes the new secret to the workload and answers with the name of the Secret, not the secret itself.
+    """
     _wire_invokers(monkeypatch)
     delivered = _wire_delivery(monkeypatch)
     created = _create(client)
@@ -251,6 +282,7 @@ def test_with_delivery_on_rotating_replaces_the_secret_and_answers_with_its_name
 
 
 def test_creating_an_instance_fails_and_the_invoker_is_withdrawn_if_the_secret_cannot_be_written(client, monkeypatch):
+    """If the secret cannot be delivered, create is 503 and the invoker just registered is deregistered again."""
     seen = _wire_invokers(monkeypatch)
     _wire_delivery(monkeypatch, fail=True)
     resp = client.post("/instances", json={"packageId": str(uuid.uuid4()), "config": {}})
@@ -259,6 +291,7 @@ def test_creating_an_instance_fails_and_the_invoker_is_withdrawn_if_the_secret_c
 
 
 def test_terminating_the_instance_deletes_its_secret(client, monkeypatch):
+    """Terminating the instance withdraws its delivered secret."""
     _wire_invokers(monkeypatch)
     delivered = _wire_delivery(monkeypatch)
     created = _create(client)

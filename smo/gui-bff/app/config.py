@@ -58,6 +58,9 @@ def _totp_key() -> str:
 
 
 def _read_key_file(name: str, path: str) -> str:
+    """Returns the text of the key file at `path`; `name` is the environment variable that named it, used only in the error.
+    An unreadable file raises ValueError (naming the variable and the OS reason, never the contents), so a bad mount stops the start instead of failing at the first sign-in.
+    """
     try:
         with open(path, encoding="utf-8") as handle:
             return handle.read()
@@ -100,6 +103,11 @@ def _bool(name: str, default: bool) -> bool:
 
 @dataclass
 class Settings:
+    """Every environment setting of the BFF, read once when the object is built (the module-level `settings` below).
+    Each field's default is a factory, so the environment is read at construction and a test can build a fresh `Settings()` after changing it. Nothing here is a secret
+    in git: secrets come from the environment or a mounted file. An empty `jwt_secret` is replaced in `__post_init__`; app/signing.py and app/main.py then decide, with
+    `jwt_secret_generated`, whether to adopt the database's shared key instead.
+    """
     r1_url: str = field(default_factory=lambda: _internal_url(os.environ.get("R1_URL", "http://r1-termination:8000")).rstrip("/"))
     # Optional override. By default the SME token endpoint is discovered the
     # same way an rApp discovers it: from R1 Termination's own /bootstrap.

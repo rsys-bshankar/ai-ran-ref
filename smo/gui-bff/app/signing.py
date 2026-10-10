@@ -34,6 +34,9 @@ MIN_RSA_BITS = 2048
 
 
 class Signer(Protocol):
+    """What the rest of the BFF needs from a session signer: `issue` a token for claims and a lifetime, `decode` a token to its claims (None for anything not valid, never an
+    exception), and `jwks` the public key set to publish. `build_signer` returns an HS256 or an asymmetric implementation.
+    """
     algorithm: str
 
     def issue(self, claims: dict, ttl_seconds: int) -> str: ...
@@ -105,6 +108,10 @@ class AsymmetricSigner:
     """RS256 or ES256: sign with one private key, verify with the public keys of the current and the previous rotations."""
 
     def __init__(self, algorithm: str, private_pem: str, previous_pems: list[tuple[str, str]] | None = None) -> None:
+        """Loads the signing key (an unencrypted PEM private key: RSA of at least 2048 bits for RS256, EC on P-256 for ES256) and the previous rotations' keys (private or public
+        PEM; they only verify). The key set is fixed here: the `kid` of each is its RFC 7638 thumbprint, and a key already present, by `kid`, is skipped. Raises ValueError naming the
+        setting for an unreadable or wrong-type key, which stops the start.
+        """
         if algorithm not in ("RS256", "ES256"):
             raise ValueError(f"{algorithm} is not an asymmetric algorithm")
         self.algorithm = algorithm
@@ -123,11 +130,16 @@ class AsymmetricSigner:
             self._public[old["kid"]] = old_public
 
     def issue(self, claims: dict, ttl_seconds: int) -> str:
+        """A JWT for `claims` signed with the current private key, with `iat`, `exp` (`ttl_seconds` ahead) and the current `kid` in the header.
+        """
         now = int(time.time())
         payload = {**claims, "iat": now, "exp": now + ttl_seconds}
         return jwt.encode(payload, self._private, algorithm=self.algorithm, headers={"kid": self.kid})
 
     def decode(self, token: str) -> dict | None:
+        """The claims of a token this signer accepts, else None. The header `alg` must be exactly the configured algorithm and the `kid` must name a key of the set
+        (current or previous); the signature is verified with that key, and the lifetime is then checked here (an integer `exp` in the future), so the rule matches the HS256 verifier's.
+        """
         try:
             header = jwt.get_unverified_header(token)
             if header.get("alg") != self.algorithm:        # none, HS256 under the public key as a secret, or the other asymmetric algorithm

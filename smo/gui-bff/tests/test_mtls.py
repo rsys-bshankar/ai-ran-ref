@@ -19,16 +19,21 @@ _spec.loader.exec_module(certs)
 
 @pytest.fixture(autouse=True)
 def clean(monkeypatch):
+    """Removes every mTLS and gateway-address variable from the environment before each test, so a test starts from the defaults.
+    """
     for name in ("SMO_MTLS", "SMO_MTLS_CERT_FILE", "SMO_MTLS_KEY_FILE", "SMO_MTLS_CA_FILE", "R1_URL", "SME_URL"):
         monkeypatch.delenv(name, raising=False)
 
 
 def test_off_by_default_the_addresses_and_the_client_are_as_before():
+    """With `SMO_MTLS` unset the R1 address stays http and the gateway's client arguments are empty."""
     assert config.Settings().r1_url == "http://r1-termination:8000"
     assert smo_client._mtls_client_args() == {}
 
 
 def test_on_the_gateway_address_is_https_and_the_client_verifies_with_the_certificate(monkeypatch, tmp_path):
+    """With mTLS on, the R1 and SME addresses become https (a trailing slash dropped) and the client gets an SSL context that requires and checks the server certificate and holds the client certificate.
+    """
     certs.init(tmp_path, 30)
     monkeypatch.setenv("SMO_MTLS", "on")
     monkeypatch.setenv("SMO_MTLS_CERT_FILE", str(tmp_path / "gui-bff" / "tls.crt"))
@@ -42,6 +47,8 @@ def test_on_the_gateway_address_is_https_and_the_client_verifies_with_the_certif
 
 
 def test_on_without_the_files_it_fails_at_start_rather_than_calling_without_a_certificate(monkeypatch, tmp_path):
+    """With mTLS on and the certificate files missing, building the client arguments raises OSError, so the BFF stops at start instead of calling R1 without a certificate.
+    """
     monkeypatch.setenv("SMO_MTLS", "on")
     monkeypatch.setenv("SMO_MTLS_CA_FILE", str(tmp_path / "missing-ca.crt"))
     with pytest.raises(OSError):

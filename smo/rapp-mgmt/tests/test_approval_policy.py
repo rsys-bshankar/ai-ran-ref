@@ -24,6 +24,8 @@ def _policy_calls(calls):
 
 
 def test_an_assist_instance_with_a_policy_has_it_pushed_under_its_client_id_at_bootstrap(client, monkeypatch):
+    """The policy is pushed to RAN NF OAM under the instance's client id only when bootstrap completes (not at create), together with `requestedBy: rapp-mgmt`, and the instance reports it.
+    """
     calls = _wire(monkeypatch, None)
     created = _create(client).json()
     assert _policy_calls(calls) == []                                                   # nothing yet: the instance does not run
@@ -34,12 +36,14 @@ def test_an_assist_instance_with_a_policy_has_it_pushed_under_its_client_id_at_b
 
 
 def test_the_defaults_are_the_conservative_ones(client, monkeypatch):
+    """An empty policy gets the defaults: one hour and EXPIRE (lapse, never approve)."""
     calls = _wire(monkeypatch, None)
     created = _create(client, policy={}).json()
     client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
     assert _policy_calls(calls)[0][1] == {"requestedBy": "rapp-mgmt", "timeoutSeconds": 3600, "onTimeout": "EXPIRE"}
 
 
+# Each row is an autonomy mode in which no person decides (AUTONOMOUS, SHADOW); creating it with an approval policy is 422 APPROVAL_POLICY_NEEDS_ASSIST.
 @pytest.mark.parametrize("mode", ["AUTONOMOUS", "SHADOW"])
 def test_a_policy_is_refused_for_a_mode_in_which_no_one_decides(client, monkeypatch, mode):
     _wire(monkeypatch, None)
@@ -47,12 +51,14 @@ def test_a_policy_is_refused_for_a_mode_in_which_no_one_decides(client, monkeypa
     assert resp.status_code == 422 and resp.json()["detail"]["title"] == "APPROVAL_POLICY_NEEDS_ASSIST"
 
 
+# Each row is a policy outside the bounds (timeout under a minute or over a week, an unknown or wrongly cased `onTimeout`); creating the instance is 422.
 @pytest.mark.parametrize("policy", [{"timeoutSeconds": 59}, {"timeoutSeconds": 604_801}, {"onTimeout": "APPROVE"}, {"onTimeout": "expire"}])
 def test_a_policy_outside_the_bounds_is_422(client, monkeypatch, policy):
     _wire(monkeypatch, None)
     assert _create(client, policy=policy).status_code == 422
 
 
+# Each row is an autonomy mode. An instance created without a policy pushes none, shows none and deletes none on terminate.
 @pytest.mark.parametrize("mode", ["AUTONOMOUS", "ASSIST", "SHADOW"])
 def test_an_instance_without_a_policy_behaves_as_before_in_every_mode(client, monkeypatch, mode):
     calls = _wire(monkeypatch, None)
@@ -63,6 +69,7 @@ def test_an_instance_without_a_policy_behaves_as_before_in_every_mode(client, mo
     assert [p for p in calls["delete"] if "rapp-approval-policy" in p] == []
 
 
+# Each row is a way the push to RAN NF OAM fails (500, 404, connection error): bootstrap-complete is 503 and the instance stays DEPLOYING, so it never runs and writes without its approval gate.
 @pytest.mark.parametrize("outcome", [500, 404, httpx.ConnectError("down")])
 def test_a_policy_that_cannot_be_put_in_force_keeps_the_instance_from_running(client, monkeypatch, outcome):
     _wire(monkeypatch, None, put_outcome=outcome)
@@ -73,6 +80,7 @@ def test_a_policy_that_cannot_be_put_in_force_keeps_the_instance_from_running(cl
 
 
 def test_terminate_removes_the_policy(client, monkeypatch):
+    """Terminating an instance deletes its approval policy at RAN NF OAM, once."""
     calls = _wire(monkeypatch, None)
     created = _create(client).json()
     client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
@@ -81,6 +89,8 @@ def test_terminate_removes_the_policy(client, monkeypatch):
 
 
 def test_an_upgrade_keeps_the_policy_and_a_rollback_restores_it(client, db_session_factory, monkeypatch):
+    """The replacement instance inherits the policy, it is pushed again under the replacement's own client id when the upgrade commits, and the version history keeps the old policy so a rollback can restore it.
+    """
     calls = _wire(monkeypatch, None)
     created = _create(client).json()
     client.post(f"/instances/{created['instanceId']}/bootstrap-complete")

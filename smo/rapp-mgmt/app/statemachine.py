@@ -22,6 +22,9 @@ from .models import RAppInstance
 
 
 class InstanceState(StrEnum):
+    """The lifecycle states of one instance row: DEPLOYING (created, waiting for the workload to call bootstrap-complete), RUNNING, UPGRADING (the old row of an upgrade
+    in flight), FAULTED (a critical fault, or a failed bootstrap) and UNDEPLOYED (torn down; the row remains until it is deleted). The names are stored in `rapp_instance.state`, so they are never renamed.
+    """
     DEPLOYING = "DEPLOYING"
     RUNNING = "RUNNING"
     UPGRADING = "UPGRADING"
@@ -30,6 +33,9 @@ class InstanceState(StrEnum):
 
 
 class InstanceEvent(StrEnum):
+    """What can happen to an instance row: bootstrap succeeded or failed, an upgrade started, committed or rolled back, terminate, crash and recover. Which event is legal in which
+    state is the table in `build_rapp_instance_fsm`.
+    """
     BOOTSTRAP_OK = "BOOTSTRAP_OK"
     BOOTSTRAP_FAILED = "BOOTSTRAP_FAILED"
     START_UPGRADE = "START_UPGRADE"
@@ -126,11 +132,18 @@ def _terminate_side_effects(instance: RAppInstance, **_) -> None:
     # Reconsideration must run BEFORE credential revocation — it reads
     # instance.oauth_client_id as the DME producer_id/SME apfId, which
     # _revoke_credential clears to None.
+    """The transition action of every move into UNDEPLOYED: deregister the instance at DME, SME, RAN NF OAM (limit and approval policy), then revoke its credential.
+    The order matters: the deregistrations read `oauth_client_id` as the producer and provider id, and `_revoke_credential` sets it to None, so it must run last.
+    """
     _reconsider_registrations(instance)
     _revoke_credential(instance)
 
 
 def build_rapp_instance_fsm() -> StateMachine[InstanceState, InstanceEvent]:
+    """Builds the transition table: which `InstanceEvent` is legal in which `InstanceState`, the state it leads to and the side-effect action it runs. Every move into UNDEPLOYED
+    (terminate, an upgrade commit) runs `_terminate_side_effects`; a crash runs only the deregistrations, so the credential stays for a recover. An event that is not in the table is
+    refused by the caller as an illegal transition (409). The table is built once, as `RAPP_INSTANCE_FSM`.
+    """
     fsm: StateMachine[InstanceState, InstanceEvent] = StateMachine()
     fsm.add(InstanceState.DEPLOYING, InstanceEvent.BOOTSTRAP_OK, InstanceState.RUNNING)
     fsm.add(InstanceState.DEPLOYING, InstanceEvent.BOOTSTRAP_FAILED, InstanceState.FAULTED)

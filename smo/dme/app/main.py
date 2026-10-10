@@ -47,6 +47,8 @@ _r1 = R1Client()
 install_health(app, checks=[database_check, sme_token_check])  # /live, /ready and the /health alias (PR-ST-7)
 
 
+# The body of producer and type registration. The type is identified by (namespace, name, version); `producerId` is the producer's own identity string. `producerHealthCallbackUrl` is called
+# for the status reads and `jobCallbackUrl` receives job starts and stops. `sourceDomain`, when given, must be LIVE_RAN or DIGITAL_TWIN (422 otherwise).
 class DMETypeRegistration(BaseModel):
     namespace: str
     name: str
@@ -65,6 +67,8 @@ class DMETypeRegistration(BaseModel):
     sourceContext: dict | None = None
 
 
+# The body of create and update of a data job. `dataDeliveryMethod` must be a known method and, when an offer exists for the type, one an offer committed to. `productionJobDefinition` is
+# checked against the type's schema, and `lifecycleStage`, when given, must be a known stage; the allowed values are in the trailing comments.
 class DataJobRequest(BaseModel):
     dataDeliveryMode: str  # ONE_TIME | CONTINUOUS
     dmeTypeId: uuid.UUID
@@ -75,6 +79,7 @@ class DataJobRequest(BaseModel):
     lifecycleStage: str | None = None  # TRAINING | TESTING | EMULATION | INFERENCE | CLOSED_LOOP_FEEDBACK
 
 
+# The body of a data record: an arbitrary JSON object, stored as it is for the job.
 class DataRecordRequest(BaseModel):
     payload: dict
 
@@ -104,6 +109,7 @@ class ActionRequest(BaseModel):
     decision: dict | None = None
 
 
+# The body of a data offer. `dataDeliveryMethods` must be a non-empty list of known methods; the first one is the method the framework commits to.
 class DataOfferRequest(BaseModel):
     dmeTypeId: uuid.UUID
     dataDeliveryMode: str
@@ -113,6 +119,7 @@ class DataOfferRequest(BaseModel):
     dataOfferTerminationNotificationUri: str
 
 
+# The body of a type subscription: where to POST the notification when a type is registered or removed, and the subscriber's name for filtering the list.
 class TypeSubscriptionRequest(BaseModel):
     notificationDestination: str
     owner: str
@@ -195,6 +202,7 @@ def list_producers(db: Session = Depends(get_session)):
 
 @app.get("/production-capabilities/{producer_id}")
 def get_producer(producer_id: str, db: Session = Depends(get_session)):
+    # One registered producer with the ids of the types it supports. 404 PRODUCER_NOT_FOUND. Read only.
     p = db.get(DMEProducer, producer_id)
     if p is None:
         raise framework_error(FrameworkError.PRODUCER_NOT_FOUND, detail="no such producer")
@@ -287,6 +295,7 @@ def subscribe_type_changes(body: TypeSubscriptionRequest, db: Session = Depends(
 @app.get("/type-subscriptions")
 def list_type_subscriptions(owner: str | None = None, limit: int = PageLimit, offset: int = PageOffset,
                              db: Session = Depends(get_session)):
+    # The type subscriptions as a page, optionally only those of one `owner`. Read only.
     stmt = select(DMETypeSubscription)
     if owner:
         stmt = stmt.where(DMETypeSubscription.owner == owner)
@@ -296,6 +305,7 @@ def list_type_subscriptions(owner: str | None = None, limit: int = PageLimit, of
 
 @app.get("/type-subscriptions/{subscription_id}")
 def get_type_subscription(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    # One type subscription. 404 TYPE_SUBSCRIPTION_NOT_FOUND. Read only.
     sub = db.get(DMETypeSubscription, subscription_id)
     if sub is None:
         raise framework_error(FrameworkError.TYPE_SUBSCRIPTION_NOT_FOUND, detail="no such subscription")
@@ -304,6 +314,7 @@ def get_type_subscription(subscription_id: uuid.UUID, db: Session = Depends(get_
 
 @app.delete("/type-subscriptions/{subscription_id}", status_code=204)
 def unsubscribe_type_changes(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Deletes the subscription. Idempotent: 204 whether or not it existed.
     sub = db.get(DMETypeSubscription, subscription_id)
     if sub is not None:
         db.delete(sub)
@@ -330,6 +341,9 @@ def _subscription_view(s: DMETypeSubscription) -> dict:
 
 
 def _validate_delivery_method(db: Session, dme_type_id: uuid.UUID, method: str) -> None:
+    """Raises 409 DELIVERY_METHOD_NOT_OFFERED when `method` is not one of `DELIVERY_METHODS` or, for a type that has at least one offer, when no offer committed to it.
+    A type with no offer at all accepts any known method. Read only.
+    """
     if method not in DELIVERY_METHODS:
         raise framework_error(FrameworkError.DELIVERY_METHOD_NOT_OFFERED, detail=f"unknown method {method}")
     # Cross-check against the actual DataOffer(s) for this dmeTypeId, not just
@@ -384,6 +398,10 @@ def _validate_lifecycle_eligibility(db: Session, dme_type_id: uuid.UUID, lifecyc
 
 @app.post("/data-jobs", status_code=202)
 def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
+    # Creates an ACTIVE job. Order of checks: the delivery method (409 DELIVERY_METHOD_NOT_OFFERED), the production definition against the registered type's schema (422 SCHEMA_VALIDATION_FAILED), then
+    # the lifecycle stage and the rule that a Digital Twin source may not feed Inference (422 SCHEMA_VALIDATION_FAILED, DIGITAL_TWIN_INFERENCE_NOT_ELIGIBLE). The schema and eligibility checks are
+    # skipped for a `dmeTypeId` that is not registered (the code does not check that it exists). For a registered type, one outbox row per producer of the type is written in the same transaction,
+    # so each producer is told after the commit. Answers 202 with the job id.
     _validate_delivery_method(db, body.dmeTypeId, body.dataDeliveryMethod)
     _validate_job_definition_schema(db, body.dmeTypeId, body.productionJobDefinition)
     _validate_lifecycle_eligibility(db, body.dmeTypeId, body.lifecycleStage)
@@ -408,6 +426,7 @@ def create_data_job(body: DataJobRequest, db: Session = Depends(get_session)):
 
 @app.get("/data-jobs/{data_job_id}")
 def get_data_job(data_job_id: uuid.UUID, db: Session = Depends(get_session)):
+    # One data job. 404 DATA_JOB_NOT_FOUND. Read only.
     job = db.get(DataJob, data_job_id)
     if job is None:
         raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
@@ -453,6 +472,7 @@ def update_data_job(data_job_id: uuid.UUID, body: DataJobRequest, db: Session = 
 
 @app.get("/data-jobs/{data_job_id}/status")
 def query_data_job_status(data_job_id: uuid.UUID, db: Session = Depends(get_session)):
+    # The job's stored status. 404 DATA_JOB_NOT_FOUND. Read only.
     job = db.get(DataJob, data_job_id)
     if job is None:
         raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
@@ -495,6 +515,7 @@ def terminate_data_jobs_for_consumer(consumer_id: str, db: Session = Depends(get
 
 @app.post("/offers", status_code=201)
 def create_data_offer(body: DataOfferRequest, db: Session = Depends(get_session)):
+    # Stores an offer, committing to the first of the offered methods. 409 DELIVERY_METHOD_NOT_OFFERED when the list is empty or holds an unknown method. The type is not checked to exist. Answers 201.
     if not body.dataDeliveryMethods or not set(body.dataDeliveryMethods) <= DELIVERY_METHODS:
         raise framework_error(FrameworkError.DELIVERY_METHOD_NOT_OFFERED)
     offer = DataOffer(
@@ -511,6 +532,7 @@ def create_data_offer(body: DataOfferRequest, db: Session = Depends(get_session)
 
 @app.get("/offers/{offer_id}")
 def get_data_offer(offer_id: uuid.UUID, db: Session = Depends(get_session)):
+    # One offer. 404 DATA_OFFER_NOT_FOUND. Read only.
     offer = db.get(DataOffer, offer_id)
     if offer is None:
         raise framework_error(FrameworkError.DATA_OFFER_NOT_FOUND, detail="no such data offer")
@@ -588,6 +610,7 @@ def _stop_job_at_producers(db: Session, dme_type: DMEType, data_job_id: uuid.UUI
 
 
 def _job_view(j: DataJob) -> dict:
+    """One data job as the JSON the routes return (ids as strings, an empty object for an absent definition or details)."""
     return {
         "dataJobId": str(j.data_job_id),
         "dataDeliveryMode": j.data_delivery_mode,
@@ -602,6 +625,8 @@ def _job_view(j: DataJob) -> dict:
 
 
 def _offer_view(o: DataOffer) -> dict:
+    """One data offer as the JSON the routes return: the methods offered, the committed one and the two notification addresses.
+    """
     return {
         "offerId": str(o.offer_id),
         "dmeTypeId": str(o.dme_type_id),
@@ -613,6 +638,8 @@ def _offer_view(o: DataOffer) -> dict:
 
 
 def _type_view(db: Session, t: DMEType) -> dict:
+    """One type as the JSON the routes return, with the sorted ids of its producers and its status, which is computed now by calling the producers' health callbacks (see `_computed_type_status`).
+    """
     producer_ids = sorted(db.scalars(select(DMEProducerType.producer_id).where(DMEProducerType.dme_type_id == t.dme_type_id)).all())
     return {
         "dmeTypeId": str(t.dme_type_id),
@@ -626,6 +653,7 @@ def _type_view(db: Session, t: DMEType) -> dict:
 
 
 def _producer_view(db: Session, p: DMEProducer) -> dict:
+    """One producer as the JSON the routes return, with the sorted ids of the types it supports."""
     type_ids = sorted(str(i) for i in db.scalars(select(DMEProducerType.dme_type_id).where(DMEProducerType.producer_id == p.producer_id)).all())
     return {
         "producerId": p.producer_id,
@@ -664,6 +692,7 @@ def _producer_is_healthy(callback_url: str) -> bool:
 @app.get("/data-jobs")
 def list_data_jobs(dme_type_id: uuid.UUID | None = None, consumer_id: str | None = None, limit: int = PageLimit,
                     offset: int = PageOffset, db: Session = Depends(get_session)):
+    # The data jobs as a page, optionally only those of one type or one consumer. Read only.
     stmt = select(DataJob)
     if dme_type_id:
         stmt = stmt.where(DataJob.dme_type_id == dme_type_id)
@@ -676,6 +705,7 @@ def list_data_jobs(dme_type_id: uuid.UUID | None = None, consumer_id: str | None
 @app.get("/offers")
 def list_data_offers(dme_type_id: uuid.UUID | None = None, limit: int = PageLimit, offset: int = PageOffset,
                       db: Session = Depends(get_session)):
+    # The data offers as a page, optionally only those of one type. Read only.
     stmt = select(DataOffer)
     if dme_type_id:
         stmt = stmt.where(DataOffer.dme_type_id == dme_type_id)
@@ -692,6 +722,7 @@ def list_data_offers(dme_type_id: uuid.UUID | None = None, limit: int = PageLimi
 
 @app.post("/data-jobs/{data_job_id}/records", status_code=201)
 def ingest_data_record(data_job_id: uuid.UUID, body: DataRecordRequest, db: Session = Depends(get_session)):
+    # Stores one payload for the job. 404 DATA_JOB_NOT_FOUND; 201 with the record id. The caller is not checked against the job's producers: who may call is decided at the gateway.
     job = db.get(DataJob, data_job_id)
     if job is None:
         raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
@@ -704,6 +735,7 @@ def ingest_data_record(data_job_id: uuid.UUID, body: DataRecordRequest, db: Sess
 @app.get("/data-jobs/{data_job_id}/records")
 def fetch_data_records(data_job_id: uuid.UUID, limit: int = PageLimit, offset: int = PageOffset,
                         db: Session = Depends(get_session)):
+    # The job's records as a page, newest first. 404 DATA_JOB_NOT_FOUND. Read only.
     job = db.get(DataJob, data_job_id)
     if job is None:
         raise framework_error(FrameworkError.DATA_JOB_NOT_FOUND, detail="no such data job")
@@ -730,6 +762,11 @@ DME_TO_RAN_NF_OAM_TIMEOUT_SECONDS = 10.0
 
 @app.post("/actions", status_code=202, responses={200: {"description": "the actionId was already recorded: the replay is IGNORED and nothing is forwarded again"}})
 def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
+    # Records an rApp's O1 change request and forwards it to RAN NF OAM as a configuration job (10 s limit). Order: empty `changes` is 422; an `actionId` already recorded is answered 200 `IGNORED` with the
+    # original status and nothing is forwarded again; otherwise the record is committed first (status FORWARDED, its default), then the job is requested. RAN NF OAM's answer decides the status: a body that is
+    # not JSON or a 5xx is 502 UPSTREAM_FAILED and the record becomes REJECTED; a 4xx is relayed as it came and the record becomes REJECTED; an answer with no job id (the change waits for human approval) is 202 with the
+    # status and `approvalId` and no forwarded job; otherwise 202 with the job id and RAN NF OAM's status. A transport failure raised by the call is not caught here, so the record then keeps the
+    # status FORWARDED.
     if not body.changes:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail="changes must not be empty")
     if body.actionId is not None:
@@ -753,7 +790,7 @@ def mediate_action(body: ActionRequest, db: Session = Depends(get_session)):
         correlation_id=get_correlation_id(),
     )
     db.add(record)
-    db.commit()
+    db.commit()    # the record is committed before RAN NF OAM is called, so it exists whatever the call does; its status is updated after the answer
     # Wave 9 (W9-02): className is forwarded too — RAN NF OAM's write
     # pre-check validates each change against its vendor's data model.
     # Wave 10.1 (W10-19): DME → RAN NF OAM is bounded at 10 s.
