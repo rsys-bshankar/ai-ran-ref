@@ -62,6 +62,8 @@ class NetconfTlsSession(NetconfSession):
         self.host, self.port = parse_tls_uri(adaptor_uri)
 
     def _connect(self) -> None:
+        """Opens the mutually authenticated TLS channel and runs the NETCONF `<hello>` exchange. Verification of the server (CA chain, host name, TLS 1.2 or later) is always on. Every failure is a NetconfSshError with the same reason codes the SSH transport uses: NETCONF_TIMEOUT (connect or handshake timed out), NETCONF_UNREACHABLE (the TCP connect failed), NETCONF_RPC_FAILED (credential files unreadable, certificate not trusted, handshake refused). The message names the kind of file error, never the file contents.
+        """
         cert, key, ca = tls_material_for(self.credential_ref)
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         context.minimum_version = ssl.TLSVersion.TLSv1_2

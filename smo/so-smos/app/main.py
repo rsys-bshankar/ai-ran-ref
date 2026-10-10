@@ -1,8 +1,14 @@
-"""SO SMOS.
+"""SO SMOS (Service Orchestration SMOS): the HTTP routes to submit, read, cancel and list multi-step service orders.
 
-SMO Design v1.3 section 3.13, extended by SO/SA SMOS LLD section 1: the
-concrete dispatch table (dispatch.py) and fail-fast execution semantics
-v1.3 left as "orchestrates in sequence" with no defined failure behavior.
+What it is: the FastAPI app of the `so-smos` module (R1 route `/so-smos` via R1 Termination). `POST /orders` runs a list of steps in order through the dispatch table in
+`dispatch.py` and stores the executed steps on a `ServiceOrder` row. The other routes read, cancel and list those rows.
+
+Where it sits: called by the GUI BFF and by SA SMOS (which reads an order to find a monitor's deployment); it calls RAN NF OAM, NFO, FOCOM and AIMgF through `R1Client`, one call
+per step. Design: SMO Design v1.3 section 3.13 and SO/SA SMOS LLD section 1; README sections 1.5 and 2.
+
+What it owns: the `service_order` table (`models.py`). It performs no step itself and does not roll back completed steps.
+
+Before editing: execution is synchronous, inside the request, and the order row is committed once, after every step has run (see `submit_service_order`).
 """
 
 import uuid
@@ -35,6 +41,8 @@ apply_correlation_id(app)
 install_health(app, checks=[database_check, sme_token_check])  # /live, /ready and the /health alias (PR-ST-7)
 
 
+# Request body of POST /orders. `scope` is free text; `steps` is a list of dicts, each of which must carry a string `stepType` and `targetModule` (checked by the validator, a 422
+# otherwise) plus whatever fields its dispatcher reads (README section 2.4). `rmihRegistration` is stored with the order and used by nothing else in this module.
 class SubmitOrderRequest(BaseModel):
     scope: str
     steps: list[dict]
@@ -51,11 +59,16 @@ class SubmitOrderRequest(BaseModel):
 
 @app.post("/orders", status_code=202)
 def submit_service_order(body: SubmitOrderRequest, db: Session = Depends(get_session)):
+    # Maintainer notes (not published). Answers 202 with {orderId, steps} after every step has run; a step failure is in the body (`status` FAILED, `error`), not an HTTP status.
+    # The order row is flushed, then all steps are dispatched, then `order.steps` is replaced by the executed steps and the row is committed once. So the order is not visible to
+    # readers while it executes, and if the process dies midway the downstream calls already made leave no order record. `steps` is assigned a new list (not mutated) because a plain JSON
+    # column does not track in-place changes.
     order = ServiceOrder(scope=body.scope, steps=body.steps, rmih_registration=body.rmihRegistration)
     db.add(order)
     db.flush()
 
     r1 = R1Client()
+    # execute_order catches every exception from a dispatcher, so this call does not raise for a downstream failure.
     results = execute_order(r1, body.steps)
     order.steps = results
     db.commit()
@@ -63,6 +76,7 @@ def submit_service_order(body: SubmitOrderRequest, db: Session = Depends(get_ses
 
 
 def _order_or_404(db: Session, order_id: uuid.UUID) -> ServiceOrder:
+    """Returns the order or raises the SERVICE_ORDER_NOT_FOUND framework error (404)."""
     order = db.get(ServiceOrder, order_id)
     if order is None:
         raise framework_error(FrameworkError.SERVICE_ORDER_NOT_FOUND, detail=f"unknown orderId {order_id}")
@@ -71,6 +85,7 @@ def _order_or_404(db: Session, order_id: uuid.UUID) -> ServiceOrder:
 
 @app.get("/orders/{order_id}")
 def query_order_status(order_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Maintainer notes (not published). 404 SERVICE_ORDER_NOT_FOUND for an unknown id. `homingDecision` is returned as stored; no route in this module writes it.
     order = _order_or_404(db, order_id)
     return {"orderId": str(order.order_id), "steps": order.steps, "homingDecision": order.homing_decision}
 
@@ -85,6 +100,9 @@ def cancel_order(order_id: uuid.UUID, db: Session = Depends(get_session)):
     commit()'s default expire-on-commit re-fetched the unchanged row
     right back, discarding the edit.
     """
+    # Maintainer notes (not published). 404 SERVICE_ORDER_NOT_FOUND for an unknown id. Only PENDING steps become CANCELLED; the order's status is not checked, so cancelling twice or
+    # cancelling a fully executed order changes nothing and still answers 200. Because execution is synchronous, an order that is still running cannot be cancelled: the only PENDING
+    # steps are those left behind by a failed step.
     order = _order_or_404(db, order_id)
     order.steps = [{**step, "status": "CANCELLED"} if step["status"] == "PENDING" else step for step in order.steps]
     db.commit()
@@ -95,6 +113,7 @@ def cancel_order(order_id: uuid.UUID, db: Session = Depends(get_session)):
 def list_service_orders(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """List read over ServiceOrder — only GET-by-id existed. Each order's
     own steps come back whole, same as query_order_status."""
+    # Maintainer notes (not published). Paginated by smo_shared.pagination (ordered by primary key, order_id). Each item carries the whole `steps` list, so a page of large orders is large.
     page = paginate(db, select(ServiceOrder), limit, offset)
     return {**page, "items": [{"orderId": str(o.order_id), "scope": o.scope, "steps": o.steps, "homingDecision": o.homing_decision,
              "rmihRegistration": o.rmih_registration} for o in page["items"]]}

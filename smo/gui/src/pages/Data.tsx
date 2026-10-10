@@ -1,3 +1,9 @@
+/**
+ * The Data & Exposure page (route /data): the data management (DME: producers, types, data jobs, offers, type subscriptions) and service exposure (SME, the CAPIF-based exposure function: API providers, invokers, published service APIs, discovery, event
+ * subscriptions) of call flows 01 and 08. Every signed-in role may read. Registering types, offers and providers, publishing services and onboarding invokers are admin calls, while creating and terminating data jobs, type subscriptions and CAPIF event subscriptions are operator calls; the buttons are drawn through `Can` and `ActionButton` from the BFF's permission
+ * table, and the BFF checks again. The tools labelled "Admin:" act as a producer or provider would and exist to exercise the flows by hand. Invoker onboarding returns a secret that SME stores only hashed, so it is shown once, in a dialog, and not kept.
+ */
+
 import { useState } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
@@ -14,6 +20,7 @@ const DELIVERY_METHODS = ["PULL_HTTP", "PUSH_HTTP", "STREAMING_KAFKA"];
 const EVENT_TYPES = ["SERVICE_API_AVAILABLE", "SERVICE_API_UNAVAILABLE", "SERVICE_API_UPDATE",
   "API_INVOKER_ONBOARDED", "API_INVOKER_UPDATED", "API_INVOKER_OFFBOARDED"];
 
+/** The page: header and the DME and SME tabs, kept in the URL hash. */
 export function Data() {
   const [tab, setTab] = useHashTab(TABS, "dme");
   return (
@@ -30,6 +37,9 @@ export function Data() {
 
 // ---------------------------------------------------------------- DME
 
+/**
+ * The DME tab: producers (deregister), types with their status (ENABLED while any producer answers its health callback; delete fails while a producer supports it), the data jobs, offers and type subscriptions, and the admin tool to register a type.
+ */
 function Dme() {
   const types = useSmo<DmeType[]>("/dme/dme-types");
   const producers = useSmo<DmeProducer[]>("/dme/production-capabilities");
@@ -61,6 +71,9 @@ function Dme() {
   );
 }
 
+/**
+ * Admin tool that registers a producer data type with its producer, callback URLs and JSON Schema for job definitions (POST /dme/production-capabilities); the type name is namespace.name.
+ */
 function RegisterDmeType() {
   const [f, setF] = useState({ namespace: "RAN", name: "", version: "1.0.0", producerId: "", healthUrl: "", jobUrl: "" });
   const [schema, setSchema] = useState('{"type": "object"}');
@@ -89,6 +102,9 @@ function RegisterDmeType() {
   );
 }
 
+/**
+ * The data jobs of consumers: a form to create one (the delivery method defaults to the method an offer committed for the type; the consumer id starts as `smo-gui:<user>`), the job list with a JSON view on a row click, and Terminate.
+ */
 function DataJobs({ types, typeName }: { types: DmeType[]; typeName: (id: string) => string }) {
   const { me } = useAuth();
   const jobs = useSmo<DataJob[]>("/dme/data-jobs");
@@ -134,6 +150,9 @@ function DataJobs({ types, typeName }: { types: DmeType[]; typeName: (id: string
   );
 }
 
+/**
+ * The producers' data offers: the offered and committed delivery methods, Notify data ready (the producer's availability signal) and Terminate, plus an admin tool to create an offer.
+ */
 function Offers({ types, typeName }: { types: DmeType[]; typeName: (id: string) => string }) {
   const offers = useSmo<DataOffer[]>("/dme/offers");
   const [typeId, setTypeId] = useState("");
@@ -168,6 +187,7 @@ function Offers({ types, typeName }: { types: DmeType[]; typeName: (id: string) 
   );
 }
 
+/** The subscriptions notified whenever a type is registered or removed, with a form to add one and Unsubscribe. */
 function TypeSubscriptions() {
   const subs = useSmo<DmeTypeSubscription[]>("/dme/type-subscriptions");
   const [dest, setDest] = useState("");
@@ -192,6 +212,9 @@ function TypeSubscriptions() {
 
 // ---------------------------------------------------------------- SME
 
+/**
+ * The SME tab: API providers (the selected one, or the first, decides which published services are shown), invokers, the selected provider's service APIs, discovery and CAPIF event subscriptions.
+ */
 function Sme() {
   const providers = useSmo<SmeProvider[]>("/sme/provider-registrations");
   const [apf, setApf] = useState<string | null>(null);
@@ -225,6 +248,9 @@ function Sme() {
   );
 }
 
+/**
+ * The service APIs published by one provider, with Unpublish and an admin tool to publish one; `allowedConsumers` (comma-separated invoker ids, empty meaning everyone) decides who can discover it.
+ */
 function PublishedServices({ apfId }: { apfId: string }) {
   const services = useSmo<SmeService[]>(`/sme/published-apis/v1/${apfId}/service-apis`);
   const [f, setF] = useState({ serviceName: "", endpoint: "", version: "1.0", moduleScope: "rapp", allowedConsumers: "" });
@@ -258,6 +284,9 @@ function PublishedServices({ apfId }: { apfId: string }) {
   );
 }
 
+/**
+ * The API invokers: their authentication and trust, Trust… (register a security context), Remove trust and Offboard (revokes its tokens and context), and a form that onboards an invoker from a public key. The onboarding secret in the answer is shown once in a dialog because SME keeps only its hash.
+ */
 function Invokers() {
   const invokers = useSmo<SmeInvoker[]>("/sme/invoker-registrations");
   const trusted = useSmo<TrustedInvoker[]>("/sme/trusted-invokers");
@@ -298,6 +327,9 @@ function Invokers() {
   );
 }
 
+/**
+ * The dialog that registers a trusted-invoker security context (PUT /sme/trusted-invokers/<id>): the notification destination, optional AEF and API ids and the preferred security method.
+ */
 function TrustInvoker({ invokerId, onClose }: { invokerId: string; onClose: () => void }) {
   const [dest, setDest] = useState("http://invoker:8000/security-notify");
   const [aefId, setAefId] = useState("");
@@ -324,6 +356,9 @@ function TrustInvoker({ invokerId, onClose }: { invokerId: string; onClose: () =
   );
 }
 
+/**
+ * Service discovery as one invoker sees it: the services visible to the chosen invoker (an `allowedConsumers` list hides a service from invokers not on it), optionally filtered by API name.
+ */
 function Discovery() {
   const invokers = useSmo<SmeInvoker[]>("/sme/invoker-registrations");
   const [invoker, setInvoker] = useState("");
@@ -343,6 +378,9 @@ function Discovery() {
   );
 }
 
+/**
+ * The CAPIF event subscriptions of one subscriber id (default `smo-gui`): subscribe with event types, a callback and optional service, AEF and invoker filters (empty means all), list with their filters, and Unsubscribe.
+ */
 function EventSubscriptions() {
   const [subscriber, setSubscriber] = useState("smo-gui");
   const subs = useSmo<CapifEventSubscription[]>(subscriber ? `/sme/capif-events/v1/${subscriber}/subscriptions` : null);

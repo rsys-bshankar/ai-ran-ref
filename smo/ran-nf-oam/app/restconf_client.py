@@ -41,6 +41,8 @@ ERRORS_KEY = "ietf-restconf:errors"
 
 
 class RestconfResult(EditResult):
+    """The outcome of one RESTCONF change. Falsy when it failed, like EditResult; `error_tag` carries the first `error-tag` of an `ietf-restconf:errors` body when there was one. Only a timeout or an unreachable server is retryable.
+    """
     RETRYABLE = {"RESTCONF_TIMEOUT", "RESTCONF_UNREACHABLE"}
 
     def __init__(self, applied: bool, reason: str | None = None, error_tag: str | None = None):
@@ -57,6 +59,8 @@ def _list_name(managed_function_ref: str | None) -> tuple[str, str]:
 
 
 def resource_url(root: str, target_ref: str, managed_function_ref: str | None = None) -> str:
+    """The RFC 8040 data-resource URL of a managed element, or of one of its managed functions, with each key percent-encoded (a ref such as `NRCellDU=101` contains a reserved '=').
+    """
     url = f"{root.rstrip('/')}/data/managed-element={_key(target_ref)}"
     if managed_function_ref:
         url += f"/managed-function={_key(managed_function_ref)}"
@@ -80,6 +84,7 @@ def build_body(target_ref: str, attribute_changes: dict, managed_function_ref: s
 
 
 def _error_tag(resp: httpx.Response) -> str | None:
+    """The `error-tag` of the first error in a RESTCONF errors body, or None when the body is not JSON or carries none."""
     try:
         errors = resp.json().get(ERRORS_KEY, {}).get("error", [])
     except (ValueError, AttributeError):
@@ -90,6 +95,8 @@ def _error_tag(resp: httpx.Response) -> str | None:
 def _send(method: str, url: str, body: dict | None = None) -> tuple[httpx.Response | None, RestconfResult | None]:
     # The per-verb httpx functions, as every other caller in this build uses
     # (and the integration mesh intercepts); GET/DELETE take no body.
+    """One HTTP exchange: (response, None) on a 2xx answer, otherwise (None, failure). Timeouts and 408/504 are RESTCONF_TIMEOUT; connection errors, 502/503, and a 5xx without an errors body are RESTCONF_UNREACHABLE (transient); any other failure, including a 5xx that carries an errors body, is RESTCONF_REQUEST_FAILED and is never retried.
+    """
     send = getattr(httpx, method.lower())
     kwargs = {"json": body} if body is not None else {}
     try:

@@ -1,13 +1,14 @@
-"""Tests for Intent Service (formerly Policy Management & Info SMOS —
-see app/main.py's own module docstring; Policy Mgmt LLD sections 1, 3).
-Run with: pytest smo/intent-service/tests -q
+"""Tests of the Intent Service routes: intents and their lifecycle, RMIH registration and capability / scope matching, strict TS 28.312 shapes and family
+constraints, feasibility and conflict reports, report delivery per report control, all report kinds, negotiation feedback, utility formulas, the rApp
+autonomy dispatch modes (AUTONOMOUS, ASSIST, SHADOW) with region scope, `/health`, and the transactional outbox behind every notification (PR-MSG-1.9).
 
-Wave 3: CreateIntent requires consumer-side RMIH selection — every test
-registers a real IntentHandlingFunction first and names it via `rmihId`.
-Wave 6: Intents, IntentHandlingFunctions and IntentReports are strict
-TS 28.312 (agreed: every caller migrated) — the helpers below build
-spec-valid bodies, and the tests at the end cover the family validation,
-feasibility, conflict and report-delivery behaviour.
+Fixtures: `client` builds a SQLite database with the module's tables plus the outbox table and a `TestClient` whose `get_session` uses it (the engine is
+kept on `app.state.test_engine`); `rapp_mgmt` replaces `R1Client.get` with an in-memory `FakeRappMgmt`; `webhooks` records callbacks by patching
+`httpx.post`. The builders `_intent`, `_expectation`, `_capability`, `_register_rmih`, `_dispatch` make spec-valid bodies; every intent test registers a
+handling function first, because an intent must name one (`rmihId`). `test_ts28312_datatypes.py` imports several of them.
+
+Run: `cd smo/intent-service && PYTHONPATH=.:../shared python -m pytest tests/test_main.py -q`. Needs nothing external. The foreign-key cascades
+(deregistering an RMIH removes its intents) are PostgreSQL behaviour and are not exercised here.
 """
 
 import uuid
@@ -27,6 +28,10 @@ from app.main import app
 
 @pytest.fixture
 def client():
+    """A `TestClient` of the Intent Service app on a fresh SQLite database (the module's tables and the outbox table); `get_session` is overridden to use it.
+
+    The engine is stored on `app.state.test_engine` so a test can read the outbox or drain it. The override is removed after the test.
+    """
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[
         cls.__table__ for cls in vars(intent_models).values()
@@ -48,6 +53,7 @@ def client():
     app.dependency_overrides.clear()
 
 
+# The two attributes of a response that the app reads (`status_code`, `json()`), for the rApp Management double and for a patched `httpx.post`.
 class FakeResponse:
     def __init__(self, status_code, payload):
         self.status_code = status_code
@@ -81,6 +87,7 @@ class FakeRappMgmt:
 
 @pytest.fixture
 def rapp_mgmt(monkeypatch):
+    """Fixture: a `FakeRappMgmt` wired in place of `R1Client.get`, so `request_autonomy_dispatch` reads the instance's mode and region scope from it."""
     fake = FakeRappMgmt()
     monkeypatch.setattr("app.main.R1Client.get", lambda self, path, **kw: fake.get(path, **kw))
     return fake
@@ -88,6 +95,7 @@ def rapp_mgmt(monkeypatch):
 
 @pytest.fixture
 def webhooks(monkeypatch):
+    """Fixture: the list of `(url, json)` callbacks sent, recorded by patching `httpx.post` (which the outbox's inline drain calls after a commit)."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     return calls
@@ -104,11 +112,13 @@ TARGETS = {
 
 
 def _target(object_type="RAN_SUBNETWORK"):
+    """Returns a valid target for `object_type` that its family allows (name, condition and value from `TARGETS`)."""
     name, condition, value = TARGETS[object_type]
     return {"targetName": name, "targetCondition": condition, "targetValueRange": value}
 
 
 def _expectation(object_type="RAN_SUBNETWORK", expectation_id="e1", instance=None, targets=None):
+    """Returns a spec-valid expectation of `object_type` (id `expectation_id`, optional `objectInstance`), with `targets` or else the object type's default target."""
     obj = {"objectType": object_type}
     if instance:
         obj["objectInstance"] = instance
@@ -117,17 +127,25 @@ def _expectation(object_type="RAN_SUBNETWORK", expectation_id="e1", instance=Non
 
 
 def _intent(rmih="so-smos", expectations=None, rmio="rapp-1", **extra):
+    """Returns a valid `POST /intents` body addressed to `rmih`, created by `rmio`, with `expectations` (default one) and a report control with no recipient;
+    `extra` adds or overrides fields.
+    """
     return {"userLabel": "test intent", "intentExpectations": expectations or [_expectation()],
             "intentReportControl": [{"observationPeriod": 60}], "rmioId": rmio, "rmihId": rmih, **extra}
 
 
 def _capability(object_type="RAN_SUBNETWORK", target_names=None):
+    """Returns a handling-function capability for `object_type` that lists `target_names` (default: the object type's default target)."""
     names = target_names if target_names is not None else [TARGETS[object_type][0]]
     return {"intentHandlingCapabilityId": f"cap-{object_type}", "supportedExpectationObjectType": object_type,
             "supportedExpectationTargetInfoList": [{"supportedTargetName": n} for n in names]}
 
 
 def _register_rmih(client, rmih_id="so-smos", capabilities=None, scope=None, callback=None, negotiation=None):
+    """Registers a handling function through the API and returns its id; asserts 201.
+
+    Defaults: id `so-smos`, one RAN capability, a callback `http://<id>:8000/intents/notify`; `scope` and `negotiation` are added only when given.
+    """
     body = {
         "rmihId": rmih_id, "smeServiceId": f"svc-{rmih_id}",
         "intentHandlingCapabilityList": capabilities if capabilities is not None else [_capability()],
@@ -143,12 +161,14 @@ def _register_rmih(client, rmih_id="so-smos", capabilities=None, scope=None, cal
 
 
 def _fulfilment(status="FULFILLED"):
+    """Returns a minimal IntentFulfilmentReport with the given status."""
     return {"intentFulfilmentInfo": {"fulfilmentStatus": status}}
 
 
 # ---------------------------------------------------------------- Intent lifecycle
 
 def test_create_and_query_intent(client):
+    """A created intent is returned by id with its priority, state, handling function, expectations and the report reference that creation returned."""
     _register_rmih(client)
     created = client.post("/intents", json=_intent(intentPriority=5)).json()
     fetched = client.get(f"/intents/{created['intentId']}").json()
@@ -160,19 +180,19 @@ def test_create_and_query_intent(client):
 
 
 def test_create_intent_for_unknown_rmih_is_404(client):
+    """An intent addressed to a handling function that is not registered is 404, not accepted and stored."""
     resp = client.post("/intents", json=_intent(rmih="no-such-rmih"))
     assert resp.status_code == 404
 
 
 def test_query_unknown_intent_is_404(client):
-    """An Intent can legitimately vanish (its RMIH was deregistered —
-    ON DELETE CASCADE), so GET must answer 404 rather than crash."""
+    """An unknown intent id is a 404, which is the normal answer after the intent's handling function was deregistered (ON DELETE CASCADE) rather than a crash."""
     resp = client.get(f"/intents/{uuid.uuid4()}")
     assert resp.status_code == 404
 
 
 def test_update_admin_state_only_allowed_by_creator(client):
-    """Policy Mgmt LLD section 1: RMIO-only."""
+    """Only the creating RMIO may change the admin state (409 for anyone else); an unknown state is 422 and an unknown intent is 404."""
     _register_rmih(client)
     created = client.post("/intents", json=_intent()).json()
 
@@ -189,6 +209,7 @@ def test_update_admin_state_only_allowed_by_creator(client):
 
 
 def test_query_intents_filters_by_admin_state(client):
+    """`GET /intents?admin_state=` returns only intents in that state."""
     _register_rmih(client)
     client.post("/intents", json=_intent())
     two = client.post("/intents", json=_intent(rmio="rapp-2")).json()
@@ -199,6 +220,7 @@ def test_query_intents_filters_by_admin_state(client):
 
 
 def test_delete_intent_removes_it(client):
+    """Deleting an intent that has a report answers 204 and the intent is no longer listed."""
     _register_rmih(client)
     intent = client.post("/intents", json=_intent()).json()
     client.post("/intent-reports", json={"intentReference": intent["intentId"], "intentFulfilmentReport": _fulfilment()})
@@ -210,13 +232,13 @@ def test_delete_intent_removes_it(client):
 
 
 def test_delete_intent_is_idempotent_for_an_unknown_id(client):
+    """Deleting an intent that does not exist is still 204."""
     resp = client.delete("/intents/00000000-0000-0000-0000-000000000000")
     assert resp.status_code == 204
 
 
 def test_create_intent_stores_and_returns_intent_mgmt_purpose(client):
-    """HISTORY.md §7 item 3: intentMgmtPurpose is the spec's
-    workflow-procedure enum, defaulting to FULFILMENT_WITHOUT_NEGOTIATION."""
+    """`intentMgmtPurpose` is stored and returned, and defaults to FULFILMENT_WITHOUT_NEGOTIATION when omitted."""
     _register_rmih(client)
     created = client.post("/intents", json=_intent()).json()
     assert client.get(f"/intents/{created['intentId']}").json()["intentMgmtPurpose"] == "FULFILMENT_WITHOUT_NEGOTIATION"
@@ -226,12 +248,14 @@ def test_create_intent_stores_and_returns_intent_mgmt_purpose(client):
 
 
 def test_create_intent_rejects_an_invalid_intent_mgmt_purpose(client):
+    """A purpose outside the spec's enum is 422."""
     _register_rmih(client)
     resp = client.post("/intents", json=_intent(intentMgmtPurpose="NOT_A_REAL_PURPOSE"))
     assert resp.status_code == 422
 
 
 def test_health_check_answers_the_gui_bff_liveness_probe(client):
+    """`GET /health` answers 200 `{"status": "healthy"}`, which the GUI BFF's module-status probe calls on every module."""
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "healthy"}
@@ -240,7 +264,7 @@ def test_health_check_answers_the_gui_bff_liveness_probe(client):
 # ---------------------------------------------------------------- IntentHandlingFunction
 
 def test_register_intent_handling_function_rejects_external_rapp_caller(client):
-    """D-SEC-POLICY-1, unchanged: external callers (rApp UUIDs) may never hold an rmihId."""
+    """D-SEC-POLICY-1: an `rmihId` that is a UUID (an rApp identity) cannot register as a handling function; the answer is 409 `SERVICE_NAME_CONFLICT`."""
     resp = client.post("/intent-handling-functions", json={
         "rmihId": "550e8400-e29b-41d4-a716-446655440000", "smeServiceId": "svc-1",
         "intentHandlingCapabilityList": [_capability()], "notificationDestination": "http://so-smos:8000/intents/notify",
@@ -250,6 +274,7 @@ def test_register_intent_handling_function_rejects_external_rapp_caller(client):
 
 
 def test_register_intent_handling_function_validates_spec_capabilities(client):
+    """A valid registration echoes its scope and negotiation functionalities; a capability list that is empty, lacks required fields or names an unsupported object type, and an unknown scope, are 422."""
     ok = client.post("/intent-handling-functions", json={
         "rmihId": "so-smos", "smeServiceId": "svc-1", "intentHandlingCapabilityList": [_capability()],
         "notificationDestination": "http://so-smos:8000/intents/notify", "intentHandlingScope": ["RAN"],
@@ -272,14 +297,14 @@ def test_register_intent_handling_function_validates_spec_capabilities(client):
 
 
 def test_deregister_intent_handling_function_symmetric_with_register(client):
+    """A registered handling function can be deregistered (204)."""
     _register_rmih(client, "sa-smos")
     resp = client.delete("/intent-handling-functions/sa-smos")
     assert resp.status_code == 204
 
 
 def test_deregister_intent_handling_function_of_an_intent_still_succeeds(client):
-    """The real ON DELETE CASCADE is verified against live Postgres (SQLite
-    doesn't enforce FKs here); this only proves the call doesn't error."""
+    """Deregistering a function that has an intent does not error. The cascade that removes the intent is a PostgreSQL foreign key and SQLite does not enforce it, so only the call is checked."""
     _register_rmih(client, "so-smos")
     client.post("/intents", json=_intent())
     resp = client.delete("/intent-handling-functions/so-smos")
@@ -287,6 +312,7 @@ def test_deregister_intent_handling_function_of_an_intent_still_succeeds(client)
 
 
 def test_list_intent_handling_functions(client):
+    """The list shows each function with its scope and its capabilities under `attributes`, which is what rApps discover handling functions by."""
     _register_rmih(client, scope=["RAN"])
     listed = client.get("/intent-handling-functions").json()["items"]
     assert [(f["rmihId"], f["intentHandlingScope"]) for f in listed] == [("so-smos", ["RAN"])]
@@ -296,6 +322,7 @@ def test_list_intent_handling_functions(client):
 # ---------------------------------------------------------------- capability / scope / dispatch
 
 def test_create_intent_rejects_when_named_rmih_scope_does_not_cover_request(client):
+    """A handling scope that the addressed function does not declare is 422 `RMIH_CAPABILITY_MISMATCH`."""
     _register_rmih(client, "so-smos", scope=["RAN"])
     resp = client.post("/intents", json=_intent(intentHandlingScope="CN"))
     assert resp.status_code == 422
@@ -303,11 +330,13 @@ def test_create_intent_rejects_when_named_rmih_scope_does_not_cover_request(clie
 
 
 def test_create_intent_accepts_when_named_rmih_scope_covers_request(client):
+    """A handling scope the function declares is accepted."""
     _register_rmih(client, "so-smos", scope=["RAN"])
     assert client.post("/intents", json=_intent(intentHandlingScope="RAN")).status_code == 201
 
 
 def test_create_intent_scope_matches_an_rmih_with_no_declared_scope(client, webhooks):
+    """A function that declares no scope covers any requested scope, and the new intent is pushed to it."""
     _register_rmih(client, "so-smos")
     resp = client.post("/intents", json=_intent(intentHandlingScope="CN"))
     assert resp.status_code == 201
@@ -315,6 +344,7 @@ def test_create_intent_scope_matches_an_rmih_with_no_declared_scope(client, webh
 
 
 def test_create_intent_dispatches_to_the_named_rmih(client, webhooks):
+    """The new-intent push goes only to the function the intent names, not to other registered functions, with the intent id and its object types."""
     _register_rmih(client, "so-smos", capabilities=[_capability("RAN_SUBNETWORK")])
     _register_rmih(client, "sa-smos", capabilities=[_capability("5GC_SUBNETWORK")])
 
@@ -327,6 +357,7 @@ def test_create_intent_dispatches_to_the_named_rmih(client, webhooks):
 
 
 def test_create_intent_rejects_a_capability_mismatch(client):
+    """A function with no capability for the expectation's object type is 422 `RMIH_CAPABILITY_MISMATCH`."""
     _register_rmih(client, "sa-smos", capabilities=[_capability("5GC_SUBNETWORK")])
     resp = client.post("/intents", json=_intent(rmih="sa-smos"))
     assert resp.status_code == 422
@@ -334,8 +365,7 @@ def test_create_intent_rejects_a_capability_mismatch(client):
 
 
 def test_every_expectation_object_type_must_be_supported(client, webhooks):
-    """Wave 6 (strict): every expectation's object type needs a capability —
-    previously one matching type was enough."""
+    """Every object type named by the intent needs a capability (one matching type is not enough); with both declared the intent is accepted and the push lists both types."""
     _register_rmih(client, capabilities=[_capability("EDGE_SERVICE_SUPPORT")])
     mixed = [_expectation("RAN_SUBNETWORK", "e1"), _expectation("EDGE_SERVICE_SUPPORT", "e2")]
     assert client.post("/intents", json=_intent(expectations=mixed)).status_code == 422
@@ -347,6 +377,7 @@ def test_every_expectation_object_type_must_be_supported(client, webhooks):
 
 
 def test_create_intent_succeeds_even_if_rmih_callback_is_unreachable(client, monkeypatch):
+    """An unreachable function callback never fails the create: the push is an outbox row, not an inline call."""
     import httpx as httpx_module
 
     def raise_error(url, json=None, timeout=None):
@@ -359,6 +390,7 @@ def test_create_intent_succeeds_even_if_rmih_callback_is_unreachable(client, mon
 
 # ---------------------------------------------------------------- Wave 6: strict TS 28.312 shape
 
+# Table: each entry breaks one rule of the strict Intent (empty or missing required lists, a missing id or target, a priority below 1, an attribute the spec does not name).
 @pytest.mark.parametrize("bad", [
     {"intentExpectations": []},                                               # minItems 1
     {"intentExpectations": [{"expectationObject": {"objectType": "RAN_SUBNETWORK"}}]},  # no id / targets
@@ -369,11 +401,13 @@ def test_create_intent_succeeds_even_if_rmih_callback_is_unreachable(client, mon
     {"notASpecAttribute": True},
 ])
 def test_create_intent_rejects_non_spec_shapes(client, bad):
+    """Each shape that is not a valid TS 28.312 Intent is refused with 422."""
     _register_rmih(client)
     assert client.post("/intents", json={**_intent(), **bad}).status_code == 422
 
 
 def test_user_label_is_required(client):
+    """`userLabel` is required by the spec, so an intent without it is 422."""
     _register_rmih(client)
     body = _intent()
     del body["userLabel"]
@@ -381,9 +415,7 @@ def test_user_label_is_required(client):
 
 
 def test_family_constraints_on_known_targets_and_contexts(client):
-    """RadioNetworkExpectation's AveDLPrbLoad target is IS_LESS_THAN with an
-    integer 0..100; its Cell context is IS_ALL_OF. Unknown names are the
-    generic ExpectationTarget/Context and only checked structurally."""
+    """A known target must use its family's condition and value range (AveDLPrbLoad: IS_LESS_THAN, integer 0..100) and a known context its condition (Cell: IS_ALL_OF); a name no family specialises is checked only structurally."""
     _register_rmih(client, capabilities=[_capability(target_names=["AveDLPrbLoad", "MyVendorTarget"])])
 
     def post(target, contexts=None):
@@ -401,6 +433,7 @@ def test_family_constraints_on_known_targets_and_contexts(client):
 
 
 def test_infeasible_target_rejected_for_fulfilment_but_reported_for_feasibility_check(client):
+    """A target the function does not list is refused for a fulfilment intent (422), but a FEASIBILITYCHECK intent is accepted and its report says INFEASIBLE with the target."""
     _register_rmih(client, capabilities=[_capability(target_names=["RANEnergyConsumption"])])
     infeasible = _expectation(targets=[{"targetName": "AveDLPrbLoad", "targetCondition": "IS_LESS_THAN", "targetValueRange": 30}])
     resp = client.post("/intents", json=_intent(expectations=[infeasible]))
@@ -414,12 +447,14 @@ def test_infeasible_target_rejected_for_fulfilment_but_reported_for_feasibility_
 
 
 def test_feasibility_purposes_need_the_negotiation_functionality(client):
+    """When a function declares negotiation functionalities, a purpose that needs one it lacks is 422; a purpose it supports is accepted."""
     _register_rmih(client, negotiation=["EXPLORATION"])
     assert client.post("/intents", json=_intent(intentMgmtPurpose="FEASIBILITYCHECK")).status_code == 422
     assert client.post("/intents", json=_intent(intentMgmtPurpose="EXPLORATION")).status_code == 201
 
 
 def test_initial_report_is_received_and_conflicts_are_reported(client):
+    """Creating an intent writes a NOT_FULFILLED / RECEIVED fulfilment report; a second intent setting the same target on the same object differently is accepted and its report carries a TARGET_CONFLICT naming the first."""
     _register_rmih(client)
     first = client.post("/intents", json=_intent(expectations=[_expectation(instance="SubNetwork=1")])).json()
     report = client.get(f"/intent-reports/{first['intentReportReference']}").json()["attributes"]
@@ -436,6 +471,7 @@ def test_initial_report_is_received_and_conflicts_are_reported(client):
 
 
 def test_reports_are_delivered_per_intent_report_control(client, webhooks):
+    """A report goes to each report-control recipient whose expected types include it (the audit recipient that wants only conflicts gets nothing), and a published report becomes the intent's current report."""
     _register_rmih(client)
     control = [{"observationPeriod": 60, "reportRecipientAddress": "http://rapp/reports",
                 "expectedReportTypes": ["INTENT_FULFILMENT_REPORT"]},
@@ -456,6 +492,7 @@ def test_reports_are_delivered_per_intent_report_control(client, webhooks):
 
 
 def test_deactivation_reports_suspended(client):
+    """Deactivating an intent writes a fulfilment report with state SUSPENDED, which becomes the current report."""
     _register_rmih(client)
     intent = client.post("/intents", json=_intent()).json()
     updated = client.patch(f"/intents/{intent['intentId']}/admin-state", json={"newState": "DEACTIVATED", "requesterId": "rapp-1"}).json()
@@ -464,6 +501,7 @@ def test_deactivation_reports_suspended(client):
 
 
 def test_publish_report_validates_every_report_kind(client):
+    """Every report kind of the spec can be published together and is returned; a report with no content or a bad enum is 422, an unknown intent is 404; the list shows the newest first."""
     _register_rmih(client)
     intent_id = client.post("/intents", json=_intent()).json()["intentId"]
     full = {
@@ -497,6 +535,7 @@ def test_publish_report_validates_every_report_kind(client):
 
 
 def test_negotiation_feedback_answers_an_offered_outcome(client):
+    """Feedback is 404 until a negotiation report exists, 422 for an outcome id that was not offered, and otherwise is written into that report with the satisfaction index."""
     _register_rmih(client)
     intent_id = client.post("/intents", json=_intent()).json()["intentId"]
     assert client.post(f"/intents/{intent_id}/negotiation-feedback", json={"referredIntentOutcomeId": 1}).status_code == 404
@@ -509,6 +548,7 @@ def test_negotiation_feedback_answers_an_offered_outcome(client):
 
 
 def test_intent_utility_formula_ioc(client):
+    """The utility formula IOC can be created (scale defaults to 1), referenced by an intent, listed and deleted; a reference to an unknown formula is 404."""
     _register_rmih(client)
     formula = client.post("/intent-utility-formulas", json={
         "utilityFunctionId": "energy-vs-throughput", "utilityParameterList": [{"parameterName": "RANEnergyConsumption", "parameterWeight": 0.7}]})
@@ -526,10 +566,12 @@ def test_intent_utility_formula_ioc(client):
 # ---------------------------------------------------------------- HISTORY.md OI-6.3: rApp Autonomy Modes
 
 def _dispatch(instance_id, rmih="so-smos", expectations=None, **extra):
+    """Returns a valid `POST /autonomy-dispatches` body for `instance_id` to `rmih` with `expectations` (default one); `extra` adds fields such as `notificationDestination`."""
     return {"instanceId": str(instance_id), "expectations": expectations or [_expectation()], "rmihId": rmih, **extra}
 
 
 def test_autonomous_dispatch_creates_a_real_intent_immediately(client, rapp_mgmt):
+    """An AUTONOMOUS dispatch is DISPATCHED in the same call with the instance's region scope, and the intent it created exists with the instance as its creator."""
     _register_rmih(client)
     instance_id = rapp_mgmt.add_instance(autonomy_mode="AUTONOMOUS", region_scope={"nodeIds": ["ne-1"]})
 
@@ -548,6 +590,7 @@ def test_autonomous_dispatch_creates_a_real_intent_immediately(client, rapp_mgmt
 
 
 def test_assist_dispatch_awaits_operator_scope_then_resolve_creates_the_intent(client, rapp_mgmt):
+    """An ASSIST dispatch is AWAITING_SCOPE with no intent; resolving it with a scope makes it DISPATCHED and creates the intent."""
     _register_rmih(client)
     instance_id = rapp_mgmt.add_instance(autonomy_mode="ASSIST")
 
@@ -562,6 +605,7 @@ def test_assist_dispatch_awaits_operator_scope_then_resolve_creates_the_intent(c
 
 
 def test_resolve_rejects_a_dispatch_not_awaiting_scope(client, rapp_mgmt):
+    """Resolving a dispatch that is not AWAITING_SCOPE is 409 `AUTONOMY_DISPATCH_NOT_AWAITING_SCOPE`."""
     _register_rmih(client)
     instance_id = rapp_mgmt.add_instance(autonomy_mode="AUTONOMOUS", region_scope={})
     dispatched = client.post("/autonomy-dispatches", json=_dispatch(instance_id)).json()
@@ -572,6 +616,7 @@ def test_resolve_rejects_a_dispatch_not_awaiting_scope(client, rapp_mgmt):
 
 
 def test_shadow_dispatch_never_creates_an_intent(client, rapp_mgmt):
+    """A SHADOW dispatch is SHADOWED with no intent and no region scope, and no intent exists afterwards."""
     _register_rmih(client)
     instance_id = rapp_mgmt.add_instance(autonomy_mode="SHADOW")
 
@@ -583,6 +628,7 @@ def test_shadow_dispatch_never_creates_an_intent(client, rapp_mgmt):
 
 
 def test_dispatch_expectations_are_strict_ts28312(client, rapp_mgmt):
+    """The dispatch's expectations are validated as TS 28.312 expectations up front, even for SHADOW; a free-form one is 422."""
     _register_rmih(client)
     instance_id = rapp_mgmt.add_instance(autonomy_mode="SHADOW")
     resp = client.post("/autonomy-dispatches", json=_dispatch(instance_id, expectations=[{"target": "latency"}]))
@@ -590,6 +636,7 @@ def test_dispatch_expectations_are_strict_ts28312(client, rapp_mgmt):
 
 
 def test_all_three_modes_notify_the_operator(client, rapp_mgmt, webhooks):
+    """The operator destination is notified in every mode, with that mode in the payload; sending is not tied to the mode."""
     _register_rmih(client)
     for mode in ["AUTONOMOUS", "ASSIST", "SHADOW"]:
         instance_id = rapp_mgmt.add_instance(autonomy_mode=mode, region_scope={} if mode == "AUTONOMOUS" else None)
@@ -606,6 +653,7 @@ def test_all_three_modes_notify_the_operator(client, rapp_mgmt, webhooks):
 
 
 def test_autonomy_dispatch_without_notification_destination_never_calls_out(client, rapp_mgmt, webhooks):
+    """With no destination nothing is sent and the destination is never guessed."""
     _register_rmih(client)
     instance_id = rapp_mgmt.add_instance(autonomy_mode="SHADOW")
     client.post("/autonomy-dispatches", json=_dispatch(instance_id))
@@ -613,7 +661,7 @@ def test_autonomy_dispatch_without_notification_destination_never_calls_out(clie
 
 
 def test_autonomy_dispatch_notification_rejects_a_non_http_scheme(client, rapp_mgmt, webhooks):
-    """CodeQL py/full-ssrf: only http(s) destinations are ever called."""
+    """CodeQL py/full-ssrf: a `file://` destination is accepted by the request but never called (the SSRF guard drops it)."""
     _register_rmih(client)
     instance_id = rapp_mgmt.add_instance(autonomy_mode="SHADOW")
     resp = client.post("/autonomy-dispatches", json=_dispatch(instance_id, notificationDestination="file:///etc/passwd"))
@@ -622,6 +670,7 @@ def test_autonomy_dispatch_notification_rejects_a_non_http_scheme(client, rapp_m
 
 
 def test_request_autonomy_dispatch_for_unknown_instance_is_404(client, rapp_mgmt):
+    """A dispatch for an instance rApp Management does not know is 404 `RAPP_INSTANCE_NOT_FOUND`."""
     _register_rmih(client)
     resp = client.post("/autonomy-dispatches", json=_dispatch(uuid.uuid4()))
     assert resp.status_code == 404
@@ -629,16 +678,17 @@ def test_request_autonomy_dispatch_for_unknown_instance_is_404(client, rapp_mgmt
 
 
 def test_autonomous_dispatch_for_unknown_rmih_is_404(client, rapp_mgmt):
+    """A dispatch addressed to an unregistered function is 404 `INTENT_HANDLING_FUNCTION_NOT_FOUND`."""
     instance_id = rapp_mgmt.add_instance(autonomy_mode="AUTONOMOUS", region_scope={})
     resp = client.post("/autonomy-dispatches", json=_dispatch(instance_id, rmih="no-such-rmih"))
     assert resp.status_code == 404
     assert resp.json()["detail"]["title"] == "INTENT_HANDLING_FUNCTION_NOT_FOUND"
 
 
+# Table: the two modes that create no intent at request time.
 @pytest.mark.parametrize("mode", ["ASSIST", "SHADOW"])
 def test_dispatch_validates_rmih_capability_up_front(client, rapp_mgmt, mode):
-    """Rejected at creation in every mode — even SHADOW "computes" the
-    Intent it would have produced."""
+    """A dispatch whose object type the function cannot handle is rejected at creation in ASSIST and SHADOW too, because even SHADOW computes the intent it would have made."""
     _register_rmih(client, capabilities=[_capability("RAN_SUBNETWORK")])
     instance_id = rapp_mgmt.add_instance(autonomy_mode=mode)
     resp = client.post("/autonomy-dispatches", json=_dispatch(instance_id, expectations=[_expectation("5GC_SUBNETWORK")]))
@@ -647,6 +697,7 @@ def test_dispatch_validates_rmih_capability_up_front(client, rapp_mgmt, mode):
 
 
 def test_list_and_get_autonomy_dispatches(client, rapp_mgmt):
+    """A dispatch can be read by id and listed by `instance_id`; an unknown id is 404."""
     _register_rmih(client)
     instance_id = rapp_mgmt.add_instance(autonomy_mode="SHADOW")
     created = client.post("/autonomy-dispatches", json=_dispatch(instance_id)).json()
@@ -663,6 +714,7 @@ def test_list_and_get_autonomy_dispatches(client, rapp_mgmt):
 # ---------------------------------------------------------------- Wave 8: ASSIST reject (W8-08) and region scope
 
 def test_assist_dispatch_can_be_rejected_and_then_neither_resolved_nor_rejected_again(client, rapp_mgmt, webhooks):
+    """Rejecting an ASSIST dispatch records who and why, creates no intent and notifies the operator; after that both resolve and reject are 409."""
     _register_rmih(client)
     instance_id = rapp_mgmt.add_instance(autonomy_mode="ASSIST")
     created = client.post("/autonomy-dispatches", json=_dispatch(instance_id, notificationDestination="http://operator/assist")).json()
@@ -682,6 +734,7 @@ def test_assist_dispatch_can_be_rejected_and_then_neither_resolved_nor_rejected_
 
 
 def test_reject_only_from_awaiting_scope_and_unknown_is_404(client, rapp_mgmt):
+    """Reject of a non-ASSIST (SHADOW) dispatch is 409 and of an unknown dispatch is 404."""
     _register_rmih(client)
     shadow = client.post("/autonomy-dispatches", json=_dispatch(rapp_mgmt.add_instance(autonomy_mode="SHADOW"))).json()
     assert client.post(f"/autonomy-dispatches/{shadow['dispatchId']}/reject", json={"rejectedBy": "op"}).status_code == 409
@@ -689,9 +742,7 @@ def test_reject_only_from_awaiting_scope_and_unknown_is_404(client, rapp_mgmt):
 
 
 def test_region_scope_is_folded_into_the_dispatched_intent(client, rapp_mgmt):
-    """AUTONOMOUS: the instance's pre-configured regionScope; ASSIST: the
-    operator's resolve — either becomes the Intent's objectInstance and
-    Cell object context."""
+    """The region scope (the instance's for AUTONOMOUS, the operator's for ASSIST) becomes the intent's `objectInstance` and its Cell object context."""
     _register_rmih(client)
     auto = rapp_mgmt.add_instance(autonomy_mode="AUTONOMOUS", region_scope={"objectInstance": "gnb-du-01", "cells": ["101", "102"]})
     intent_id = client.post("/autonomy-dispatches", json=_dispatch(auto)).json()["intentId"]
@@ -709,9 +760,7 @@ def test_region_scope_is_folded_into_the_dispatched_intent(client, rapp_mgmt):
 
 
 def test_an_expectation_naming_its_cells_is_bounded_by_the_region_scope(client, rapp_mgmt):
-    """Wave 10.1: an rApp that decided to act on one cell gets exactly that
-    cell — the instance's region scope bounds it, never widens it to every
-    cell in the region; a cell (or element) outside the region is refused."""
+    """An expectation that names cells keeps only those inside the region (never widened to the whole region); cells or an element entirely outside it are 422."""
     _register_rmih(client)
     auto = rapp_mgmt.add_instance(autonomy_mode="AUTONOMOUS", region_scope={"objectInstance": "gnb-du-01", "cells": ["101", "102"]})
 
@@ -732,14 +781,13 @@ def test_an_expectation_naming_its_cells_is_bounded_by_the_region_scope(client, 
 # ---------------------------------------------------------------- notifications through the outbox (PR-MSG-1.9)
 
 def _outbox_rows():
+    """Returns every outbox row, oldest first, read through a new session on the test engine."""
     with sessionmaker(bind=app.state.test_engine)() as db:
         return db.query(NotificationOutbox).order_by(NotificationOutbox.created_at).all()
 
 
 def test_an_intent_and_its_notifications_survive_a_crash_between_commit_and_send(client, monkeypatch):
-    """The crash test of MSG-1.9 for the Intent Service: the intent, its first report and the RMIH and report-recipient
-    notifications are one committed transaction; with the inline send off (the process died after the commit) nothing went
-    out, and a later drain delivers them."""
+    """The crash test of MSG-1.9: the intent, its first report and the RMIH and recipient notifications commit together; with the inline send off (as if the process died after the commit) nothing went out, and a later `outbox.drain` sends both."""
     monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
     monkeypatch.setenv("MODULE", "intent-service")
     calls = []
@@ -763,6 +811,7 @@ def test_an_intent_and_its_notifications_survive_a_crash_between_commit_and_send
 
 
 def test_an_autonomy_dispatch_the_intent_it_creates_and_the_notifications_are_one_transaction(client, rapp_mgmt, monkeypatch):
+    """An AUTONOMOUS dispatch leaves three outbox rows after one commit: the RMIH push, the operator's dispatch notice and the new intent's first report to the operator."""
     monkeypatch.setenv("SMO_OUTBOX_INLINE_DRAIN", "false")
     _register_rmih(client)
     instance_id = rapp_mgmt.add_instance(autonomy_mode="AUTONOMOUS", region_scope={})
@@ -776,6 +825,7 @@ def test_an_autonomy_dispatch_the_intent_it_creates_and_the_notifications_are_on
 
 
 def test_nothing_is_announced_and_no_intent_is_stored_when_the_create_does_not_commit(client, monkeypatch):
+    """When the commit fails, no callback and no outbox row exist and no intent is stored: nobody is told about an intent that does not exist."""
     calls = []
     monkeypatch.setattr("app.main.httpx.post", lambda url, json=None, timeout=None: calls.append((url, json)))
     _register_rmih(client)
@@ -783,6 +833,7 @@ def test_nothing_is_announced_and_no_intent_is_stored_when_the_create_does_not_c
     from sqlalchemy.orm import Session as OrmSession
     real_commit = OrmSession.commit
 
+    # A commit that rolls back and raises, but only for a session that has outbox rows pending, so the setup requests commit normally.
     def failing_commit(self):
         if self.info.get("outbox_pending_ids"):
             self.rollback()

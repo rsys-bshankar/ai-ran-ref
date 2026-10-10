@@ -42,6 +42,10 @@ HORIZON_MINUTES = 60
 
 @dataclass
 class EnergyModel:
+    """The trained predictor: three regression weights, the hour-of-day PRB profile, the fit (RMSE, sample count), the thresholds and the version.
+    The methods predict the next-hour PRB and turn it into a LOCKED, UNLOCKED or NO_CHANGE recommendation; the artifact is this dataclass as
+    JSON.
+    """
     weights: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])  # [drift, trend gain, seasonal gain]; untrained = persistence
     profile: list[float] = field(default_factory=list)                     # mean PRB per hour of day (24); empty = no seasonality
     rmse: float = 0.0
@@ -53,16 +57,23 @@ class EnergyModel:
     version: str = "1.0.0"
 
     def seasonal(self, hour: int | None) -> float:
+        """The cell population's usual PRB change from this hour to the next (the profile difference); 0 when there is no hour or no 24-value profile."""
         if hour is None or len(self.profile) != 24:
             return 0.0
         return self.profile[(hour + 1) % 24] - self.profile[hour % 24]
 
     def predict(self, prb_now: float, prb_hour_ago: float | None = None, hour: int | None = None) -> float:
+        """Predicted next-hour PRB, kept within 0 to 100: the current value plus the drift, the gain on the last hour's trend and the gain on the
+        seasonal change. Without a sample from an hour ago the trend is 0.
+        """
         trend = prb_now - (prb_hour_ago if prb_hour_ago is not None else prb_now)
         w0, w1, w2 = self.weights
         return max(0.0, min(100.0, prb_now + w0 + w1 * trend + w2 * self.seasonal(hour)))
 
     def recommend(self, prb_now: float, future_prb: float) -> str:
+        """LOCKED when both the current and the predicted PRB are below the sleep threshold, UNLOCKED when the prediction is above the wake threshold,
+        else NO_CHANGE (the hysteresis zone). The wake test comes first.
+        """
         if future_prb > self.wake_threshold:
             return "UNLOCKED"
         if prb_now < self.sleep_threshold and future_prb < self.sleep_threshold:
@@ -77,12 +88,14 @@ class EnergyModel:
         return round(max(0.0, 1.0 - self.rmse / band), 3)
 
     def infer(self, prb_now: float, prb_hour_ago: float | None = None, hour: int | None = None) -> dict:
+        """The inference answer for one cell: {futurePrb, recommendedState, confidence}."""
         future = self.predict(prb_now, prb_hour_ago, hour)
         return {"futurePrb": round(future, 2), "recommendedState": self.recommend(prb_now, future),
                 "confidence": self.confidence()}
 
     # ------------------------------------------------------------ artifact
     def to_artifact(self) -> bytes:
+        """Serialises the model as a .zip holding one JSON member (`energy_model.json`), the form stored in MLMR."""
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr(ARTIFACT_MEMBER, json.dumps(asdict(self), indent=1, sort_keys=True))
@@ -90,6 +103,7 @@ class EnergyModel:
 
     @classmethod
     def from_artifact(cls, data: bytes) -> "EnergyModel":
+        """Reads a model back from the bytes `to_artifact` made; raises zipfile.BadZipFile or KeyError for anything else."""
         with zipfile.ZipFile(io.BytesIO(data)) as z:
             return cls.from_dict(json.loads(z.read(ARTIFACT_MEMBER)))
 

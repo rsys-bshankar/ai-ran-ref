@@ -36,6 +36,7 @@ LEGACY_MARKER_TABLE = "service_profile"
 
 
 def alembic_config(connection) -> Config:
+    """An Alembic `Config` for the migrations in `smo/migrations` that runs on the given SQLAlchemy `connection` (passed to `migrations/env.py` through `config.attributes`), so the caller owns the transaction."""
     config = Config(str(SMO_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(SMO_ROOT / "migrations"))
     config.attributes["connection"] = connection
@@ -47,6 +48,7 @@ def current_revision(connection) -> str | None:
 
 
 def is_legacy(connection) -> bool:
+    """True for a database created from `001_init.sql` directly: it has the schema (the marker table `service_profile`) but no `alembic_version` table, so it must be stamped before it is upgraded."""
     tables = set(inspect(connection).get_table_names())
     return "alembic_version" not in tables and LEGACY_MARKER_TABLE in tables
 
@@ -76,6 +78,7 @@ def schema_is_current(db_revision: str | None, image_revisions: list[str]) -> bo
 
 
 def image_revisions(connection) -> list[str]:
+    """The revision ids of this checkout's migration history, newest first. A database revision that is not in this list was made by a later release."""
     from alembic.script import ScriptDirectory
     return [r.revision for r in ScriptDirectory.from_config(alembic_config(connection)).walk_revisions()]
 
@@ -104,6 +107,11 @@ def downgrade(connection, revision: str) -> str | None:
 
 
 def main() -> int:
+    """Command-line entry: waits for the schema (`--wait`), prints the current revision (`--current`), downgrades (`--downgrade`), or upgrades to `--revision` (default head).
+
+        Returns 0, or 1 only when `--wait` runs out. An upgrade of a database that is already past this image's head is a no-op that says so (the rolling-upgrade rule: a
+        previous release's image must start against a newer schema). Errors from Alembic or the database propagate and end the process with a traceback.
+    """
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--revision", default="head")
     parser.add_argument("--downgrade", metavar="REVISION", help="reverse to REVISION (-1: one step) instead of upgrading")

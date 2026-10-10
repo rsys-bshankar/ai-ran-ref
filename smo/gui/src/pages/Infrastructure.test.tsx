@@ -1,4 +1,9 @@
 // @vitest-environment jsdom
+/**
+ * Component tests of the managed-element (O1 endpoint) tab of the Infrastructure page (pages/Infrastructure.tsx): the region and tenant columns and registering an element with them (SEC-10.2). Runs as an admin against `fakeBff` with
+ * the real permission table; jsdom. Run: `cd gui && npx vitest run src/pages/Infrastructure.test.tsx`.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../auth/AuthContext";
@@ -15,6 +20,9 @@ const endpoint = (ref: string, extra: Record<string, unknown> = {}) => ({
   healthStatus: "ACTIVE", lastHeartbeatAt: null, ...extra,
 });
 
+/**
+ * Starts the fake BFF as an admin with three O1 endpoints (two with a region, one with a tenant) and the registration route.
+ */
 function bff() {
   return fakeBff({
     "GET /me": { username: "ana", role: "admin", csrfToken: "c", local: true, totpEnrolled: true, mfaEnrolmentRequired: false },
@@ -29,6 +37,7 @@ function bff() {
 const open = () => mountWith(<AuthProvider><Infrastructure /></AuthProvider>);
 
 describe("the managed elements and where they are (SEC-10.2)", () => {
+  // Each element shows its region and tenant, and a dash for what is not set.
   it("shows the region and tenant of each element, and a dash for what is not set", async () => {
     bff();
     const { container } = await open();
@@ -41,6 +50,7 @@ describe("the managed elements and where they are (SEC-10.2)", () => {
     expect(cells("ME-3")).toContain("—");
   });
 
+  // Registering an element sends its region and tenant, and leaves them out when blank.
   it("registers an element with a region and a tenant, and leaves them out when blank", async () => {
     const calls = bff();
     const { container } = await open();

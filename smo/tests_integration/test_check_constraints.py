@@ -44,6 +44,7 @@ STATE_COLUMNS = {
 
 
 def _enum_values(path: str, name: str) -> set[str]:
+    """The string constants of a state-machine class in the source tree, read with `ast` so the module is not imported."""
     tree = ast.parse((SMO_ROOT / path).read_text())
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef) and node.name == name:
@@ -52,6 +53,7 @@ def _enum_values(path: str, name: str) -> set[str]:
 
 
 def _checks(connection) -> dict[tuple[str, str], set[str]]:
+    """Every single-column CHECK of the migrated Postgres schema that lists values, as {(table, column): allowed values}."""
     rows = connection.execute(text(
         "SELECT c.relname, a.attname, pg_get_constraintdef(k.oid) FROM pg_constraint k "
         "JOIN pg_class c ON c.oid = k.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace "
@@ -88,6 +90,9 @@ def _assigned_literals(module: str) -> list[tuple[str, str, str, int]]:
 
 @needs_postgres
 def test_every_state_of_a_state_machine_is_allowed_by_the_check_on_its_column(database):  # noqa: F811
+    """Every state of a state machine in code is allowed by the CHECK on its column, which only Postgres can say; this is how `HALTED` and
+    `REVERTED` were once refused. Needs Postgres.
+    """
     url, *_ = database
     engine = create_engine(url, isolation_level="AUTOCOMMIT")
     with engine.connect() as connection:
@@ -104,7 +109,25 @@ def test_every_state_of_a_state_machine_is_allowed_by_the_check_on_its_column(da
 
 
 @needs_postgres
+def test_the_options_of_a_campaign_are_the_values_the_check_on_its_column_allows(database):  # noqa: F811
+    """Not a state machine, but a choice the API takes as a `Literal` and the table checks (revision 0035, `rollback_order`; 0033, `on_gate_failure`): the two lists are one."""
+    url, *_ = database
+    engine = create_engine(url, isolation_level="AUTOCOMMIT")
+    with engine.connect() as connection:
+        checks = _checks(connection)
+    engine.dispose()
+    source = (SMO_ROOT / "ran-nf-oam" / "app" / "lifecycle.py").read_text()
+    for column, field in (("rollback_order", "rollbackOrder"), ("on_gate_failure", "onGateFailure")):
+        literal = re.search(rf"{field}: Literal\[([^\]]*)\]", source)
+        assert literal, f"{field} is no longer a Literal in lifecycle.py: take it out of this test"
+        assert set(re.findall(r'"([^"]*)"', literal.group(1))) == checks[("software_campaign", column)], f"software_campaign.{column}: the CHECK and the request's choices differ"
+
+
+@needs_postgres
 def test_a_literal_the_code_assigns_to_a_checked_column_is_allowed(database):  # noqa: F811
+    """A string literal the code assigns to an attribute that has a CHECK list in the module's tables must be in that list, unless waived with a
+    reason; a waiver that matches nothing also fails. Needs Postgres.
+    """
     url, *_ = database
     engine = create_engine(url, isolation_level="AUTOCOMMIT")
     with engine.connect() as connection:
@@ -131,4 +154,5 @@ def test_a_literal_the_code_assigns_to_a_checked_column_is_allowed(database):  #
 
 
 def test_the_waivers_file_gives_a_reason_for_every_entry():
+    """Every waiver in the waivers file carries a real reason (more than 20 characters)."""
     assert all(isinstance(reason, str) and len(reason) > 20 for reason in WAIVERS.values())

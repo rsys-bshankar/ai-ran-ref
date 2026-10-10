@@ -175,6 +175,11 @@ class Callbacks:
         return f"{live.CALLBACK_BASE}/csar/{in_process_url.rsplit('/', 1)[-1]}" if live.LIVE else in_process_url
 
     def capture(self, module: str, url_prefix: str, with_location: bool = False):
+        """Returns the payloads delivered to destinations starting with `url_prefix` since this call (pairs of (url, payload) with `with_location`).
+
+        In-process it replaces the module's `httpx.post` so a delivery to that prefix is recorded and then refused with a connect error, like the
+        runbook's own "no listener" note; other URLs go to the real `post`. Live, it reads what the real receiver got.
+        """
         if live.LIVE:
             return live.LiveCapture(self._receiver, url_prefix, with_location)
         import httpx

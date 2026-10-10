@@ -1,11 +1,18 @@
+/**
+ * The approval inbox (route /approvals, PR-GUI-7): `Approvals` with its two tabs (waiting, decided) and `ApprovalDrawer`, the review of one rApp action held for a person's decision (AI-11) with Approve and Reject.
+ * Reads RAN NF OAM's /rapp-approvals through the BFF (the waiting list polls every 5 s). Every signed-in role may read it; Approve and Reject are drawn only for the operator role and up
+ * (`Can` on POST .../approve, as the BFF's permission table says), and the BFF checks again. The same drawer is opened from the decision record page. Covered by `Approvals.test.tsx`.
+ */
+
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useSmo, useSmoAction, useSmoPage } from "../api/hooks";
+import { useAuth } from "../auth/AuthContext";
 import type { Approval, ApprovalDetail, DecisionRecord } from "../api/types";
 import { ConfigJobDrawer } from "../components/ConfigJobDrawer";
 import { Card, Can, DataTable, Drawer, ErrorBox, Field, Id, KeyValue, PageHeader, StateBadge, Tabs, useHashTab } from "../components/ui";
-import { APPROVAL_MEANING, describeChange, describeElements, formatTime, timeLeft } from "../lib/domain";
+import { APPROVAL_MEANING, approvalProgress, decidedByText, describeChange, describeElements, formatTime, timeLeft } from "../lib/domain";
 
 const TABS = ["waiting", "decided"] as const;
 const WAITING = "/ran-nf-oam/rapp-approvals";
@@ -33,6 +40,9 @@ export function Approvals() {
   );
 }
 
+/**
+ * The "waiting" tab: the requests that are still PENDING, with the rApp, the changes, the rationale, approvals so far, and when each lapses; a row or "Review…" opens `ApprovalDrawer`.
+ */
 function Waiting() {
   const waiting = useSmoPage<Approval>(WAITING, { status: "PENDING", limit: 100, total: false }, { refetchInterval: 5_000 });
   const [open, setOpen] = useState<string | null>(null);
@@ -44,6 +54,7 @@ function Waiting() {
           { header: "rApp", render: (a) => <><Id value={a.invokerId} /> <span className="muted small">{a.requestedBy}</span></> },
           { header: "Changes", render: (a) => <span title={a.managedElements.join(", ")}>{a.changeCount} on {describeElements(a.managedElements)}</span> },
           { header: "Why", render: (a) => <span className="small">{a.decision?.rationale ?? <span className="muted">no rationale given</span>}</span> },
+          { header: "Approvals", render: (a) => approvalProgress(a) ?? <span className="muted">one needed</span> },
           { header: "Asked", render: (a) => formatTime(a.createdAt) },
           { header: "Lapses", render: (a) => <span title={formatTime(a.expiresAt)}>{timeLeft(a.expiresAt)} <span className="muted small">({a.onTimeout === "REJECT" ? "rejected" : "expires"})</span></span> },
           { header: "", render: (a) => <button className="btn" onClick={(e) => { e.stopPropagation(); setOpen(a.approvalId); }}>Review…</button> },
@@ -53,6 +64,9 @@ function Waiting() {
   );
 }
 
+/**
+ * The "decided" tab: every request that is no longer PENDING (approved, rejected, expired or refused) with who decided it, when and why.
+ */
 function Decided() {
   const decided = useSmoPage<Approval>(WAITING, { limit: 100, total: false });
   const [open, setOpen] = useState<string | null>(null);
@@ -63,7 +77,7 @@ function Decided() {
         { header: "rApp", render: (a) => <><Id value={a.invokerId} /> <span className="muted small">{a.requestedBy}</span></> },
         { header: "Changes", render: (a) => `${a.changeCount} on ${describeElements(a.managedElements)}` },
         { header: "Outcome", render: (a) => <span title={APPROVAL_MEANING[a.status]}><StateBadge state={a.status} /></span> },
-        { header: "By", render: (a) => a.decidedBy ?? "—" },
+        { header: "By", render: (a) => decidedByText(a) },
         { header: "When", render: (a) => formatTime(a.decidedAt) },
         { header: "Reason", render: (a) => a.decisionReason ?? a.refusalCode ?? <span className="muted">—</span> },
       ]} />
@@ -79,9 +93,16 @@ export function ApprovalDrawer({ id, onClose }: { id: string; onClose: () => voi
   const [reason, setReason] = useState("");
   const [job, setJob] = useState<string | null>(null);
   const action = useSmoAction();
+  const { me } = useAuth();
   const data = view.data;
+  const needed = data?.requiredApprovals ?? 1;
+  const given = data?.approvals ?? [];
+  // The BFF records a vote under `smo-gui:<username>`; comparing that name is how the drawer knows this user already approved (one person cannot give both approvals).
+  const iApproved = me !== null && given.some((v) => v.by.trim().toLowerCase() === `smo-gui:${me.username}`.toLowerCase());
+  const lastApproval = given.length + 1 >= needed;
   const decide = (verb: "approve" | "reject") => action.mutate(
-    { method: "POST", path: `${WAITING}/${id}/${verb}`, json: { reason: reason.trim() || null }, success: verb === "approve" ? "Approved: the change is being written" : "Rejected: nothing was written" },
+    { method: "POST", path: `${WAITING}/${id}/${verb}`, json: { reason: reason.trim() || null },
+      success: verb === "reject" ? "Rejected: nothing was written" : lastApproval ? "Approved: the change is being written" : "Your approval is recorded: another person must approve before anything is written" },
     { onSuccess: () => setReason("") });
   return (
     <Drawer title={<>rApp action <Id value={id} /></>} onClose={onClose}>
@@ -96,10 +117,19 @@ export function ApprovalDrawer({ id, onClose }: { id: string; onClose: () => voi
           ["Requested by", data.requestedBy],
           ["Asked", formatTime(data.createdAt)],
           [data.status === "PENDING" ? "Lapses" : "Decided", data.status === "PENDING" ? `${formatTime(data.expiresAt)} (${timeLeft(data.expiresAt)}), then it ${data.onTimeout === "REJECT" ? "is rejected" : "expires"}` : `${formatTime(data.decidedAt)} by ${data.decidedBy ?? "—"}`],
+          ["Approvals", needed > 1 ? `${given.length} of ${needed} (two different people must approve)` : null],
           ["Reason", data.decisionReason],
           ["Refused as", data.refusalCode],
           ["Config job", data.jobId ? <button key="j" className="btn ghost" onClick={() => setJob(data.jobId)}><Id value={data.jobId} /></button> : null],
         ]} />
+
+        {needed > 1 && (
+          <Card title={`Approvals so far (${given.length} of ${needed})`}>
+            {given.length === 0
+              ? <p className="muted small">None yet. This rApp's policy asks for {needed} different people: the first approval keeps the request waiting, the second makes the change. One rejection ends it.</p>
+              : <ul aria-label="Approvals so far">{given.map((v, i) => <li key={i} className="small"><b>{v.by}</b> <span className="muted">{formatTime(v.at)}{v.reason ? ` · ${v.reason}` : ""}</span></li>)}</ul>}
+          </Card>
+        )}
 
         <Card title="Why the rApp asks">
           <KeyValue items={[
@@ -120,9 +150,12 @@ export function ApprovalDrawer({ id, onClose }: { id: string; onClose: () => voi
           <Can method="POST" path={`${WAITING}/${id}/approve`}>
             <Card title="Your decision">
               <p className="muted small">Approving checks the rApp's safeguards again (it may have been stopped or reached a limit while this waited), then writes exactly the changes above. It is recorded under your name.</p>
+              {needed > 1 && <p className="small" role="note">{iApproved
+                ? "You have approved this request. A different person must give the other approval; you can still reject it."
+                : lastApproval ? "Your approval is the last one needed: approving writes the change." : "This is the first of two approvals: nothing is written until a different person approves too."}</p>}
               <Field label="Reason" hint="Optional; kept with the decision"><input value={reason} maxLength={1000} onChange={(e) => setReason(e.target.value)} /></Field>
               <div className="row gap">
-                <button className="btn primary" disabled={action.isPending} onClick={() => decide("approve")}>{action.isPending ? "…" : "Approve"}</button>
+                <button className="btn primary" disabled={action.isPending || iApproved} title={iApproved ? "You have already approved this request" : undefined} onClick={() => decide("approve")}>{action.isPending ? "…" : "Approve"}</button>
                 <button className="btn danger" disabled={action.isPending} onClick={() => decide("reject")}>Reject</button>
               </div>
             </Card>

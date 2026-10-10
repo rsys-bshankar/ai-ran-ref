@@ -35,6 +35,7 @@ def _subscribe(client, **body):
 
 
 def test_a_kill_switch_refusal_is_announced_with_who_what_and_why(client, fleet):
+    """A refusal by the kill switch queues one event for the subscriber, naming the rApp, who asked, the code and the reason."""
     _subscribe(client)
     client.put("/rapp-kill/es-client", json={"requestedBy": "alice", "reason": "oscillating"})
     assert _write(client).status_code == 403
@@ -50,6 +51,7 @@ def test_a_kill_switch_refusal_is_announced_with_who_what_and_why(client, fleet)
     ({"maxChangePercent": 5}, lambda c: _write(c, value=50), "RAPP_MAGNITUDE_EXCEEDED"),
 ])
 def test_each_kind_of_refusal_is_announced(client, fleet, limits, call, code):
+    """The rate limit, the blast radius and the magnitude limit are each announced with their own code."""
     _subscribe(client)
     assert client.put("/rapp-limits/es-client", json=limits).status_code == 200
     refused = call(client)
@@ -58,6 +60,7 @@ def test_each_kind_of_refusal_is_announced(client, fleet, limits, call, code):
 
 
 def test_a_refusal_in_the_middle_of_a_job_is_announced_too(client, fleet):
+    """A refusal at `continue` of a staged job (a kill thrown while it waited) is announced like one at the start."""
     _subscribe(client)
     job = _write(client, ELEMENTS[:2], waveSize=1, wavePauseSeconds=3600).json()["jobId"]
     client.put("/rapp-kill/es-client", json={"requestedBy": "alice"})
@@ -67,6 +70,7 @@ def test_a_refusal_in_the_middle_of_a_job_is_announced_too(client, fleet):
 
 
 def test_a_refusal_is_recorded_when_nobody_is_subscribed_and_can_be_queried(client, fleet):
+    """Refusals are recorded whether or not anyone subscribed, can be filtered by rApp, code and time, and queue no event without a subscriber."""
     client.put("/rapp-limits/es-client", json={"maxElementsPerJob": 1})
     _write(client, ELEMENTS[:3])
     items = client.get("/safeguard-refusals").json()["items"]
@@ -78,6 +82,8 @@ def test_a_refusal_is_recorded_when_nobody_is_subscribed_and_can_be_queried(clie
 
 
 def test_a_repeat_is_recorded_each_time_but_announced_once_per_interval(client, fleet, monkeypatch):
+    """The same refusal of the same rApp is recorded every time but announced once per interval, so a retrying rApp cannot flood its watchers; another rApp is counted separately.
+    """
     _subscribe(client)
     client.put("/rapp-kill/es-client", json={"requestedBy": "alice"})
     for _ in range(4):
@@ -93,6 +99,7 @@ def test_a_repeat_is_recorded_each_time_but_announced_once_per_interval(client, 
 
 
 def test_with_the_interval_at_zero_every_refusal_is_announced(client, fleet, monkeypatch):
+    """An interval of zero announces every refusal."""
     import datetime
     monkeypatch.setattr("app.main.SAFEGUARD_EVENT_MIN_INTERVAL", datetime.timedelta(0))
     _subscribe(client)
@@ -103,6 +110,7 @@ def test_with_the_interval_at_zero_every_refusal_is_announced(client, fleet, mon
 
 
 def test_a_subscriber_may_ask_for_some_refusals_only(client, fleet):
+    """A subscription narrowed to some codes is told of those only."""
     _subscribe(client, refusals=["RAPP_MAGNITUDE_EXCEEDED"])
     client.put("/rapp-kill/es-client", json={"requestedBy": "alice"})
     _write(client)
@@ -114,6 +122,7 @@ def test_a_subscriber_may_ask_for_some_refusals_only(client, fleet):
 
 
 def test_every_subscriber_is_told(client, fleet):
+    """Each subscriber gets its own copy of the event."""
     _subscribe(client)
     second = client.post("/safeguard-subscriptions", json={"callbackUri": "http://other.example/hook"})
     assert second.status_code == 201
@@ -123,11 +132,14 @@ def test_every_subscriber_is_told(client, fleet):
 
 
 def test_a_callers_that_is_not_refused_causes_no_event(client, fleet):
+    """An accepted write queues no safeguard event."""
     _subscribe(client)
     assert _write(client).status_code == 202 and _events(fleet) == []
 
 
 def test_subscriptions_can_be_listed_and_removed_and_a_bad_destination_is_refused(client, fleet):
+    """Subscriptions are listed and deleted (404 when repeated), duplicate codes collapse, and an unsafe or malformed callback or an unknown code is 422.
+    """
     sub = _subscribe(client, refusals=["RAPP_KILLED", "RAPP_KILLED"])
     assert sub["refusals"] == ["RAPP_KILLED"]
     assert [s["subscriptionId"] for s in client.get("/safeguard-subscriptions").json()["items"]] == [sub["subscriptionId"]]

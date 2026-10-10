@@ -1,3 +1,9 @@
+/**
+ * The landing page (route /, every signed-in role): module health (BFF /api/modules/status, polled every 10 s), open alarms by severity, SA SMOS escalations, model and rApp KPI sparklines, and fleet counts per state with
+ * links to the pages that own them. Read-only. The counts come from the first page of each list (the modules' default page size is 100, `smo_shared/pagination.py`), so a fleet larger than that is under-counted here; the pages
+ * themselves page through everything.
+ */
+
 import type { ReactNode } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -12,6 +18,10 @@ import { CountBar, Sparkline } from "../components/charts";
 import { Card, DataTable, ErrorBox, Id, PageHeader, StateBadge } from "../components/ui";
 import { countBySeverity, metricSeries, moduleRows, numericMetricKeys, SEVERITIES } from "../lib/domain";
 
+/**
+ * The dashboard. Each tile or card reads its own list through `useSmo` (cached and shared with the other pages) and tolerates a failed or missing read by showing a dash or an empty text, so one module being down
+ * leaves the rest of the page working. "Modules healthy" counts `healthy` over the modules the BFF reported (14 until the first answer arrives).
+ */
 export function Dashboard() {
   const status = useQuery<ModulesStatus>({ queryKey: ["bff", "modules-status"], queryFn: () => api("/modules/status"), refetchInterval: POLL.status });
   const alarms = useSmo<Alarm[]>("/ran-nf-oam/alarms", undefined, { refetchInterval: POLL.alarms });
@@ -118,6 +128,9 @@ function byState<T extends { state: string }>(rows: T[] | undefined) {
   return byKey(rows, (r) => r.state);
 }
 
+/**
+ * Counts rows per key (for the fleet summaries); undefined while the rows have not arrived, so the card shows a dash instead of zero.
+ */
 function byKey<T>(rows: T[] | undefined, key: (r: T) => string): Record<string, number> | undefined {
   if (!rows) return undefined;
   const out: Record<string, number> = {};
@@ -130,6 +143,9 @@ function Stat({ label, value, sub, tone, to }: { label: string; value: ReactNode
   return to.startsWith("#") ? <a className={`stat tone-${tone}`} href={to}>{body}</a> : <Link className={`stat tone-${tone}`} to={to}>{body}</Link>;
 }
 
+/**
+ * One fleet card: the total, a badge per state with its count, linking to the page and tab that manage those objects.
+ */
 function Summary({ label, counts, to }: { label: string; counts: Record<string, number> | undefined; to: string }) {
   const total = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : undefined;
   return (
@@ -142,6 +158,9 @@ function Summary({ label, counts, to }: { label: string; counts: Record<string, 
   );
 }
 
+/**
+ * The model KPI card: for up to four subscriptions, the first two numeric metrics of its reports as sparklines (oldest first).
+ */
 function MlmfSparklines({ reports }: { reports: MlmfReport[] }) {
   if (reports.length === 0) return <p className="muted">No MLMF performance reports yet.</p>;
   const bySub = new Map<string, MlmfReport[]>();
@@ -160,6 +179,9 @@ function MlmfSparklines({ reports }: { reports: MlmfReport[] }) {
   );
 }
 
+/**
+ * The rApp performance card: for each given RUNNING instance (the caller passes at most three) the latest 30 performance reports, drawn as a sparkline of the first numeric metric; one read per instance through `useQueries`.
+ */
 function RappSparklines({ instances }: { instances: InstanceSummary[] }) {
   const perf = useQueries({
     queries: instances.map((i) => ({

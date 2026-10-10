@@ -42,6 +42,9 @@ class RoleGateway:
 
 @pytest.fixture
 def gateway(loaded_apps, monkeypatch):
+    """A TestClient on the real R1 gateway with the rate limit off and role enforcement left at its default, whose upstream is a fake that accepts
+    two tokens (an rApp's and a module's); returns (client, upstream calls).
+    """
     upstream_calls: list = []
     monkeypatch.setenv("R1_RATE_PER_SECOND", "0")
     monkeypatch.delenv("SMO_ROLE_ENFORCEMENT", raising=False)
@@ -55,12 +58,16 @@ def _real_routes(loaded_apps, prefix):
 
 
 def test_every_policy_entry_names_a_route_that_exists(loaded_apps):
+    """Every internal-only entry of the policy matches a route that exists in its module, so a renamed route cannot leave a rule that guards
+    nothing.
+    """
     for module, methods, pattern in roles.INTERNAL_ONLY:
         found = [(m, p) for m, p in _real_routes(loaded_apps, module) if m in methods and pattern.match(p)]
         assert found, f"{module} {sorted(methods)} {pattern.pattern} matches no route of {R1_PREFIX_TO_SERVICE[module]}: renamed or removed?"
 
 
 def test_every_allow_list_rule_names_a_route_that_exists(loaded_apps):
+    """Every rule that allows an rApp a change matches a route that exists in its module."""
     for module, rules in roles.RAPP_MAY_CHANGE.items():
         if rules is None:
             continue
@@ -70,6 +77,9 @@ def test_every_allow_list_rule_names_a_route_that_exists(loaded_apps):
 
 
 def test_an_rapp_is_refused_on_exactly_the_routes_the_policy_names_and_a_module_on_none(loaded_apps, gateway):
+    """A walk of every route of every backend through the real gateway shows an rApp refused (403 ROLE_NOT_PERMITTED) on exactly the routes the
+    policy names and an SMO module refused on none.
+    """
     client, upstream_calls = gateway
     refused_to_rapp, wrongly_refused_to_module, walked = [], [], 0
     for prefix in sorted(set(R1_PREFIX_TO_SERVICE) - {"/dme-push", "/dme-pull"}):
@@ -87,6 +97,9 @@ def test_an_rapp_is_refused_on_exactly_the_routes_the_policy_names_and_a_module_
 
 
 def test_the_policy_covers_what_the_per_rapp_limits_and_the_kpi_definitions_depend_on():
+    """The policy keeps rApps from changing the per-rApp limits, the KPI definitions and the config-history purge, which the per-rApp limits and
+    the KPI definitions depend on.
+    """
     assert roles.internal_only("/ran-nf-oam", "PUT", "/rapp-limits/x")
     assert roles.internal_only("/ran-nf-oam", "PUT", "/kpi-definitions/k")
     assert roles.internal_only("/ran-nf-oam", "POST", "/config-history/purge")

@@ -21,6 +21,7 @@ def _instructions(text: str) -> list[str]:
 
 
 def test_the_image_ends_as_a_numeric_non_root_user_before_it_starts_the_service():
+    """The Dockerfile's last `USER` is a numeric non-root uid, so the runtime can check it, and comes before `CMD`."""
     instructions = _instructions(DOCKERFILE)
     users = [i for i, line in enumerate(instructions) if line.startswith("USER ")]
     assert users, "the Dockerfile never drops root"
@@ -31,6 +32,9 @@ def test_the_image_ends_as_a_numeric_non_root_user_before_it_starts_the_service(
 
 
 def test_the_two_directories_a_service_writes_exist_and_belong_to_that_user():
+    """The directories a service writes (`/data`, `/srv/packages`, `/srv/scratch`) are made and owned by the service user in the image, and compose
+    mounts volumes at the first two.
+    """
     run = " ".join(line for line in _instructions(DOCKERFILE) if line.startswith("RUN "))
     assert re.search(r"mkdir -p /data /srv/packages /srv/scratch", run) and re.search(r"chown smo:smo /data /srv/packages /srv/scratch", run)
     compose = (SMO_ROOT / "docker-compose.yml").read_text()
@@ -38,6 +42,7 @@ def test_the_two_directories_a_service_writes_exist_and_belong_to_that_user():
 
 
 def test_every_service_we_build_drops_every_capability_and_cannot_gain_privileges():
+    """Every service built from this repository drops all capabilities and sets `no-new-privileges`."""
     services = _compose()
     built = {name: svc for name, svc in services.items() if "build" in svc}
     assert len(built) >= 25, "the compose file lost services"
@@ -59,6 +64,7 @@ def test_every_service_we_build_has_a_read_only_root_filesystem_with_memory_scra
 
 
 def test_no_service_asks_for_more_privilege_than_the_default():
+    """No service is privileged, shares the host network, PID or IPC namespace, mounts the Docker socket or adds a capability."""
     for name, svc in _compose().items():
         assert not svc.get("privileged"), name
         assert svc.get("network_mode") != "host" and svc.get("pid") != "host" and svc.get("ipc") != "host", name
@@ -67,5 +73,6 @@ def test_no_service_asks_for_more_privilege_than_the_default():
 
 
 def test_postgres_is_left_with_its_defaults_because_its_entrypoint_drops_privileges_itself():
+    """The Postgres service has no `cap_drop`, because its image entrypoint starts as root and drops privileges itself."""
     postgres = _compose()["postgres"]
     assert "cap_drop" not in postgres

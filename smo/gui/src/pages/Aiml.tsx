@@ -1,3 +1,11 @@
+/**
+ * The AI/ML page (route /aiml): the model lifecycle of call flow 02, in six tabs: models (MLMR registry with AIMgF's lifecycle and runtime state), training jobs, inference jobs, model coordination groups, performance monitoring (MLMF, also used
+ * on the KPIs page) and feature groups. Every signed-in role may read, except feature groups, which hold datalake credentials and are visible only to roles the permission table allows (operator and up). What a button offers comes from the state machines in
+ * `lib/domain.ts` (`modelActions`, `runtimeActions`); which buttons a role sees comes from the BFF's permission table (`Can` and `ActionButton`): the training, validation and emulation requests and the training and validation approvals are operator calls, the
+ * governance decisions (submit for approval, approve, reject, certify, promote, roll back) and deprecate and retire are admin calls. The BFF sets `decidedBy` itself from the signed-in user (it overrides the `smo-gui` this page sends); the producer id `smo-gui`
+ * sent with job requests is not an authority either.
+ */
+
 import { useState, type FormEvent } from "react";
 
 import { useSmo, useSmoAction } from "../api/hooks";
@@ -19,6 +27,7 @@ const REGISTERED_LIFECYCLE: ModelLifecycle = {
 
 const TABS = ["models", "training", "inference", "groups", "mlmf", "features"] as const;
 
+/** The page: header and the six tabs, kept in the URL hash. */
 export function Aiml() {
   const [tab, setTab] = useHashTab(TABS, "models");
   return (
@@ -39,6 +48,9 @@ export function Aiml() {
   );
 }
 
+/**
+ * Returns a function that names a model id as "<type> <version>" from the cached model list, or null when the id is not (yet) known; callers fall back to showing the short id.
+ */
 export function useModelNames() {
   const models = useSmo<Model[]>("/mlmr/models");
   return (id: string | null) => {
@@ -54,6 +66,9 @@ function useLifecycles() {
   return (modelId: string): ModelLifecycle => lifecycles.data?.find((l) => l.modelId === modelId) ?? { ...REGISTERED_LIFECYCLE, modelId };
 }
 
+/**
+ * The models tab: the registered models (filter by type) with their lifecycle state and cleared node groups, the buttons the state allows, Register model (for roles that may), and the model drawer on a row click.
+ */
 function Models() {
   const [modelType, setModelType] = useState("");
   const models = useSmo<Model[]>("/mlmr/models", { model_type: modelType });
@@ -83,6 +98,9 @@ function Models() {
   );
 }
 
+/**
+ * The buttons of a model's lifecycle state (`modelActions`): request training, validation or emulation (job routes), complete the in-flight run (`CompleteJobButton`) or advance the lifecycle (governance events carry `decided_by`). DEPRECATE and RETIRE ask first because they are terminal.
+ */
 function ModelActions({ model, lifecycle }: { model: Model; lifecycle: ModelLifecycle }) {
   const aimgfBase = `/aimgf/models/${model.modelId}`;
   return (
@@ -101,6 +119,9 @@ function ModelActions({ model, lifecycle }: { model: Model; lifecycle: ModelLife
   );
 }
 
+/**
+ * The buttons of a model's runtime state (deploy, activate, scale, terminate; `runtimeActions`); terminate asks first.
+ */
 function RuntimeActions({ modelId, lifecycle }: { modelId: string; lifecycle: ModelLifecycle }) {
   const aimgfBase = `/aimgf/models/${modelId}`;
   return (
@@ -114,6 +135,9 @@ function RuntimeActions({ modelId, lifecycle }: { modelId: string; lifecycle: Mo
   );
 }
 
+/**
+ * The dialog that registers a model (POST /mlmr/models). Blank fields are sent as null; (type, version) must be unique, which the backend enforces.
+ */
 function RegisterModel({ onClose }: { onClose: () => void }) {
   const [form, setForm] = useState({ modelType: "", version: "1.0.0", description: "", author: "", owner: "", inputDataType: "", outputDataType: "", requiredResourceTypeId: "" });
   const action = useSmoAction();
@@ -140,6 +164,10 @@ function RegisterModel({ onClose }: { onClose: () => void }) {
   );
 }
 
+/**
+ * The drawer of one model: the lifecycle stepper, the state's actions, edit and delete, the metadata, the artifact versions to download (the latest version is the number after the last colon of `artifactLocation`, so artifacts v1 to vN are offered),
+ * artifact upload, deployment to node groups (only for a CERTIFIED or PROMOTED model), runtime state and actions, an inference-job request for an ACTIVE runtime, and the training and inference jobs of the model.
+ */
 function ModelDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const mlmrBase = `/mlmr/models/${id}`;
   const aimgfBase = `/aimgf/models/${id}`;
@@ -195,6 +223,9 @@ function ModelDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
+/**
+ * The form that uploads a model artifact (a .zip) as multipart form data to MLMR; each upload becomes the next artifact version.
+ */
 function ArtifactUpload({ modelId }: { modelId: string }) {
   const [file, setFile] = useState<File | null>(null);
   const action = useSmoAction();
@@ -212,6 +243,9 @@ function ArtifactUpload({ modelId }: { modelId: string }) {
   );
 }
 
+/**
+ * The form that clears a model for deployment on node groups (comma-separated; POST /mllf/models/<id>/deploy). It stamps the cleared node groups on AIMgF's lifecycle row and needs a CERTIFIED or PROMOTED model.
+ */
 function DeployNodeGroups({ modelId, clearedNodeGroups }: { modelId: string; clearedNodeGroups: string[] }) {
   const [groups, setGroups] = useState(clearedNodeGroups.join(", "));
   const action = useSmoAction();
@@ -228,6 +262,7 @@ function DeployNodeGroups({ modelId, clearedNodeGroups }: { modelId: string; cle
 
 // ---------------------------------------------------------------- jobs
 
+/** The training jobs tab (filter by status). */
 function TrainingJobs() {
   const [status, setStatus] = useState("");
   const jobs = useSmo<TrainingJob[]>("/aimgf/training-jobs", { status });
@@ -242,6 +277,9 @@ function TrainingJobs() {
 // OI-5-aiml-trainingjob-steps: the steps a run passes through, reported by its runtime
 const STEP_LABEL: Record<TrainingJob["currentStep"], string> = { DATA_EXTRACTION: "1/3 data extraction", TRAINING: "2/3 training", TRAINED_MODEL: "3/3 trained model" };
 
+/**
+ * A table of training jobs: target (model or coordination group), producer, status, the furthest step the run reported (`STEP_LABEL`), the NFO runtime, and the metrics (view, and write back for roles that may); a job that is IN_PROGRESS or SUSPENDED can be cancelled.
+ */
 function TrainingTable({ rows, loading, error }: { rows?: TrainingJob[]; loading?: boolean; error?: unknown }) {
   const modelName = useModelNames();
   const [metricsFor, setMetricsFor] = useState<TrainingJob | null>(null);
@@ -270,6 +308,9 @@ function TrainingTable({ rows, loading, error }: { rows?: TrainingJob[]; loading
   );
 }
 
+/**
+ * The inference jobs tab (filter by status); results are pulled through DME, so this view tracks job state only.
+ */
 function InferenceJobs() {
   const [status, setStatus] = useState("");
   const jobs = useSmo<InferenceJob[]>("/aimgf/inference-jobs", { status });
@@ -281,6 +322,9 @@ function InferenceJobs() {
   );
 }
 
+/**
+ * A table of inference jobs with Completed and Failed buttons for a RUNNING job (the resolve route, which simulates the runtime reporting the outcome).
+ */
 function InferenceTable({ rows, loading, error }: { rows?: InferenceJob[]; loading?: boolean; error?: unknown }) {
   const modelName = useModelNames();
   return (
@@ -301,6 +345,9 @@ function InferenceTable({ rows, loading, error }: { rows?: InferenceJob[]; loadi
 
 // ---------------------------------------------------------------- coordination groups
 
+/**
+ * The coordination groups tab: create a group of two or more models (for roles that may) and list the groups with a Retrain group button (a training job for the group).
+ */
 function Groups() {
   const groups = useSmo<CoordinationGroup[]>("/mlmr/coordination-groups");
   const models = useSmo<Model[]>("/mlmr/models");
@@ -345,6 +392,9 @@ function Groups() {
 
 // ---------------------------------------------------------------- MLMF
 
+/**
+ * The MLMF tab (model performance monitoring, shared with the KPIs page): the subscriptions with their guard KPI floors and a report view for the selected one.
+ */
 export function Mlmf() {
   const subs = useSmo<MlmfSubscription[]>("/aimgf/mlmf/subscriptions");
   const modelName = useModelNames();
@@ -368,6 +418,9 @@ export function Mlmf() {
   );
 }
 
+/**
+ * The reports of one MLMF subscription: a sparkline per numeric metric with the guard floor drawn, the raw reports with BREACHED or ok, and an admin tool to inject a report.
+ */
 function MlmfReports({ sub }: { sub?: MlmfSubscription }) {
   const reports = useSmo<MlmfReport[]>(sub ? `/aimgf/mlmf/subscriptions/${sub.subscriptionId}/reports` : null, { limit: 100 });
   const [metrics, setMetrics] = useState("{}");
@@ -396,6 +449,9 @@ function MlmfReports({ sub }: { sub?: MlmfSubscription }) {
   );
 }
 
+/**
+ * The form that subscribes to a model's performance (POST /aimgf/mlmf/subscriptions): the model, the DME type the metrics arrive on, the metric types, an optional guard KPI floor and an optional notification URL (blank: poll).
+ */
 function SubscribeMlmf() {
   const models = useSmo<Model[]>("/mlmr/models");
   const dmeTypes = useSmo<DmeType[]>("/dme/dme-types");
@@ -430,6 +486,9 @@ function SubscribeMlmf() {
 }
 
 
+/**
+ * The dialog that edits a model's metadata. The model type and version are its identity and are sent unchanged, because the backend rejects a change.
+ */
 function EditModel({ model, onClose }: { model: Model; onClose: () => void }) {
   const [f, setF] = useState({
     description: model.description ?? "", author: model.author ?? "", owner: model.owner ?? "",
@@ -457,6 +516,9 @@ function EditModel({ model, onClose }: { model: Model; onClose: () => void }) {
   );
 }
 
+/**
+ * The dialog that writes back a training job's model metrics as JSON, as the trainer (MLTF) would; it replaces the stored metrics wholesale.
+ */
 function WriteMetrics({ job, onClose }: { job: TrainingJob; onClose: () => void }) {
   const [text, setText] = useState(JSON.stringify(job.modelMetrics ?? { accuracy: 0.93, loss: 0.12 }, null, 2));
   const parsed = parseJsonObject(text);
@@ -474,6 +536,9 @@ function WriteMetrics({ job, onClose }: { job: TrainingJob; onClose: () => void 
   );
 }
 
+/**
+ * The feature groups tab: the groups (visible only when the role may GET them, because they hold datalake credentials, which are never shown) and the create form (for roles that may), whose token field is a password input. With "source via DME" a DME type is chosen and AIMgF creates a data job for the group.
+ */
 function FeatureGroups() {
   const { can } = useAuth();
   const allowed = can("GET", "/aimgf/feature-groups");

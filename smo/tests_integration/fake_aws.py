@@ -21,6 +21,12 @@ def _path(url: str) -> Path:
 
 
 def main(argv: list[str]) -> int:
+    """Runs one fake `aws s3` call and returns the exit code.
+
+    Flags are skipped (`--endpoint-url` and `--sse` with their value) except `--recursive`. `cp` copies between a local path and a bucket path,
+    `ls` lists a bucket directory in the CLI's two output shapes, and `rm --recursive` deletes a directory. Returns 1 when a download source or
+    a listed directory does not exist, and 2 for anything else.
+    """
     positional: list[str] = []
     recursive = False
     i = 0

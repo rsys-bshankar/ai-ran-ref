@@ -20,6 +20,9 @@ pytestmark_openssl = pytest.mark.skipif(shutil.which("openssl") is None, reason=
 
 
 def make_certs(directory: Path, *args: str, names: str = "") -> subprocess.CompletedProcess:
+    """Runs the development certificate script into `directory` with a minimal environment (`names` as the extra names) and returns the finished
+    process.
+    """
     env = {"PATH": "/usr/bin:/bin:/usr/local/bin", "SMO_TLS_NAMES": names}
     return subprocess.run([str(SCRIPT), *args, str(directory)], capture_output=True, text=True, env=env, timeout=60)
 
@@ -30,6 +33,7 @@ def openssl(*args: str) -> str:
 
 @pytest.fixture(scope="module")
 def certs(tmp_path_factory):
+    """A certificate directory made once for the module with the extra name `smo.example.test` and the address 10.0.0.5."""
     directory = tmp_path_factory.mktemp("certs")
     result = make_certs(directory, names="smo.example.test,10.0.0.5")
     assert result.returncode == 0, result.stderr
@@ -38,6 +42,7 @@ def certs(tmp_path_factory):
 
 @pytestmark_openssl
 def test_the_server_certificate_chains_to_the_ca_and_is_not_itself_a_ca(certs):
+    """The server certificate verifies against the CA, is not a CA itself and is for server authentication. Needs openssl."""
     assert "OK" in openssl("verify", "-CAfile", str(certs / "ca.crt"), str(certs / "server.crt"))
     server = openssl("x509", "-in", str(certs / "server.crt"), "-noout", "-text")
     assert "CA:FALSE" in server and "TLS Web Server Authentication" in server
@@ -46,6 +51,7 @@ def test_the_server_certificate_chains_to_the_ca_and_is_not_itself_a_ca(certs):
 
 @pytestmark_openssl
 def test_it_names_every_host_the_edge_is_reached_by_and_the_extra_names_asked_for(certs):
+    """The certificate names localhost, the two services behind the edge and 127.0.0.1, and the extra names the operator asked for. Needs openssl."""
     san = openssl("x509", "-in", str(certs / "server.crt"), "-noout", "-ext", "subjectAltName")
     for name in ("DNS:localhost", "DNS:r1-termination", "DNS:gui", "IP Address:127.0.0.1", "DNS:smo.example.test",
                  "IP Address:10.0.0.5"):
@@ -54,6 +60,7 @@ def test_it_names_every_host_the_edge_is_reached_by_and_the_extra_names_asked_fo
 
 @pytestmark_openssl
 def test_it_is_valid_for_a_year_and_the_key_belongs_to_the_certificate(certs):
+    """The certificate is valid for more than 300 and less than 400 days, and the private key is the one that belongs to it. Needs openssl."""
     assert subprocess.run(["openssl", "x509", "-in", str(certs / "server.crt"), "-noout", "-checkend", str(300 * 86400)]).returncode == 0
     assert subprocess.run(["openssl", "x509", "-in", str(certs / "server.crt"), "-noout", "-checkend", str(400 * 86400)]).returncode == 1
     cert_key = openssl("x509", "-in", str(certs / "server.crt"), "-noout", "-pubkey")
@@ -63,6 +70,9 @@ def test_it_is_valid_for_a_year_and_the_key_belongs_to_the_certificate(certs):
 
 @pytestmark_openssl
 def test_the_ca_key_is_private_the_directory_is_owner_only_and_a_rerun_keeps_what_is_there(tmp_path):
+    """The CA key is private (0600), the directory is owner-only (0700), a rerun keeps the existing files and `--force` replaces them. Needs
+    openssl.
+    """
     directory = tmp_path / "certs"
     assert make_certs(directory).returncode == 0
     assert stat.S_IMODE((directory / "ca.key").stat().st_mode) == 0o600
@@ -85,6 +95,9 @@ def _client_context() -> ssl.SSLContext:
 
 @pytestmark_openssl
 def test_a_real_tls_handshake_works_for_a_client_that_trusts_the_ca_and_fails_for_one_that_does_not(certs):
+    """A real TLS handshake with the generated certificate works for clients that trust the CA and fails for a client that does not trust it. Needs
+    openssl.
+    """
     server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     server_context.minimum_version = ssl.TLSVersion.TLSv1_2
     server_context.load_cert_chain(certs / "server.crt", certs / "server.key")
@@ -119,6 +132,9 @@ def test_a_real_tls_handshake_works_for_a_client_that_trusts_the_ca_and_fails_fo
 # ---------------------------------------------------------------- the edge nginx config
 
 def test_the_edge_offers_only_tls_1_2_and_1_3_with_the_certificate_from_the_mounted_secrets():
+    """The edge nginx config offers TLS 1.2 and 1.3 only, reads its certificate and key from the mounted secrets, and disables session tickets and
+    the version header.
+    """
     assert re.search(r"ssl_protocols\s+TLSv1\.2 TLSv1\.3;", NGINX)
     assert "TLSv1 " not in NGINX and "TLSv1.1" not in NGINX and "SSLv" not in NGINX
     assert "ssl_certificate     /run/secrets/tls_cert;" in NGINX and "ssl_certificate_key /run/secrets/tls_key;" in NGINX
@@ -126,6 +142,9 @@ def test_the_edge_offers_only_tls_1_2_and_1_3_with_the_certificate_from_the_moun
 
 
 def test_each_door_is_tls_sends_hsts_and_proxies_to_the_right_service():
+    """The edge has two TLS-only listeners, 3443 to the GUI and 8443 to the gateway, each sending HSTS and the forwarded protocol, and no
+    plain-HTTP listener.
+    """
     servers = re.findall(r"server \{(.*?)\n\}", NGINX, re.S)
     assert len(servers) == 2
     by_port = {re.search(r"listen (\d+) ssl;", body).group(1): body for body in servers}
@@ -144,6 +163,9 @@ def _compose() -> dict:
 
 
 def test_the_edge_is_only_in_the_tls_profile_publishes_two_ports_and_is_hardened():
+    """The edge runs only in the `tls` profile, publishes just its two ports, drops all capabilities and gets its certificate as secrets; the
+    services outside the default stack are exactly the listed profile services, so the default stack needs no certificate.
+    """
     compose = _compose()
     edge = compose["services"]["edge-tls"]
     assert edge["profiles"] == ["tls"]
@@ -160,11 +182,13 @@ def test_the_edge_is_only_in_the_tls_profile_publishes_two_ports_and_is_hardened
 
 
 def test_the_gui_session_cookie_is_secure_by_default_so_it_is_only_sent_over_the_https_door():
+    """The GUI session cookie is Secure by default, so a browser sends it only over the HTTPS door."""
     environment = _compose()["services"]["gui-bff"]["environment"]
     assert environment["GUI_COOKIE_SECURE"] == "${GUI_COOKIE_SECURE:-true}"
 
 
 def test_the_certificate_directory_is_git_ignored():
+    """The `certs/` directory is git-ignored so generated keys are not committed."""
     assert "certs/" in (SMO_ROOT / ".gitignore").read_text().splitlines()
 
 

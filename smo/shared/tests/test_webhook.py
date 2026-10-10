@@ -10,6 +10,7 @@ import pytest
 from smo_shared.webhook import delete_webhook, get_webhook, is_safe_webhook_destination, post_webhook
 
 
+# Table: destinations that must be allowed, including private-range addresses a real deployment's containers use.
 @pytest.mark.parametrize("destination", [
     "http://consumer/callback",
     "http://rapp-1:8000/cb",
@@ -21,6 +22,8 @@ def test_allows_ordinary_http_and_https_destinations(destination):
     assert is_safe_webhook_destination(destination) is True
 
 
+# Table: destinations that must be refused: no destination, other schemes, loopback, link-local (cloud metadata), multicast and unspecified addresses,
+# localhost and metadata host names in any case, and malformed URLs (which must be refused, not raise).
 @pytest.mark.parametrize("destination", [
     None,
     "",
@@ -48,6 +51,7 @@ def test_rejects_dangerous_or_malformed_destinations(destination):
 
 
 def test_post_webhook_calls_httpx_post_for_an_allowed_destination(monkeypatch):
+    """An allowed destination is called with httpx.post with the JSON body, and the response is returned."""
     calls = []
     monkeypatch.setattr("smo_shared.webhook.httpx.post",
                          lambda url, json=None, timeout=None: calls.append((url, json)) or httpx.Response(200))
@@ -57,6 +61,7 @@ def test_post_webhook_calls_httpx_post_for_an_allowed_destination(monkeypatch):
 
 
 def test_post_webhook_no_ops_for_a_disallowed_destination(monkeypatch):
+    """A destination the guard refuses is never called and None is returned."""
     calls = []
     monkeypatch.setattr("smo_shared.webhook.httpx.post", lambda url, json=None, timeout=None: calls.append(url))
     resp = post_webhook("http://169.254.169.254/latest/meta-data/", json={"a": 1})
@@ -65,6 +70,7 @@ def test_post_webhook_no_ops_for_a_disallowed_destination(monkeypatch):
 
 
 def test_post_webhook_swallows_an_unreachable_destination(monkeypatch):
+    """A connection error is swallowed: post_webhook returns None."""
     def raise_error(url, json=None, timeout=None):
         raise httpx.ConnectError("boom")
     monkeypatch.setattr("smo_shared.webhook.httpx.post", raise_error)
@@ -72,11 +78,13 @@ def test_post_webhook_swallows_an_unreachable_destination(monkeypatch):
 
 
 def test_get_webhook_calls_httpx_get_for_an_allowed_destination(monkeypatch):
+    """get_webhook calls an allowed destination with httpx.get."""
     monkeypatch.setattr("smo_shared.webhook.httpx.get", lambda url, timeout=None: httpx.Response(200))
     assert get_webhook("http://producer/health") is not None
 
 
 def test_get_webhook_no_ops_for_a_disallowed_destination(monkeypatch):
+    """get_webhook does not call a refused destination."""
     calls = []
     monkeypatch.setattr("smo_shared.webhook.httpx.get", lambda url, timeout=None: calls.append(url))
     assert get_webhook("http://127.0.0.1/health") is None
@@ -84,6 +92,7 @@ def test_get_webhook_no_ops_for_a_disallowed_destination(monkeypatch):
 
 
 def test_delete_webhook_calls_httpx_delete_for_an_allowed_destination(monkeypatch):
+    """delete_webhook calls an allowed destination with httpx.delete and returns the response."""
     calls = []
     monkeypatch.setattr("smo_shared.webhook.httpx.delete",
                          lambda url, timeout=None: calls.append(url) or httpx.Response(204))
@@ -93,6 +102,7 @@ def test_delete_webhook_calls_httpx_delete_for_an_allowed_destination(monkeypatc
 
 
 def test_delete_webhook_no_ops_for_a_disallowed_destination(monkeypatch):
+    """delete_webhook does not call a refused destination."""
     calls = []
     monkeypatch.setattr("smo_shared.webhook.httpx.delete", lambda url, timeout=None: calls.append(url))
     assert delete_webhook("file:///etc/passwd") is None

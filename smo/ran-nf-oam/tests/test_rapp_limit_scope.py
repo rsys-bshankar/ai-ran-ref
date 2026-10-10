@@ -28,6 +28,7 @@ def _title(resp):
 # ---- blast radius
 
 def test_a_job_naming_more_elements_than_allowed_is_refused_before_anything_is_sent(client, fleet):
+    """A job that names more distinct elements than `maxElementsPerJob` is 403 RAPP_BLAST_RADIUS_EXCEEDED, with no job row and no edit sent."""
     _limit(client, maxElementsPerJob=2)
     refused = _write(client, ELEMENTS[:3])
     assert refused.status_code == 403 and _title(refused) == "RAPP_BLAST_RADIUS_EXCEEDED"
@@ -38,6 +39,7 @@ def test_a_job_naming_more_elements_than_allowed_is_refused_before_anything_is_s
 
 
 def test_a_job_within_the_blast_radius_goes_through_and_elements_count_once(client, fleet):
+    """The blast radius counts distinct elements: a job at the limit passes, and two changes to one element count as one."""
     _limit(client, maxElementsPerJob=2)
     assert _write(client, ELEMENTS[:2]).status_code == 202
     twice = client.post("/config-jobs", headers=ES, json={"requestedBy": "r", "scope": "cell", "changes": [
@@ -46,6 +48,7 @@ def test_a_job_within_the_blast_radius_goes_through_and_elements_count_once(clie
 
 
 def test_a_blast_radius_alone_does_not_limit_how_many_jobs(client, fleet):
+    """`maxElementsPerJob` limits the size of a job, not how many jobs the rApp starts."""
     _limit(client, maxElementsPerJob=1)
     assert [_write(client, value=10 + i % 2).status_code for i in range(5)] == [202] * 5
 
@@ -54,6 +57,8 @@ def test_a_blast_radius_alone_does_not_limit_how_many_jobs(client, fleet):
 
 @pytest.mark.parametrize("value, allowed", [(12, True), (8, True), (10, True), (12.1, False), (7.9, False), (30, False), ("12", True), ("13", False)])
 def test_a_value_may_move_by_the_percentage_allowed_and_no_further(client, fleet, value, allowed):
+    """A numeric change is allowed up to `maxChangePercent` of the current value (also for a numeric string) and refused beyond it with 403 RAPP_MAGNITUDE_EXCEEDED, writing nothing.
+    """
     _limit(client, maxChangePercent=20)
     resp = _write(client, value=value)
     assert (resp.status_code == 202) is allowed, resp.text
@@ -63,12 +68,14 @@ def test_a_value_may_move_by_the_percentage_allowed_and_no_further(client, fleet
 
 
 def test_the_refusal_says_what_would_have_moved_and_by_how_much(client, fleet):
+    """The magnitude refusal names the element, attribute, old and new value and the percentage, so an rApp's author can see why."""
     _limit(client, maxChangePercent=20)
     detail = _write(client, value=15).json()["detail"]["detail"]
     assert "ME-1 txPower: 10 to 15 is a change of 50.0%" in detail and "20% at most" in detail
 
 
 def test_a_value_of_zero_may_only_stay_zero(client, fleet):
+    """From a current value of 0 any change is an unbounded percentage and is refused, while writing 0 again is allowed."""
     _limit(client, maxChangePercent=50)
     fleet["values"]["ME-1"] = "0"
     assert _write(client, value=0).status_code == 202
@@ -77,6 +84,8 @@ def test_a_value_of_zero_may_only_stay_zero(client, fleet):
 
 
 def test_what_is_not_a_number_is_not_measured_but_what_cannot_be_read_is_refused(client, fleet, monkeypatch):
+    """A non-numeric new value is not measured, but a numeric one whose current value cannot be read, or is not a number, is refused: a limit that is skipped when inconvenient is not a limit.
+    """
     _limit(client, maxChangePercent=10)
     named = client.post("/config-jobs", headers=ES, json={"requestedBy": "r", "scope": "cell", "changes": [
         {"managedElementRef": "ME-1", "attributeChanges": {"txPower": "ON"}}]})
@@ -92,6 +101,7 @@ def test_what_is_not_a_number_is_not_measured_but_what_cannot_be_read_is_refused
 
 
 def test_one_change_over_the_limit_refuses_the_whole_job(client, fleet):
+    """One change over the magnitude limit refuses the whole job, naming the element, and nothing is written for the others."""
     _limit(client, maxChangePercent=20)
     changes = [{"managedElementRef": "ME-1", "attributeChanges": {"txPower": 11}}, {"managedElementRef": "ME-2", "attributeChanges": {"txPower": 40}}]
     resp = client.post("/config-jobs", headers=ES, json={"requestedBy": "r", "scope": "cell", "changes": changes})
@@ -100,6 +110,7 @@ def test_one_change_over_the_limit_refuses_the_whole_job(client, fleet):
 
 
 def test_a_dry_run_is_checked_too(client, fleet):
+    """Both limits apply to a dry run, so the rApp finds out before a real write."""
     _limit(client, maxElementsPerJob=1, maxChangePercent=20)
     assert _write(client, ELEMENTS[:2], dryRun=True).status_code == 403
     assert _write(client, value=40, dryRun=True).status_code == 403
@@ -109,12 +120,14 @@ def test_a_dry_run_is_checked_too(client, fleet):
 # ---- who is limited
 
 def test_other_callers_and_unidentified_ones_are_not_limited(client, fleet):
+    """The limits belong to one rApp's invoker id; other callers and calls R1 did not identify are not held to them."""
     _limit(client, maxElementsPerJob=1, maxChangePercent=1)
     assert _write(client, ELEMENTS[:3], value=50, headers={"X-R1-Invoker-Id": "someone-else"}).status_code == 202
     assert _write(client, ELEMENTS[:3], value=60, headers={}).status_code == 202
 
 
 def test_undoing_a_change_is_not_limited(client, fleet):
+    """A rollback is not held to the magnitude or blast-radius limits, since undoing a change must not be refused."""
     job = _write(client, value=20).json()["jobId"] if _limit(client, maxConfigJobsPerHour=10) else None     # a 100% change, before any magnitude limit
     _limit(client, maxChangePercent=5, maxElementsPerJob=1)
     resp = client.post(f"/config-jobs/{job}/rollback", json={"requestedBy": "ops"}, headers=ES)
@@ -124,6 +137,7 @@ def test_undoing_a_change_is_not_limited(client, fleet):
 # ---- the limits themselves
 
 def test_a_put_replaces_the_whole_set_and_needs_at_least_one(client, fleet):
+    """A PUT of limits replaces the whole set (a limit not named is removed), and an empty body is a 422."""
     first = _limit(client, maxConfigJobsPerHour=3, maxElementsPerJob=2, maxChangePercent=15.5)
     assert (first["maxConfigJobsPerHour"], first["maxElementsPerJob"], first["maxChangePercent"]) == (3, 2, 15.5)
     second = _limit(client, maxElementsPerJob=4)
@@ -135,4 +149,5 @@ def test_a_put_replaces_the_whole_set_and_needs_at_least_one(client, fleet):
 @pytest.mark.parametrize("body", [{"maxElementsPerJob": 0}, {"maxElementsPerJob": 10_001}, {"maxChangePercent": 0}, {"maxChangePercent": -5},
                                   {"maxChangePercent": 10_001}, {"maxChangePercent": "lots"}, {"maxElementsPerJob": 1.5}])
 def test_the_values_are_validated(client, body):
+    """Out-of-range, non-positive and non-numeric limit values are 422."""
     assert client.put("/rapp-limits/x", json=body).status_code == 422

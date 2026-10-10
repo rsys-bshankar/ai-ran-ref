@@ -48,6 +48,13 @@ FIELDS = ("seq", "audit_id", "occurred_at", "actor", "actor_role", "action", "ta
 
 
 class AuditEntry(Base):
+    """One row of the audit hash chain (table `audit_log`): who (`actor`, `actor_role`) did what (`action`, `target`), with which `result`, when.
+
+    `seq` is the row's position in the chain (1, 2, 3 ...; assigned by `record()` from the locked head, never by the database), `prev_hash` is the
+    `hash` of row `seq - 1` (`GENESIS` for row 1) and `hash` is `compute_hash()` over every other field. Rows are append-only: nothing in this
+    module updates or deletes one, and `verify()` reports any row that was. Written through `record()` or `write_audit()`, never constructed by
+    callers.
+    """
     __tablename__ = "audit_log"
     seq: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=False)
     audit_id: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True)
@@ -64,6 +71,11 @@ class AuditEntry(Base):
 
 
 class AuditHead(Base):
+    """The single row (`head_id` is always 1) that names the end of the chain: the `seq` and `hash` of the last `AuditEntry`.
+
+    It is locked (`SELECT ... FOR UPDATE`) while a row is added, which is what serialises writers, and `verify()` compares it with where the rows
+    actually end, so a removed tail is detected.
+    """
     __tablename__ = "audit_head"
     head_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)     # always 1
     last_seq: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"))
@@ -77,6 +89,12 @@ def _iso(moment: datetime.datetime) -> str:
 
 
 def compute_hash(entry: AuditEntry) -> str:
+    """The SHA-256 (hex) over a row's own fields and its `prev_hash`; the value stored in `AuditEntry.hash`.
+
+    The fields are serialised as JSON with sorted keys and no spaces so the same row always gives the same bytes, and `occurred_at` goes through
+    `_iso()` so a timestamp read back from SQLite (no zone) hashes the same as the one written. Changing the field set or the serialisation breaks
+    `verify()` for every row already stored.
+    """
     body = {
         "seq": entry.seq, "audit_id": str(entry.audit_id), "occurred_at": _iso(entry.occurred_at), "actor": entry.actor,
         "actor_role": entry.actor_role, "action": entry.action, "target": entry.target, "result": entry.result,
@@ -86,6 +104,11 @@ def compute_hash(entry: AuditEntry) -> str:
 
 
 def _locked_head(db: Session) -> AuditHead:
+    """Returns the head row with a row lock held until the caller's transaction ends, creating it first when it does not exist.
+
+    Holding the lock from here to the commit is what makes the numbering gapless and the chain unforkable across replicas. When two first-ever
+    writers race to create it, the loser's IntegrityError (inside a savepoint) is swallowed and it re-reads the winner's row.
+    """
     head = db.execute(select(AuditHead).where(AuditHead.head_id == 1).with_for_update()).scalar_one_or_none()
     if head is None:                                                     # revision 0021 seeds it; this is for a database made another way
         try:
@@ -187,6 +210,11 @@ def export(db: Session, since: int = 0, fmt: str = _FORMATS[0], out=None, hostna
 
 
 def main(argv=None) -> int:
+    """Entry point of `python -m smo_shared.audit verify|export`; returns the process exit code.
+
+    `verify` prints the verdict and returns 1 when the chain is broken (a script can fail on it); `export` writes the rows and the head to stdout
+    and returns 0. Opens its own session on the database named by `SMO_DATABASE_URL`.
+    """
     parser = argparse.ArgumentParser(prog=_PROG, description=_DESCRIPTION)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("verify", help=_VERIFY_HELP)

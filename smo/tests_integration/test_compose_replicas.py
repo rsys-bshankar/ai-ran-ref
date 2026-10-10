@@ -18,16 +18,21 @@ HELM = yaml.safe_load((SMO / "deploy/helm/smo/ci/ha-values.yaml").read_text())["
 
 
 def test_every_replicated_service_exists_in_compose_and_runs_two():
+    """Every service in the replicas override exists in compose and runs two replicas."""
     assert set(REPLICAS) <= set(COMPOSE)
     assert all(svc["deploy"]["replicas"] == 2 for svc in REPLICAS.values())
 
 
 def test_compose_and_helm_replicate_the_same_modules():
+    """The replicas override and the Helm values replicate the same modules."""
     assert set(REPLICAS) == set(HELM)
 
 
 def test_a_replicated_service_does_not_publish_a_host_port_two_containers_cannot_share():
     # the override resets them; anything left in the base file for a replicated service would make the second container fail to start
+    """A replicated service that publishes a host port in the base file has its ports reset by the override, because the second container could not
+    bind the same port.
+    """
     for name, svc in REPLICAS.items():
         if COMPOSE[name].get("ports"):
             assert svc.get("ports") == [], f"{name} publishes a host port and the override does not drop it"

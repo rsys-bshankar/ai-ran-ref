@@ -477,6 +477,7 @@
   "paths": {
     "/actions": {
       "get": {
+        "description": "The recorded actions. PR-SEC-10.7: a caller with a scope claim sees the actions all of whose elements are inside it (filtered, never refused; `total` counts what\nit may see). DME has no region or tenant to match, so the elements inside the claim are asked of RAN NF OAM (`GET /ran-nf-oam/managed-entities`, which applies\nthe claim it is passed); the cost is that call for each list, in pages of 500. An unscoped caller (an SMO module, the operator's GUI, an rApp with no claim) asks nothing\nand sees every action, as before.",
         "operationId": "list_actions_actions_get",
         "parameters": [
           {
@@ -794,6 +795,7 @@
     },
     "/actions/{action_id}": {
       "get": {
+        "description": "One action. PR-SEC-10.7: for a caller with a scope claim, one that names an element outside it is a 404, as if there were no such action.",
         "operationId": "get_action_actions__action_id__get",
         "parameters": [
           {

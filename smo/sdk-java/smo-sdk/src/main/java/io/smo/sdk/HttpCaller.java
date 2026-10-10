@@ -19,6 +19,9 @@ final class HttpCaller {
     /** Waits; a test replaces it to record the delays instead of sleeping. */
     @FunctionalInterface
     interface Sleeper {
+        /**
+         * Waits for {@code duration}. Throws {@link InterruptedException} when the thread is interrupted while waiting.
+         */
         void sleep(Duration duration) throws InterruptedException;
     }
 
@@ -32,6 +35,18 @@ final class HttpCaller {
         this.sleeper = sleeper;
     }
 
+    /**
+     * Sends one request and repeats it per {@code retry}.
+     *
+     * <p>{@code headers} are sent as given (the caller adds {@code Authorization}); {@code Accept: application/json} is always
+     * added, and {@code Content-Type: application/json} when {@code jsonBody} is not null. A transport failure is repeated
+     * whatever the policy's statuses, and so is a status the policy lists, for every method: this class does not know which
+     * calls are safe to repeat (R1Client makes a POST safe by adding an {@code Idempotency-Key}; the token calls of
+     * {@link TokenProvider} send none).
+     *
+     * @return the answer of the last attempt, with whatever status it has (a 4xx or 5xx is returned, not thrown)
+     * @throws SdkException with status 0 when the last attempt fails in transport, or the thread is interrupted
+     */
     R1Response send(String method, String url, Map<String, String> headers, String jsonBody, RetryPolicy retry) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).timeout(timeout);
         headers.forEach(builder::header);
@@ -62,6 +77,10 @@ final class HttpCaller {
         }
     }
 
+    /**
+     * Waits {@code delay} through the sleeper; a zero delay does not call it. An interrupt restores the thread's interrupt flag
+     * and is thrown as an {@link SdkException}.
+     */
     private void pause(Duration delay) {
         if (delay.isZero()) {
             return;

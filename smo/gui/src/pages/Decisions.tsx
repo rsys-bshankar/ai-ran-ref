@@ -1,3 +1,9 @@
+/**
+ * The decision record pages (PR-AI-13.4): `Decisions` is the filtered, paged list of why each rApp change was made, and `DecisionDetail` (route /decisions/:decisionId) one record with its
+ * integrity check against the audit chain. Reads RAN NF OAM's /decision-records through the BFF; read-only, so every signed-in role (viewer and up) may open it. The config job and the approval
+ * request of a record open in their own drawers (`ConfigJobDrawer`, `ApprovalDrawer`). Covered by `Decisions.test.tsx`.
+ */
+
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
@@ -47,7 +53,7 @@ export function Decisions() {
             { header: "Model", render: (r) => r.modelVersion ?? <span className="muted">—</span> },
             { header: "Rationale", render: (r) => <span className="small">{r.rationale ?? <span className="muted">none given</span>}</span> },
             { header: "Changes", render: (r) => r.changeCount },
-            { header: "Approved by", render: (r) => r.approvedBy ?? <span className="muted">—</span> },
+            { header: "Approved by", render: (r) => r.approvers?.length ? r.approvers.join(", ") : r.approvedBy ?? <span className="muted">—</span> },
           ]} />
         <div className="row gap">
           <button className="btn" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Newer</button>
@@ -82,7 +88,7 @@ export function DecisionDetail() {
             ["Requested by", r.requestedBy],
             ["Config job", r.jobId ? <button key="j" className="btn ghost" onClick={() => setJob(true)}><Id value={r.jobId} /></button> : <span className="muted">none was made</span>],
             ["Approval request", r.approvalId ? <button key="a" className="btn ghost" onClick={() => setApproval(true)}><Id value={r.approvalId} /></button> : <span className="muted">not held for approval</span>],
-            ["Approved by", r.approvedBy],
+            [r.approvers ? "Approvers (two were needed)" : "Approved by", r.approvers ? (r.approvers.length ? r.approvers.join(", ") : "none before it ended") : r.approvedBy],
             ["Decided by", r.decidedBy ? `${r.decidedBy} (${formatTime(r.decidedAt)})` : null],
           ]} />
         </Card>

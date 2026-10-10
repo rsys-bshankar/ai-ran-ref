@@ -53,6 +53,8 @@ def purge_audit(db: Database, older_than_days: int, export_dir: Path | None = No
 
 
 def warn_rows() -> int:
+    """The row count above which `warn_if_large` warns: `SMO_RETENTION_WARN_ROWS`, default 1000000, 0 meaning never; a value that is not an integer gives the default.
+    """
     try:
         return max(0, int(os.environ.get("SMO_RETENTION_WARN_ROWS", "1000000") or DEFAULT_WARN_ROWS))
     except ValueError:
@@ -76,6 +78,10 @@ def warn_if_large(db: Database) -> int | None:
 
 
 def main() -> int:
+    """The `python -m app.retention` command. Reads `GUI_AUDIT_RETENTION_DAYS` (not an integer is treated as 0) and `GUI_AUDIT_EXPORT_DIR`, opens the BFF's database, and
+    either purges and prints how many rows went, or, with retention off, only warns when the table is large. Returns the process exit code (always 0: a failed export or purge
+    raises and the traceback is the failure).
+    """
     from .config import Settings
     try:
         days = int(os.environ.get("GUI_AUDIT_RETENTION_DAYS", "0") or 0)

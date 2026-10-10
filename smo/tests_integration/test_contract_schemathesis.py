@@ -45,6 +45,9 @@ CHECKS = (no_unhandled_server_error, st_checks.status_code_conformance, st_check
 
 
 def _fixture(module: str):
+    """Builds the pytest fixture `contract_schema_<module>` that loads the module's OpenAPI schema from its live ASGI app; `mesh` is requested
+    first so the shared database and the other modules are wired before the schema is built.
+    """
     @pytest.fixture(name=f"contract_schema_{module.replace('-', '_')}")
     def schema_of(mesh, loaded_apps):  # `mesh` first: it wires the database and the other modules
         return schemathesis.openapi.from_asgi("/openapi.json", loaded_apps[module].app)
@@ -53,6 +56,9 @@ def _fixture(module: str):
 
 
 def _contract_test(module: str):
+    """Builds the generated contract test of one module: schemathesis cases from its schema without `/ready` and the waived operations, run with
+    `SMO_CONTRACT_EXAMPLES` examples (20 by default) and a fixed seed so a failure reproduces. The function is named `test_<module>_contract`.
+    """
     name = f"contract_schema_{module.replace('-', '_')}"
 
     schema = schemathesis.pytest.from_fixture(name).exclude(path="/ready")
@@ -77,6 +83,7 @@ for _module in MODULES:
 
 
 def test_every_waiver_names_an_operation_of_a_module_under_test(loaded_apps):
+    """Every waiver names an operation that exists in a module under test, so a waiver is removed when its route goes."""
     stale = []
     for key in WAIVERS:
         module, method, path = key.split(" ", 2)

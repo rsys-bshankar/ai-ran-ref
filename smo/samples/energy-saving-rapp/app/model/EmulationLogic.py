@@ -20,6 +20,12 @@ HOUR = datetime.timedelta(hours=1)
 
 
 def emulate(model: EnergyModel, records: list[dict]) -> tuple[bool, dict]:
+    """Replays the model over every sample of the Digital Twin trend and returns (passed, metrics).
+
+    Counts the cell-hours the model would put to sleep, how many of those met a load above the wake threshold in the next hour (the coverage
+    impact), and whether every night-time (00:00 to 04:00) sample below the sleep threshold is recommended LOCKED. Passes when the night hours
+    are all LOCKED and the coverage impact is at most MAX_COVERAGE_IMPACT.
+    """
     sleeps = misses = midnight_low = midnight_locked = 0
     for series in by_cell(records).values():
         for t, now in series:

@@ -20,13 +20,21 @@ ONBOARDING_VALIDATION = Path(__file__).resolve().parents[2] / "onboarding" / "ap
 SDK_NAMESPACES = {"data", "analytics", "models", "lifecycle", "intent", "platform"}
 ASD_IDENTITY = ("application_name", "application_version", "provider")
 NOT_SHIPPED_PARTS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".git", "tests", "node_modules"}
+# File names that are never meant to travel in a package: environment files and key or keystore files.
 SECRET_NAMES = re.compile(r"(^|/)(\.env|id_rsa|id_ed25519|.*\.(pem|key|p12|pfx|jks))$", re.I)
+# A PEM private key header, or the `ed25519-seed:<base64>` form of the SMO's own signing keys.
 PRIVATE_KEY = re.compile(rb"-----BEGIN [A-Z ]*PRIVATE KEY-----|ed25519-seed:[A-Za-z0-9+/]{43}=")
+# Files above this size are not scanned for PK-9, so a key inside a larger file is not found.
 MAX_SCANNED_BYTES = 1_000_000
 
 
 def onboarding():
-    """Onboarding's own validation module, loaded from its file (every module's package is called `app`, so it cannot be imported by name)."""
+    """Onboarding's own validation module (`onboarding/app/package_validation.py`), loaded from its file and cached in `sys.modules`.
+
+    It is loaded by path because every SMO module's Python package is called `app`, so it cannot be imported by name next to this kit. The checks call its parsers
+    (`_asd_identity`, `_parse_ai_capabilities`, `_parse_sme_declarations`, `validate_package_bytes`), which makes PK-V the same code `POST /packages` runs, and also means a
+    rename of those private functions breaks the kit.
+    """
     module = sys.modules.get("rapp_onboarding_package_validation")
     if module is None:
         spec = importlib.util.spec_from_file_location("rapp_onboarding_package_validation", ONBOARDING_VALIDATION)
@@ -37,6 +45,7 @@ def onboarding():
 
 
 def _open(ctx: PackageContext) -> zipfile.ZipFile:
+    """The package as a `ZipFile`, or `Skip` (naming PK-1) when it is not a zip, so one broken file fails PK-1 once and the later checks skip."""
     try:
         return zipfile.ZipFile(io.BytesIO(ctx.data))
     except zipfile.BadZipFile:
@@ -54,6 +63,7 @@ def _only(z: zipfile.ZipFile, *names: str) -> zipfile.ZipFile:
 
 
 def _asd_definitions(z: zipfile.ZipFile) -> tuple[str, str]:
+    """`(path, text)` of the entry definitions file that TOSCA.meta names; `Fail` when TOSCA.meta, its `Entry-Definitions:` line or the file it names is missing."""
     try:
         meta = z.read("TOSCA-Metadata/TOSCA.meta").decode()
     except KeyError:
@@ -69,6 +79,7 @@ def _asd_definitions(z: zipfile.ZipFile) -> tuple[str, str]:
 
 @check("PK-1", "STRUCTURE", "the package is a .csar zip file with no entry listed twice", PACKAGE)
 def pk_zip(ctx: PackageContext) -> None:
+    """PK-1: the file name ends with .csar (Onboarding refuses a location that does not), it is a zip, no entry appears twice and every entry's CRC is good."""
     if not ctx.name.endswith(".csar"):
         raise Fail(f"the file name {ctx.name!r} does not end with .csar (Onboarding refuses a location that does not)")
     try:
@@ -85,11 +96,13 @@ def pk_zip(ctx: PackageContext) -> None:
 
 @check("PK-2", "STRUCTURE", "TOSCA-Metadata/TOSCA.meta names an entry definitions file that is in the package", PACKAGE)
 def pk_tosca(ctx: PackageContext) -> None:
+    """PK-2: TOSCA-Metadata/TOSCA.meta names an `Entry-Definitions:` file that is in the package."""
     _asd_definitions(_open(ctx))
 
 
 @check("PK-3", "STRUCTURE", "the ASD names the rApp: application_name, application_version and provider are set", PACKAGE)
 def pk_identity(ctx: PackageContext) -> None:
+    """PK-3 (warning): the ASD sets application_name, application_version and provider; Onboarding accepts a package without them and lists it with placeholder values."""
     z = _open(ctx)
     try:
         _, definitions = _asd_definitions(z)
@@ -103,6 +116,10 @@ def pk_identity(ctx: PackageContext) -> None:
 
 @check("PK-4", "MANIFEST", "manifest.yaml, when present, is valid: runtimeProfiles, limits and operatorUi pass Onboarding's rules", PACKAGE)
 def pk_manifest(ctx: PackageContext) -> None:
+    """PK-4: manifest.yaml, when present, passes Onboarding's parser (runtimeProfiles including memory quantities, limits, operatorUi).
+
+    The parsed manifest is kept in `ctx.cache["manifest"]` for PK-5. Skips when the package has no manifest.
+    """
     z = _open(ctx)
     if "manifest.yaml" not in z.namelist():
         raise Skip("the package has no manifest.yaml (optional)")
@@ -115,6 +132,7 @@ def pk_manifest(ctx: PackageContext) -> None:
 
 @check("PK-5", "MANIFEST", "the manifest declares its execution modes and a runtime profile for each, so the platform can size its runtimes", PACKAGE)
 def pk_profiles(ctx: PackageContext) -> None:
+    """PK-5 (warning): the manifest declares `executionModes` and a runtime profile for each, because without them AIMgF cannot size the runtime."""
     manifest = ctx.cache.get("manifest")
     if manifest is None:
         raise Skip("no valid manifest.yaml (PK-4)")
@@ -132,6 +150,7 @@ def pk_profiles(ctx: PackageContext) -> None:
 
 @check("PK-6", "MANIFEST", "capabilities.yaml, when present, parses and names SDK namespaces", PACKAGE)
 def pk_capabilities(ctx: PackageContext) -> None:
+    """PK-6: capabilities.yaml, when present, parses (fail); consumes and provides entries are mappings naming one of the six SDK namespaces (warning otherwise, since Onboarding stores them unchecked)."""
     z = _open(ctx)
     if "capabilities.yaml" not in z.namelist():
         raise Skip("the package has no capabilities.yaml (optional)")
@@ -149,6 +168,7 @@ def pk_capabilities(ctx: PackageContext) -> None:
 
 @check("PK-7", "MANIFEST", "Files/Sme declarations, when present, are valid JSON", PACKAGE)
 def pk_sme(ctx: PackageContext) -> None:
+    """PK-7: Files/Sme declarations, when present, are valid under Onboarding's SME parser."""
     z = _open(ctx)
     if not any(n.startswith("Files/Sme/") for n in z.namelist()):
         raise Skip("the package declares no SME providers or service APIs")
@@ -160,6 +180,7 @@ def pk_sme(ctx: PackageContext) -> None:
 
 @check("PK-8", "HYGIENE", "the package ships no test suite, cache, environment file or key file", PACKAGE)
 def pk_hygiene(ctx: PackageContext) -> None:
+    """PK-8 (warning): no cache directory, test suite, .git, node_modules, environment file or key-named file is shipped in the package."""
     z = _open(ctx)
     names = [i.filename for i in z.infolist() if not i.is_dir()]
     stray = [n for n in names if NOT_SHIPPED_PARTS & set(n.split("/")[:-1]) or SECRET_NAMES.search(n)]
@@ -169,6 +190,7 @@ def pk_hygiene(ctx: PackageContext) -> None:
 
 @check("PK-9", "HYGIENE", "no file in the package holds a private key", PACKAGE)
 def pk_no_private_key(ctx: PackageContext) -> None:
+    """PK-9: no file up to `MAX_SCANNED_BYTES` holds a PEM private key or the SMO's `ed25519-seed:` key form; a package is distributed, so a key inside it is published."""
     z = _open(ctx)
     holders = [i.filename for i in z.infolist() if not i.is_dir() and i.file_size <= MAX_SCANNED_BYTES and PRIVATE_KEY.search(z.read(i.filename))]
     if holders:
@@ -177,6 +199,11 @@ def pk_no_private_key(ctx: PackageContext) -> None:
 
 @check("PK-S", "SIGNATURE", "the package is signed by a publisher in the trust store, and nothing was changed after signing", PACKAGE)
 def pk_signature(ctx: PackageContext) -> None:
+    """PK-S: the package verifies against the trust store, so it is signed by a trusted publisher and no file changed after signing.
+
+    With no trust store: skipped, or a failure under `--require-signed` (Onboarding in that configuration also refuses when it has no trust store). An unsigned package is a
+    warning unless signatures are required; every other verification error (tampered, unknown publisher, bad key) is a failure. The publisher is kept in `ctx.cache`.
+    """
     if ctx.trust is None:
         if ctx.require_signed:
             raise Fail("signed packages are required but no trust store was given (--trust): this is what Onboarding does with ONBOARDING_REQUIRE_SIGNED_PACKAGES and no ONBOARDING_TRUST_STORE")
@@ -184,6 +211,7 @@ def pk_signature(ctx: PackageContext) -> None:
     try:
         verified = csar_signing.verify_csar(ctx.data, ctx.trust)
     except csar_signing.SignatureError as exc:
+        # 'Unsigned' is advice (a warning) only when the package carries no signing entry at all; a package with a digest list but a missing signature file is only partly signed, and fails.
         if exc.code == "unsigned" and not ctx.require_signed and not csar_signing.is_signed(_open(ctx).namelist()):
             raise Warn("the package is not signed (accepted by Onboarding unless ONBOARDING_REQUIRE_SIGNED_PACKAGES is on)") from None
         raise Fail(str(exc)) from None
@@ -192,6 +220,7 @@ def pk_signature(ctx: PackageContext) -> None:
 
 @check("PK-V", "ONBOARDING", "Onboarding's validation accepts the package (the same code POST /packages runs)", PACKAGE)
 def pk_onboarding(ctx: PackageContext) -> None:
+    """PK-V: Onboarding's own validation accepts the package with the same trust store and policy; the failure message is the reason Onboarding would store as `failureReason`."""
     module = onboarding()
     try:
         entry, artifacts, integrity_hash, identity = module.validate_package_bytes(ctx.data, ctx.name, trust=ctx.trust, require_signed=ctx.require_signed)

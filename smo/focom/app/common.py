@@ -1,5 +1,19 @@
-"""Shared FOCOM constants, the lazily seeded Phase 1 topology, and the O2IMS
-InformationObjectClass fields every resource view carries."""
+"""Constants, the lazily seeded Phase 1 topology and the view builders shared by every FOCOM route file.
+
+What it is: the Phase 1 identifiers (`PHASE1_*`, `SEEDED_RESOURCE_TYPES`), the two endpoint strings `GET /inventory` reports, the seeding function
+`ensure_phase1_topology` and the dict builders for the O2-IMS objects that more than one route file returns (`location_view`, `site_view`,
+`pool_view`, and `ioc`, the `objectClass` / `objectInstance` pair every view carries). Design record: `focom/README.md` (1.5, 2.2); the
+degenerate single-cluster topology is D-DEPLOY-FOCOM-1.
+
+Where it sits: imported by `main.py`, `sites.py`, `fcaps.py` and `provisioning.py`; it imports only `models.py` and `smo_shared.mtls`. It makes
+no HTTP call and owns no route.
+
+Owns: the seed rows and the shape of the three views above. Does not own: the other views (resource type, resource, deployment manager live in
+`main.py`; alarms, performance and the O2-IMS object kinds live in `fcaps.py` and `provisioning.py`).
+
+Before editing: `ensure_phase1_topology` is called at the start of the read routes and it commits, so it is a write that happens on a GET; the
+ids it seeds are the ones the tests, NFO (`oCloudId`) and SO SMOS (`pool-0`) rely on, so changing a value here is a contract change.
+"""
 
 import os
 import uuid
@@ -28,34 +42,55 @@ SEEDED_RESOURCE_TYPES = {
 }
 
 # O2IMS infrastructureManagementServicesEndPoint / smoRegistrationService
+# Both values are read once at import (unlike `auto_register_resource_types`, which reads its flag per call), so a changed variable needs a restart.
+# `mtls.http_url` turns the default `http://` registration service into `https://` when mTLS is on; the endpoint `/focom` is a path, not a URL.
 IMS_ENDPOINT = os.environ.get("FOCOM_IMS_ENDPOINT", "/focom")
 SMO_REGISTRATION_SERVICE = mtls.http_url(os.environ.get("FOCOM_SMO_REGISTRATION_SERVICE", "http://r1-termination:8000"))
 
 
 def auto_register_resource_types() -> bool:
-    """SA-FOCOM-9: legacy behaviour (an unknown resourceTypeId on provision is
-    registered) only when explicitly enabled; read at call time."""
+    """Returns True when `FOCOM_AUTO_REGISTER_RESOURCE_TYPES` is `1`, `true` or `yes` (any case); False otherwise, which is the default (SA-FOCOM-9).
+
+    When True, `POST /resources/provision` registers an unknown `resourceTypeId` instead of refusing it with 404. The variable is read at each call, not at
+    import, so a test can set it with `monkeypatch.setenv`; this function is the only reader.
+    """
     return os.environ.get("FOCOM_AUTO_REGISTER_RESOURCE_TYPES", "").lower() in ("1", "true", "yes")
 
 
 def global_cloud_id(o_cloud_id: str) -> str:
-    """The SMO-assigned, globally unique O-Cloud id: stable for a given oCloudId."""
+    """Returns the SMO-assigned global id of an O-Cloud: a UUIDv5 of `o-cloud:<oCloudId>` in the URL namespace.
+
+    Deterministic on purpose: the same `oCloudId` gives the same `globalCloudId` on every call, on every replica and after a restart, with nothing stored.
+    """
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"o-cloud:{o_cloud_id}"))
 
 
+# O2-IMS AttributeValuePair: `{key, value}` with a value of any JSON type. Used for the `extensions` lists of the site model and the O2-IMS objects.
+# A docstring is deliberately not used: it would change the OpenAPI schema.
 class AttributeValuePair(BaseModel):
     key: str
     value: Any
 
 
 def ioc(object_class: str, path: str, object_id: str) -> dict:
-    """InformationObjectClass: objectClass + objectInstance (the resource's URL)."""
+    """Returns the InformationObjectClass pair every O2-IMS view carries: `objectClass` and `objectInstance`, the object's URL `/focom/<path>/<id>`.
+
+    `path` is the collection segment of the route (`locations`, `resource-pools`, ...). The `/focom` prefix is written here and is not taken from
+    `IMS_ENDPOINT`.
+    """
     return {"objectClass": object_class, "objectInstance": f"/focom/{path}/{object_id}"}
 
 
 def ensure_phase1_topology(db: Session) -> None:
-    """Lazily seeds the single degenerate ResourceType / ResourcePool /
-    DeploymentManager / Location / OCloudSite on first read (D-DEPLOY-FOCOM-1)."""
+    """Inserts whatever part of the Phase 1 topology is missing and commits once, only if something was inserted (D-DEPLOY-FOCOM-1).
+
+    Seeds the resource types in `SEEDED_RESOURCE_TYPES`, `loc-0`, `site-0`, `pool-0` and `dm-0`. Idempotent: existing rows are never overwritten, with one
+    exception: a `pool-0` whose `o_cloud_site_id` is empty (a row created before the site model existed) is linked to `site-0`.
+
+    Called at the start of the read routes (and of the routes that need a seeded row) instead of at startup, so no module needs a startup seeding step.
+    Two first requests racing on an empty database can both try to insert the same primary key; the loser's commit fails and that request answers 500
+    (the other request seeds the rows, so a retry succeeds).
+    """
     changed = False
     for type_id, description in SEEDED_RESOURCE_TYPES.items():
         if db.get(ResourceType, type_id) is None:
@@ -87,6 +122,10 @@ def ensure_phase1_topology(db: Session) -> None:
 
 
 def location_view(db: Session, loc: Location) -> dict:
+    """Returns the O2-IMS `Location` object for `loc`, with `oCloudSiteIds` listing the sites that name it (one query).
+
+    `coordinate` and `address` are returned as stored (plain strings); `extensions` is `[]` when none were set.
+    """
     site_ids = [s.o_cloud_site_id for s in db.scalars(select(OCloudSite).where(OCloudSite.location_id == loc.global_location_id)).all()]
     return {**ioc("Location", "locations", loc.global_location_id), "globalLocationId": loc.global_location_id, "name": loc.name,
             "description": loc.description, "oCloudId": loc.o_cloud_id, "oCloudSiteIds": site_ids,
@@ -94,6 +133,10 @@ def location_view(db: Session, loc: Location) -> dict:
 
 
 def pool_view(db: Session, p: ResourcePool) -> dict:
+    """Returns the O2-IMS `ResourcePool` object for `p`, with `resources` listing the ids (as strings) of the resources in the pool (one query).
+
+    The list is not paginated: a pool with many resources returns all their ids in every pool view, including the inline pools of `site_view`.
+    """
     resource_ids = [str(r) for r in db.scalars(select(Resource.resource_id).where(Resource.resource_pool_id == p.resource_pool_id)).all()]
     return {**ioc("ResourcePool", "resource-pools", p.resource_pool_id), "resourcePoolId": p.resource_pool_id, "name": p.name,
             "description": p.description, "oCloudId": p.o_cloud_id, "oCloudSiteId": p.o_cloud_site_id,
@@ -101,6 +144,7 @@ def pool_view(db: Session, p: ResourcePool) -> dict:
 
 
 def site_view(db: Session, s: OCloudSite) -> dict:
+    """Returns the O2-IMS `OCloudSite` object for `s`, with its pools inline in `resourcePools` (each a full `pool_view`)."""
     pools = db.scalars(select(ResourcePool).where(ResourcePool.o_cloud_site_id == s.o_cloud_site_id)).all()
     return {**ioc("OCloudSite", "o-cloud-sites", s.o_cloud_site_id), "oCloudSiteId": s.o_cloud_site_id, "locationId": s.location_id,
             "name": s.name, "description": s.description, "oCloudId": s.o_cloud_id,

@@ -1,7 +1,9 @@
 """PR-RAPP-1.3 (the trust store in compose and the chart) and PR-RAPP-2.3 (the rApp egress NetworkPolicy of the chart).
 
-The first group reads the files and needs nothing else. The render tests need the `helm` binary and are skipped without it (CI's `helm` job has it); they were
-written against the templates read line by line, since the session that wrote them had no helm.
+The first group reads the files and needs nothing else. The render tests need the `helm` binary and are skipped without it (CI's `helm` job
+has it). The
+fixtures and render helpers come from `test_helm_chart.py`. Run with: PYTHONPATH=shared python -m pytest tests_integration/test_helm_rapp.py
+-q
 """
 
 from test_helm_chart import CHART, COMPOSE, SMO_ROOT, VALUES, _deployment, _env_of, _modules, _pod_templates, _render, helm
@@ -10,6 +12,9 @@ RAPPS = {"energy-saving-rapp", "mobility-optimization-rapp", "coverage-optimizat
 
 
 def test_signing_and_the_egress_policy_are_off_by_default_in_the_chart_and_in_compose():
+    """Package signing enforcement and the rApp egress policy are off by default in the chart, and compose passes the trust store and
+    require-signed settings with empty and false defaults.
+    """
     assert VALUES["rappSigning"] == {"trustStoreConfigMap": "", "requireSigned": False}
     assert VALUES["rappNetworkPolicy"]["enabled"] is False
     assert "ONBOARDING_TRUST_STORE" not in _modules()["onboarding"]["env"]                  # the chart sets them only when asked to
@@ -18,6 +23,9 @@ def test_signing_and_the_egress_policy_are_off_by_default_in_the_chart_and_in_co
 
 
 def test_the_chart_and_compose_name_the_signing_settings_the_code_reads():
+    """The chart template sets the two environment variables Onboarding reads, mounts the trust store where the variable says, and the chart README
+    documents both new value groups.
+    """
     template = (CHART / "templates" / "modules.yaml").read_text()
     assert "name: ONBOARDING_TRUST_STORE" in template and "name: ONBOARDING_REQUIRE_SIGNED_PACKAGES" in template
     assert "mountPath: /run/rapp-trust" in template and "name: rapp-trust" in template
@@ -29,6 +37,9 @@ def test_the_chart_and_compose_name_the_signing_settings_the_code_reads():
 
 
 def test_the_egress_policy_selects_the_rapps_by_the_identity_kind_the_chart_gives_them_and_adds_no_pod_label():
+    """The egress policy template selects rApps by the identity kind the chart already sets and adds no pod label, since a label would change the
+    pod template and restart the rApps.
+    """
     assert {n for n, m in _modules().items() if m["env"].get("SMO_IDENTITY_KIND") == "rapp"} == RAPPS
     template = (CHART / "templates" / "rapp-egress.yaml").read_text()
     assert 'get $m.env "SMO_IDENTITY_KIND"' in template and 'include "smo.podLabels"' not in template and "template:" not in template and "kind: NetworkPolicy" in template
@@ -38,6 +49,7 @@ def test_the_egress_policy_selects_the_rapps_by_the_identity_kind_the_chart_give
 
 @helm
 def test_the_rapp_egress_policy_is_not_rendered_by_default():
+    """By default the chart renders no rApp egress policy. Needs helm."""
     assert not [d for d in _render() if d["kind"] == "NetworkPolicy" and d["metadata"]["name"].startswith("rapp-egress")]
 
 
@@ -47,6 +59,9 @@ def _egress_policies(*args):
 
 @helm
 def test_the_rapp_egress_policy_lets_the_reference_rapps_reach_r1_dns_and_the_database_only():
+    """The rendered policy selects the four reference rApps and allows egress to the gateway on 8000, to cluster DNS on 53 and to the database on
+    5432, and nothing else. Needs helm.
+    """
     [policy] = _egress_policies()
     assert policy["metadata"]["name"] == "rapp-egress-0" and policy["spec"]["policyTypes"] == ["Egress"]
     selector = policy["spec"]["podSelector"]
@@ -62,6 +77,7 @@ def test_the_rapp_egress_policy_lets_the_reference_rapps_reach_r1_dns_and_the_da
 
 @helm
 def test_the_egress_policy_changes_no_pod_template_so_it_restarts_nothing():
+    """Turning the policy on, with or without extra selectors, changes no pod template, so it restarts nothing. Needs helm."""
     plain = _pod_templates(_render())
     assert plain == _pod_templates(_render("--set", "rappNetworkPolicy.enabled=true"))
     assert plain == _pod_templates(_render("--set", "rappNetworkPolicy.enabled=true", "--set", "rappNetworkPolicy.extraPodSelectors[0].matchLabels.app=mine"))
@@ -69,6 +85,9 @@ def test_the_egress_policy_changes_no_pod_template_so_it_restarts_nothing():
 
 @helm
 def test_the_egress_policy_options_drop_or_add_rules():
+    """The options drop the database and DNS rules, drop the database rule for an external Postgres, add Tempo when the bundled one is on (and not
+    when the tracing endpoint is the operator's own), and append extra egress rules. Needs helm.
+    """
     def pods(policy):
         labels = [r["to"][0]["podSelector"]["matchLabels"] for r in policy["spec"]["egress"] if "to" in r and "podSelector" in r["to"][0]]
         return [m["app.kubernetes.io/name"] for m in labels if "app.kubernetes.io/name" in m]       # the DNS rule selects kube-dns by k8s-app, not by this label
@@ -86,6 +105,7 @@ def test_the_egress_policy_options_drop_or_add_rules():
 
 @helm
 def test_a_rapp_workload_of_your_own_gets_a_policy_of_its_own():
+    """An rApp of the operator's own, named by an extra pod selector, gets its own numbered policy allowing the gateway. Needs helm."""
     policies = _egress_policies("--set", "rappNetworkPolicy.extraPodSelectors[0].matchLabels.app=my-rapp")
     assert [p["metadata"]["name"] for p in policies] == ["rapp-egress-0", "rapp-egress-1"]
     assert policies[1]["spec"]["podSelector"] == {"matchLabels": {"app": "my-rapp"}}
@@ -94,6 +114,7 @@ def test_a_rapp_workload_of_your_own_gets_a_policy_of_its_own():
 
 @helm
 def test_with_every_chart_rapp_disabled_only_the_extra_selectors_get_a_policy():
+    """With every chart rApp disabled no policy is rendered, and an extra selector alone gets one. Needs helm."""
     args = [x for n in sorted(RAPPS) for x in ("--set", f"modules.{n}.enabled=false")]
     assert _egress_policies(*args) == []
     policies = _egress_policies(*args, "--set", "rappNetworkPolicy.extraPodSelectors[0].matchLabels.app=mine")
@@ -102,6 +123,9 @@ def test_with_every_chart_rapp_disabled_only_the_extra_selectors_get_a_policy():
 
 @helm
 def test_the_trust_store_configmap_is_mounted_and_named_only_when_set_and_nothing_else_changes():
+    """The trust store ConfigMap is mounted read-only into Onboarding, with the path and require-signed variables, only when
+    `rappSigning.trustStoreConfigMap` is set, and no other module gets the setting. Needs helm.
+    """
     off = _deployment(_render(), "onboarding")["spec"]["template"]["spec"]
     assert "ONBOARDING_TRUST_STORE" not in {e["name"] for e in off["containers"][0]["env"]} and "rapp-trust" not in {v["name"] for v in off["volumes"]}
     docs = _render("--set", "rappSigning.trustStoreConfigMap=rapp-publishers", "--set", "rappSigning.requireSigned=true")

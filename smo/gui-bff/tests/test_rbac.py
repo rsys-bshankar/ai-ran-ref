@@ -18,11 +18,13 @@ def allowed(method, path, role, **query):
     return decide(method, path, {k: [v] for k, v in query.items()}, Role(role)).allowed
 
 
+# One case per proxied module: a viewer can read the module's health route, so the catch-all read rule covers every module in `MODULES`.
 @pytest.mark.parametrize("module", MODULES)
 def test_every_module_is_readable_by_a_viewer(module):
     assert allowed("GET", f"/{module}/health", "viewer")
 
 
+# Each row is a route and the lowest role that may call it. The test checks every role against the row, so a viewer is refused below the minimum and every role at or above it is allowed. Add a row for each rule that is added to the table.
 @pytest.mark.parametrize("method,path,minimum", [
     ("POST", "/onboarding/packages", "operator"),
     ("POST", "/onboarding/packages/p/prime", "operator"),
@@ -99,6 +101,11 @@ def test_every_module_is_readable_by_a_viewer(module):
     ("POST", "/ran-nf-oam/software-campaigns/c/rollback", "operator"),
     ("GET", "/ran-nf-oam/software-campaigns/c/report", "viewer"),
     ("GET", "/ran-nf-oam/element-onboarding", "viewer"),
+    ("GET", "/ran-nf-oam/software-campaigns", "viewer"),
+    ("GET", "/ran-nf-oam/onboarding-templates", "viewer"),
+    ("POST", "/ran-nf-oam/lifecycle-subscriptions", "admin"),            # MGT-14.7 / MGT-15.6: where a failure or a halt is announced
+    ("DELETE", "/ran-nf-oam/lifecycle-subscriptions/s", "admin"),
+    ("GET", "/ran-nf-oam/lifecycle-subscriptions", "viewer"),
     ("PUT", "/sme/invoker-registrations/i/authz-scope", "admin"),
     # AI-11: a person decides an rApp's action (operator); who waits for a decision, and who is told, is administrative
     ("POST", "/ran-nf-oam/rapp-approvals/a/approve", "operator"),
@@ -137,16 +144,21 @@ def test_minimum_role_per_route(method, path, minimum):
 
 
 def test_deprecate_is_admin_only_via_query_match():
+    """Lifecycle events that are governance decisions are admin only, selected by the `event` query value, while an ordinary event stays operator level.
+    """
     assert allowed("POST", "/aimgf/models/m/advance", "operator", event="APPROVE_TRAINING")
     assert not allowed("POST", "/aimgf/models/m/advance", "operator", event="DEPRECATE")
     assert allowed("POST", "/aimgf/models/m/advance", "admin", event="DEPRECATE")
 
 
 def test_any_duplicated_value_triggers_the_query_match():
+    """A repeated `event` parameter cannot slip an admin-only event past the rule: any one value that matches makes the rule apply.
+    """
     decision = decide("POST", "/aimgf/models/m/advance", {"event": ["CERTIFY", "DEPRECATE"]}, Role.OPERATOR)
     assert not decision.allowed and decision.required_role == Role.ADMIN
 
 
+# Each row is a route that is machine-to-machine, unknown or has no rule for that method; even an admin gets no decision (`required_role` None), so the GUI cannot reach it.
 @pytest.mark.parametrize("method,path", [
     ("POST", "/sme/oauth2/token"),
     ("POST", "/sme/oauth2/introspect"),
@@ -164,10 +176,12 @@ def test_unlisted_routes_are_not_exposed_to_anyone(method, path):
 
 
 def test_path_ids_cannot_span_segments():
+    """An id placeholder matches one path segment, so extra segments cannot be used to reach a rule meant for a shorter path."""
     assert not allowed("POST", "/rapp-mgmt/instances/a/b/terminate", "admin")
 
 
 def test_every_mutating_rule_requires_at_least_operator():
+    """No rule that changes something is open to a viewer."""
     assert all(r.role != Role.VIEWER for r in RULES if r.method != "GET")
 
 
@@ -178,10 +192,13 @@ def test_spa_permissions_fixture_matches_the_live_table():
 
 
 def test_the_gui_cannot_stop_an_rapp_as_somebody_else():
+    """The kill request is forced to carry the signed-in user as `requestedBy`, so an operator cannot stop an rApp in someone else's name.
+    """
     decision = decide("PUT", "/rapp-mgmt/instances/i/kill", {}, Role.OPERATOR)
     assert decision.allowed and decision.rule.json_overrides(type("U", (), {"username": "alice", "role": Role.OPERATOR})()) == {"requestedBy": "smo-gui:alice"}
 
 
+# Each row is a change-job action; every one is attributed to `smo-gui:<user>`, and a rollback carries the MSAC admin tier only for an admin.
 @pytest.mark.parametrize("path", ["/ran-nf-oam/config-jobs/j/rollback", "/ran-nf-oam/config-jobs/j/continue", "/ran-nf-oam/config-jobs/j/halt", "/ran-nf-oam/config-jobs/j/abort"])
 def test_a_job_action_is_always_attributed_to_the_gui_user_and_an_admin_holds_the_msac_tier(path):
     rule = decide("POST", path, {}, Role.OPERATOR).rule
@@ -192,5 +209,7 @@ def test_a_job_action_is_always_attributed_to_the_gui_user_and_an_admin_holds_th
 
 
 def test_kpi_check_and_publish_are_not_exposed_to_the_gui():
+    """The KPI check, the KPI publish and the due-job sweep belong to services and workers, so even an admin cannot reach them through the GUI.
+    """
     for path in ("/ran-nf-oam/config-jobs/j/kpi-check", "/ran-nf-oam/kpis/k/publish", "/ran-nf-oam/config-jobs/advance-due"):
         assert not decide("POST", path, {}, Role.ADMIN).allowed

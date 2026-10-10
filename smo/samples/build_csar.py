@@ -68,6 +68,9 @@ def build_bytes(name: str, key: Path | None = DEMO_KEY, *, sign: bool = True, so
 
 
 def build(name: str, key: Path | None = DEMO_KEY, *, sign: bool = True) -> Path:
+    """Writes the signed (or, with `sign=False`, unsigned) package of the named sample to `samples/<name>.csar` and prints its path; this is the
+    file the integration suite compares with the sample's sources.
+    """
     output = SAMPLES_DIR / f"{name}.csar"
     output.write_bytes(build_bytes(name, key, sign=sign))
     print(f"wrote {output.relative_to(SAMPLES_DIR.parent.parent)}" + ("" if sign else " (unsigned)"))
@@ -83,6 +86,9 @@ def build_dir(source: Path, name: str, key: Path | None = DEMO_KEY, *, sign: boo
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Command line of the builder: builds the named samples (all four by default) with the demo key or `--key`, or, with `--source-dir` and
+    `--name`, a package directory outside `samples/` into `./<name>.csar`.
+    """
     parser = argparse.ArgumentParser(description="Zip a sample rApp into <name>.csar, signed.")
     parser.add_argument("names", nargs="*", help="samples to build (default: all four)")
     parser.add_argument("--key", type=Path, help="the private key to sign with (PEM or ed25519-seed line); default: the DEMO publisher's")

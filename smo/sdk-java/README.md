@@ -10,7 +10,7 @@
 | Called by | Any Java rApp; the example `examples/hello-rapp`. No SMO module uses it |
 | Database tables | None |
 | Retries and idempotency | 4 attempts with exponential backoff on 429/502/503/504 and transport errors; every POST carries an `Idempotency-Key` its repeats reuse; one repeat on `409 CONCURRENT_MODIFICATION` |
-| Unit tests | 48 (`smo-sdk` 42, `hello-rapp` 6), JUnit 5, no network beyond loopback; CI job `sdk-java` |
+| Unit tests | 48 (`smo-sdk` 42, `hello-rapp` 6), JUnit 6, no network beyond loopback; CI job `sdk-java` |
 | Status | RAPP-4.2 to 4.5 done for Java. Open: a run against the live compose stack, mTLS from the environment, the analytics / lifecycle / intent namespaces (`OPEN_ITEMS.md`, PR-RAPP-4) |
 
 ## 1. High-level design (HLD)
@@ -59,8 +59,8 @@ rApp code --> SmoSdk --> R1Client --(Bearer)--> R1 Termination --> module
 | Jackson `JsonNode` as the value type | The Python SDK returns `dict`; the response shapes are not in the spec |
 | Maven with the checked-in wrapper (`mvnw`), the distribution pinned by SHA-256 | Reproducible with only a JDK and network access to Maven Central; no tool to install; the same command locally and in CI |
 | JDK 21 (LTS), `--release 21`, `-Xlint:all -Werror` | The current LTS; warnings are failures |
-| Dependencies: `jackson-databind` 2.22.3 (runtime; the newest release, patched for the five high advisories the dependency review flagged in 2.18.2: GHSA-j3rv-43j4-c7qm, -rmj7-2vxq-3g9f, -q4xh-88c3-wmh7, -wv8q-qhhj-9h54, -cxp5-3px4-pw24), JUnit Jupiter 5.11.4 (test) | Nothing else. The JDK's `HttpClient` and `com.sun.net.httpserver` cover the transport and the tests' fake server |
-| `dependencies.sha256` and `scripts/verify-dependencies.sh` | Maven has no lock file. The SHA-256 of each of the 11 jars of the test classpath is committed and checked in CI, so a changed artifact at the same version fails; `-C` makes Maven fail on a checksum mismatch with Central. `--write` regenerates it after a deliberate version change (review the diff) |
+| Dependencies: `jackson-databind` 2.22.3 (runtime; the newest release, patched for the five high advisories the dependency review flagged in 2.18.2: GHSA-j3rv-43j4-c7qm, -rmj7-2vxq-3g9f, -q4xh-88c3-wmh7, -wv8q-qhhj-9h54, -cxp5-3px4-pw24), JUnit Jupiter 6.1.3 (test; JUnit 6 needs Java 17 or newer, the build is on 21) | Nothing else. The JDK's `HttpClient` and `com.sun.net.httpserver` cover the transport and the tests' fake server |
+| `dependencies.sha256` and `scripts/verify-dependencies.sh` | Maven has no lock file. The SHA-256 of each of the 12 jars of the test classpath is committed and checked in CI, so a changed artifact at the same version fails; `-C` makes Maven fail on a checksum mismatch with Central. `--write` regenerates it after a deliberate version change (review the diff) |
 | No framework, no logging dependency in the SDK | Fewer dependencies to patch; the SDK does not log, it throws |
 | `close()` deregisters only a self-enrolled invoker | A pinned invoker belongs to rApp Management (revoked on terminate) |
 

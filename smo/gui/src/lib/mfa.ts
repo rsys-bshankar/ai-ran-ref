@@ -1,5 +1,9 @@
-// One-time codes (PR-SEC-7): what the sign-in's second step and the Account security page need that is not rendering.
-// The reason codes are the backend's (gui-bff/app/main.py): the page shows its own wording for each and never the server's text for an unknown one.
+/**
+ * One-time codes (PR-SEC-7): the parts of the sign-in's second step and of the Account security page that are not rendering: the challenge types, the code format checks,
+ * and the wording for each failure.
+ * The reason codes are the backend's (gui-bff/app/main.py); the page shows its own wording for each and never the server's text for an unknown one.
+ * Used by `auth/AuthContext.tsx`, `pages/Login.tsx`, `main.tsx`, `components/LoginCodeStep.tsx` and `components/TotpEnrolment.tsx`; covered by `mfa.test.ts`.
+ */
 
 import type { Me } from "../api/types";
 
@@ -8,6 +12,9 @@ export interface LoginChallenge { mfaRequired: true; challenge: string; expiresI
 /** The session `POST /api/login` or `POST /api/login/totp` opens; `recoveryCodesLeft` is there when a recovery code was spent. */
 export type SignedIn = Me & { recoveryCodesLeft?: number };
 
+/**
+ * Narrows the answer of POST /api/login: true when it is a second-step challenge (no session yet) rather than a signed-in user.
+ */
 export function isChallenge(result: unknown): result is LoginChallenge {
   return typeof result === "object" && result !== null && (result as { mfaRequired?: unknown }).mfaRequired === true
     && typeof (result as { challenge?: unknown }).challenge === "string";
@@ -33,14 +40,19 @@ export function isRecoveryCode(input: string): boolean {
   return /^[a-z0-9]{16}$/i.test(cleanCode(input));
 }
 
+/**
+ * True for what the second step accepts: a six-digit code or a sixteen-character recovery code. The server decides whether it is right; this only avoids sending an obviously malformed one.
+ */
 export function isPlausibleCode(input: string): boolean {
   return isTotpCode(input) || isRecoveryCode(input);
 }
 
+/** The recovery codes as text, one per line with a final newline, for the clipboard. */
 export function recoveryCodesText(codes: string[]): string {
   return codes.join("\n") + "\n";
 }
 
+/** The sentence about how many recovery codes remain; at zero it tells the user to generate new ones. */
 export function recoveryLeftText(left: number): string {
   if (left <= 0) return "You have no recovery codes left: generate new ones on the Account security page.";
   return `${left} recovery code${left === 1 ? "" : "s"} left.`;
@@ -65,7 +77,7 @@ export function loginErrorMessage(err: { status?: number; title?: string; messag
   return err.message || "Sign-in failed.";
 }
 
-/** The routes an admin without a one-time code may still open when the backend requires one (GUI_ADMIN_MFA_REQUIRED). */
+/** True when the user must enrol a one-time code first (the backend's GUI_ADMIN_MFA_REQUIRED) and is not already on the Account security page, the one route open to them; the router then redirects there. */
 export function mustEnrol(me: Pick<Me, "mfaEnrolmentRequired"> | null | undefined, pathname: string): boolean {
   return Boolean(me?.mfaEnrolmentRequired) && pathname !== "/security";
 }

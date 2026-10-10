@@ -56,11 +56,28 @@ install_health(app, checks=[database_check, sme_token_check])  # /live, /ready a
 
 class ApprovalPolicy(BaseModel):
     """What happens to a request nobody decided within `timeoutSeconds` (a minute to a week, default an hour): `EXPIRE` (the default) lapses it,
-    `REJECT` has the platform reject it. Neither writes anything; there is no option that approves by itself."""
+    `REJECT` has the platform reject it. Neither writes anything; there is no option that approves by itself.
+
+    `requiredApprovals` (default 1, one approval, as before) may be 2: the request then needs two different people to approve it (the first approval keeps it waiting,
+    the requester's own never counts, one rejection ends it). Stored and pushed only when it is 2, so a policy that does not use it is exactly what it was."""
     timeoutSeconds: int = Field(default=3600, ge=60, le=604_800)
     onTimeout: Literal["EXPIRE", "REJECT"] = "EXPIRE"
+    requiredApprovals: Literal[1, 2] = 1
 
 
+def _policy_to_store(policy: ApprovalPolicy | None) -> dict | None:
+    """The policy as kept on the instance and pushed to RAN NF OAM. `requiredApprovals` is left out while it is 1, so an instance that did not opt into two-person
+    approval has the policy it had before the field existed (stored, returned and pushed unchanged)."""
+    if policy is None:
+        return None
+    stored = policy.model_dump()
+    if stored["requiredApprovals"] == 1:
+        del stored["requiredApprovals"]
+    return stored
+
+
+# The body of CreateInstance. `packageId` is the only required field. `autonomyMode` is fixed here for the life of the instance. `approvalPolicy` is accepted only with ASSIST
+# (422 APPROVAL_POLICY_NEEDS_ASSIST). `authzScope` and `operatorApiBase` are checked in the route (422), not by this model, so the answer can use a fixed message that does not echo the input.
 class CreateInstanceRequest(BaseModel):
     packageId: uuid.UUID
     config: dict = {}
@@ -82,6 +99,7 @@ class CreateInstanceRequest(BaseModel):
     authzScope: dict | None = None
 
 
+# The body of UpgradeInstance: the package the replacement instance runs (it must be AVAILABLE or PRIMED, checked when the replacement is provisioned).
 class UpgradeRequest(BaseModel):
     newPackageId: uuid.UUID
 
@@ -158,7 +176,7 @@ def create_instance(body: CreateInstanceRequest, request: Request, db: Session =
     except ValueError as exc:
         raise framework_error(FrameworkError.AUTHZ_SCOPE_INVALID, detail=str(exc)) from None
     inst = provision_instance(db, body.packageId, configuration=body.config, autonomy_mode=body.autonomyMode,
-                              region_scope=body.regionScope, approval_policy=body.approvalPolicy.model_dump() if body.approvalPolicy else None,
+                              region_scope=body.regionScope, approval_policy=_policy_to_store(body.approvalPolicy),
                               authz_scope=claim)
     inst.operator_api_base = base
     db.commit()
@@ -212,6 +230,7 @@ def issue_instance_credentials(instance_id: uuid.UUID, response: Response, db: S
     return {"instanceId": str(inst.instance_id), "oauthClientId": inst.oauth_client_id, "oauthClientSecret": secret}
 
 
+# The body of the kill-switch route: `requestedBy` is recorded at RAN NF OAM as who stopped the instance (the GUI forces it to the signed-in user) and `reason` is optional free text.
 class KillRequest(BaseModel):
     requestedBy: str
     reason: str | None = None
@@ -387,6 +406,8 @@ def _resolve_current(db: Session, instance_id: uuid.UUID) -> RAppInstance:
 
 
 def _version_view(v) -> dict:
+    """One `RAppInstanceVersion` row as the JSON the version routes return: ids as strings, the instance and package it replaced, the configuration it ran, the rollback that undid it (or null) and the commit time.
+    """
     return {"versionId": str(v.version_id), "kind": v.kind, "instanceId": str(v.instance_id),
             "packageId": str(v.package_id), "previousInstanceId": str(v.previous_instance_id),
             "previousPackageId": str(v.previous_package_id), "previousConfiguration": v.previous_configuration,
@@ -511,12 +532,15 @@ def delete_instance(instance_id: uuid.UUID, db: Session = Depends(get_session)):
 
 @app.get("/instances/{instance_id}/config")
 def get_config(instance_id: uuid.UUID, db: Session = Depends(get_session)):
+    # The stored configuration of an instance, `{}` when none. 404 for an unknown instance. Unlike most routes here it reads the row directly, without the lazy upgrade-timeout sweep of `_load_instance`.
     inst = _get_or_404(db, instance_id)
     return inst.configuration or {}
 
 
 @app.put("/instances/{instance_id}/config")
 def set_config(instance_id: uuid.UUID, config: dict, db: Session = Depends(get_session)):
+    # Replaces the whole configuration of an instance with the body (no merge, no schema check) and answers 200 `{status: updated}`; 404 for an unknown instance. It does not restart the workload, and
+    # it does not check which caller it is (the operator GUI's rule table allows operators and admins).
     inst = _get_or_404(db, instance_id)
     inst.configuration = config
     db.commit()
@@ -546,6 +570,7 @@ def report_fault(instance_id: uuid.UUID, severity: str, description: str = "", d
     return {"status": "recorded", "instanceState": inst.state}
 
 
+# The body of the operator-API registration: the base URL where the instance's operator API is reached. The route validates it (422 OPERATOR_API_BASE_INVALID).
 class OperatorApiRequest(BaseModel):
     operatorApiBase: str
 

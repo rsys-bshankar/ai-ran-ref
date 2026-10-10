@@ -1,3 +1,10 @@
+/**
+ * The sign-in page (route /login, the only route outside `RequireAuth`): the password form, the second step for an account with a one-time code (`LoginCodeStep`),
+ * and the single-sign-on button when the BFF offers one. What is offered comes from GET /api/auth/config (OIDC on or off, login mode "both", "oidc" or "local", break-glass),
+ * read before login; until it answers, or when it cannot be read, the password form is shown. A signed-in visitor is redirected to the page they came from.
+ * No role is needed (the visitor has none yet); the BFF applies the rate limit and the lock-out and this page only shows its reasons (`lib/mfa.ts`, `lib/oidc.ts`).
+ */
+
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -9,6 +16,11 @@ import { useToast } from "../components/Toast";
 import { oidcErrorMessage, oidcLoginHref, type AuthConfig } from "../lib/oidc";
 import { loginErrorMessage, recoveryLeftText, type LoginChallenge } from "../lib/mfa";
 
+/**
+ * The sign-in page. The first step posts the username and password through `AuthProvider.login`; an answer with a challenge opens the code step, a session opens the app.
+ * A spent challenge (CHALLENGE_INVALID) or a lock-out (429) sends the user back to the password step. With `GUI_LOGIN_MODE=oidc` the password form is hidden behind a small
+ * "Break-glass sign-in" link that appears only when the backend says a break-glass account exists. After a recovery code is spent, a toast says how many are left.
+ */
 export function Login() {
   const { me, login, loginWithCode } = useAuth();
   const toast = useToast();

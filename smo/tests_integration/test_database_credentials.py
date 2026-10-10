@@ -10,6 +10,7 @@ LITERAL_PASSWORD = re.compile(r"smo:smo@")
 
 
 def test_no_service_or_script_source_carries_the_old_default_url():
+    """No service, shared or script source carries a default database URL with a password in it."""
     offenders = []
     for path in list(SMO_ROOT.glob("*/app/**/*.py")) + list(SMO_ROOT.glob("samples/*/app/**/*.py")) + \
             list(SMO_ROOT.glob("shared/smo_shared/**/*.py")) + list(SMO_ROOT.glob("scripts/*.py")):
@@ -23,6 +24,9 @@ def _compose() -> dict:
 
 
 def test_the_database_password_is_a_compose_secret_file_never_a_literal_or_an_environment_value():
+    """In docker-compose.yml the database password is a secret file for Postgres and is never a literal or an environment value, and every
+    service's database URL names the Postgres host and no password.
+    """
     compose = _compose()
     text = (SMO_ROOT / "docker-compose.yml").read_text()
     assert not LITERAL_PASSWORD.search(text) and "POSTGRES_PASSWORD:" not in text
@@ -52,6 +56,7 @@ def test_the_database_password_is_a_compose_secret_file_never_a_literal_or_an_en
 
 
 def test_the_secret_directory_and_the_real_env_file_are_git_ignored_and_the_example_holds_no_password():
+    """The `secrets/` directory and the real `.env` are git-ignored and `.env.example` holds no password."""
     example = (SMO_ROOT / ".env.example").read_text()
     assert "POSTGRES_PASSWORD=" not in example and not LITERAL_PASSWORD.search(example)
     ignored = (SMO_ROOT / ".gitignore").read_text().splitlines()
@@ -59,6 +64,9 @@ def test_the_secret_directory_and_the_real_env_file_are_git_ignored_and_the_exam
 
 
 def test_init_secrets_creates_the_file_once_and_never_overwrites_it(tmp_path):
+    """`init_secrets.sh` creates a random 48-hex-character password file once (in an owner-only directory, without printing it) and a second run
+    keeps it.
+    """
     import shutil
     import stat
     import subprocess
@@ -77,6 +85,7 @@ def test_init_secrets_creates_the_file_once_and_never_overwrites_it(tmp_path):
 
 def test_every_fuzz_target_that_imports_an_app_sets_a_database_url_first():
     # a fuzz target runs outside pytest, where an unset URL is refused; it found this the hard way in CI
+    """A fuzz target that imports an app sets `SMO_DATABASE_URL` first, because a fuzz target runs outside pytest where an unset URL is refused."""
     for path in (SMO_ROOT / "fuzz").glob("fuzz_*.py"):
         text = path.read_text()
         if re.search(r"^\s*from app\.|^\s*import app\b", text, re.M):

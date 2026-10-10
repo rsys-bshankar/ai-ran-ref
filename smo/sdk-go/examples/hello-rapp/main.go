@@ -42,6 +42,8 @@ type state struct {
 	DmeTypes   int       `json:"dmeTypes"`
 }
 
+// snapshot returns a copy of the state as the JSON object the operator page reads; the keys are the paths that
+// package/manifest.yaml's panels use, so renaming one breaks the page. "state" is the literal RUNNING.
 func (s *state) snapshot() map[string]any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -63,6 +65,9 @@ func beat(ctx context.Context, c *smosdk.Client, s *state) {
 	s.LastError, s.DmeTypes = "", len(page.Items)
 }
 
+// newMux builds the HTTP routes: /health for the container probe and the two operator-API routes the manifest declares
+// (status, and run, which takes a heartbeat now). The paths carry an {instanceId} segment that the handlers ignore: the
+// process serves one instance.
 func newMux(c *smosdk.Client, s *state) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -77,12 +82,14 @@ func newMux(c *smosdk.Client, s *state) *http.ServeMux {
 	return mux
 }
 
+// writeJSON answers with status and v as JSON.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// getenv returns the environment variable name, or def when it is unset or empty.
 func getenv(name, def string) string {
 	if v := os.Getenv(name); v != "" {
 		return v
@@ -90,6 +97,8 @@ func getenv(name, def string) string {
 	return def
 }
 
+// main runs the rApp, or with -probe checks its own /health and exits with 0 or 1 (the container healthcheck). The
+// rApp's failure is logged as JSON and exits 1.
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-probe" {
 		os.Exit(probe(getenv("HELLO_LISTEN", ":8000")))
@@ -101,6 +110,8 @@ func main() {
 	}
 }
 
+// probe GETs /health on the address the server listens on (127.0.0.1 when listen is only a port) and returns 0 when it
+// answers 200 within 3 s, 1 otherwise.
 func probe(listen string) int {
 	addr := listen
 	if addr[0] == ':' {
@@ -118,6 +129,10 @@ func probe(listen string) int {
 	return 0
 }
 
+// run is the life of the rApp: take a token, start the operator API, register it when HELLO_INSTANCE_ID is set, beat
+// every HELLO_HEARTBEAT_SECONDS until SIGINT/SIGTERM or the server stops, then withdraw the registration and shut the
+// server down. It returns an error when no token can be had, the operator API cannot be registered, or the server
+// fails; a failed heartbeat is recorded in the state and is not an error.
 func run(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

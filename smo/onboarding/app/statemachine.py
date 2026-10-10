@@ -1,9 +1,16 @@
-"""ApplicationPackage lifecycle.
+"""The ApplicationPackage lifecycle: its states, its events, and the transition table `ONBOARDING_FSM`.
 
-SMO Design v1.3 section 3.4 state diagram (AVAILABLE <-> DEPRECATED -> deleted)
-extended by Onboarding/rApp Mgmt LLD section 3 (the FAILED terminal state
-v1.3 never modeled) and section 4 (the cascade-delete guard, concretized
-here as an actual guard function rather than just a stated rule).
+What it is: the table that decides which package events are legal from which state, and the two guards behind the cascade-delete and deprime rules. It
+implements SMO Design v1.3 section 3.4 (AVAILABLE <-> DEPRECATED -> deleted), extended by Onboarding/rApp Mgmt LLD section 3 (the FAILED terminal state) and
+section 4 (the cascade-delete guard as an actual query), and by the package priming stage of HISTORY.md §5.
+
+Where it sits: `app/main.py` fires events on this table (`ONBOARDING_FSM.fire`, `_fire`) and stores the returned state; the generic engine is
+`smo_shared/statemachine.py`. The table holds no per-package state.
+
+What it owns: the allowed transitions and the guards. It does not write the package row, commit, or map a refusal to HTTP (`main._fire` does). A direct delete
+of a FAILED package is not an edge here: the route handles it without the FSM.
+
+Before editing: README section 2.3 lists the same table; change both together. A guard receives the keyword arguments `db` and `package` that `fire` is called with.
 """
 
 from __future__ import annotations
@@ -19,6 +26,11 @@ from .models import ApplicationPackage, PackageUsageRegistration
 
 
 class PackageState(StrEnum):
+    """The lifecycle states of an application package, stored as strings in `application_package.state`.
+
+    PRIMING and DEPRIMING are transitional: the prime and deprime routes fire both of their events in one request, so neither is ever committed or observable. FAILED and
+    DELETING are terminal (DELETING keeps the row).
+    """
     ONBOARDING = "ONBOARDING"
     AVAILABLE = "AVAILABLE"
     PRIMING = "PRIMING"
@@ -30,6 +42,11 @@ class PackageState(StrEnum):
 
 
 class PackageEvent(StrEnum):
+    """The events that move a package between states; `ONBOARDING_FSM` says which are legal from which state.
+
+    VALIDATE_OK and VALIDATE_FAILED come from the onboarding pipeline, the others from the lifecycle routes. PRIME_COMPLETE and DEPRIME_COMPLETE are fired by the routes
+    right after PRIME and DEPRIME.
+    """
     VALIDATE_OK = "VALIDATE_OK"
     VALIDATE_FAILED = "VALIDATE_FAILED"
     PRIME = "PRIME"
@@ -46,6 +63,8 @@ def _no_blocking_dependents(db: Session, package: ApplicationPackage) -> bool:
     not just the stated rule: blocked if any child package is
     AVAILABLE/DEPRECATED, or any usage registration has no stopped_at.
     """
+    # Two queries, both `LIMIT 1`: a child package (parent_package_id = this package) in AVAILABLE or DEPRECATED, then an open usage registration. No route sets
+    # parent_package_id today, so in practice the second query decides.
     blocking_child = db.scalar(
         select(ApplicationPackage).where(
             ApplicationPackage.parent_package_id == package.package_id,
@@ -64,11 +83,10 @@ def _no_blocking_dependents(db: Session, package: ApplicationPackage) -> bool:
 
 
 def _no_active_instances(db: Session, package: ApplicationPackage) -> bool:
-    """The reference's own deprimeRapp guard ('Unable to deprime as there
-    are active rapp instances.') — reuses the same active-usage-
-    registration signal the cascade-delete guard already tracks
-    (CreateInstance calls usage/start; TerminateInstance calls
-    usage/stop — HISTORY.md §2's cascade-delete-guard fix).
+    """Guard of DEPRIME: true when no usage registration of the package is open (stopped_at is null).
+
+    The reference's deprimeRapp guard ('Unable to deprime as there are active rapp instances.'). It reuses the usage-registration signal of the cascade-delete guard:
+    rApp Management calls usage/start on CreateInstance and usage/stop on TerminateInstance (HISTORY.md §2, cascade-delete-guard fix).
     """
     active_usage = db.scalar(
         select(PackageUsageRegistration).where(
@@ -80,6 +98,11 @@ def _no_active_instances(db: Session, package: ApplicationPackage) -> bool:
 
 
 def build_onboarding_fsm() -> StateMachine[PackageState, PackageEvent]:
+    """Builds the package transition table (README section 2.3); `ONBOARDING_FSM` below is the one instance every route uses.
+
+    Edges: ONBOARDING -> AVAILABLE or FAILED; AVAILABLE -> PRIMING -> PRIMED; PRIMED -> DEPRIMING (guarded) -> AVAILABLE; AVAILABLE -> DEPRECATED -> AVAILABLE (cancel);
+    AVAILABLE or DEPRECATED -> DELETING (guarded). Every other (state, event) pair is illegal.
+    """
     fsm: StateMachine[PackageState, PackageEvent] = StateMachine()
     fsm.add(PackageState.ONBOARDING, PackageEvent.VALIDATE_OK, PackageState.AVAILABLE)
     fsm.add(PackageState.ONBOARDING, PackageEvent.VALIDATE_FAILED, PackageState.FAILED)
@@ -99,6 +122,7 @@ def build_onboarding_fsm() -> StateMachine[PackageState, PackageEvent]:
         PackageState.PRIMED,
         PackageEvent.DEPRIME,
         PackageState.DEPRIMING,
+        # `fire` passes its keyword context (db, package) to a guard; the guard lambdas of this table (this one and the two DELETE ones) keep db and package and ignore any other keyword.
         guard=lambda db, package, **_: _no_active_instances(db, package),
     )
     fsm.add(PackageState.DEPRIMING, PackageEvent.DEPRIME_COMPLETE, PackageState.AVAILABLE)

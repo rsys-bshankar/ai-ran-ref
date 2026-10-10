@@ -113,8 +113,8 @@ class FakePlatform:
         self.training.append((ok, metrics))
         return {"status": "TRAINED" if ok else "FAILED"}
 
-    def execute_action(self, consumer, changes, action_id, source_context):
-        self.actions.append({"changes": changes, "actionId": action_id, "context": source_context})
+    def execute_action(self, consumer, changes, action_id, source_context, decision=None):
+        self.actions.append({"changes": changes, "actionId": action_id, "context": source_context, "decision": decision})
         if not self.stuck:
             for change in changes:
                 self.config.setdefault(change["managedFunctionRef"], {}).update(change["attributeChanges"])
@@ -142,6 +142,7 @@ class FakePlatform:
 
 @pytest.fixture
 def platform(monkeypatch):
+    """The in-memory platform double that replaces the AI Runtime SDK, installed in the app for one test."""
     fake = FakePlatform()
     monkeypatch.setattr(main, "sdk", fake)
     return fake
@@ -149,6 +150,7 @@ def platform(monkeypatch):
 
 @pytest.fixture
 def r1(monkeypatch):
+    """The R1 double (rapp-mgmt's instance records and the other rApps' published lists), installed in the app for one test."""
     fake = FakeR1()
     monkeypatch.setattr(main, "_r1", fake)
     return fake
@@ -156,6 +158,9 @@ def r1(monkeypatch):
 
 @pytest.fixture
 def client():
+    """A TestClient on a fresh SQLite database with the rApp's three tables created and the session dependency overridden; the override is removed
+    after the test.
+    """
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[m.__table__ for m in (main.MobilityInstance, main.MobilityRelation, main.MobilityDecision)])
     factory = sessionmaker(bind=engine)
@@ -173,6 +178,7 @@ def client():
 
 
 def _start(client, r1, mode="AUTONOMOUS", **config):
+    """Registers an instance with the R1 double, calls `start` and returns the instance id; `config` entries extend the instance configuration."""
     instance_id = str(uuid.uuid4())
     r1.paths[f"/rapp-mgmt/instances/{instance_id}"] = (200, {
         "packageId": str(uuid.uuid4()), "autonomyMode": mode,
@@ -183,6 +189,7 @@ def _start(client, r1, mode="AUTONOMOUS", **config):
 
 
 def _deployed(client, platform, r1, mode="AUTONOMOUS", **config):
+    """Starts an instance and runs train, validate, emulate and deploy, so the test begins with a deployed model."""
     instance_id = _start(client, r1, mode, **config)
     for step in ("train", "validate", "emulate", "deploy"):
         resp = client.post(f"/instances/{instance_id}/lifecycle/{step}")
@@ -200,7 +207,19 @@ def _cio(platform, relation=REL):
 
 # ---------------------------------------------------------------- instance binding
 
+
+def _assert_decision(action, rapp, reason):
+    """PR-AI-13: a direct write says why it is made, so RAN NF OAM's decision record (and an approver) has more than the job: the execution it came from, the
+    version of the model that decided (when the instance has one) and the reason in words."""
+    decision = action["decision"]
+    assert decision["rationale"] == f"Restoring service: {reason}"
+    assert decision["inputsRef"].startswith(f"{rapp}:") and ":execution:" in decision["inputsRef"] and decision["inputsRef"].endswith(action["context"]["correlationId"])
+    assert set(decision) <= {"inputsRef", "modelVersion", "rationale"}
+
 def test_start_binds_the_instance_and_discovers_a_dataset_per_stage(client, platform, r1):
+    """`start` stores the configuration (baseline, merged DMRO bounds, peers, default RMIH) with a dataset per lifecycle stage, lists the instance
+    and its relations, and a second start re-binds without a duplicate.
+    """
     instance_id = _start(client, r1, "ASSIST", baselineCio=2, dmroBounds={"maximumDeviationHoTriggerHigh": 4},
                          energySavingInstanceId="es-1", trafficSteeringInstanceId="ts-1")
     view = client.get(f"/instances/{instance_id}").json()
@@ -214,6 +233,9 @@ def test_start_binds_the_instance_and_discovers_a_dataset_per_stage(client, plat
 
 
 def test_start_rejects_an_unknown_instance_and_an_invalid_config(client, platform, r1):
+    """An instance rapp-mgmt does not know is 404 INSTANCE_NOT_FOUND; one without relations, with an incomplete relation or without a managed
+    element is 422 INSTANCE_CONFIG_INVALID.
+    """
     resp = client.post(f"/instances/{uuid.uuid4()}/start")
     assert (resp.status_code, resp.json()["detail"]["title"]) == (404, "INSTANCE_NOT_FOUND")
     bad = ({"relations": []}, {"relations": [{"relation": REL, "source": "201"}]}, {"managedElementRef": ""})
@@ -226,6 +248,7 @@ def test_start_rejects_an_unknown_instance_and_an_invalid_config(client, platfor
 
 
 def test_an_instance_that_was_never_started_is_404_on_every_route(client, platform, r1):
+    """Every route that takes an instance id answers 404 INSTANCE_NOT_STARTED for one that was never started."""
     missing = uuid.uuid4()
     for verb, path in (("get", ""), ("post", "/lifecycle/deploy"), ("post", "/evaluate"), ("post", "/reconcile"),
                        ("get", "/relations"), ("get", "/dashboard")):
@@ -234,6 +257,7 @@ def test_an_instance_that_was_never_started_is_404_on_every_route(client, platfo
 
 
 def test_a_platform_error_is_passed_through_and_a_server_error_becomes_502(client, platform, r1, monkeypatch):
+    """An SDK error below 500 reaches the caller with its own status and title; a platform 5xx is answered 502 PLATFORM_ERROR."""
     instance_id = _start(client, r1)
     monkeypatch.setattr(platform.lifecycle, "start_training", _raise(SdkError(409, {"detail": {"title": "BUSY", "detail": "x"}})))
     resp = client.post(f"/instances/{instance_id}/lifecycle/train")
@@ -246,6 +270,9 @@ def test_a_platform_error_is_passed_through_and_a_server_error_becomes_502(clien
 # ---------------------------------------------------------------- lifecycle
 
 def test_the_model_lifecycle_trains_validates_emulates_and_deploys_with_the_dmro_bounds(client, platform, r1):
+    """The four lifecycle routes run in order and record their job ids; deploy also writes the DMRO bounds through DME with a decision record and
+    verifies them; training again keeps the registered model.
+    """
     instance_id = _start(client, r1)
     trained = client.post(f"/instances/{instance_id}/lifecycle/train").json()
     assert (trained["status"], trained["metrics"]["artifactVersion"]) == ("TRAINED", 4)
@@ -256,12 +283,14 @@ def test_the_model_lifecycle_trains_validates_emulates_and_deploys_with_the_dmro
     deployed = client.post(f"/instances/{instance_id}/lifecycle/deploy").json()
     assert deployed["artifactVersion"] == 4 and deployed["dmro"]["verification"] == "VERIFIED"
     assert platform.config[f"DMROFunction={ME}"]["maximumDeviationHoTriggerHigh"] == 6
+    assert "DMRO bounds" in platform.actions[0]["decision"]["rationale"]               # PR-AI-13: the bounds write says why it is made
     view = client.get(f"/instances/{instance_id}").json()
     assert view["lifecycleJobs"] == {"training": "tr-1", "validation": "va-1", "emulation": "em-1"}
     assert client.post(f"/instances/{instance_id}/lifecycle/train").json()["modelId"] == view["modelId"]
 
 
 def test_a_dmro_write_that_does_not_stick_is_reported_unverified(client, platform, r1):
+    """A DMRO bounds write that O1 does not apply is reported as VERIFY_FAILED on deploy."""
     instance_id = _start(client, r1)
     for step in ("train", "validate", "emulate"):
         client.post(f"/instances/{instance_id}/lifecycle/{step}")
@@ -270,6 +299,7 @@ def test_a_dmro_write_that_does_not_stick_is_reported_unverified(client, platfor
 
 
 def test_training_on_too_little_history_is_422_and_the_job_is_failed(client, platform, r1):
+    """Too little history is 422 TRAINING_FAILED and the training job is completed as failed with the reason, not left running."""
     instance_id = _start(client, r1)
     platform.records["TRAINING"] = platform.records["TRAINING"][:2]
     resp = client.post(f"/instances/{instance_id}/lifecycle/train")
@@ -281,12 +311,14 @@ def test_training_on_too_little_history_is_422_and_the_job_is_failed(client, pla
 # ---------------------------------------------------------------- evaluate
 
 def test_evaluate_needs_a_deployed_model(client, platform, r1):
+    """`evaluate` before a model is deployed is 409 MODEL_NOT_DEPLOYED."""
     instance_id = _start(client, r1)
     resp = client.post(f"/instances/{instance_id}/evaluate")
     assert (resp.status_code, resp.json()["detail"]["title"]) == (409, "MODEL_NOT_DEPLOYED")
 
 
 def test_evaluate_in_shadow_mode_recommends_a_change_and_writes_nothing(client, platform, r1):
+    """In SHADOW mode a CIO raise is recorded as SHADOWED, the dispatch carries the six-entry CIO expectation, and O1 is not written."""
     instance_id = _deployed(client, platform, r1, "SHADOW")
     platform.dispatch = {"status": "SHADOWED", "dispatchId": str(uuid.uuid4()), "autonomyMode": "SHADOW"}
     body = client.post(f"/instances/{instance_id}/evaluate", headers={"X-Correlation-ID": "exec-1"}).json()
@@ -296,6 +328,9 @@ def test_evaluate_in_shadow_mode_recommends_a_change_and_writes_nothing(client, 
 
 
 def test_evaluate_in_autonomous_mode_raises_the_cio_and_verifies_it(client, platform, r1):
+    """An autonomous change goes through the intent, is verified by an O1 read-back, puts the relation under observation, and nothing else happens
+    to it while observed.
+    """
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     d = client.post(f"/instances/{instance_id}/evaluate", headers={"X-Correlation-ID": "exec-abcdef"}).json()["decisions"][0]
@@ -309,6 +344,9 @@ def test_evaluate_in_autonomous_mode_raises_the_cio_and_verifies_it(client, plat
 
 
 def test_a_change_that_degrades_the_kpi_is_reverted_straight_through_dme(client, platform, r1):
+    """When the problem rate is worse an hour after a change, the CIO is reverted through DME with the reason on the action and the decision
+    record, and the relation is back to STEADY.
+    """
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     client.post(f"/instances/{instance_id}/evaluate")
@@ -316,10 +354,12 @@ def test_a_change_that_degrades_the_kpi_is_reverted_straight_through_dme(client,
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
     assert (d["decision"], d["reason"], d["outcome"], d["kpi"]["verdict"]) == ("REVERT_CIO", "KPI_DEGRADED", "REVERTED", "DEGRADED")
     assert _cio(platform) == [0] * 6 and platform.actions[-1]["context"]["reason"] == "REVERT:KPI_DEGRADED"
+    _assert_decision(platform.actions[-1], "mobility-optimization-rapp", "REVERT:KPI_DEGRADED")
     assert d["finalState"] == {"state": "STEADY", "cio": 0}
 
 
 def test_a_revert_that_will_not_stick_is_retried_once_and_reported(client, platform, r1):
+    """A revert that O1 does not apply is sent twice and reported as REVERT_FAILED, not as success."""
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     client.post(f"/instances/{instance_id}/evaluate")
@@ -331,6 +371,7 @@ def test_a_revert_that_will_not_stick_is_retried_once_and_reported(client, platf
 
 
 def test_a_change_that_holds_up_is_confirmed(client, platform, r1):
+    """A change whose problem rate did not get worse is CONFIRMED and the relation returns to STEADY."""
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     client.post(f"/instances/{instance_id}/evaluate")
@@ -341,6 +382,9 @@ def test_a_change_that_holds_up_is_confirmed(client, platform, r1):
 
 
 def test_a_write_that_o1_reports_but_does_not_apply_is_rolled_back(client, platform, r1):
+    """A completed action whose read-back does not match is VERIFY_FAILED and rolled back; the relation is already on its old CIO so the rollback
+    performs nothing.
+    """
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     platform.config["NRCellRelation=201-202"] = {"cellIndividualOffset": [0] * 6}
@@ -351,6 +395,7 @@ def test_a_write_that_o1_reports_but_does_not_apply_is_rolled_back(client, platf
 
 
 def test_a_rollback_that_cannot_be_verified_is_reported(client, platform, r1):
+    """When even the restore cannot be read back, the relation is reported as VERIFY_FAILED_ROLLBACK_FAILED after two attempts."""
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     platform.stuck = True          # the live CIO is unreadable, so the restore is written (twice) and never confirmed
@@ -358,8 +403,10 @@ def test_a_rollback_that_cannot_be_verified_is_reported(client, platform, r1):
     assert d["outcome"] == "VERIFY_FAILED_ROLLBACK_FAILED" and len(d["rollback"]["attempts"]) == 2
 
 
+# One row per non-completed action status the intent handler can report, and the rollback trigger it maps to.
 @pytest.mark.parametrize("status,trigger", [("PARTIAL_SUCCESS", "PARTIAL_SUCCESS"), ("FAILED", "ACTION_FAILED")])
 def test_a_change_the_intent_handler_did_not_complete_is_rolled_back(client, platform, r1, status, trigger):
+    """A PARTIAL_SUCCESS or FAILED action is rolled back without a verification read."""
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     platform.action_status = status
@@ -368,6 +415,7 @@ def test_a_change_the_intent_handler_did_not_complete_is_rolled_back(client, pla
 
 
 def test_a_change_the_intent_never_reported_is_rolled_back_as_failed(client, platform, r1):
+    """An intent report with no action for the relation (or an unreadable one) counts as NOT_ENACTED and is rolled back as ACTION_FAILED."""
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched(noReport=True)
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
@@ -375,6 +423,9 @@ def test_a_change_the_intent_never_reported_is_rolled_back_as_failed(client, pla
 
 
 def test_assist_mode_waits_for_the_operator_then_enacts_on_reconcile(client, platform, r1):
+    """In ASSIST mode the change waits for approval and the relation is skipped meanwhile; `reconcile` enacts it once approved, and a pending
+    dispatch settles nothing.
+    """
     instance_id = _deployed(client, platform, r1, "ASSIST")
     dispatch_id = str(uuid.uuid4())
     platform.dispatch = {"status": "AWAITING_SCOPE", "dispatchId": dispatch_id, "autonomyMode": "ASSIST"}
@@ -390,6 +441,7 @@ def test_assist_mode_waits_for_the_operator_then_enacts_on_reconcile(client, pla
 
 
 def test_assist_mode_rejection_leaves_the_relation_unchanged(client, platform, r1):
+    """A rejected ASSIST dispatch ends as REJECTED and the relation stays STEADY."""
     instance_id = _deployed(client, platform, r1, "ASSIST")
     dispatch_id = str(uuid.uuid4())
     platform.dispatch = {"status": "AWAITING_SCOPE", "dispatchId": dispatch_id, "autonomyMode": "ASSIST"}
@@ -400,6 +452,9 @@ def test_assist_mode_rejection_leaves_the_relation_unchanged(client, platform, r
 
 
 def test_the_guards_block_a_change_and_the_audit_trail_says_why(client, platform, r1):
+    """Handover not allowed, an emergency target, a target asleep and a Traffic Steering relation under observation each block the change and are
+    named in the audit; nothing is dispatched.
+    """
     instance_id = _deployed(client, platform, r1, energySavingInstanceId="es-1", trafficSteeringInstanceId="ts-1")
     platform.guards = [{"cellId": "202", "cellClass": "EMERGENCY"}]
     platform.config["NRCellRelation=201-202"] = {"isHOAllowed": "false"}
@@ -415,6 +470,7 @@ def test_the_guards_block_a_change_and_the_audit_trail_says_why(client, platform
 
 
 def test_an_unreachable_coordination_peer_is_ignored(client, platform, r1):
+    """A target whose O1 state cannot be read holds nothing, so a lost peer does not stop the loop."""
     instance_id = _deployed(client, platform, r1, "SHADOW", energySavingInstanceId="es-1", trafficSteeringInstanceId="ts-1")
     platform.dispatch = {"status": "SHADOWED", "dispatchId": str(uuid.uuid4()), "autonomyMode": "SHADOW"}
     platform.unreadable = {"NRCellDU=202"}
@@ -423,6 +479,7 @@ def test_an_unreachable_coordination_peer_is_ignored(client, platform, r1):
 
 
 def test_a_relation_without_data_is_left_alone(client, platform, r1):
+    """A relation with no PM windows gets NO_CHANGE with reason NO_DATA."""
     instance_id = _deployed(client, platform, r1)
     platform.records["INFERENCE"] = []
     d = client.post(f"/instances/{instance_id}/evaluate").json()["decisions"][0]
@@ -432,6 +489,7 @@ def test_a_relation_without_data_is_left_alone(client, platform, r1):
 # ---------------------------------------------------------------- audit and dashboard
 
 def test_decisions_are_listed_filtered_and_shown_on_the_dashboard(client, platform, r1):
+    """The decision list filters by execution and relation, and the dashboard returns the rate trend (limited by `points`) and the latest decision."""
     instance_id = _deployed(client, platform, r1, "SHADOW")
     platform.dispatch = {"status": "SHADOWED", "dispatchId": str(uuid.uuid4()), "autonomyMode": "SHADOW"}
     for execution in ("e-1", "e-2"):
@@ -446,6 +504,7 @@ def test_decisions_are_listed_filtered_and_shown_on_the_dashboard(client, platfo
 
 
 def test_the_dashboard_of_a_relation_without_decisions_has_no_latest_decision(client, platform, r1):
+    """A started instance with no evaluation has a dashboard whose relation has no latest decision."""
     instance_id = _start(client, r1)
     assert client.get(f"/instances/{instance_id}/dashboard").json()["relations"][0]["latestDecision"] is None
 
@@ -453,6 +512,7 @@ def test_the_dashboard_of_a_relation_without_decisions_has_no_latest_decision(cl
 # ---------------------------------------------------------------- the Digital Twin producer
 
 def test_the_sim_producer_registers_publishes_and_answers_dme_callbacks(client, platform):
+    """The Digital Twin producer registers its type (201), publishes windows to the data jobs, and answers DME's health, job and stop callbacks."""
     resp = client.post("/sim-producer/register")
     assert resp.status_code == 201 and resp.json()["dmeTypeId"] == "t-1"
     body = {"managedElementRef": ME, "relations": {REL: "TOO_LATE", "203-204": "PING_PONG"}, "start": T0.isoformat(), "hours": 3}

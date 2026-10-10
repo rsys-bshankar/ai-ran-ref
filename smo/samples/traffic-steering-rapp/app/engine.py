@@ -56,6 +56,10 @@ NO_CHANGE, REVERT = "NO_CHANGE", "REVERT"
 
 @dataclass
 class Neighbour:
+    """A neighbour of the source cell as a steering target: its layer, the facts that exclude it (protected, asleep, recently woken, in a Coverage
+    change set, critical alarm), and the state of the relation source to it (CIO, whether handover and load balancing are allowed, whether the
+    Mobility rApp is observing it).
+    """
     cell: str
     layer: str
     protected: bool = False
@@ -72,6 +76,10 @@ class Neighbour:
 
 @dataclass
 class SourceInput:
+    """One source cell's inputs to a pass: its layer, PM sample count, the baselines, its neighbours, the live idle priorities, the steering this
+    rApp already has in force, and the guard facts (class and incident zone, alarm, sleep, Coverage observation, last change, when each
+    neighbour last steered load to it).
+    """
     cell: str
     layer: str
     samples: float
@@ -93,6 +101,11 @@ def _protected(guard: dict) -> bool:
 
 
 def source_guards(s: SourceInput, now: datetime.datetime) -> dict:
+    """Runs the guards on a source cell and returns {"passed": bool, "blocks": [{guard, level, detail?}]}.
+
+    Each guard that fires adds a block, so the audit trail lists every reason and not only the first. `now` is the newest window's time, not the
+    wall clock, so replaying old data gives the same answer. No I/O.
+    """
     blocks = []
     if _protected(s.guard):
         blocks.append({"guard": "PROTECTED_CELL", "level": "HARD"})
@@ -110,6 +123,9 @@ def source_guards(s: SourceInput, now: datetime.datetime) -> dict:
 
 
 def target_exclusion(s: SourceInput, n: Neighbour, now: datetime.datetime) -> str | None:
+    """Returns the reason code (TARGET_PROTECTED, TARGET_CRITICAL_ALARM, TARGET_ASLEEP, TARGET_RECENTLY_WOKEN, TARGET_COVERAGE_OBSERVING or
+    ANTI_OSCILLATION) that rules a neighbour out as a steering target, or None when it is eligible. The first reason that applies is returned.
+    """
     if n.protected:
         return "TARGET_PROTECTED"
     if n.critical_alarm:

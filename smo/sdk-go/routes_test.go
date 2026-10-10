@@ -1,3 +1,7 @@
+// routes_test.go checks routes.go: every route the SDK calls exists, with its method, in the committed
+// docs/openapi/<module>.json, and route.path fills and escapes its placeholders. It reads those documents from the
+// repository (../docs/openapi), so run it inside a checkout of smo/: cd smo/sdk-go && go test ./... .
+
 package smosdk
 
 import (
@@ -38,6 +42,9 @@ func TestEveryRouteTheSDKCallsIsInTheCommittedOpenAPIDocuments(t *testing.T) {
 	}
 }
 
+// TestRoutePathFillsAndEscapesPlaceholders
+// pins that arguments are path-escaped into the template in order, and that too many or too few arguments panic, as a
+// programming error.
 func TestRoutePathFillsAndEscapesPlaceholders(t *testing.T) {
 	if got := operatorAPIPutRoute.path("a/b c"); got != "/rapp-mgmt/instances/a%2Fb%20c/operator-api" {
 		t.Fatalf("path = %q", got)

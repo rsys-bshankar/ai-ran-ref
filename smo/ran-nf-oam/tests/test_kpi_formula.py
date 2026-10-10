@@ -23,6 +23,8 @@ from app.kpi_formula import FormulaError, evaluate, names, parse
     ("ifelse(a > 0, b / a, 0)", {"a": 2, "b": 5}, 2.5),
 ])
 def test_arithmetic_comparisons_and_functions(formula, values, expected):
+    """The evaluator computes the arithmetic, comparisons and the small function set a KPI formula may use, and `ifelse` evaluates only the branch it takes.
+    """
     assert evaluate(formula, values) == expected
 
 
@@ -35,10 +37,13 @@ def test_arithmetic_comparisons_and_functions(formula, values, expected):
     ("a ** 64 * a ** 64 * a ** 64 * a ** 64 * a ** 64 * a ** 64", {"a": 1e300}),   # overflows to infinity: not a number
 ])
 def test_an_undefined_result_is_none_not_an_error(formula, values):
+    """A division by zero, a missing counter, a domain error or an overflow gives None (an undefined KPI), never an exception that would fail the whole computation.
+    """
     assert evaluate(formula, values) is None
 
 
 def test_the_counter_names_of_a_formula():
+    """`names` returns the distinct variables of a formula in sorted order, and not the function names."""
     assert names("100 * (ok + retry) / max(tot, 1) + ok") == ["ok", "retry", "tot"]
 
 
@@ -87,11 +92,14 @@ HOSTILE = [
 
 @pytest.mark.parametrize("formula", HOSTILE)
 def test_hostile_or_malformed_input_is_refused_when_parsed_and_never_run(formula):
+    """Anything outside the arithmetic grammar (attribute access, calls to anything but the allowed functions, comprehensions, strings, big literals) is refused at parse time.
+    """
     with pytest.raises(FormulaError):
         parse(formula)
 
 
 def test_size_limits():
+    """A formula with too many parts, too deep a nesting, or too long a text is refused, so a formula cannot be used to burn CPU."""
     with pytest.raises(FormulaError):
         parse("a + " * 200 + "a")                                       # too many parts
     with pytest.raises(FormulaError):
@@ -101,6 +109,7 @@ def test_size_limits():
 
 
 def test_a_refused_formula_never_reaches_a_counter_or_a_side_effect(monkeypatch):
+    """A formula that calls a real built-in such as print is refused before anything runs: the built-in is never called."""
     called = []
     monkeypatch.setattr("builtins.print", lambda *a, **k: called.append(a))
     with pytest.raises(FormulaError):

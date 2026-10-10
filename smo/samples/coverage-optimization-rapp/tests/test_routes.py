@@ -118,8 +118,8 @@ class FakePlatform:
         self.training.append((ok, metrics))
         return {"status": "TRAINED" if ok else "FAILED"}
 
-    def execute_action(self, consumer, changes, action_id, source_context):
-        self.actions.append({"changes": changes, "actionId": action_id, "context": source_context})
+    def execute_action(self, consumer, changes, action_id, source_context, decision=None):
+        self.actions.append({"changes": changes, "actionId": action_id, "context": source_context, "decision": decision})
         if not self.stuck:
             for change in changes:
                 self.config.setdefault(change["managedFunctionRef"], {}).update(change["attributeChanges"])
@@ -149,6 +149,7 @@ class FakePlatform:
 
 @pytest.fixture
 def platform(monkeypatch):
+    """The in-memory platform double that replaces the AI Runtime SDK, installed in the app for one test."""
     fake = FakePlatform()
     monkeypatch.setattr(main, "sdk", fake)
     return fake
@@ -156,6 +157,7 @@ def platform(monkeypatch):
 
 @pytest.fixture
 def r1(monkeypatch):
+    """The R1 double (rapp-mgmt's instance records and the other rApps' published lists), installed in the app for one test."""
     fake = FakeR1()
     monkeypatch.setattr(main, "_r1", fake)
     return fake
@@ -163,6 +165,9 @@ def r1(monkeypatch):
 
 @pytest.fixture
 def client():
+    """A TestClient on a fresh SQLite database with the rApp's three tables created and the session dependency overridden; the override is removed
+    after the test.
+    """
     engine = make_test_engine()
     Base.metadata.create_all(engine, tables=[m.__table__ for m in (main.CoverageInstance, main.CoverageCell, main.CoverageDecision)])
     factory = sessionmaker(bind=engine)
@@ -180,6 +185,7 @@ def client():
 
 
 def _start(client, r1, mode="AUTONOMOUS", **config):
+    """Registers an instance with the R1 double, calls `start` and returns the instance id; `config` entries extend the instance configuration."""
     instance_id = str(uuid.uuid4())
     r1.paths[f"/rapp-mgmt/instances/{instance_id}"] = (200, {
         "packageId": str(uuid.uuid4()), "autonomyMode": mode, "configuration": {"managedElementRef": ME, "cells": CELLS, **config}})
@@ -189,6 +195,7 @@ def _start(client, r1, mode="AUTONOMOUS", **config):
 
 
 def _deployed(client, platform, r1, mode="AUTONOMOUS", **config):
+    """Starts an instance and runs train, validate, emulate and deploy, so the test begins with a deployed model."""
     instance_id = _start(client, r1, mode, **config)
     for step in ("train", "validate", "emulate", "deploy"):
         resp = client.post(f"/instances/{instance_id}/lifecycle/{step}")
@@ -212,7 +219,19 @@ def _moved(body):
 
 # ---------------------------------------------------------------- instance binding
 
+
+def _assert_decision(action, rapp, reason):
+    """PR-AI-13: a direct write says why it is made, so RAN NF OAM's decision record (and an approver) has more than the job: the execution it came from, the
+    version of the model that decided (when the instance has one) and the reason in words."""
+    decision = action["decision"]
+    assert decision["rationale"] == f"Restoring service: {reason}"
+    assert decision["inputsRef"].startswith(f"{rapp}:") and ":execution:" in decision["inputsRef"] and decision["inputsRef"].endswith(action["context"]["correlationId"])
+    assert set(decision) <= {"inputsRef", "modelVersion", "rationale"}
+
 def test_start_binds_the_instance_and_discovers_a_dataset_per_stage(client, platform, r1):
+    """`start` stores the configuration (cells, baselines, peers, default RMIH) with a dataset per lifecycle stage, lists the instance and its
+    cells, and a second start re-binds without a duplicate.
+    """
     instance_id = _start(client, r1, "ASSIST", baselineTilt=50, baselinePower=40, mobilityInstanceId="mo-1", energySavingInstanceId="es-1")
     view = client.get(f"/instances/{instance_id}").json()
     assert (view["cells"], view["baselineTilt"], view["baselinePower"], view["autonomyMode"]) == (CELLS, 50, 40, "ASSIST")
@@ -225,6 +244,7 @@ def test_start_binds_the_instance_and_discovers_a_dataset_per_stage(client, plat
 
 
 def test_start_rejects_an_unknown_instance_and_an_invalid_config(client, platform, r1):
+    """An instance rapp-mgmt does not know is 404 INSTANCE_NOT_FOUND and one without a managed element or cells is 422 INSTANCE_CONFIG_INVALID."""
     resp = client.post(f"/instances/{uuid.uuid4()}/start")
     assert (resp.status_code, resp.json()["detail"]["title"]) == (404, "INSTANCE_NOT_FOUND")
     for config in ({"cells": []}, {"managedElementRef": ""}):
@@ -235,6 +255,7 @@ def test_start_rejects_an_unknown_instance_and_an_invalid_config(client, platfor
 
 
 def test_an_instance_that_was_never_started_is_404_on_every_route(client, platform, r1):
+    """Every route that takes an instance id answers 404 INSTANCE_NOT_STARTED for one that was never started."""
     missing = uuid.uuid4()
     for verb, path in (("get", ""), ("post", "/lifecycle/deploy"), ("post", "/evaluate"), ("post", "/reconcile"),
                        ("get", "/cells"), ("get", "/dashboard")):
@@ -243,6 +264,7 @@ def test_an_instance_that_was_never_started_is_404_on_every_route(client, platfo
 
 
 def test_a_platform_error_is_passed_through_and_a_server_error_becomes_502(client, platform, r1, monkeypatch):
+    """An SDK error below 500 reaches the caller with its own status and title; a platform 5xx is answered 502 PLATFORM_ERROR."""
     instance_id = _start(client, r1)
     monkeypatch.setattr(platform.lifecycle, "start_training", _raise(SdkError(409, {"detail": {"title": "BUSY", "detail": "x"}})))
     resp = client.post(f"/instances/{instance_id}/lifecycle/train")
@@ -255,6 +277,7 @@ def test_a_platform_error_is_passed_through_and_a_server_error_becomes_502(clien
 # ---------------------------------------------------------------- lifecycle
 
 def test_the_model_lifecycle_trains_validates_emulates_and_deploys(client, platform, r1):
+    """The four lifecycle routes run in order, record their job ids on the instance, and training again reuses the registered model."""
     instance_id = _start(client, r1)
     trained = client.post(f"/instances/{instance_id}/lifecycle/train").json()
     assert (trained["status"], trained["metrics"]["artifactVersion"]) == ("TRAINED", 5)
@@ -270,6 +293,7 @@ def test_the_model_lifecycle_trains_validates_emulates_and_deploys(client, platf
 
 
 def test_training_on_too_little_history_is_422_and_the_job_is_failed(client, platform, r1):
+    """Too little history is 422 TRAINING_FAILED and the training job is completed as failed with the reason, not left running."""
     instance_id = _start(client, r1)
     platform.records["TRAINING"] = platform.records["TRAINING"][:2]
     resp = client.post(f"/instances/{instance_id}/lifecycle/train")
@@ -281,18 +305,23 @@ def test_training_on_too_little_history_is_422_and_the_job_is_failed(client, pla
 # ---------------------------------------------------------------- evaluate
 
 def test_evaluate_needs_a_deployed_model(client, platform, r1):
+    """`evaluate` before a model is deployed is 409 MODEL_NOT_DEPLOYED."""
     instance_id = _start(client, r1)
     resp = client.post(f"/instances/{instance_id}/evaluate")
     assert (resp.status_code, resp.json()["detail"]["title"]) == (409, "MODEL_NOT_DEPLOYED")
 
 
 def test_evaluate_without_pm_data_decides_nothing(client, platform, r1):
+    """With no PM windows an evaluation returns no decisions."""
     instance_id = _deployed(client, platform, r1)
     platform.records["INFERENCE"] = []
     assert _evaluate(client, instance_id)["decisions"] == []
 
 
 def test_evaluate_in_shadow_mode_plans_a_move_and_writes_nothing(client, platform, r1):
+    """In SHADOW mode the plan is recorded as SHADOWED, the dispatch carries one expectation per moved cell, and no action reaches DME and no
+    change set starts observing.
+    """
     instance_id = _deployed(client, platform, r1, "SHADOW")
     platform.dispatch = {"status": "SHADOWED", "dispatchId": str(uuid.uuid4()), "autonomyMode": "SHADOW"}
     body = _evaluate(client, instance_id, **{"X-Correlation-ID": "exec-1"})
@@ -304,6 +333,9 @@ def test_evaluate_in_shadow_mode_plans_a_move_and_writes_nothing(client, platfor
 
 
 def test_an_enacted_change_set_is_verified_and_then_confirmed_by_the_kpi(client, platform, r1):
+    """An autonomous change set is verified by reading O1 back, goes under observation (nothing else moves), and is confirmed after an hour of
+    healthy PM.
+    """
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     body = _evaluate(client, instance_id)
@@ -326,6 +358,9 @@ def test_an_enacted_change_set_is_verified_and_then_confirmed_by_the_kpi(client,
 
 
 def test_a_change_set_that_degrades_the_cluster_is_reverted_through_dme(client, platform, r1):
+    """When the cluster is worse an hour after a change, the changed cell is reverted through DME with the reason on the action and the decision
+    record, and it ends on its baseline.
+    """
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     moves = _moved(_evaluate(client, instance_id))
@@ -336,11 +371,13 @@ def test_a_change_set_that_degrades_the_cluster_is_reverted_through_dme(client, 
     assert body["kpi"]["verdict"] == "DEGRADED"
     assert (reverted["decision"], reverted["reason"], reverted["outcome"]) == ("REVERT", "KPI_DEGRADED", "REVERTED")
     assert platform.actions[-1]["context"]["reason"] == "REVERT:KPI_DEGRADED"
+    _assert_decision(platform.actions[-1], "coverage-optimization-rapp", "REVERT:KPI_DEGRADED")
     assert reverted["finalState"]["digitalTilt"] == BASELINE_TILT and reverted["finalState"]["configuredMaxTxPower"] == BASELINE_POWER
     assert client.get(f"/instances/{instance_id}").json()["observing"] is None
 
 
 def test_a_revert_that_will_not_stick_is_retried_once_and_reported(client, platform, r1):
+    """A revert that O1 does not apply is sent twice per cell and reported as REVERT_FAILED, not as success."""
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     moves = _moved(_evaluate(client, instance_id))
@@ -354,6 +391,7 @@ def test_a_revert_that_will_not_stick_is_retried_once_and_reported(client, platf
 
 
 def test_a_cell_outside_the_change_set_is_only_reviewed(client, platform, r1):
+    """Cells that were not changed get CHANGE_SET_REVIEW at the end of the observation, not a confirmation or a revert."""
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     changed = {d["cellId"] for d in _moved(_evaluate(client, instance_id))}
@@ -363,6 +401,9 @@ def test_a_cell_outside_the_change_set_is_only_reviewed(client, platform, r1):
 
 
 def test_a_write_that_o1_reports_but_does_not_apply_is_rolled_back(client, platform, r1):
+    """A completed action whose read-back does not match is VERIFY_FAILED and the cell is rolled back (already at its old setting) with no
+    observation started.
+    """
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     platform.stuck = True
@@ -373,6 +414,7 @@ def test_a_write_that_o1_reports_but_does_not_apply_is_rolled_back(client, platf
 
 
 def test_a_rollback_that_cannot_be_verified_is_reported(client, platform, r1):
+    """When even the restore cannot be read back, the cell is reported as VERIFY_FAILED_ROLLBACK_FAILED after two attempts."""
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     platform.stuck = True
@@ -383,8 +425,10 @@ def test_a_rollback_that_cannot_be_verified_is_reported(client, platform, r1):
     assert moves and all(d["outcome"] == "VERIFY_FAILED_ROLLBACK_FAILED" and len(d["rollback"]["attempts"]) == 2 for d in moves)
 
 
+# One row per non-completed action status the intent handler can report, and the rollback trigger it maps to.
 @pytest.mark.parametrize("status,trigger", [("PARTIAL_SUCCESS", "PARTIAL_SUCCESS"), ("FAILED", "ACTION_FAILED")])
 def test_a_change_the_intent_handler_did_not_complete_is_rolled_back(client, platform, r1, status, trigger):
+    """A PARTIAL_SUCCESS or FAILED action is rolled back without a verification read."""
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched()
     platform.action_status = status
@@ -393,6 +437,7 @@ def test_a_change_the_intent_handler_did_not_complete_is_rolled_back(client, pla
 
 
 def test_a_change_the_intent_never_reported_is_rolled_back_as_failed(client, platform, r1):
+    """An intent report with no action for a cell (or an unreadable one) counts as NOT_ENACTED and is rolled back as ACTION_FAILED."""
     instance_id = _deployed(client, platform, r1)
     platform.dispatch = _dispatched(noReport=True)
     moves = _moved(_evaluate(client, instance_id))
@@ -400,6 +445,9 @@ def test_a_change_the_intent_never_reported_is_rolled_back_as_failed(client, pla
 
 
 def test_assist_mode_waits_for_the_operator_then_enacts_on_reconcile(client, platform, r1):
+    """In ASSIST mode the change set waits for approval and every cell is recorded as waiting; `reconcile` enacts it once approved, and a second
+    reconcile settles nothing.
+    """
     instance_id = _deployed(client, platform, r1, "ASSIST")
     dispatch_id = str(uuid.uuid4())
     platform.dispatch = {"status": "AWAITING_SCOPE", "dispatchId": dispatch_id, "autonomyMode": "ASSIST"}
@@ -418,6 +466,7 @@ def test_assist_mode_waits_for_the_operator_then_enacts_on_reconcile(client, pla
 
 
 def test_assist_mode_rejection_leaves_the_cluster_unchanged(client, platform, r1):
+    """A rejected ASSIST dispatch ends as REJECTED, clears the pending dispatch and writes nothing."""
     instance_id = _deployed(client, platform, r1, "ASSIST")
     dispatch_id = str(uuid.uuid4())
     platform.dispatch = {"status": "AWAITING_SCOPE", "dispatchId": dispatch_id, "autonomyMode": "ASSIST"}
@@ -431,6 +480,9 @@ def test_assist_mode_rejection_leaves_the_cluster_unchanged(client, platform, r1
 
 
 def test_the_guards_block_every_cell_and_the_audit_trail_says_why(client, platform, r1):
+    """Protected cell, critical alarm, O1 lock, energy-saving sleep and a Mobility relation under observation each block their cells and the
+    reasons appear in the audit; nothing is dispatched.
+    """
     instance_id = _deployed(client, platform, r1, energySavingInstanceId="es-1", mobilityInstanceId="mo-1")
     platform.guards = [{"cellId": "301", "cellClass": "EMERGENCY"}]
     platform.alarms = [{"alarmId": "al-1", "severity": "critical", "probableCause": "x", "managedFunctionRef": "NRCellDU=302"}]
@@ -449,6 +501,7 @@ def test_the_guards_block_every_cell_and_the_audit_trail_says_why(client, platfo
 
 
 def test_unreachable_peers_and_an_unreadable_alarm_list_hold_nothing(client, platform, r1):
+    """A failing alarm query or an unreachable peer rApp holds no cell, so a lost peer does not stop the loop."""
     instance_id = _deployed(client, platform, r1, "SHADOW", energySavingInstanceId="es-1", mobilityInstanceId="mo-1")
     platform.alarms_fail = True
     platform.dispatch = {"status": "SHADOWED", "dispatchId": str(uuid.uuid4()), "autonomyMode": "SHADOW"}
@@ -459,6 +512,9 @@ def test_unreachable_peers_and_an_unreadable_alarm_list_hold_nothing(client, pla
 # ---------------------------------------------------------------- audit and dashboard
 
 def test_decisions_are_listed_filtered_and_shown_on_the_dashboard(client, platform, r1):
+    """The decision list filters by execution and cell, and the dashboard returns the share and excess trends (limited by `points`) and each cell's
+    latest decision.
+    """
     instance_id = _deployed(client, platform, r1, "SHADOW")
     platform.dispatch = {"status": "SHADOWED", "dispatchId": str(uuid.uuid4()), "autonomyMode": "SHADOW"}
     for execution in ("e-1", "e-2"):
@@ -474,6 +530,7 @@ def test_decisions_are_listed_filtered_and_shown_on_the_dashboard(client, platfo
 
 
 def test_the_dashboard_of_a_cluster_without_decisions_has_no_latest_decision(client, platform, r1):
+    """A started instance with no evaluation has a dashboard whose cells have no latest decision."""
     instance_id = _start(client, r1)
     assert {c["latestDecision"] for c in client.get(f"/instances/{instance_id}/dashboard").json()["cells"]} == {None}
 
@@ -481,6 +538,9 @@ def test_the_dashboard_of_a_cluster_without_decisions_has_no_latest_decision(cli
 # ---------------------------------------------------------------- the Digital Twin producer
 
 def test_the_sim_producer_registers_publishes_and_answers_dme_callbacks(client, platform):
+    """The Digital Twin producer registers its type (201), publishes windows to the data jobs (a bad body is 422), and answers DME's health, job
+    and stop callbacks.
+    """
     resp = client.post("/sim-producer/register")
     assert resp.status_code == 201 and resp.json()["dmeTypeId"] == "t-1"
     body = {"managedElementRef": ME, "clusters": {"dt1": {"scenario": "OVERSHOOT", "faultCell": "b"}, "dt2": {}}, "start": T0.isoformat(), "hours": 2}

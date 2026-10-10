@@ -35,7 +35,10 @@ One pass is `POST /instances/{id}/evaluate`, per source cell:
   Intent, the SA SMOS O1-CM handler, DME and RAN NF OAM.
 - O1 write: sets the reselection priority or the relation's CIO, then reads
   the value back to verify. A failed or unverified write is rolled back
-  directly through DME `/actions`.
+  directly through DME `/actions`. Each direct write sends a `decision`
+  (`PR-AI-13`): a reference to the execution, the model version and the reason
+  in words, kept by RAN NF OAM as the decision record of the job. Writes made
+  through an Intent carry none.
 - Verify or revert: after 60 minutes of post-change PM the change is CONFIRMED,
   or REVERTED (also direct to DME) if a target became congested, the source
   ended worse than forecast, or a CIO change raised handover failures.

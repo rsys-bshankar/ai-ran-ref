@@ -25,6 +25,8 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Drop every view in `public` that selects from a base table of the same name in another schema, which is what the compatibility views of 0023 to 0025 are; found in the catalogue, not from a list."""
+    # A PL/pgSQL block rather than a fixed list: it removes exactly the views that depend on a same-named table in another schema, so a view of any other kind in `public` is left alone.
     op.execute("""
         DO $$
         DECLARE v record;
@@ -51,6 +53,7 @@ ADDED_AFTER_THE_VIEWS = {("nfo", "lcm_operation"): {"created_at"}}              
 
 
 def downgrade() -> None:
+    """Create the views again for every base table outside `public`, with the columns the tables had when the views were first made (`ADDED_AFTER_THE_VIEWS` are left out)."""
     bind = op.get_bind()
     columns: dict[tuple[str, str], list[str]] = {}
     rows = bind.exec_driver_sql("""

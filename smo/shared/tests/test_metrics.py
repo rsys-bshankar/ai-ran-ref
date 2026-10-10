@@ -1,4 +1,7 @@
-"""PR-OBS-2: request count and latency series, and /metrics."""
+"""PR-OBS-2: request count and latency series, and /metrics.
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_metrics.py -q
+"""
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -10,18 +13,21 @@ from smo_shared.metrics import install_metrics
 
 
 def _app() -> FastAPI:
+    """Helper: an app with metrics and health installed, a templated route (which can answer 409) and a route that crashes."""
     app = FastAPI()
     install_metrics(app)
     install_health(app)
 
     @app.get("/models/{model_id}")
     def model(model_id: str):
+        # Test route that can answer 409; not part of any published API.
         if model_id == "boom":
             raise HTTPException(status_code=409, detail="x")
         return {"id": model_id}
 
     @app.get("/crash")
     def crash():
+        # Test route that raises an unexpected error; not part of any published API.
         raise RuntimeError("no")
 
     return app
@@ -32,6 +38,7 @@ def _sample(name: str, **labels) -> float:
 
 
 def test_a_request_is_counted_under_its_route_template_and_status():
+    """Requests are counted under the route template and status, so two different ids add two to one series."""
     client = TestClient(_app())
     before = _sample("smo_http_requests_total", method="GET", route="/models/{model_id}", status="200")
     client.get("/models/a")
@@ -40,11 +47,13 @@ def test_a_request_is_counted_under_its_route_template_and_status():
 
 
 def test_raw_ids_never_become_label_values():
+    """A raw path id never appears in the scrape output, which would make the label set unbounded."""
     TestClient(_app()).get("/models/some-unique-id-123")
     assert "some-unique-id-123" not in TestClient(_app()).get("/metrics").text
 
 
 def test_error_statuses_have_their_own_series_and_unmatched_paths_share_one():
+    """A 409, a 500 and unmatched 404s are counted under their own status, with every unknown path sharing the `unmatched` series."""
     client = TestClient(_app(), raise_server_exceptions=False)
     b409 = _sample("smo_http_requests_total", method="GET", route="/models/{model_id}", status="409")
     b404 = _sample("smo_http_requests_total", method="GET", route="unmatched", status="404")
@@ -59,6 +68,7 @@ def test_error_statuses_have_their_own_series_and_unmatched_paths_share_one():
 
 
 def test_latency_is_observed_in_a_histogram():
+    """Each request adds one observation and a positive duration to the latency histogram."""
     client = TestClient(_app())
     before = _sample("smo_http_request_duration_seconds_count", method="GET", route="/models/{model_id}", status="200")
     client.get("/models/a")
@@ -67,6 +77,7 @@ def test_latency_is_observed_in_a_histogram():
 
 
 def test_probes_and_the_scrape_itself_are_not_counted():
+    """Probe routes and /metrics are not counted, or a scrape every few seconds would dominate the series."""
     client = TestClient(_app())
     client.get("/live")
     client.get("/health")
@@ -78,6 +89,7 @@ def test_probes_and_the_scrape_itself_are_not_counted():
 
 
 def test_metrics_is_prometheus_text_and_not_in_the_openapi_spec():
+    """/metrics answers Prometheus text format and is not published in the OpenAPI document."""
     client = TestClient(_app())
     response = client.get("/metrics")
     assert response.status_code == 200
@@ -89,6 +101,7 @@ def test_metrics_is_prometheus_text_and_not_in_the_openapi_spec():
 # --- PR-OBS-2.5: state machine transitions ----------------------------------------------------------------------------------------
 
 def test_every_transition_is_counted_by_machine_state_event_and_target_and_refusals_have_their_own_series():
+    """A state machine counts each transition by machine, from-state, event and to-state, and each refused one in its own series."""
     import enum
     from smo_shared.statemachine import IllegalTransition, StateMachine
 
@@ -115,6 +128,7 @@ def test_every_transition_is_counted_by_machine_state_event_and_target_and_refus
 
 
 def test_a_guard_that_rejects_counts_as_a_refusal_not_a_transition():
+    """A transition whose guard rejects is counted as a refusal, not as a taken transition."""
     import enum
     from smo_shared.statemachine import IllegalTransition, StateMachine
 
@@ -135,6 +149,7 @@ def test_a_guard_that_rejects_counts_as_a_refusal_not_a_transition():
 # --- PR-OBS-2.4: database pool gauges ----------------------------------------------------------------------------------------------
 
 def test_pool_gauges_follow_checkouts_and_returns(tmp_path):
+    """The pool gauges show in-use, idle and overflow connections and the capacity as connections are checked out and returned."""
     from sqlalchemy import create_engine
     from sqlalchemy.pool import QueuePool
     from smo_shared.metrics import PoolCollector
@@ -161,6 +176,7 @@ def test_pool_gauges_follow_checkouts_and_returns(tmp_path):
 
 
 def test_a_pool_that_is_not_a_queue_pool_reports_nothing():
+    """A pool without the queue-pool counters (SQLite's test pool) yields no pool series instead of an error."""
     from smo_shared.metrics import PoolCollector
     from smo_shared.testing import make_test_engine
 
@@ -168,13 +184,15 @@ def test_a_pool_that_is_not_a_queue_pool_reports_nothing():
 
 
 def test_the_scrape_carries_the_pool_and_fsm_families_for_the_modules_own_engine():
+    """The scrape output includes the state-machine counter family registered by the shared library."""
     body = TestClient(_app()).get("/metrics").text
     assert "# TYPE smo_fsm_transitions_total counter" in body
 
 
 def test_a_service_without_database_credentials_can_install_metrics():
-    """R1 Termination and the mock services have no database: installing metrics must not import smo_shared.db (the first version did, and
-    the compose stack failed to start with MissingDatabaseUrl)."""
+    """Installing metrics in a process with no database settings (R1 Termination, the mocks) must not import smo_shared.db, which would refuse to start
+    without a URL.
+    """
     import os
     import subprocess
     import sys
@@ -190,15 +208,20 @@ def test_a_service_without_database_credentials_can_install_metrics():
 
 
 def _calls(client, target, method, outcome) -> float:
+    """Helper: the current value of smo_outbound_calls_total for one (client, target, method, outcome)."""
     return _sample("smo_outbound_calls_total", client=client, target=target, method=method, outcome=outcome)
 
 
 def test_r1_target_is_the_module_in_the_path_and_bounded():
+    """r1_target returns the module segment of a path (without query) and `other` for anything that is not module-shaped or too long, keeping the label
+    bounded.
+    """
     from smo_shared.metrics import r1_target
     assert r1_target("/sme/service-apis/v1/x") == "sme" and r1_target("/dme/data-jobs?x=1") == "dme" and r1_target("sme") == "sme"
     assert r1_target("/") == "other" and r1_target("/Not A Module/x") == "other" and r1_target("/" + "a" * 80) == "other"
 
 
+# Table: the stubbed response (200, 404, 503) and the outcome class (2xx, 4xx, 5xx) it must be counted under; each call also records a duration.
 @pytest.mark.parametrize("behaviour,outcome", [
     (lambda *a, **k: __import__("httpx").Response(200), "2xx"),
     (lambda *a, **k: __import__("httpx").Response(404), "4xx"),
@@ -214,6 +237,7 @@ def test_r1_client_counts_each_call_by_target_method_and_outcome(monkeypatch, be
 
 
 def test_r1_client_counts_a_timeout_and_a_connection_error_and_still_raises(monkeypatch):
+    """R1Client counts a timeout and a connection error under their outcomes and still re-raises the exception to the caller."""
     import httpx
     from smo_shared.r1_client import R1Client
 
@@ -235,6 +259,7 @@ def test_r1_client_counts_a_timeout_and_a_connection_error_and_still_raises(monk
 
 
 def test_the_retry_after_a_401_is_a_second_counted_call(monkeypatch):
+    """The automatic retry after a 401 is counted as a second call, so the 4xx and the 2xx each appear once."""
     import httpx
     from smo_shared import r1_client
     answers = iter([httpx.Response(401), httpx.Response(200)])
@@ -246,6 +271,9 @@ def test_the_retry_after_a_401_is_a_second_counted_call(monkeypatch):
 
 
 def test_webhooks_are_counted_under_one_constant_target_never_the_host(monkeypatch):
+    """Callbacks are counted under the constant target `callback` (a refused destination as `blocked`) and no destination host appears in the metric
+    output.
+    """
     import httpx
     from smo_shared import webhook
     monkeypatch.setattr(webhook.httpx, "post", lambda url, json=None, timeout=None: httpx.Response(500))

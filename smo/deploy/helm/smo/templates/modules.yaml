@@ -1,4 +1,11 @@
-{{- /* One Deployment and one Service per enabled module, from one template (PR-OPS-2.2). */}}
+{{- /*
+  One Deployment per enabled module, and its Service (none for a worker) and PersistentVolumeClaim (only for a module with `persistence`), all from this one
+  template (PR-OPS-2.2). Driven by `modules` and `moduleDefaults` (kind, port, replicas, database, databaseRole, enrollment, mtls, env, resources,
+  persistence, scratch, preStopSeconds) and by image, placement, mtls, postgres.tls, rappSigning, rappCredentials, gui, tracing and ranNfOam.
+  What it must keep in step with: docker-compose.yml (each module's image, secrets and environment, checked by tests_integration/test_helm_chart.py) and
+  the optional templates that add to a module's pod (mtls.yaml, postgres.yaml, rapp-credentials.yaml). A comment in the YAML below is rendered into the
+  manifest; a template comment such as this one is not.
+*/}}
 {{- if not (has .Values.placement.mode (list "soft" "hard" "off")) }}
 {{- fail (printf "placement.mode must be soft, hard or off, not %q" .Values.placement.mode) }}
 {{- end }}
@@ -140,6 +147,17 @@ spec:
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+            {{- if eq $name "ran-nf-oam" }}
+            {{- with $.Values.ranNfOam.vesPasswordSecretRef }}
+            {{- if .name }}
+            {{- if or (hasKey $m.env "RAN_NF_OAM_VES_PASSWORD") (hasKey $m.env "RAN_NF_OAM_VES_PASSWORD_FILE") }}
+            {{- fail "ranNfOam.vesPasswordSecretRef is set and modules.ran-nf-oam.env also sets RAN_NF_OAM_VES_PASSWORD or RAN_NF_OAM_VES_PASSWORD_FILE: the VES listener refuses a password given twice (503); use one" }}
+            {{- end }}
+            # SB-7.8: the VES listener's password from a Secret of your own, a file mounted at /run/ves (the listener exists only with a password)
+            - { name: RAN_NF_OAM_VES_PASSWORD_FILE, value: /run/ves/password }
+            {{- end }}
+            {{- end }}
+            {{- end }}
             {{- if eq $name "onboarding" }}
             {{- if $.Values.rappSigning.trustStoreConfigMap }}
             # PR-RAPP-1: the accepted publishers' public keys, the files of a ConfigMap of your own mounted at /run/rapp-trust (read for each package)
@@ -175,6 +193,7 @@ spec:
             {{- end }}
             {{- end }}
             {{- end }}
+          {{- /* the probes follow `kind`: a service answers /live and /ready (with mTLS in server mode they run inside the container, with the module's own certificate), a worker touches a heartbeat file and has no port, a static module (the GUI) gets a TCP check */}}
           {{- if eq $m.kind "service" }}
           {{- if $m.preStopSeconds }}
           # PR-HA-2: stay up for a few seconds after the pod is marked terminating, so the Service and the other pods stop sending to it
@@ -262,6 +281,9 @@ spec:
             {{- if and (eq $name "onboarding") $.Values.rappSigning.trustStoreConfigMap }}
             - { name: rapp-trust, mountPath: /run/rapp-trust, readOnly: true }
             {{- end }}
+            {{- if and (eq $name "ran-nf-oam") $.Values.ranNfOam.vesPasswordSecretRef.name }}
+            - { name: ves-password, mountPath: /run/ves, readOnly: true }
+            {{- end }}
             {{- if $m.persistence }}
             - { name: data, mountPath: {{ $m.persistence.mountPath }} }
             {{- end }}
@@ -324,6 +346,14 @@ spec:
             secretName: {{ $.Values.gui.jwtKeySecretRef.name | quote }}
             defaultMode: 0440              # readable by the pod's group (fsGroup), not by the world
         {{- end }}
+        {{- if and (eq $name "ran-nf-oam") $.Values.ranNfOam.vesPasswordSecretRef.name }}
+        - name: ves-password
+          secret:
+            secretName: {{ $.Values.ranNfOam.vesPasswordSecretRef.name | quote }}
+            defaultMode: 0440              # readable by the pod's group (fsGroup), not by the world
+            items:
+              - { key: {{ $.Values.ranNfOam.vesPasswordSecretRef.key | default "ves-password" | quote }}, path: password }      # only this key, not the whole Secret
+        {{- end }}
         {{- if and (eq $name "onboarding") $.Values.rappSigning.trustStoreConfigMap }}
         - name: rapp-trust
           configMap:
@@ -342,6 +372,7 @@ spec:
         - name: scratch
           emptyDir: {}
         {{- end }}
+{{- /* the claim of a module with `persistence` (its Deployment is Recreate, so one pod holds the volume); with persistence.enabled off the pod gets an emptyDir instead and no claim is made */}}
 {{- if and $m.persistence $.Values.persistence.enabled }}
 ---
 apiVersion: v1
@@ -359,6 +390,7 @@ spec:
     requests:
       storage: {{ $m.persistence.size }}
 {{- end }}
+{{- /* a worker has no port, so no Service */}}
 {{- if ne $m.kind "worker" }}
 ---
 apiVersion: v1

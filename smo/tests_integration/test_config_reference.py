@@ -23,6 +23,7 @@ DOC = (SMO_ROOT / "docs" / "CONFIGURATION.md").read_text(encoding="utf-8")
 
 @pytest.fixture(scope="module")
 def walked():
+    """The environment reads and the unresolvable ones found by walking the source tree once, shared by the tests of this file."""
     reads, unresolved = cr.collect(SMO_ROOT)
     return reads, unresolved
 
@@ -38,22 +39,26 @@ def unread(reads, document: str) -> list[str]:
 
 
 def test_every_variable_read_in_code_is_in_the_table(walked):
+    """The walk finds more than 100 variables, and each one is in docs/CONFIGURATION.md."""
     reads, _ = walked
     assert len({r.name for r in reads}) > 100, "the walk found almost nothing: it is not reading the source"
     assert undocumented(reads, DOC) == [], "read in code, missing from docs/CONFIGURATION.md: run python scripts/config_reference.py --write"
 
 
 def test_the_table_lists_no_variable_that_no_code_reads(walked):
+    """The table has no row for a variable no code reads."""
     reads, _ = walked
     assert unread(reads, DOC) == [], "listed in docs/CONFIGURATION.md but read nowhere: run python scripts/config_reference.py --write"
 
 
 def test_no_read_has_a_name_the_walk_cannot_work_out(walked):
+    """Every environment read has a name the walk can resolve, or is annotated `# config-ref: NAME`."""
     _, unresolved = walked
     assert unresolved == [], "an environment read whose variable name is built in a way the walk cannot follow: add `# config-ref: NAME` on or above it"
 
 
 def test_every_variable_has_a_description_and_no_description_is_orphaned(walked):
+    """Every variable has a written description (no `TODO`) and `config_descriptions.json` has none for a variable that no longer exists."""
     reads, _ = walked
     variables = cr.build(reads)
     assert [v.name for v in variables if v.description == "TODO"] == []
@@ -61,6 +66,7 @@ def test_every_variable_has_a_description_and_no_description_is_orphaned(walked)
 
 
 def test_the_documented_defaults_are_the_code_defaults(walked):
+    """The default in the table is the default in the code, so a changed default shows up as a stale document."""
     reads, _ = walked
     documented = cr.documented_names(DOC)
     drifted = {v.name: (documented[v.name], cr.default_cell(v)) for v in cr.build(reads) if documented.get(v.name) != cr.default_cell(v)}
@@ -68,11 +74,13 @@ def test_the_documented_defaults_are_the_code_defaults(walked):
 
 
 def test_the_committed_document_is_what_the_generator_writes(walked):
+    """docs/CONFIGURATION.md is byte for byte what `scripts/config_reference.py --write` produces."""
     reads, _ = walked
     assert cr.splice(DOC, cr.render_markdown(cr.build(reads))) == DOC, "docs/CONFIGURATION.md is stale: run python scripts/config_reference.py --write"
 
 
 def test_secrets_are_marked(walked):
+    """The known secrets are marked as masked and a variable whose description merely mentions a secret is not."""
     reads, _ = walked
     secret = {v.name for v in cr.build(reads) if v.masked}
     assert {"SMO_DATABASE_PASSWORD", "SMO_DATABASE_PASSWORD_FILE", "SMO_ENROLLMENT_SECRET", "GUI_JWT_SECRET", "GUI_ADMIN_PASSWORD"} <= secret
@@ -111,11 +119,15 @@ class Settings:
 
 
 def reads_of(source: str):
+    """Runs the extraction on a source snippet and returns ({name: read}, unresolved)."""
     reads, unresolved = cr.extract(source)
     return {r.name: r for r in reads}, unresolved
 
 
 def test_extraction_finds_each_way_of_reading_the_environment():
+    """The extraction finds every way the code reads the environment (get, index, getenv, a constant name, the secret helper and its `_FILE` form,
+    presence tests, `or` fallbacks, the wrapper and prefix forms) with the right defaults.
+    """
     found, unresolved = reads_of(SNIPPET)
     assert unresolved == []
     assert {"SEEDED_PORT", "SEEDED_REQUIRED", "SEEDED_GETENV", "SEEDED_CONSTANT_NAME", "SEEDED_PASSWORD", "SEEDED_PASSWORD_FILE", "SEEDED_PRESENT",
@@ -131,16 +143,19 @@ def test_extraction_finds_each_way_of_reading_the_environment():
 
 
 def test_the_wrapper_itself_is_not_a_variable():
+    """The placeholder names inside the environment wrapper are not reported as variables."""
     found, _ = reads_of(SNIPPET)
     assert not any(n.startswith("<") for n in found)        # neither `name` nor `{prefix}` is reported as a variable of its own
 
 
 def test_a_name_built_at_run_time_is_a_pattern():
+    """A name built from an f-string is reported as a pattern with a placeholder, not as unresolved."""
     found, unresolved = reads_of('import os\n\ndef cred(ref):\n    return os.environ.get(f"SEEDED_CRED_{ref.upper()}_PASSWORD")\n')
     assert unresolved == [] and set(found) == {"SEEDED_CRED_<REF>_PASSWORD"}
 
 
 def test_a_name_the_walk_cannot_follow_must_be_annotated():
+    """A read whose name is a loop variable is reported as unresolved with its location, and a `# config-ref:` annotation resolves it."""
     source = 'import os\n\nfor var in ("A", "B"):\n    print(os.environ.get(var))\n'
     assert reads_of(source)[1] == ["snippet.py:4"]
     annotated = 'import os\n\nfor var in ("A", "B"):\n    # config-ref: SEEDED_A, SEEDED_B\n    print(os.environ.get(var))\n'
@@ -149,6 +164,7 @@ def test_a_name_the_walk_cannot_follow_must_be_annotated():
 
 
 def test_a_compose_substitution_is_a_read():
+    """A `${NAME:-default}` in a compose file counts as a read, and one in a comment does not."""
     reads = cr.compose_reads("services:\n  a:\n    environment:\n      X: ${SEEDED_COMPOSE:-7}\n      # ${COMMENTED_OUT:-1}\n")
     assert [(r.name, r.default, r.module) for r in reads] == [("SEEDED_COMPOSE", "7", "compose")]
 
@@ -157,6 +173,7 @@ def test_a_compose_substitution_is_a_read():
 
 
 def test_a_new_environment_read_that_is_not_in_the_table_fails_the_check(walked):
+    """Seeded miss: adding one new read to the real tree makes the undocumented check fail, so the check can fail at all."""
     reads, _ = walked
     new, _ = cr.extract('import os\nPOOL = os.environ.get("SEEDED_MISS_NEW_SETTING", "1")\n', "billing/app/main.py", "billing")
     assert undocumented(reads, DOC) == []                                # the real tree passes ...
@@ -164,6 +181,7 @@ def test_a_new_environment_read_that_is_not_in_the_table_fails_the_check(walked)
 
 
 def test_a_row_for_a_variable_no_code_reads_fails_the_check(walked):
+    """Seeded miss: a stale row in the table makes the unread check fail."""
     reads, _ = walked
     stale = DOC.replace("### Read by several modules", "| `SEEDED_STALE_ROW` | `1` |  | `x.py` | gone |\n\n### Read by several modules", 1)
     assert unread(reads, DOC) == [] and unread(reads, stale) == ["SEEDED_STALE_ROW"]

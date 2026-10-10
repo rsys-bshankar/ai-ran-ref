@@ -40,6 +40,8 @@ def _create(client, **extra):
 
 
 def test_an_instance_without_a_claim_registers_an_unscoped_invoker_as_before(client, sme):
+    """An instance created without an authorisation scope registers an invoker with no `authzScope` key at all and shows no scope.
+    """
     created = _create(client)
     assert created.status_code == 202
     assert sme["registrations"] == [{"apiInvokerPublicKey": f"rapp-instance:{created.json()['instanceId']}"}]          # no authzScope key at all
@@ -47,6 +49,7 @@ def test_an_instance_without_a_claim_registers_an_unscoped_invoker_as_before(cli
 
 
 def test_the_claim_is_put_on_the_invoker_and_shown_on_the_instance(client, sme):
+    """The scope given at create is normalised, put on the invoker at SME, and shown in the instance detail and the list."""
     created = _create(client, authzScope={"tenants": ["acme"], "regions": ["eu-west"]}).json()
     assert sme["registrations"][0]["authzScope"] == CLAIM
     assert client.get(f"/instances/{created['instanceId']}").json()["authzScope"] == CLAIM
@@ -54,6 +57,7 @@ def test_the_claim_is_put_on_the_invoker_and_shown_on_the_instance(client, sme):
     assert [i["authzScope"] for i in listed] == [CLAIM]
 
 
+# Each row is a scope that is not valid (empty list, wrong type, unknown key, a value with a space, a duplicate): create is 422 AUTHZ_SCOPE_INVALID, nothing is registered and no instance exists.
 @pytest.mark.parametrize("claim", [{"regions": []}, {"regions": "eu"}, {"zones": ["z"]}, {"tenants": ["a b"]}, {"regions": ["eu", "eu"]}])
 def test_a_claim_that_is_not_valid_creates_nothing(client, sme, claim):
     resp = _create(client, authzScope=claim)
@@ -71,12 +75,15 @@ def test_an_sme_that_does_not_record_the_claim_leaves_no_unscoped_identity_behin
 
 
 def test_a_new_credential_carries_the_claim_too(client, sme):
+    """Issuing new credentials registers the new invoker with the same scope claim."""
     created = _create(client, authzScope=CLAIM).json()
     assert client.post(f"/instances/{created['instanceId']}/credentials").status_code == 200
     assert [r.get("authzScope") for r in sme["registrations"]] == [CLAIM, CLAIM]
 
 
 def test_an_upgrade_keeps_the_claim_and_a_rollback_restores_it(client, db_session_factory, sme):
+    """The replacement instance and its invoker carry the scope, the version history keeps the old one, and a rollback restores it.
+    """
     created = _create(client, authzScope=CLAIM).json()
     client.post(f"/instances/{created['instanceId']}/bootstrap-complete")
     upgraded = client.post(f"/instances/{created['instanceId']}/upgrade", json={"newPackageId": str(uuid.uuid4())})
@@ -101,6 +108,8 @@ def _two_instances(client, sme):
 
 
 def test_an_rapp_reports_bootstrap_and_performance_for_its_own_instance_only(client, sme):
+    """A caller with the rApp role is refused (403 NOT_THIS_INSTANCE) on another instance's performance and bootstrap-complete, with no effect, while its own instance works.
+    """
     mine, other = _two_instances(client, sme)
     own = {"X-R1-Role": "rapp", "X-R1-Invoker-Id": mine["oauthClientId"]}
     refused = client.post(f"/instances/{other['instanceId']}/performance", json={"cpu": 1}, headers=own)
@@ -112,6 +121,7 @@ def test_an_rapp_reports_bootstrap_and_performance_for_its_own_instance_only(cli
     assert client.post(f"/instances/{mine['instanceId']}/bootstrap-complete", headers=own).json()["state"] == "RUNNING"
 
 
+# Each row is rApp-role headers that do not identify the instance (no invoker id, an empty one, or another's): both the performance and the bootstrap-complete calls are 403 and the instance stays DEPLOYING.
 @pytest.mark.parametrize("headers", [{"X-R1-Role": "rapp"}, {"X-R1-Role": "rapp", "X-R1-Invoker-Id": ""}, {"X-R1-Role": "rapp", "X-R1-Invoker-Id": "someone-else"}])
 def test_an_rapp_that_is_not_the_instance_is_refused(client, sme, headers):
     mine, _ = _two_instances(client, sme)
@@ -141,6 +151,7 @@ def test_the_limits_are_put_in_force_on_the_platforms_own_account_when_the_rapp_
 
 
 def test_an_instance_without_a_credential_cannot_be_acted_for_by_an_rapp(client, sme):
+    """A terminated instance has no credential, so no rApp can act for it (403)."""
     created = _create(client).json()
     client.post(f"/instances/{created['instanceId']}/terminate")
     resp = client.post(f"/instances/{created['instanceId']}/performance", json={"cpu": 1}, headers={"X-R1-Role": "rapp", "X-R1-Invoker-Id": created["oauthClientId"]})
@@ -148,6 +159,7 @@ def test_an_instance_without_a_credential_cannot_be_acted_for_by_an_rapp(client,
 
 
 def test_an_operator_and_a_call_that_did_not_come_through_the_gateway_are_as_before(client, sme):
+    """An internal caller, and a call without gateway headers, may still act for any instance; an unknown instance is 404."""
     mine, other = _two_instances(client, sme)
     internal = {"X-R1-Role": "internal", "X-R1-Invoker-Id": "smo-gui"}
     assert client.post(f"/instances/{mine['instanceId']}/performance", json={"cpu": 1}, headers=internal).status_code == 200

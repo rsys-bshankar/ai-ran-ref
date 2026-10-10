@@ -1,9 +1,14 @@
-// The pure part of the generic renderer for the operator page a rApp declares (PR-GUI-8, GUI-8.4; docs/adr/0004-operator-ui-declaration.md): reading
-// fields by the path subset, filling route parameters, formatting values, building chart series, checking an action's inputs. No React, no network.
-//
-// Everything here is defensive on purpose. The declaration was validated at onboarding, but the stored one may come from a newer Onboarding than this
-// GUI build, or have been edited in the database, and the answers of a rApp are arbitrary: a missing field, a wrong type or a prototype name ("constructor")
-// shows "—" or text, and nothing throws. Values are always text: nothing here makes HTML, a link, a style or an attribute out of data.
+/**
+ * The pure part of the generic renderer for the operator page a rApp declares (PR-GUI-8, GUI-8.4; docs/adr/0004-operator-ui-declaration.md): reading
+ * fields by the path subset, filling route parameters, formatting values, building chart series, checking an action's inputs. No React, no network.
+ *
+ * Everything here is defensive on purpose. The declaration was validated at onboarding, but the stored one may come from a newer Onboarding than this
+ * GUI build, or have been edited in the database, and the answers of a rApp are arbitrary: a missing field, a wrong type or a prototype name ("constructor")
+ * shows "—" or text, and nothing throws. Values are always text: nothing here makes HTML, a link, a style or an attribute out of data.
+ *
+ * The route-filling functions are a security boundary: a value from a row reaches a URL path or query only when it is one safe segment (`safeSegment`), so a row cannot
+ * steer a call to another route. Used by `components/OperatorUi.tsx` and `api/rapps.ts`; covered by `operatorUi.test.ts`.
+ */
 
 import { formatTime } from "./domain";
 
@@ -136,6 +141,9 @@ export function formatValue(value: unknown, format?: string, unit?: string): str
   }
 }
 
+/**
+ * The finite number a value stands for: a finite number as it is, a non-blank numeric string converted; anything else (NaN, infinity, text, null) is null.
+ */
 export function numberOf(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return Number(value);
@@ -217,7 +225,7 @@ export function readInputs(specs: InputSpec[], values: Record<string, string | b
   return { body, errors };
 }
 
-/** The text a refresh interval is polled at, in ms, or false for "when the page opens and on a manual refresh". Out-of-range values are clamped to the format's 5 to 3600. */
+/** The polling interval in ms for a source's `refreshSeconds`, or false for "when the page opens and on a manual refresh". Out-of-range values are clamped to the format's 5 to 3600. */
 export function refreshInterval(seconds: unknown): number | false {
   const n = numberOf(seconds);
   return n === null ? false : Math.min(3600, Math.max(5, n)) * 1000;

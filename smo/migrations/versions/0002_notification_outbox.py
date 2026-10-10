@@ -15,6 +15,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Create `notification_outbox` and its partial index on the pending rows by due time, which is what a drain reads."""
     op.execute("""
         CREATE TABLE notification_outbox (
           id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -33,4 +34,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop `notification_outbox`."""
     op.execute("DROP TABLE notification_outbox")

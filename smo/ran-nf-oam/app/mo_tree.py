@@ -13,8 +13,10 @@ DNs are compared as exact text: case-sensitive, no whitespace around the RDNs.
 """
 
 import datetime
+from collections.abc import Callable
 
 from sqlalchemy import select
+from sqlalchemy.sql import Select
 from sqlalchemy.orm import Session
 
 from .ldn import parse_ldn
@@ -77,8 +79,9 @@ def children_stmt(dn: str):
     return select(ManagedObject).where(ManagedObject.parent_dn == dn).order_by(ManagedObject.object_class, ManagedObject.object_id)
 
 
-def subtree(db: Session, dn: str, depth: int) -> tuple[dict, bool]:
-    """(the object and its descendants down to `depth` levels as nested `children`, whether `MAX_SUBTREE_NODES` cut it short)."""
+def subtree(db: Session, dn: str, depth: int, restrict: Callable[[Select], Select] | None = None) -> tuple[dict, bool]:
+    """(the object and its descendants down to `depth` levels as nested `children`, whether `MAX_SUBTREE_NODES` cut it short). `restrict` (PR-SEC-10.9) limits the
+    children read at every level (to the nodes a caller may see); the root is the caller's to have checked."""
     root = db.get_one(ManagedObject, dn)
     budget = [MAX_SUBTREE_NODES]
     truncated = [False]
@@ -89,7 +92,7 @@ def subtree(db: Session, dn: str, depth: int) -> tuple[dict, bool]:
         if level >= depth:
             return node
         kids = []
-        for child in db.scalars(children_stmt(obj.dn)).all():
+        for child in db.scalars(restrict(children_stmt(obj.dn)) if restrict else children_stmt(obj.dn)).all():
             if budget[0] <= 0:
                 truncated[0] = True
                 break

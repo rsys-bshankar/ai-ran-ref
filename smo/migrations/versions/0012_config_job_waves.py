@@ -28,6 +28,7 @@ JOB_COLUMNS = [
 
 
 def upgrade() -> None:
+    """Add the wave settings and state to `write_config_job` (`JOB_COLUMNS`) and `position` and `wave` to `write_config_sub_change`; existing rows become one-wave jobs."""
     for column in JOB_COLUMNS:
         op.execute(f"ALTER TABLE write_config_job ADD COLUMN {column}")
     op.execute("ALTER TABLE write_config_sub_change ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
@@ -35,6 +36,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop the columns added by `upgrade`, in reverse order."""
     op.execute("ALTER TABLE write_config_sub_change DROP COLUMN wave")
     op.execute("ALTER TABLE write_config_sub_change DROP COLUMN position")
     for column in reversed(JOB_COLUMNS):

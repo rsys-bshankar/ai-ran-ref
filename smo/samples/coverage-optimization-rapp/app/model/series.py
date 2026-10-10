@@ -34,6 +34,7 @@ Series = list[Window]
 
 
 def parse_time(value: str) -> datetime.datetime:
+    """Parses an ISO 8601 time (a trailing Z allowed) and returns it timezone-aware, assuming UTC when it has no offset."""
     t = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
     return t if t.tzinfo else t.replace(tzinfo=datetime.UTC)
 
@@ -57,6 +58,7 @@ def total(c: dict) -> float:
 
 
 def share(c: dict, counter: str) -> float:
+    """One counter as a percentage of the window's report total, rounded to 3 places; 0 when the total is 0."""
     t = total(c)
     return 0.0 if t <= 0 else round(100.0 * float(c.get(counter, 0)) / t, 3)
 
@@ -82,6 +84,7 @@ def latest(series: Series) -> Window | None:
 
 
 def at(series: Series, when: datetime.datetime) -> dict | None:
+    """The payload of the window that starts exactly at `when`, or None."""
     for t, p in series:
         if t == when:
             return p

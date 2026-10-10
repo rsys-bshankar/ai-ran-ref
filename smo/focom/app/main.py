@@ -1,14 +1,29 @@
-"""FOCOM SMOS (O2ims).
+"""FOCOM SMOS (O2-IMS): the FastAPI module for the O-Cloud inventory, inventory-change subscriptions and the TEIV-shaped topology export, served at
+`/focom` behind R1 Termination.
 
-SMO Design v1.3 section 3.6, extended by NFO+FOCOM LLD section 1: FOCOM's
-own alarm/performance domain (infrastructure — O-Cloud host/node/cluster
-health) is distinguished explicitly from RAN NF OAM's RAN-function alarms.
-Phase 1: degenerate single-node cluster (D-DEPLOY-FOCOM-1, unchanged).
+What it is: the inventory routes (`/inventory`, `/resource-types`, `/resource-pools`, `/deployment-managers`), resource provision / deprovision / status,
+inventory subscriptions and `/topology`, plus the app wiring. The other route groups are separate files mounted here: `sites.py` (locations, sites,
+pool create / delete), `fcaps.py` (alarms and performance) and `provisioning.py` (artifact, cluster, infrastructure and provisioning-request
+resources). Design record: `focom/README.md`; SMO Design v1.3 section 3.6 and NFO+FOCOM LLD section 1. FOCOM's alarm and performance domain is
+infrastructure (O-Cloud host, node, cluster health), distinct from RAN NF OAM's RAN-function alarms. Phase 1 is a degenerate single-node cluster
+(D-DEPLOY-FOCOM-1).
+
+Where it sits: NFO calls `GET /inventory` (it reads `oCloudId`) and SO SMOS calls `POST /resources/provision`, both through R1 Termination. FOCOM calls
+no other module; inventory notifications to subscribers are outbox rows (`smo_shared.outbox`), never a direct HTTP call from a route.
+
+Owns: the inventory tables and the rules between them in this file. Does not own: authorization (R1 Termination introspects the token; the GUI BFF
+decides which role may call provision, deprovision and alarm ingest) or any placement decision (NFO).
+
+Before editing: (1) the docstring of a route function or a request model is published as OpenAPI text, so changing one makes
+`tests_integration/test_openapi_specs.py` fail until `scripts/generate_openapi_specs.py` is rerun; maintainer notes for routes are `#` comments under
+the docstring. (2) Routes that notify call `_notify_inventory_subscribers` (or `fcaps._notify`) before `db.commit()`: the outbox row is part of the same
+transaction and is sent after it commits. (3) `import httpx` is kept although nothing here calls it: the tests patch `app.main.httpx.post` (see `ruff.toml`).
 """
 
 import uuid
 from typing import Literal
 
+# Unused here on purpose: the unit tests patch `app.main.httpx.post` and the integration tests patch `loaded_apps[<module>].httpx` (see `ruff.toml`, F401).
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict
@@ -40,6 +55,7 @@ apply_correlation_id(app)
 
 install_health(app, checks=[database_check])  # /live, /ready and the /health alias (PR-ST-7)
 
+# The routes in this file call the seeding function under this name; the implementation is in `common.py`.
 _ensure_phase1_topology = ensure_phase1_topology  # seeded lazily on first read (common.py)
 
 app.include_router(sites.router)
@@ -85,6 +101,10 @@ def query_inventory(resource_type: str = "", db: Session = Depends(get_session))
     `oCloudId`, not this filtered list, so this has no effect on it
     either way.
     """
+    # Route notes (the docstring above is published): seeds the topology, then reads `oCloudId`, `name` and `description` from the `dm-0` deployment manager
+    # row. `resource_type` filters `resourceTypes` only (an unregistered type gives `[]`, not an error); `deploymentManagers`, `locations` and `oCloudSites`
+    # are always complete and unpaginated, with the pools inline in each site. `globalCloudId` is derived from `oCloudId`, the two endpoint fields come
+    # from `common.py`, and `extensions` is always `[]`.
     _ensure_phase1_topology(db)
     dm = db.get_one(DeploymentManager, PHASE1_DEPLOYMENT_MANAGER_ID)
     resource_types = db.scalars(select(ResourceType)).all()
@@ -123,6 +143,8 @@ class RegisterResourceTypeRequest(BaseModel):
 
 @app.post("/resource-types", status_code=201)
 def register_resource_type(body: RegisterResourceTypeRequest, db: Session = Depends(get_session)):
+    # Route notes: 201 with the stored type. 422 `SCHEMA_VALIDATION_FAILED` (not 409) when the id already exists. The body forbids unknown fields. The only
+    # route that sets the dictionary ids, kind and class of a type; a type registered here can then be provisioned.
     _ensure_phase1_topology(db)
     if db.get(ResourceType, body.resourceTypeId) is not None:
         raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"resource type {body.resourceTypeId!r} already exists")
@@ -150,6 +172,7 @@ def list_resource_types(limit: int = PageLimit, offset: int = PageOffset, db: Se
 
 @app.get("/resource-types/{resource_type_id}")
 def get_resource_type(resource_type_id: str, db: Session = Depends(get_session)):
+    # Route notes: 404 `RESOURCE_TYPE_NOT_FOUND` for an unknown id.
     _ensure_phase1_topology(db)
     t = db.get(ResourceType, resource_type_id)
     if t is None:
@@ -159,6 +182,7 @@ def get_resource_type(resource_type_id: str, db: Session = Depends(get_session))
 
 @app.get("/resource-pools")
 def list_resource_pools(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: seeds the topology; paginated; each pool lists all its resource ids (`pool_view`).
     _ensure_phase1_topology(db)
     page = paginate(db, select(ResourcePool), limit, offset)
     return {**page, "items": [pool_view(db, p) for p in page["items"]]}
@@ -166,6 +190,7 @@ def list_resource_pools(limit: int = PageLimit, offset: int = PageOffset, db: Se
 
 @app.get("/resource-pools/{resource_pool_id}")
 def get_resource_pool(resource_pool_id: str, db: Session = Depends(get_session)):
+    # Route notes: 404 `RESOURCE_POOL_NOT_FOUND` for an unknown id.
     _ensure_phase1_topology(db)
     p = db.get(ResourcePool, resource_pool_id)
     if p is None:
@@ -176,6 +201,7 @@ def get_resource_pool(resource_pool_id: str, db: Session = Depends(get_session))
 @app.get("/resource-pools/{resource_pool_id}/resources")
 def list_pool_resources(resource_pool_id: str, limit: int = PageLimit, offset: int = PageOffset,
                          db: Session = Depends(get_session)):
+    # Route notes: 404 `RESOURCE_POOL_NOT_FOUND` for an unknown pool; otherwise a page of the resources in it (an empty pool gives an empty page).
     _ensure_phase1_topology(db)
     if db.get(ResourcePool, resource_pool_id) is None:
         raise framework_error(FrameworkError.RESOURCE_POOL_NOT_FOUND, detail="no such resource pool")
@@ -186,6 +212,7 @@ def list_pool_resources(resource_pool_id: str, limit: int = PageLimit, offset: i
 
 @app.get("/deployment-managers")
 def list_deployment_managers(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
+    # Route notes: seeds the topology; paginated. Phase 1 has the one `dm-0` row.
     _ensure_phase1_topology(db)
     page = paginate(db, select(DeploymentManager), limit, offset)
     return {**page, "items": [_deployment_manager_view(d) for d in page["items"]]}
@@ -193,6 +220,7 @@ def list_deployment_managers(limit: int = PageLimit, offset: int = PageOffset, d
 
 @app.get("/deployment-managers/{deployment_manager_id}")
 def get_deployment_manager(deployment_manager_id: str, db: Session = Depends(get_session)):
+    # Route notes: 404 `DEPLOYMENT_MANAGER_NOT_FOUND` for an unknown id.
     _ensure_phase1_topology(db)
     d = db.get(DeploymentManager, deployment_manager_id)
     if d is None:
@@ -200,6 +228,7 @@ def get_deployment_manager(deployment_manager_id: str, db: Session = Depends(get
     return _deployment_manager_view(d)
 
 
+# Name prefixes of the TEIV-shaped export: entity and relationship groups are keyed `o-ran-smo-teiv-cloud:<Name>`, ids are `urn:oran:smo:teiv:<Type>:<id>`.
 TEIV_CLOUD_PREFIX = "o-ran-smo-teiv-cloud"
 TEIV_URN_PREFIX = "urn:oran:smo:teiv"
 
@@ -226,6 +255,10 @@ def export_topology(db: Session = Depends(get_session)):
     resource -> pool, resource -> parent) rather than inventing
     relationships this schema doesn't actually track.
     """
+    # Route notes (the docstring above is published): seeds the topology, then reads every type, pool, deployment manager and resource (unpaginated). An
+    # entity or relationship group appears only when it has at least one member, so an empty database exports empty lists. The relationships come from
+    # the resource's own columns only (type, pool, `parent_id`); a relationship id is `<RELATIONSHIP>:<resourceId>`, so each resource has at most one of
+    # each kind. Locations, sites, alarms and the O2-IMS objects of `provisioning.py` are not exported.
     _ensure_phase1_topology(db)
 
     resource_types = db.scalars(select(ResourceType)).all()
@@ -296,21 +329,15 @@ def export_topology(db: Session = Depends(get_session)):
 
 
 def _notify_inventory_subscribers(db: Session, event_type: str, resource_id: str, resource_type_id: str | None) -> None:
-    """HISTORY.md §5: subscribe_inventory_changes took no
-    callback parameter, stored nothing, and delivered nothing — the
-    reference's real Subscription model stores a callback + filter and
-    pushes typed create/modify/delete notifications on inventory
-    change. Wired into the only two mutating endpoints this module has
-    (provision/deprovision). A caller can still pass resource_type_id
-    as None (e.g. deprovisioning an id that was never provisioned) — an
-    unset filter always matches rather than being silently dropped.
-    Best-effort delivery, same pattern as Policy Mgmt's CreateIntent
-    notification.
+    """Enqueues a notification for each inventory subscription that wants this event; the caller commits.
 
-    consumerSubscriptionId (HISTORY.md §7 item 8): the spec's own
-    description is explicit that it exists "for tracking, routing, or
-    identifying the subscription used to report the event" — i.e. it's
-    meant to come back on the notification itself, not just be stored.
+    `event_type` is `CREATE` or `DELETE`. A subscription with a `resource_type_id` filter is skipped when it differs from `resource_type_id`; when
+    `resource_type_id` is None (deprovisioning an id that is not a stored resource) every subscription matches, so a type-filtered subscriber still hears
+    about the delete. The payload is `{objectType: "resource", notificationEventType, resourceId, resourceTypeId, consumerSubscriptionId}`; the
+    subscriber's own `consumerSubscriptionId` comes back on the notification so it can route it.
+
+    One outbox row per subscription, added to the caller's transaction and sent after its commit (PR-MSG-1.8); nothing is sent when the caller rolls back.
+    A callback the SSRF guard refuses is dropped by `enqueue` with a log warning.
     """
     for sub in db.scalars(select(InventorySubscription)).all():
         if sub.resource_type_id is not None and resource_type_id is not None and sub.resource_type_id != resource_type_id:
@@ -324,6 +351,8 @@ def _notify_inventory_subscribers(db: Session, event_type: str, resource_id: str
 
 @app.post("/inventory/subscriptions", status_code=201)
 def subscribe_inventory_changes(body: SubscribeInventoryRequest, db: Session = Depends(get_session)):
+    # Route notes: 201 with `{subscriptionId, consumerSubscriptionId}`. Neither `callback` nor `resourceTypeId` is checked here: the SSRF guard runs when a
+    # notification is enqueued (a refused destination is dropped there), and a filter naming no registered type simply never matches.
     sub = InventorySubscription(callback=body.callback, resource_type_id=body.resourceTypeId,
                                  consumer_subscription_id=body.consumerSubscriptionId)
     db.add(sub)
@@ -333,6 +362,7 @@ def subscribe_inventory_changes(body: SubscribeInventoryRequest, db: Session = D
 
 @app.delete("/inventory/subscriptions/{subscription_id}", status_code=204)
 def unsubscribe_inventory_changes(subscription_id: uuid.UUID, db: Session = Depends(get_session)):
+    # Route notes: idempotent, 204 for an unknown id. A `subscription_id` that is not a UUID is rejected by FastAPI (422) before the route runs.
     sub = db.get(InventorySubscription, subscription_id)
     if sub is not None:
         db.delete(sub)
@@ -350,6 +380,10 @@ def provision_resource(spec: dict, db: Session = Depends(get_session)):
     1 never validated this field, and rejecting it now would be a
     scope-creeping behavior change, not just a schema addition.
     """
+    # Route notes (the docstring above is published): `spec` is an untyped dict. `resourceTypeId` defaults to `generic` when absent or empty; an unregistered
+    # type is 404 `RESOURCE_TYPE_NOT_FOUND` unless `FOCOM_AUTO_REGISTER_RESOURCE_TYPES` is on. `description`, `globalAssetId`, `tags` and `groups` are
+    # copied as given without checking their types. The resource always goes into `pool-0` whatever pools exist (`sites.py`). Order: seed, resolve the type,
+    # insert the resource, flush for its id, enqueue the CREATE notifications, one commit. Answers 200 (not 201) with `{resourceId, clusterId}`.
     _ensure_phase1_topology(db)
     resource_type_id = spec.get("resourceTypeId") or PHASE1_RESOURCE_TYPE_ID
     if db.get(ResourceType, resource_type_id) is None:
@@ -381,6 +415,9 @@ def provision_resource(spec: dict, db: Session = Depends(get_session)):
 
 @app.delete("/resources/{resource_id}")
 def deprovision_resource(resource_id: str, db: Session = Depends(get_session)):
+    # Route notes: always 200 `{status: "deprovisioned"}`. A `resource_id` that is not a UUID or names no stored resource is a no-op, but the DELETE
+    # notification is still enqueued, with the id exactly as given and no type (so every subscriber matches). The delete does not look at objects that
+    # name the resource (cluster resources, infrastructure resources, children through `parent_id`).
     try:
         resource = db.get(Resource, uuid.UUID(resource_id))
     except ValueError:
@@ -395,6 +432,7 @@ def deprovision_resource(resource_id: str, db: Session = Depends(get_session)):
 
 @app.get("/resources/{resource_id}/status")
 def monitor_resource(resource_id: str):
+    # Route notes: a constant. Answers `healthy` for any id, existing or not, and reads no database or telemetry.
     return {"resourceId": resource_id, "status": "healthy"}
 
 
@@ -420,6 +458,7 @@ def _deployment_manager_view(d: DeploymentManager) -> dict:
 @app.get("/inventory/subscriptions")
 def list_inventory_subscriptions(limit: int = PageLimit, offset: int = PageOffset, db: Session = Depends(get_session)):
     """(GUI pass 2) Inventory-change subscriptions were write-only."""
+    # Route notes: paginated; lists `subscriptionId`, `callback`, `consumerSubscriptionId` and `resourceTypeId`.
     page = paginate(db, select(InventorySubscription), limit, offset)
     return {**page, "items": [{"subscriptionId": str(s.subscription_id), "callback": s.callback,
              "consumerSubscriptionId": s.consumer_subscription_id, "resourceTypeId": s.resource_type_id}

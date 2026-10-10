@@ -73,6 +73,12 @@ class _ModuleIdentity:
     """This process's OAuth2 client identity at SME, and its cached token."""
 
     def __init__(self, store=None):
+        """Starts with the invoker id and secret pinned by `SMO_INVOKER_ID` / `SMO_INVOKER_SECRET` when both are set in the environment, else none
+        (registered on first use).
+
+        `store` is the shared identity store; when None it is resolved on first use by `_identity_store`. No network or database access happens
+        here.
+        """
         self.lock = threading.Lock()
         self.invoker_id: str | None = os.environ.get("SMO_INVOKER_ID") or None
         self.invoker_secret: str | None = os.environ.get("SMO_INVOKER_SECRET") or None
@@ -85,6 +91,11 @@ class _ModuleIdentity:
         self.expires_at = 0.0
 
     def _discover(self, base_url: str) -> str:
+        """Returns the token endpoint URL, reading it once from the gateway's `GET /bootstrap` (first usable `tokenEndPoint.uri`) and caching it.
+
+        Sends `X-Bootstrap-Key` when `SMO_BOOTSTRAP_KEY` is set. Raises httpx errors on a failed call and StopIteration when no endpoint is
+        advertised; `token_for` catches both.
+        """
         if self.token_endpoint is None:
             # PR-SEC-9.3: a gateway that sets R1_BOOTSTRAP_KEY asks for it here; unset (the default) nothing is sent
             key = read_secret("SMO_BOOTSTRAP_KEY")
@@ -95,6 +106,10 @@ class _ModuleIdentity:
         return self.token_endpoint
 
     def _identity_store(self):
+        """Returns the shared identity store, or None for a per-process identity.
+
+        The database store is used when `MODULE` is set and `SMO_MODULE_IDENTITY_STORE` is not `off`; resolved once per process.
+        """
         if not self._store_resolved:
             self._store_resolved = True
             if os.environ.get("MODULE") and os.environ.get("SMO_MODULE_IDENTITY_STORE", "db") != "off":
@@ -106,6 +121,12 @@ class _ModuleIdentity:
         # An opaque label, not a PEM key: this client authenticates with its onboarding
         # secret, so SME has no key to verify assertions with (an RFC 7523 client
         # assertion needs a PEM key, SA-SME-1-public-key).
+        """Registers a new invoker at SME (`POST /invoker-registrations`) and returns (invoker id, onboarding secret).
+
+        An SMO module sends the enrollment secret so SME records it as `internal`; an rApp sends none. The public key field carries an opaque label
+        (`smo-<kind>:<MODULE>:<random>`) because this client authenticates with its onboarding secret and has no key. Raises httpx errors on
+        failure.
+        """
         sme = token_endpoint.rsplit("/oauth2/token", 1)[0]
         kind = identity_kind()
         label = f"smo-{'rapp' if kind == 'rapp' else 'module'}:{os.environ.get('MODULE', 'unknown')}:{secrets.token_urlsafe(8)}"
@@ -153,6 +174,9 @@ class _ModuleIdentity:
 
     @staticmethod
     def _offboard(token_endpoint: str, invoker_id: str) -> None:
+        """Best-effort delete of an invoker registration this process made but lost the race to store; a failure is logged and ignored (it is only an
+        orphan registration).
+        """
         sme = token_endpoint.rsplit("/oauth2/token", 1)[0]
         try:
             httpx.delete(f"{sme}/invoker-registrations/{invoker_id}", timeout=5.0, **mtls.client_kwargs(sme))
@@ -166,6 +190,14 @@ class _ModuleIdentity:
         }, timeout=5.0, **mtls.client_kwargs(token_endpoint))
 
     def token_for(self, base_url: str, refresh: bool = False) -> str | None:
+        """Returns a bearer token for SME's token endpoint, from the cache unless `refresh` is set or it is within 30 s of expiring; None when none can
+        be obtained.
+
+        Under the identity lock it discovers the endpoint, registers an identity if there is none, and requests a client-credentials token (scope
+        `smo-rapp` for an rApp, `smo-internal` for a module). A 400 from the token endpoint means SME no longer knows the invoker: it registers
+        again once and retries. Any failure is logged and gives None, so the caller sends the request without a token and R1 answers 401. The lock
+        is held during the network calls, so concurrent callers wait for one refresh rather than each making their own.
+        """
         with self.lock:
             if not refresh and self.token and time.time() < self.expires_at:
                 return self.token
@@ -174,6 +206,7 @@ class _ModuleIdentity:
                 if self.invoker_id is None:
                     self._onboard(token_endpoint)
                 resp = self._grant(token_endpoint)
+                # SME answers 400 when it no longer knows the invoker id (for example the registry was reset): register afresh, once, and ask again.
                 if resp.status_code == 400:   # SME no longer knows this invoker: onboard afresh, once
                     self._onboard(token_endpoint, stale_invoker_id=self.invoker_id)
                     resp = self._grant(token_endpoint)
@@ -198,6 +231,13 @@ def _module_token(base_url: str, refresh: bool = False) -> str | None:
 
 
 class R1Client:
+    """Synchronous HTTP client for calling another module through R1 Termination (`base_url`, default `R1_GATEWAY_URL`).
+
+    Each call adds the bearer token (the caller's own `bearer_token`, else this process's module token), the correlation id, the on-behalf-of rApp
+    and its scope claim, and the trace headers, counts the call in the outbound metrics, and retries once with a fresh token on a 401 when it used
+    the module token. It never raises for an HTTP status: the caller reads `status_code`. It raises httpx's own transport errors (timeouts,
+    connection failures).
+    """
     def __init__(self, base_url: str = R1_GATEWAY_URL, bearer_token: str | None = None):
         self.base_url = base_url
         self._bearer_token = bearer_token
@@ -206,6 +246,11 @@ class R1Client:
         return f"{self.base_url}{path}"
 
     def _headers(self, refresh: bool = False) -> dict:
+        """The headers every call carries: `Authorization` (omitted when no token could be obtained), and, when known, the correlation id and the
+        on-behalf-of originator with its scope claim.
+
+        `refresh=True` forces a new module token (used for the retry after a 401).
+        """
         token = self._bearer_token or _module_token(self.base_url, refresh)
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         # Wave 3 cross-cutting standardization's Correlation-ID slice
@@ -252,6 +297,12 @@ class R1Client:
     def _send(self, send, path: str, method: str = "other", **kwargs) -> httpx.Response:
         # A caller's own headers (for example `Idempotency-Key`, PR-ST-3) ride along with the
         # authorization and correlation headers; the client's own win on a clash.
+        """Sends one request with `send` (an `httpx` function), applying the client's defaults, and retries once on a 401.
+
+        The caller's own `headers` are merged under the client's (the client's win on a clash), `timeout` defaults to `timeouts.call_timeout()`, and
+        the mTLS context is added when mTLS is on. The retry happens only when no `bearer_token` was given, since a caller-supplied token cannot be
+        refreshed here.
+        """
         extra = kwargs.pop("headers", None) or {}
         kwargs.setdefault("timeout", call_timeout())   # never httpx's implicit 5 s (timeouts.py)
         for name, value in mtls.client_kwargs(self.base_url).items():   # PR-SEC-2: this module's client certificate and the CA, when SMO_MTLS=on

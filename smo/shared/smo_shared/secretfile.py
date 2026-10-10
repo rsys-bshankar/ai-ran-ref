@@ -28,6 +28,12 @@ class SecretFileError(RuntimeError):
 
 
 def read_secret(name: str, environ: Mapping[str, str] = os.environ) -> str | None:
+    """Returns the secret named `name` from `environ[name]` or from the file named by `environ[name + "_FILE"]`; None when neither is set or the value
+    is empty.
+
+    Raises SecretConflict when both are set and SecretFileError when the file cannot be read (the message names the variable and path, never the
+    contents). One trailing newline is removed from a file's text.
+    """
     value = environ.get(name) or ""
     path = environ.get(f"{name}_FILE") or ""
     if value and path:

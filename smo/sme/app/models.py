@@ -1,3 +1,15 @@
+"""SQLAlchemy tables of SME and the CAPIF event-type sets (`SERVICE_API_EVENTS`, `API_INVOKER_EVENTS`, `EVENT_TYPES`).
+
+What it is: the eight tables behind `app/main.py` (service registry and its authorization policy, provider and invoker registrations, issued tokens, used client
+assertions, trusted invokers, event subscriptions). `main.py` is the only code that reads or writes them; no other module touches them, and none of these tables
+references another module's. Design record: `sme/README.md` section 2.2 and the `HISTORY.md` entries cited on each class.
+
+Before editing: the schema is the Alembic history in `smo/migrations/versions/`, not these classes. Change a column here and add a revision in the same change (expand
+before contract, see `smo/CLAUDE.md`), then check it with `scripts/check_migration_matches_models.py` against Postgres. Postgres types (`ARRAY`, `JSON`, `Uuid`) carry a
+SQLite variant so the unit tests run on SQLite (`ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite")`); SQLite returns datetimes naive, so elapsed-time
+code must pass them through `smo_shared.timeutil.as_utc`.
+"""
+
 import datetime
 import uuid
 
@@ -8,6 +20,11 @@ from smo_shared.db import Base
 
 
 class ServiceProfile(Base):
+    """One published service API (CAPIF ServiceAPIDescription, flattened): the row discovery returns and events describe.
+
+    `service_name` is unique across all producers; `producer_id` is the publishing `apfId`. `service_id` is the `serviceId` of the API and the `apiId` of event filters.
+    `aef_profiles` is kept as one JSON list (see the comment below). Deleting the row cascades to its `ServiceAuthzPolicy`.
+    """
     __tablename__ = "service_profile"
     # UNIQUE on service_name ALONE, not (service_name, producer_id) — Foundational
     # Platform LLD section 2.3's actual decision is that a DIFFERENT producer
@@ -44,6 +61,11 @@ class ServiceProfile(Base):
 
 
 class ServiceAuthzPolicy(Base):
+    """Who may discover a service: one row per `ServiceProfile` (primary key is the foreign key, deleted with the service).
+
+    `allowed_consumers` None or empty means everyone; otherwise only the listed invoker ids see the service and are notified about it (`main._visible_to`). When
+    `gates_discovery_visibility` is false the list is ignored. The flag defaults to true and no API changes it: every registration creates the row with the default.
+    """
     __tablename__ = "service_authz_policy"
 
     service_id: Mapped[uuid.UUID] = mapped_column(
@@ -190,6 +212,10 @@ class TrustedInvoker(Base):
 
 
 class ServiceEventSubscription(Base):
+    """A CAPIF event subscription: `subscriber_id` wants `event_types` POSTed to `callback_uri`, narrowed by the optional filters.
+
+    A filter column that is NULL or empty does not restrict (`main._filters_match`). `api_ids` holds serviceIds (as strings), `api_invoker_ids` invoker ids, `aef_ids` AEF ids.
+    """
     __tablename__ = "service_event_subscription"
 
     subscription_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -202,7 +228,9 @@ class ServiceEventSubscription(Base):
     aef_ids: Mapped[list[str] | None] = mapped_column(ARRAY(String).with_variant(JSON(none_as_null=True), "sqlite"))
 
 
+# Events about a published service; their `eventDetail` carries `apiIds` and `aefIds`.
 SERVICE_API_EVENTS = {"SERVICE_API_AVAILABLE", "SERVICE_API_UNAVAILABLE", "SERVICE_API_UPDATE"}
 # OI-5-sme-filters: TS 29.222 CAPIFEvent's invoker-onboarding events
 API_INVOKER_EVENTS = {"API_INVOKER_ONBOARDED", "API_INVOKER_OFFBOARDED", "API_INVOKER_UPDATED"}
+# Every event type a subscription may ask for: `subscribe_events` refuses anything outside this set.
 EVENT_TYPES = SERVICE_API_EVENTS | API_INVOKER_EVENTS

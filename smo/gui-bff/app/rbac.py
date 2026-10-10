@@ -24,6 +24,9 @@ from typing import Callable
 
 
 class Role(StrEnum):
+    """The three GUI roles. The string values are what is stored in `gui_user.role`, sent in the session answer and written in the audit log, so they are never renamed.
+    Order of power is `RANK`, not the declaration order.
+    """
     VIEWER = "viewer"
     OPERATOR = "operator"
     ADMIN = "admin"
@@ -47,6 +50,9 @@ GUI_RMIO_ID = "smo-gui"
 
 @dataclass(frozen=True)
 class User:
+    """The signed-in identity as the rules need it: the user name and the role read from the user table on this request. The `smo-gui:<username>` string the rules
+    write into forwarded requests is built from `username`.
+    """
     username: str
     role: Role
 
@@ -56,6 +62,10 @@ Overrides = Callable[[User], dict]
 
 @dataclass(frozen=True)
 class Rule:
+    """One line of the permission table: the HTTP method, the full-path pattern, the minimum role, and optionally an extra condition on the query (`query_match`) and values
+    forced from the signed-in user into the query (`query_overrides`) or the top level of the JSON body (`json_overrides`). A forced value replaces whatever the browser sent.
+    Instances are immutable and live in `RULES`; the order of that list is part of the meaning.
+    """
     method: str
     pattern: re.Pattern
     role: Role
@@ -66,6 +76,9 @@ class Rule:
 
 @dataclass(frozen=True)
 class Decision:
+    """The answer of `decide`: `allowed`, the role the matching rule needs (None when no rule matches, so the call is not exposed through the GUI at all) and the rule
+    itself (None then), which the proxy uses to apply the overrides.
+    """
     allowed: bool
     required_role: Role | None   # None: not exposed through the GUI at all
     rule: Rule | None = None
@@ -125,6 +138,8 @@ RULES: list[Rule] = [
     # admin-only, the same elevated stakes DEPRECATE/RETIRE already get —
     # everything else `advance` can fire (the automatic TRAINING_COMPLETE/
     # VALIDATION_COMPLETE/EMULATION_COMPLETE-style transitions) is operator.
+    # The first match wins, so these admin-only events must stay above the generic advance rule that follows them: that rule would match the same request at
+    # operator level. `decide` looks for any value of `event` among all the values sent, and tests/test_rbac_matrix.py fails for a rule that another rule shadows.
     _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "DEPRECATE"}),
     _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "RETIRE"}),
     _rule("POST", "/aimgf/models/{id}/advance", A, query_match={"event": "SUBMIT_FOR_APPROVAL"}),
@@ -189,6 +204,9 @@ RULES: list[Rule] = [
           json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
     _rule("POST", "/ran-nf-oam/software-campaigns/{id}/(continue|halt|abort|rollback)", O,
           json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
+    # MGT-14.7 / MGT-15.6: where the platform calls when an onboarding fails or a campaign halts is an administrative decision (as for safeguard and approval subscriptions)
+    _rule("POST", "/ran-nf-oam/lifecycle-subscriptions", A),
+    _rule("DELETE", "/ran-nf-oam/lifecycle-subscriptions/{id}", A),
     # Wave 9 (W9-01..06): the vendor capability registry, CM schema
     # descriptors and cell guards are inventory/onboarding data — admin.
     _rule("POST", "/ran-nf-oam/(cm-schemas|vendor-onboarding)", A),

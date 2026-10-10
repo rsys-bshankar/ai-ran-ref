@@ -1,3 +1,9 @@
+"""Database table of RAN Analytics (`mdaf_producer`) and the MDA type helpers `main.py` uses to fill its `mda_type` column.
+
+The schema is created by the Alembic revisions in `migrations/`. `MDA_TYPES` repeats the list in `mdaf/app/ts28104.py` (the two
+modules are separate processes and do not import each other); change both together.
+"""
+
 import uuid
 
 from sqlalchemy import ARRAY, JSON, String, Uuid
@@ -5,9 +11,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from smo_shared.db import Base
 
-# HISTORY.md §7 — RAN Analytics vs. TS28104 MDA NRM, `analytics_type` enum
-# finding, closed: TS28104_MdaNrm.yaml's own real, closed 24-value
-# `MDAType` enum, read directly (not summarized).
+# The closed `MDAType` enum of TS28104_MdaNrm.yaml (25 values, copied from the spec), the values a producer may declare as its
+# `mda_type` (HISTORY.md §7, the `analytics_type` enum finding). The same list is `ts28104.MDA_TYPES` in `mdaf`.
 MDA_TYPES = frozenset({
     "COVERAGE_ANALYTICS_COVERAGE_PROBLEM_ANALYSIS", "COVERAGE_ANALYTICS_PAGING_OPTIMIZATION",
     "COVERAGE_ANALYTICS_RET_TP_ANALYTICS", "SLS_ANALYSIS_SERVICE_EXPERIENCE_ANALYSIS",
@@ -40,10 +45,15 @@ _MDA_TYPE_BY_SHORTHAND = {
 
 
 def infer_mda_type(analytics_type: str) -> str | None:
+    """Returns the TS 28.104 MDA type for the two analytics type shorthands this build maps without ambiguity, else None (nothing is guessed)."""
     return _MDA_TYPE_BY_SHORTHAND.get(analytics_type)
 
 
 class MDAFProducer(Base):
+    """One analytics producer registration, keyed by (`producer_id`, `analytics_type`) so one producer can register several types.
+    `dme_input_types` are the DME data type ids it reads and `output_schema` the schema of what it publishes, both as declared by the
+    producer. `mda_type` is the optional TS 28.104 MDA type of the registration.
+    """
     __tablename__ = "mdaf_producer"
 
     producer_id: Mapped[str] = mapped_column(String, primary_key=True)

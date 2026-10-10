@@ -48,6 +48,11 @@ _BLOCKED_HOSTNAMES = frozenset({"localhost", "metadata.google.internal", "metada
 
 
 def _is_blocked_literal_ip(host: str) -> bool:
+    """True when `host` is a literal IP address that is never a legitimate callback target: loopback, link-local (including the 169.254.169.254
+    metadata address), multicast, unspecified or reserved.
+
+    False for a hostname (not resolved here) and for private-range addresses, which real deployments use.
+    """
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
@@ -56,6 +61,13 @@ def _is_blocked_literal_ip(host: str) -> bool:
 
 
 def is_safe_webhook_destination(destination: str | None) -> bool:
+    """True when `destination` may be called: a non-empty `http` or `https` URL with a host that is not one of `localhost`, `metadata.google.internal`,
+    `metadata` and not a blocked literal IP.
+
+    False for None, an empty or malformed URL, any other scheme or a missing host. This is the SSRF guard every outbound callback passes (the outbox
+    checks it at enqueue and again at send). It compares the host text only: it does not resolve names (see the module description for what that
+    leaves open).
+    """
     if not destination:
         return False
     try:

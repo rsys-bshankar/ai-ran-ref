@@ -59,12 +59,14 @@ def migrate(url: str, *args: str, runner=subprocess.run) -> subprocess.Completed
 
 
 def failure_line(text: str) -> str:
+    """The line of a failed `migrate.py` run that names the error (the last one mentioning `Error` or `error:`), cut to 200 characters, for the table."""
     lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
     named = [line for line in lines if re.search(r"Error|error:", line) and not line.startswith("(Background on this error")]
     return (named or lines or ["no output"])[-1][:200]
 
 
 def markdown(rows: list[tuple[str, float, str]], lost: list[str]) -> str:
+    """The step table in markdown, followed by the list of tables that lost rows (or "none")."""
     out = ["| Step | Seconds | |", "|---|---:|---|"]
     out += [f"| {step} | {seconds:.1f} | {note} |" for step, seconds, note in rows]
     out += ["", "Rows lost between the first and the last count: " + ("; ".join(lost) if lost else "none") + "."]
@@ -72,6 +74,11 @@ def markdown(rows: list[tuple[str, float, str]], lost: list[str]) -> str:
 
 
 def main(argv: list[str]) -> int:
+    """Takes row counts, downgrades one revision at a time from head to `--to` (timing each step), upgrades to head again, takes the counts again and prints a table.
+
+        Returns 1 if a downgrade step fails (the walk stops there, but the way back up is still attempted), if the way up fails, or if any table has fewer rows at the end than at
+        the start. The database named by `--url` is changed; point it at a throwaway one.
+    """
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--url", required=True)
     ap.add_argument("--to", default=None, help="the revision to stop at (default: the one above the baseline)")

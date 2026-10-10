@@ -45,10 +45,12 @@ from pathlib import Path
 INT_TYPES = {"int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"}
 INT_BOUNDS = {"int8": (-2**7, 2**7 - 1), "int16": (-2**15, 2**15 - 1), "int32": (-2**31, 2**31 - 1), "int64": (-2**63, 2**63 - 1),
               "uint8": (0, 2**8 - 1), "uint16": (0, 2**16 - 1), "uint32": (0, 2**32 - 1), "uint64": (0, 2**64 - 1)}
+# the largest unscaled value of a decimal64; the bound of a value with `fraction-digits` d is this divided by 10**d (used when a decimal64 range says `min` or `max`)
 DECIMAL64_MAX = 2**63 - 1
 
 
 def _number(text: str, decimal: bool):
+    """Parses one bound of a YANG `range`/`length`: a float for a decimal64 range, otherwise an int (decimal, or hexadecimal with a `0x` prefix). A leading `+` is dropped."""
     text = text.strip().lstrip("+")
     if decimal:
         return float(text)
@@ -57,7 +59,8 @@ def _number(text: str, decimal: bool):
 
 def parse_intervals(text: str, low, high, decimal: bool = False) -> list[list]:
     """A YANG `range` / `length` argument ("0..100 | 200", "min..max", "-90.0..+90.0") as [[lo, hi], ...];
-    `min` and `max` become `low` and `high`, which may be None (unbounded)."""
+        `min` and `max` become `low` and `high`, which may be None (unbounded). A single value `200` is the interval `[200, 200]`.
+    """
     out = []
     for part in text.split("|"):
         bounds = [b.strip() for b in part.split("..")]
@@ -72,6 +75,11 @@ DATA_NODES = {"leaf", "leaf-list", "list", "container", "choice", "anydata", "an
 # ---------------------------------------------------------------- parsing
 
 def _tokens(text: str):
+    """Splits YANG text into `(token, was_quoted)` pairs, skipping whitespace and `//` and `/* */` comments.
+
+        `{`, `}`, `;` and `+` are tokens of their own; a quoted string is one token (double-quoted ones with their escape sequences resolved, single-quoted ones
+        literal); anything else runs to the next whitespace or one of `{};`. The flag lets `parse` tell the quoted string "{" from the brace.
+    """
     i, n = 0, len(text)
     while i < n:
         c = text[i]
@@ -106,7 +114,11 @@ def _tokens(text: str):
 
 
 def parse(text: str) -> list:
-    """Statements as (keyword, argument, [children])."""
+    """Statements as (keyword, argument, [children]).
+
+        A statement is `keyword [argument] ( ";" | "{" children "}" )`; arguments joined with `+` ("a" + "b") are concatenated. The result is a list of top-level
+        statements, normally one `module` or `submodule`. The parser does not validate: malformed input gives a partial tree, not an error.
+    """
     toks = list(_tokens(text))
     pos = 0
 
@@ -137,6 +149,7 @@ def parse(text: str) -> list:
 
 
 def _children(stmt, *keywords):
+    """The direct child statements of `stmt` whose keyword is one of `keywords`."""
     return [c for c in stmt[2] if c[0] in keywords]
 
 
@@ -147,7 +160,11 @@ def _local(name: str) -> str:
 # ---------------------------------------------------------------- the model
 
 class Bundle:
+    """Everything read from the input and library files: the groupings and typedefs found by name, the modules whose data nodes become classes, and the
+        result (`classes`, `unresolved`, `library_used`). First definition of a name wins, so the input files (added before the library) shadow the library.
+    """
     def __init__(self):
+        """Creates the empty indexes. `library_origin` maps `id(statement)` to the library file it came from, so a use of a library definition can be traced back to its file."""
         self.groupings: dict[str, tuple] = {}
         self.typedefs: dict[str, tuple] = {}
         self.modules: list[tuple] = []
@@ -157,6 +174,7 @@ class Bundle:
         self.library_used: set[str] = set()
 
     def add_module(self, module) -> None:
+        """Registers a module of the schema itself: its groupings and typedefs become findable and its top-level lists and containers become classes in `build`."""
         self.modules.append(module)
         self._collect(module)
 
@@ -165,6 +183,10 @@ class Bundle:
         self._collect(module, origin)
 
     def _collect(self, stmt, origin: str | None = None) -> None:
+        """Records the groupings and typedefs under `stmt`, descending through the statements that can contain them. An already-known name is not replaced.
+
+            `origin` (the library file) is remembered per statement, so that `_used` can list which library files actually supplied something.
+        """
         for child in stmt[2]:
             if child[0] == "grouping":
                 if child[1] not in self.groupings:
@@ -180,12 +202,19 @@ class Bundle:
                 self._collect(child, origin)
 
     def _used(self, stmt) -> None:
+        """Notes that a statement from a library file was used, so that file is listed under `library` in the descriptor. Does nothing for an input-file statement."""
         origin = self.library_origin.get(id(stmt))
         if origin:
             self.library_used.add(origin)
 
     # type -> descriptor entry
     def type_of(self, type_stmt, depth: int = 0) -> dict:
+        """The descriptor entry of a `type` statement: `{"type": ..., "enum"?, "range"?, "fractionDigits"?, "length"?, "pattern"?}`.
+
+            A typedef is followed (at most ten levels; an unknown typedef or a longer chain is `any`) and the statement's own `range`, `length`, `fraction-digits` and
+            `pattern` are laid on top of what the typedef gave; the most derived `range`/`length` replaces the inherited one, patterns accumulate. `invert-match` patterns
+            are dropped.
+        """
         name = _local(type_stmt[1])
         own = {c[0]: c for c in _children(type_stmt, "range", "length", "fraction-digits")}
         patterns = [c[1] for c in _children(type_stmt, "pattern")
@@ -228,6 +257,12 @@ class Bundle:
         return entry
 
     def attributes(self, node, seen=frozenset()) -> dict:
+        """The attributes of a list/container/grouping node as `{name: entry}`: its leaves, leaf-lists, nested lists and containers (`array` / `object`),
+            and what its `uses`, `choice` and `case` children contribute.
+
+            The children of a `container attributes` are merged in (the 3GPP IOC convention). A `uses` of a grouping nothing defines is added to `unresolved`; `seen`
+            stops a grouping that uses itself.
+        """
         attrs: dict[str, dict] = {}
         for child in node[2]:
             keyword = child[0]
@@ -256,15 +291,18 @@ class Bundle:
         return attrs
 
     def add_class(self, node) -> None:
+        """Adds the node as a class named after it, merging into an existing class of the same name (nodes of the same name in different modules or augments are one class)."""
         attrs = self.attributes(node)
         existing = self.classes.setdefault(node[1], {})
         existing.update(attrs)
 
     def build(self) -> None:
+        """Turns the top-level lists and containers of every registered module (and of its `augment`s) into classes. Call once, after all modules are added."""
         for module in self.modules:
             self._walk(module)
 
     def _walk(self, stmt) -> None:
+        """Adds each `list`/`container` child as a class and descends into `augment` statements; other children are ignored."""
         for child in stmt[2]:
             if child[0] in ("list", "container"):
                 self.add_class(child)
@@ -272,6 +310,7 @@ class Bundle:
                 self._walk(child)
 
     def revision(self) -> str:
+        """The newest `revision` date across the registered modules (the dates compare as text, YYYY-MM-DD), or "" when none has one."""
         dates = [r[1] for m in self.modules for r in _children(m, "revision")]
         return max(dates) if dates else ""
 
@@ -293,6 +332,7 @@ def ingest(files: list[Path], library: list[Path] | None = None) -> Bundle:
 
 
 def yang_files(paths: list[Path]) -> list[Path]:
+    """Expands the arguments to `.yang` files: a directory gives every `.yang` below it (sorted), a file is taken as it is."""
     files = []
     for p in paths:
         files += sorted(p.rglob("*.yang")) if p.is_dir() else [p]
@@ -306,6 +346,10 @@ def source_name(path: Path) -> str:
 
 
 def main() -> None:
+    """Reads the YANG input, writes the descriptor JSON to `--out` (creating its directory, overwriting any existing file) and prints the IOC, revision and unresolved counts.
+
+        `library` appears in the descriptor only when a library file supplied something; `unresolved` is always present so gaps stay visible.
+    """
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("yang", nargs="+", type=Path, help="YANG file(s) or directories")
     parser.add_argument("--name", required=True)

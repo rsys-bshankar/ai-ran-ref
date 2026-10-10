@@ -10,6 +10,11 @@ final class Json {
     private Json() {
     }
 
+    /**
+     * Encodes {@code value} as JSON text.
+     *
+     * @throws SdkException (status 0) when Jackson cannot encode it
+     */
     static String write(Object value) {
         try {
             return MAPPER.writeValueAsString(value);

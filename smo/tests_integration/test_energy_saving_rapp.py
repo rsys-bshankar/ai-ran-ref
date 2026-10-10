@@ -47,6 +47,10 @@ def _asleep(mesh, iid, clock, cell="101"):
 # ---------------------------------------------------------------- TC01–TC10, TC13, TC14, TC29, TC30
 
 def test_tc01_to_tc10_lifecycle_inference_and_verified_o1_action(mesh, loaded_apps, monkeypatch):
+    """TC01 to TC10 end to end: the package is onboarded with its execution modes, autonomy modes and runtime profiles; the datasets come through
+    DME; the model is trained (artifact in MLMR), validated, emulated, certified and promoted; and a LOCK is enacted autonomously through the
+    intent, DME and RAN NF OAM and read back on the mock adaptor.
+    """
     iid = ready(mesh, loaded_apps, monkeypatch, mode="AUTONOMOUS")
     inst = ok(mesh[RAPP].get(f"/instances/{iid}"))
 
@@ -143,6 +147,9 @@ def test_tc01_to_tc10_lifecycle_inference_and_verified_o1_action(mesh, loaded_ap
 # ---------------------------------------------------------------- TC11, TC12, D-2 actuator
 
 def test_tc11_tc12_shadow_assist_and_the_energy_saving_control_actuator(mesh, loaded_apps, monkeypatch):
+    """TC11 and TC12: SHADOW only recommends (no O1 change), ASSIST waits for the operator's approval and then enacts or, when rejected, never
+    enacts, and the ENERGY_SAVING_CONTROL actuator works as the administrative-state one does.
+    """
     ids = scenario(mesh, loaded_apps, monkeypatch, {
         "shadow": ("SHADOW", "ADMINISTRATIVE_STATE"), "assist": ("ASSIST", "ADMINISTRATIVE_STATE"),
         "ces": ("AUTONOMOUS", "ENERGY_SAVING_CONTROL")})
@@ -191,6 +198,9 @@ def test_tc11_tc12_shadow_assist_and_the_energy_saving_control_actuator(mesh, lo
 # ---------------------------------------------------------------- TC15, TC21
 
 def test_tc21_operator_override_and_tc15_duplicate_unlock(mesh, loaded_apps, monkeypatch):
+    """TC21: an operator override wakes a sleeping cell at once through a verified direct DME action carrying the correlation id and reason, and
+    suppresses the AI for it until cleared. TC15: a duplicate unlock of an awake cell performs no action.
+    """
     iid = ready(mesh, loaded_apps, monkeypatch)
     clock = Clock(mesh)
     _asleep(mesh, iid, clock)
@@ -220,6 +230,9 @@ def test_tc21_operator_override_and_tc15_duplicate_unlock(mesh, loaded_apps, mon
 # ---------------------------------------------------------------- TC16, TC17
 
 def test_tc16_netconf_timeout_retried_and_tc17_retries_exhausted(mesh, loaded_apps, monkeypatch, no_backoff):
+    """TC16: one NETCONF timeout is retried after the first back-off and then applied. TC17: when every attempt times out the action fails, an
+    alarm is raised, the cell stays serving, the model stays promoted and active, and the Intent's report says NOT_FULFILLED.
+    """
     iid = ready(mesh, loaded_apps, monkeypatch)
     clock = Clock(mesh)
 
@@ -249,6 +262,9 @@ def test_tc16_netconf_timeout_retried_and_tc17_retries_exhausted(mesh, loaded_ap
 # ---------------------------------------------------------------- TC18, TC27, TC28, TC33
 
 def test_tc18_tc27_tc28_tc33_verification_and_rollback(mesh, loaded_apps, monkeypatch):
+    """TC18: a write the node acknowledges but never applies fails verification and is rolled back. TC27 and TC28: a partial apply is rolled back
+    for every cell, restoring the one that was locked. TC33: a read-after-write mismatch on a wake re-sends the unlock and then verifies it.
+    """
     iid = ready(mesh, loaded_apps, monkeypatch)
     clock = Clock(mesh)
 
@@ -286,6 +302,9 @@ def test_tc18_tc27_tc28_tc33_verification_and_rollback(mesh, loaded_apps, monkey
 # ---------------------------------------------------------------- TC19, TC32 (neighbours)
 
 def test_tc19_neighbour_congestion_wakes_and_tc32_recovery(mesh, loaded_apps, monkeypatch):
+    """TC19: a neighbour above 80 % PRB wakes a sleeping cell. TC32: while the neighbour stays overloaded the cell may not sleep again, and once it
+    recovers it may.
+    """
     iid = ready(mesh, loaded_apps, monkeypatch, guards={"101": {"neighbourRefs": [f"{ME}/102"]}})
     clock = Clock(mesh)
     _asleep(mesh, iid, clock)
@@ -308,6 +327,9 @@ def test_tc19_neighbour_congestion_wakes_and_tc32_recovery(mesh, loaded_apps, mo
 # ---------------------------------------------------------------- TC20, TC24 (alarms)
 
 def test_tc20_coverage_alarm_wakes_and_tc24_critical_alarm_blocks(mesh, loaded_apps, monkeypatch):
+    """TC20: a critical coverage alarm wakes a sleeping cell. TC24: while a critical alarm is active a LOCK is blocked whatever the prediction, and
+    it is allowed again once the alarm is cleared.
+    """
     iid = ready(mesh, loaded_apps, monkeypatch)
     clock = Clock(mesh)
     _asleep(mesh, iid, clock)
@@ -352,6 +374,10 @@ def test_a_cell_alarm_holds_that_cell_and_the_cells_relying_on_it(mesh, loaded_a
 # ---------------------------------------------------------------- TC22, TC23, TC31, W10-06 (MDAF)
 
 def test_tc22_wake_threshold_tc23_hysteresis_tc31_false_wake_up_and_mdaf(mesh, loaded_apps, monkeypatch):
+    """TC23: PRB between 5 % and 15 % changes nothing in either direction. TC22: a predicted load above 15 % wakes the cell. TC31: a false wake-up
+    does not make the cell flap (the 30 minute guard holds it) and it sleeps again after a fresh hour. Also: an MDAF prediction alone is a wake
+    signal.
+    """
     iid = ready(mesh, loaded_apps, monkeypatch)
     clock = Clock(mesh)
     _asleep(mesh, iid, clock)
@@ -389,6 +415,9 @@ def test_tc22_wake_threshold_tc23_hysteresis_tc31_false_wake_up_and_mdaf(mesh, l
 # ---------------------------------------------------------------- TC25, TC26 (hard guards)
 
 def test_tc25_last_sector_and_tc26_emergency_cell_block(mesh, loaded_apps, monkeypatch):
+    """TC25: of two low cells in one sector group only one may sleep, the other is the last awake sector. TC26: an emergency cell and a cell in an
+    incident zone never sleep. All of these are hard blocks and they hold on the next pass too.
+    """
     iid = ready(mesh, loaded_apps, monkeypatch, guards={
         "101": {"sectorGroup": "S1"}, "102": {"sectorGroup": "S1"}, "103": {"cellClass": "EMERGENCY"},
         "104": {"incidentZone": "flood-7"}})
@@ -410,6 +439,9 @@ def test_tc25_last_sector_and_tc26_emergency_cell_block(mesh, loaded_apps, monke
 # ---------------------------------------------------------------- the package itself
 
 def test_the_committed_csar_is_built_from_the_sample_sources():
+    """The committed package is exactly what `samples/build_csar.py` builds from the sample's sources now (signed with the demo key), so a source
+    change without a rebuilt package fails here with the command to run.
+    """
     import importlib.util
     spec = importlib.util.spec_from_file_location("build_csar", SMO_ROOT / "samples" / "build_csar.py")
     builder = importlib.util.module_from_spec(spec)

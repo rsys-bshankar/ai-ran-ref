@@ -22,18 +22,21 @@ def _title(response):
 
 @pytest.fixture
 def stopped_rapp(mesh):
+    """A mesh in which an operator has stopped the rApp `es-client` with its kill switch at RAN NF OAM."""
     resp = mesh["ran-nf-oam"].put("/rapp-kill/es-client", json={"requestedBy": "alice", "reason": "oscillating"})
     assert resp.status_code == 200
     return mesh
 
 
 def test_a_stopped_rapp_cannot_write_through_dme(stopped_rapp):
+    """A write the stopped rApp makes through DME is refused with 403 RAPP_KILLED and DME records the action as REJECTED."""
     refused = _action(stopped_rapp, RAPP)
     assert refused.status_code == 403 and _title(refused) == "RAPP_KILLED", refused.text
     assert [a["status"] for a in stopped_rapp["dme"].get("/actions").json()["items"]] == ["REJECTED"]
 
 
 def test_stopping_one_rapp_does_not_stop_another_or_dme_itself(stopped_rapp):
+    """The kill switch of one rApp does not stop another rApp or a module writing on its own account."""
     assert _title(_action(stopped_rapp, OTHER_RAPP)) != "RAPP_KILLED"
     assert _title(_action(stopped_rapp, {"X-R1-Role": "internal", "X-R1-Invoker-Id": "dme-client"})) != "RAPP_KILLED"      # a module on its own account
 
@@ -45,6 +48,7 @@ def test_an_rapp_cannot_pose_as_another_to_escape_its_own_stop(stopped_rapp):
 
 
 def test_the_limits_of_an_rapp_apply_to_what_it_writes_through_dme(mesh):
+    """An rApp's blast-radius limit applies to what it writes through DME (403 RAPP_BLAST_RADIUS_EXCEEDED) and not to another rApp."""
     assert mesh["ran-nf-oam"].put("/rapp-limits/es-client", json={"maxElementsPerJob": 1}).status_code == 200
     refused = _action(mesh, RAPP, elements=("ME-1", "ME-2"))
     assert refused.status_code == 403 and _title(refused) == "RAPP_BLAST_RADIUS_EXCEEDED", refused.text
@@ -52,6 +56,7 @@ def test_the_limits_of_an_rapp_apply_to_what_it_writes_through_dme(mesh):
 
 
 def test_the_refusal_is_recorded_against_the_rapp_not_against_dme(stopped_rapp):
+    """The refusal is recorded with the rApp as the invoker, not DME."""
     _action(stopped_rapp, RAPP)
     [refusal] = stopped_rapp["ran-nf-oam"].get("/safeguard-refusals").json()["items"]
     assert refusal["invokerId"] == "es-client" and refusal["refusal"] == "RAPP_KILLED"

@@ -47,6 +47,10 @@ public final class TokenProvider {
     private String token;
     private Instant expiresAt = Instant.MIN;
 
+    /**
+     * The identity starts as the one pinned in {@code config} (null when none is, which means the first token enrols one).
+     * {@code clock} is injected so that tests move time by hand.
+     */
     TokenProvider(SmoConfig config, HttpCaller http, Clock clock) {
         this.config = config;
         this.http = http;
@@ -129,6 +133,11 @@ public final class TokenProvider {
         }
     }
 
+    /**
+     * Returns SME's token endpoint, asking R1 Termination's {@code GET /bootstrap} the first time only: the first entry of
+     * {@code apiEndpoints} that has a {@code tokenEndPoint.uri} wins. The uri is used as given (it is not checked to end in
+     * {@code /oauth2/token}). Throws {@link SdkException} for an error status, or when no entry names an endpoint. The caller holds {@code lock}.
+     */
     private String discover() {
         if (tokenEndpoint == null) {
             Map<String, String> headers = new LinkedHashMap<>();
@@ -153,6 +162,13 @@ public final class TokenProvider {
         return tokenEndpoint;
     }
 
+    /**
+     * Registers a new API invoker at SME and keeps the id and secret it returns as the identity, marked as self-enrolled. The
+     * request carries an opaque label in place of a public key; a module identity also sends its enrollment secret in
+     * {@code X-SMO-Enrollment}. The call goes through {@link HttpCaller#send} with the configured retry policy, like every
+     * other call, and carries no {@code Idempotency-Key}. Throws {@link SdkException} for an error status or an answer without
+     * an id and secret. The caller holds {@code lock}.
+     */
     private void enrol(String endpoint) {
         // An opaque label, not a PEM key: this client authenticates with its onboarding secret (see the Python client).
         byte[] salt = new byte[6];
@@ -179,6 +195,10 @@ public final class TokenProvider {
         selfEnrolled = true;
     }
 
+    /**
+     * Sends the {@code client_credentials} grant for the identity's scope and returns the answer unchecked: {@link #token(boolean)}
+     * decides what a non-success status means. The caller holds {@code lock}.
+     */
     private R1Response grant(String endpoint) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("grant_type", "client_credentials");

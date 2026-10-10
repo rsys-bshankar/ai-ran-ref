@@ -78,6 +78,12 @@ class RateBucket(Base):
 
 
 class TokenBuckets:
+    """The in-process token buckets: one per caller, held in this replica's memory (the default store; see the module description for the budget with N
+    replicas).
+
+    `rate` and `burst` are callables so a change in the environment applies on the next call. `blocking = False`: `take` does no I/O and may run on
+    the event loop. Bounded by MAX_TRACKED_CALLERS, past which buckets that would be full again are dropped.
+    """
     blocking = False                                   # take() does no I/O: safe to call on the event loop
 
     def __init__(self, rate: Callable[[], float], burst: Callable[[], float], clock: Callable[[], float] = time.monotonic):
@@ -109,6 +115,7 @@ class TokenBuckets:
             del self._buckets[caller]
 
     def clear(self) -> None:
+        """Forgets every bucket (used by tests)."""
         with self._lock:
             self._buckets.clear()
 
@@ -140,6 +147,11 @@ class SharedTokenBuckets:
 
     def __init__(self, rate: Callable[[], float], burst: Callable[[], float], clock: Callable[[], float] = time.time,
                  session_factory=None, monotonic: Callable[[], float] = time.monotonic):
+        """`rate` and `burst` are callables read on every `take`; `clock` is wall-clock epoch seconds (stored in the table); `monotonic` times the
+        back-off, the purge and the log throttle.
+
+        Holds an in-process `TokenBuckets` as the fail-open fallback. Opens no database connection.
+        """
         self._rate, self._burst, self._clock, self._monotonic = rate, burst, clock, monotonic
         self._session_factory = session_factory
         self._local = TokenBuckets(rate, burst, monotonic)          # the fallback while the store is down
@@ -178,6 +190,10 @@ class SharedTokenBuckets:
         return None if allowed else max(1, math.ceil((1 - tokens) / rate))
 
     def _take_shared(self, caller: str, rate: float, burst: float) -> tuple[float, bool]:
+        """Runs the one atomic upsert for `caller` and commits; returns (tokens left, whether this request was allowed).
+
+        Raises whatever the database raises; `take` turns that into the fail-open fallback.
+        """
         with self._session() as db:
             statement, _ = _statements(db.get_bind().dialect.name)
             first_allowed = burst >= 1

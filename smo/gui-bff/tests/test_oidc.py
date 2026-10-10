@@ -137,6 +137,8 @@ def db():
 
 
 def make_cfg(**over) -> Settings:
+    """`Settings` for an OIDC-enabled BFF against the fake provider (issuer, client, redirect URI, group map `smo-admins`, `smo-ops`, `smo-viewers`); `over` changes any field.
+    """
     base = dict(r1_url=R1, jwt_secret="test-secret", cookie_secure=False, admin_password=PASSWORDS["admin"], operator_password=PASSWORDS["operator"],
                 viewer_password=PASSWORDS["viewer"], oidc_enabled=True, oidc_issuer=ISSUER, oidc_client_id=CLIENT_ID,
                 oidc_client_credential=CLIENT_CREDENTIAL, oidc_redirect_uri=REDIRECT, oidc_group_role_map=GROUP_MAP, oidc_provider_name="Keycloak")
@@ -145,6 +147,8 @@ def make_cfg(**over) -> Settings:
 
 
 def make_app(idp, db, cfg=None):
+    """Builds the BFF app on `db` with OIDC pointed at `idp`'s mock transport and the fake SMO behind the gateway; the users are seeded first.
+    """
     cfg = cfg or make_cfg()
     seed_users(db, cfg)
     return create_app(cfg, db=db, gateway=R1Gateway(R1, db, transport=httpx.MockTransport(FakeSmo().handler)), oidc_transport=httpx.MockTransport(idp.handler))
@@ -161,6 +165,7 @@ def client(app):
 
 
 def audit_rows(db, action=None):
+    """Every audit row, or only those with `action`, read straight from the database."""
     with db.session() as s:
         rows = s.query(AuditEntry).all()
     return [r for r in rows if action is None or r.action == action]
@@ -175,12 +180,16 @@ def start(client) -> tuple[str, str]:
 
 
 def sign_in(client, idp, state_override=None, **claims):
+    """Runs a whole OIDC sign-in as the browser would: start at the BFF, authorize at the fake provider (with `claims` overriding the ID token), come back to the callback (optionally with another `state`); returns the callback response.
+    """
     location, state = start(client)
     code = idp.authorize(location, **claims)
     return client.get("/api/oidc/callback", params={"code": code, "state": state_override or state})
 
 
 def failure(resp) -> str:
+    """Asserts the response is the redirect to the sign-in page for a failed OIDC sign-in, with no session cookie, and returns the `oidc_error` code.
+    """
     assert resp.status_code == 303, resp.text
     location = resp.headers["location"]
     assert location.startswith("/login?oidc_error="), location
@@ -191,6 +200,7 @@ def failure(resp) -> str:
 # ---------------------------------------------------------------- what the sign-in page may offer
 
 def test_auth_config_reports_oidc_off_by_default(db, idp):
+    """With OIDC disabled the sign-in page is told local login only, and both OIDC routes answer 404."""
     cfg = make_cfg(oidc_enabled=False)
     app = make_app(idp, db, cfg)
     body = TestClient(app).get("/api/auth/config").json()
@@ -200,6 +210,7 @@ def test_auth_config_reports_oidc_off_by_default(db, idp):
 
 
 def test_auth_config_when_enabled_names_the_provider_and_needs_no_session(client):
+    """With OIDC enabled the unauthenticated config names the provider and where to start the sign-in."""
     body = client.get("/api/auth/config").json()
     assert body == {"localLogin": True, "loginMode": "both", "breakGlass": False, "oidc": {"enabled": True, "providerName": "Keycloak", "loginUrl": "/api/oidc/login"}}
 
@@ -207,6 +218,8 @@ def test_auth_config_when_enabled_names_the_provider_and_needs_no_session(client
 # ---------------------------------------------------------------- the happy path
 
 def test_login_redirects_to_the_provider_with_state_nonce_and_a_pkce_challenge(client, db):
+    """The start of a sign-in redirects with code flow, S256 PKCE, state and nonce, stores them in the database, and sets an httpOnly binding cookie whose value is not in the URL.
+    """
     resp = client.get("/api/oidc/login")
     assert resp.status_code == 302
     query = {k: v[0] for k, v in parse_qs(urlsplit(resp.headers["location"]).query).items()}
@@ -221,6 +234,8 @@ def test_login_redirects_to_the_provider_with_state_nonce_and_a_pkce_challenge(c
 
 
 def test_sign_in_creates_the_user_without_a_password_and_issues_the_normal_session(client, idp, db):
+    """A first sign-in creates `oidc:<sub>` with the unusable hash and the mapped role, sets the usual session cookies, authenticates the client at the token endpoint and audits OIDC_LOGIN.
+    """
     resp = sign_in(client, idp)
     assert resp.status_code == 303 and resp.headers["location"] == "/"
     set_cookies = resp.headers.get_list("set-cookie")
@@ -239,6 +254,7 @@ def test_sign_in_creates_the_user_without_a_password_and_issues_the_normal_sessi
 
 
 def test_the_session_works_for_unsafe_calls_with_the_csrf_header_only(client, idp):
+    """An OIDC session is an ordinary cookie session: unsafe calls need the CSRF header, while logout does not."""
     sign_in(client, idp, groups=["smo-admins"])
     assert client.post("/api/logout").status_code == 200       # logout needs no CSRF header, like a local one
     sign_in(client, idp, groups=["smo-admins"])
@@ -248,12 +264,15 @@ def test_the_session_works_for_unsafe_calls_with_the_csrf_header_only(client, id
 
 
 def test_a_user_with_no_password_cannot_sign_in_locally(client, idp, app):
+    """The placeholder hash of an OIDC user never verifies, so no password (including `!` and the empty one) signs in at the local form.
+    """
     sign_in(client, idp)
     for password in ("!", "", "anything-at-all"):
         assert TestClient(app).post("/api/login", json={"username": "oidc:user-1", "password": password}).status_code == 401
 
 
 def test_admin_cannot_set_a_password_on_an_oidc_user(client, idp, app):
+    """An admin cannot give an OIDC user a password (409 OIDC_USER), but can change the role."""
     sign_in(client, idp)
     admin = TestClient(app)
     resp = admin.post("/api/login", json={"username": "admin", "password": PASSWORDS["admin"]})
@@ -265,6 +284,7 @@ def test_admin_cannot_set_a_password_on_an_oidc_user(client, idp, app):
 
 # ---------------------------------------------------------------- roles
 
+# Each row is the groups in the ID token and the role the BFF must give: the highest of the mapped groups, ignoring unrelated ones.
 @pytest.mark.parametrize("groups, role", [(["smo-viewers"], "viewer"), (["smo-ops"], "operator"), (["smo-admins"], "admin"),
                                           (["smo-viewers", "smo-admins", "unrelated"], "admin"), (["unrelated", "smo-ops"], "operator")])
 def test_the_highest_mapped_group_decides_the_role(client, idp, groups, role):
@@ -274,6 +294,7 @@ def test_the_highest_mapped_group_decides_the_role(client, idp, groups, role):
 
 
 def test_the_role_is_evaluated_again_at_every_sign_in(client, idp, db):
+    """The role is recomputed at each sign-in on the same user row, and the change is audited."""
     sign_in(client, idp, groups=["smo-admins"])
     assert client.get("/api/me").json()["role"] == "admin"
     sign_in(client, idp, groups=["smo-viewers"])
@@ -284,6 +305,8 @@ def test_the_role_is_evaluated_again_at_every_sign_in(client, idp, db):
 
 
 def test_an_unmapped_group_is_denied_and_no_user_is_created(client, idp, db):
+    """A person whose groups map to no role is refused (`no_role`), no user row is created, and the failure is audited with the subject.
+    """
     idp.groups = ["marketing"]
     assert failure(sign_in(client, idp)) == "no_role"
     with db.session() as s:
@@ -294,11 +317,13 @@ def test_an_unmapped_group_is_denied_and_no_user_is_created(client, idp, db):
 
 
 def test_a_token_with_no_groups_claim_is_denied(client, idp):
+    """An ID token with no groups claim at all is refused like an unmapped group."""
     idp.mutate = {"groups": None}
     assert failure(sign_in(client, idp)) == "no_role"
 
 
 def test_a_default_role_admits_people_with_no_mapped_group(idp, db):
+    """With `GUI_OIDC_DEFAULT_ROLE` set, a person with no mapped group signs in with that role."""
     client = TestClient(make_app(idp, db, make_cfg(oidc_default_role="viewer")), follow_redirects=False)
     idp.groups = ["marketing"]
     sign_in(client, idp)
@@ -306,6 +331,7 @@ def test_a_default_role_admits_people_with_no_mapped_group(idp, db):
 
 
 def test_losing_every_group_ends_the_earlier_sessions_of_that_person(client, idp):
+    """When a sign-in is refused for lack of a role, the person's earlier sessions stop working too."""
     sign_in(client, idp)
     assert client.get("/api/me").status_code == 200
     old = dict(client.cookies)
@@ -318,6 +344,8 @@ def test_losing_every_group_ends_the_earlier_sessions_of_that_person(client, idp
 
 
 def test_groups_can_be_a_nested_claim_or_a_string():
+    """Groups can come from a dotted path into an object, a space or comma separated string, or a list with non-strings ignored; an exact dotted claim name wins.
+    """
     claims = {"realm_access": {"roles": ["a", "b"]}, "scope_groups": "x, y  z", "plain": ["only", 3, None], "dotted.name": ["d"]}
     assert groups_from(claims, "realm_access.roles") == ["a", "b"]
     assert groups_from(claims, "scope_groups") == ["x", "y", "z"]
@@ -326,6 +354,7 @@ def test_groups_can_be_a_nested_claim_or_a_string():
 
 
 def test_a_disabled_user_is_refused(client, idp, db):
+    """A deactivated OIDC user cannot sign in again (`account_disabled`) and the attempt is audited."""
     sign_in(client, idp)
     with db.session() as s:
         s.get(GuiUser, "oidc:user-1").active = False
@@ -337,6 +366,7 @@ def test_a_disabled_user_is_refused(client, idp, db):
 # ---------------------------------------------------------------- state, nonce, PKCE
 
 def test_an_unknown_state_is_refused(client, idp, db):
+    """A callback with an unknown or missing state is refused as `invalid_state` and audited."""
     start(client)
     assert failure(client.get("/api/oidc/callback", params={"code": "c", "state": "never-issued"})) == "invalid_state"
     assert failure(client.get("/api/oidc/callback", params={"code": "c"})) == "invalid_state"
@@ -344,6 +374,7 @@ def test_an_unknown_state_is_refused(client, idp, db):
 
 
 def test_a_state_works_once(client, idp):
+    """The sign-in in flight is consumed by its callback, so replaying the same callback fails."""
     location, state = start(client)
     code = idp.authorize(location)
     assert client.get("/api/oidc/callback", params={"code": code, "state": state}).status_code == 303
@@ -352,6 +383,8 @@ def test_a_state_works_once(client, idp):
 
 
 def test_a_callback_from_another_browser_is_refused(client, idp, app):
+    """A callback without the binding cookie, or with another one, is refused (login CSRF: a callback URL planted in the victim's browser).
+    """
     location, state = start(client)
     code = idp.authorize(location)
     attacker_view = TestClient(app, follow_redirects=False)           # no binding cookie: a callback URL planted in the victim's browser
@@ -362,6 +395,7 @@ def test_a_callback_from_another_browser_is_refused(client, idp, app):
 
 
 def test_an_expired_sign_in_is_refused(client, idp, db):
+    """A sign-in whose stored lifetime has passed is refused as `invalid_state`."""
     location, state = start(client)
     with db.session() as s:
         s.get(OidcLogin, state).expires_at = time.time() - 1
@@ -370,17 +404,21 @@ def test_an_expired_sign_in_is_refused(client, idp, db):
 
 
 def test_a_wrong_nonce_is_refused(client, idp, db):
+    """An ID token whose nonce is not the one the sign-in started with is refused."""
     idp.mutate = {"nonce": "not-the-nonce-we-sent"}
     assert failure(sign_in(client, idp)) == "token_invalid"
     assert "nonce mismatch" in audit_rows(db, "OIDC_LOGIN_FAILED")[-1].detail
 
 
 def test_a_token_without_a_nonce_is_refused(client, idp):
+    """An ID token with no nonce is refused, so a replayed token from another sign-in cannot be accepted."""
     idp.mutate = {"nonce": None}
     assert failure(sign_in(client, idp)) == "token_invalid"
 
 
 def test_pkce_the_provider_refuses_a_verifier_that_does_not_match(client, idp, db):
+    """A code exchange with a verifier that does not match the challenge is refused by the provider and reported as `token_exchange_failed`.
+    """
     location, state = start(client)
     code = idp.authorize(location)
     with db.session() as s:
@@ -390,6 +428,8 @@ def test_pkce_the_provider_refuses_a_verifier_that_does_not_match(client, idp, d
 
 
 def test_the_provider_reporting_an_error_is_shown_as_a_code_not_its_text(client, idp, db):
+    """A provider error becomes a short code in the redirect; its description (here a script tag) is shown nowhere, neither in the URL nor the audit detail.
+    """
     _, state = start(client)
     resp = client.get("/api/oidc/callback", params={"error": "access_denied", "error_description": "<script>alert(1)</script>", "state": state})
     assert failure(resp) == "access_denied" and "script" not in resp.headers["location"]
@@ -399,6 +439,8 @@ def test_the_provider_reporting_an_error_is_shown_as_a_code_not_its_text(client,
 
 
 def test_the_pending_table_is_bounded(client, monkeypatch):
+    """When the limit of sign-ins in flight is reached, another start is refused with `too_many_logins` so the unauthenticated route cannot grow the table without bound.
+    """
     import app.main as main
     monkeypatch.setattr(main, "MAX_PENDING_LOGINS", 2)
     start(client), start(client)
@@ -408,27 +450,32 @@ def test_the_pending_table_is_bounded(client, monkeypatch):
 # ---------------------------------------------------------------- the ID token
 
 def test_a_wrong_audience_is_refused(client, idp, db):
+    """An ID token issued for another client is refused."""
     assert failure(sign_in(client, idp, aud="some-other-client", azp="some-other-client")) == "token_invalid"
     assert "InvalidAudienceError" in audit_rows(db, "OIDC_LOGIN_FAILED")[-1].detail
 
 
 def test_several_audiences_need_this_client_as_authorized_party(client, idp):
+    """With several audiences the authorized party must be this client."""
     assert failure(sign_in(client, idp, aud=[CLIENT_ID, "other"], azp="other")) == "token_invalid"
     assert sign_in(TestClient(client.app, follow_redirects=False), idp, aud=[CLIENT_ID, "other"], azp=CLIENT_ID).status_code == 303
 
 
 def test_a_wrong_issuer_is_refused(client, idp, db):
+    """An ID token from another issuer is refused."""
     assert failure(sign_in(client, idp, iss="https://evil.example.com")) == "token_invalid"
     assert "InvalidIssuerError" in audit_rows(db, "OIDC_LOGIN_FAILED")[-1].detail
 
 
 def test_an_expired_token_is_refused(client, idp, db):
+    """An expired ID token is refused."""
     now = int(time.time())
     assert failure(sign_in(client, idp, iat=now - 7200, exp=now - 3600)) == "token_invalid"
     assert "ExpiredSignatureError" in audit_rows(db, "OIDC_LOGIN_FAILED")[-1].detail
 
 
 def test_a_token_missing_exp_or_sub_is_refused(client, idp):
+    """An ID token without `exp`, or without `sub`, is refused."""
     idp.mutate = {"exp": None}
     assert failure(sign_in(client, idp)) == "token_invalid"
     idp.mutate = {"sub": None}
@@ -436,6 +483,7 @@ def test_a_token_missing_exp_or_sub_is_refused(client, idp):
 
 
 def test_a_tampered_token_is_refused(client, idp, db):
+    """Changing a claim (here promoting the groups) under the old signature is refused."""
     genuine = idp.id_token
 
     def tampered(nonce, **claims):
@@ -450,6 +498,7 @@ def test_a_tampered_token_is_refused(client, idp, db):
 
 
 def test_a_token_signed_by_another_key_is_refused(client, idp, db):
+    """A token signed with a key the provider never published, even under a known `kid`, is refused."""
     other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     forged = lambda nonce, **claims: jwt.encode({"iss": ISSUER, "aud": CLIENT_ID, "sub": "x", "iat": int(time.time()), "exp": int(time.time()) + 60,  # noqa: E731
                                                  "nonce": nonce, "groups": ["smo-admins"]}, other, algorithm="RS256", headers={"kid": idp.kid})
@@ -459,6 +508,7 @@ def test_a_token_signed_by_another_key_is_refused(client, idp, db):
 
 
 def test_alg_none_is_refused(client, idp, db):
+    """An unsigned token (`alg: none`) is refused before any key is looked at."""
     def unsigned(nonce, **claims):
         now = int(time.time())
         header = _b64(json.dumps({"alg": "none", "typ": "JWT", "kid": idp.kid}).encode())
@@ -486,11 +536,13 @@ def test_an_hmac_token_keyed_with_the_public_key_is_refused(client, idp, db):
 
 
 def test_a_token_that_is_not_a_jwt_is_refused(client, idp):
+    """A string that is not a JWT is refused as an invalid token."""
     idp.id_token = lambda nonce, **claims: "not.a.jwt"
     assert failure(sign_in(client, idp)) == "token_invalid"
 
 
 def test_a_wrong_at_hash_is_refused_and_a_right_one_accepted(client, idp):
+    """An `at_hash` that does not match the access token is refused, and a correct one is accepted."""
     idp.at_hash = "AAAAAAAAAAAAAAAAAAAAAA"
     assert failure(sign_in(client, idp)) == "token_invalid"
     digest = hashlib.sha256(b"access-1").digest()
@@ -501,6 +553,8 @@ def test_a_wrong_at_hash_is_refused_and_a_right_one_accepted(client, idp):
 # ---------------------------------------------------------------- keys and discovery
 
 def test_a_rotated_signing_key_is_picked_up_and_discovery_is_cached(client, idp):
+    """Discovery and keys are cached, and a token under a new `kid` makes one refetch of the key set once the throttle has passed.
+    """
     sign_in(client, idp)
     assert (idp.discovery_hits, idp.jwks_hits) == (1, 1)
     sign_in(TestClient(client.app, follow_redirects=False), idp)
@@ -512,6 +566,8 @@ def test_a_rotated_signing_key_is_picked_up_and_discovery_is_cached(client, idp)
 
 
 def test_a_forged_key_id_does_not_make_the_backend_refetch_the_keys_each_time(client, idp):
+    """Repeated tokens with an unknown `kid` cause at most one more key fetch, so a forger cannot make the BFF hammer the provider.
+    """
     sign_in(client, idp)
     hits = idp.jwks_hits
     idp.mutate = {}
@@ -522,6 +578,8 @@ def test_a_forged_key_id_does_not_make_the_backend_refetch_the_keys_each_time(cl
 
 
 def test_an_unreachable_provider_is_reported_and_the_last_good_discovery_keeps_serving(client, idp, db):
+    """With the provider down the start fails as `idp_unavailable`, but once discovery has been fetched an expired copy is still used while the provider is down.
+    """
     idp.down = True
     assert failure(client.get("/api/oidc/login")) == "idp_unavailable"
     idp.down = False
@@ -532,11 +590,13 @@ def test_an_unreachable_provider_is_reported_and_the_last_good_discovery_keeps_s
 
 
 def test_a_discovery_document_for_another_issuer_is_refused(client, idp):
+    """A discovery document whose `issuer` is not the configured one is refused."""
     idp.discovery_issuer = "https://evil.example.com"
     assert failure(client.get("/api/oidc/login")) == "idp_error"
 
 
 def test_the_code_exchange_failing_is_reported(client, idp):
+    """A provider failure at the token endpoint is reported as `token_exchange_failed`."""
     location, state = start(client)
     code = idp.authorize(location)
     idp.token_status = 500
@@ -544,6 +604,8 @@ def test_the_code_exchange_failing_is_reported(client, idp):
 
 
 def test_client_secret_post_is_used_when_the_provider_offers_only_that(idp):
+    """When the provider lists only `client_secret_post`, the client id and credential go in the form body and no Basic header is sent.
+    """
     doc_handler = idp.handler
 
     def only_post(request):
@@ -573,6 +635,7 @@ def _oidc_client(app) -> OidcClient:
 # ---------------------------------------------------------------- logout
 
 def test_logout_of_an_oidc_user_revokes_the_session_and_offers_the_provider_logout(client, idp, db):
+    """Logout revokes the session and returns the provider's end-session URL with the client id; the token stops working."""
     sign_in(client, idp)
     token = client.cookies[SESSION_COOKIE]
     resp = client.post("/api/logout")
@@ -585,6 +648,8 @@ def test_logout_of_an_oidc_user_revokes_the_session_and_offers_the_provider_logo
 
 
 def test_logout_without_an_end_session_endpoint_or_for_a_local_user_has_no_redirect(idp, db):
+    """No end-session URL is returned when the provider has none or the user is local, and the post-logout redirect is added when configured.
+    """
     idp.end_session = False
     app = make_app(idp, db, make_cfg(oidc_post_logout_redirect_uri="https://gui.example.com/login"))
     client = TestClient(app, follow_redirects=False)
@@ -603,11 +668,13 @@ def test_logout_without_an_end_session_endpoint_or_for_a_local_user_has_no_redir
 # ---------------------------------------------------------------- local login stays, unless switched off
 
 def test_local_login_still_works_with_oidc_on(app):
+    """Turning OIDC on does not close the local form."""
     resp = TestClient(app).post("/api/login", json={"username": "admin", "password": PASSWORDS["admin"]})
     assert resp.status_code == 200 and resp.json()["role"] == "admin"
 
 
 def test_local_login_can_be_switched_off(idp, db):
+    """With local login off the form and the token grant are 403, while OIDC sign-in still works."""
     app = make_app(idp, db, make_cfg(local_login_enabled=False))
     client = TestClient(app)
     assert client.get("/api/auth/config").json()["localLogin"] is False
@@ -620,12 +687,14 @@ def test_local_login_can_be_switched_off(idp, db):
 
 
 def test_local_login_off_without_oidc_stops_the_start(db):
+    """Switching local login off with no OIDC raises at start, because nobody could sign in."""
     with pytest.raises(ValueError, match="GUI_LOCAL_LOGIN_ENABLED=false needs GUI_OIDC_ENABLED=true"):
         create_app(make_cfg(oidc_enabled=False, local_login_enabled=False), db=db)
 
 
 # ---------------------------------------------------------------- configuration is validated at start
 
+# Each row is one wrong OIDC setting and the text of the start-up error that must name it.
 @pytest.mark.parametrize("over, message", [
     ({"oidc_issuer": ""}, "GUI_OIDC_ISSUER is required"),
     ({"oidc_client_id": ""}, "GUI_OIDC_CLIENT_ID is required"),
@@ -646,6 +715,8 @@ def test_bad_oidc_configuration_stops_the_start(db, over, message):
 
 
 def test_http_is_accepted_for_localhost_or_when_allowed_and_the_map_parses():
+    """http URLs are accepted for localhost or with `GUI_OIDC_ALLOW_HTTP`, and the group map parser handles spaces, `=` inside a group name and empty entries.
+    """
     OidcConfig.from_settings(make_cfg(oidc_issuer="http://localhost:8080/realms/x", oidc_redirect_uri="http://127.0.0.1:3000/api/oidc/callback"))
     with pytest.raises(ValueError):
         OidcConfig.from_settings(make_cfg(oidc_issuer="http://keycloak:8080/realms/x"))
@@ -655,10 +726,12 @@ def test_http_is_accepted_for_localhost_or_when_allowed_and_the_map_parses():
 
 
 def test_oidc_off_needs_none_of_its_settings(db):
+    """With OIDC off, missing or invalid OIDC settings are ignored."""
     create_app(make_cfg(oidc_enabled=False, oidc_issuer="", oidc_client_id="", oidc_group_role_map="x=bad"), db=db)
 
 
 def test_the_client_credential_comes_from_a_file_and_never_from_both(tmp_path, monkeypatch):
+    """The client credential is read from the named file, setting both forms is an error, and an unreadable file is an error."""
     from app.config import _client_credential
     path = tmp_path / "credential"
     path.write_text("from-the-file\n")
@@ -674,12 +747,15 @@ def test_the_client_credential_comes_from_a_file_and_never_from_both(tmp_path, m
 
 
 def test_pkce_challenge_matches_the_rfc_7636_example():
+    """The S256 challenge of the RFC 7636 example verifier matches the RFC's value."""
     assert pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk") == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
 
 
 # ---------------------------------------------------------------- several instances (PR-ST-5)
 
 def test_a_sign_in_started_on_one_instance_finishes_on_another(idp, tmp_path):
+    """The state lives in the database, so a callback may reach another instance than the one that started the sign-in; the resulting session is valid on both and the state is spent for both.
+    """
     path = tmp_path / "gui.db"
     first = make_app(idp, Database(f"sqlite:///{path}"))
     second = make_app(idp, Database(f"sqlite:///{path}"))
@@ -696,6 +772,8 @@ def test_a_sign_in_started_on_one_instance_finishes_on_another(idp, tmp_path):
 # ---------------------------------------------------------------- the CI realm agrees with the workflow and the script
 
 def test_the_keycloak_realm_of_the_browser_check_matches_the_workflow_and_the_script():
+    """The Keycloak realm used by the browser check agrees with the workflow's OIDC settings and the script's test users; the test reads files from the repository, so it needs the full checkout.
+    """
     from pathlib import Path
     smo = Path(__file__).resolve().parents[2]
     realm = json.loads((smo / "gui-bff" / "tests" / "keycloak" / "smo-realm.json").read_text())

@@ -26,6 +26,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Create `onboarding_template`, `element_onboarding` and `software_campaign` with their checks and indexes, and add `campaign_id`, `campaign_wave`, `rollback_of` and `software_version` to `software_management_job`; every statement tolerates a rerun."""
     op.execute("""
         CREATE TABLE IF NOT EXISTS ran_nf_oam.onboarding_template (
             name              VARCHAR PRIMARY KEY,
@@ -96,6 +97,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop the index, the four columns and the three tables, in reverse order; onboarding and campaign history is lost."""
     op.execute("DROP INDEX IF EXISTS ran_nf_oam.ix_software_management_job_campaign_id")
     op.execute("ALTER TABLE ran_nf_oam.software_management_job DROP COLUMN IF EXISTS software_version")
     op.execute("ALTER TABLE ran_nf_oam.software_management_job DROP COLUMN IF EXISTS rollback_of")

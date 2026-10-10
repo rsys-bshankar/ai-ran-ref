@@ -17,6 +17,10 @@ LABEL = {"smo-state": "true"}
 
 
 def pin(documents: list) -> list:
+    """Adds `nodeSelector: {smo-state: "true"}` to the pod template of each StatefulSet or Deployment named in `STATE`, in place, and returns the documents.
+
+        Other documents (including non-mapping ones) pass through untouched; an existing nodeSelector keeps its other keys.
+    """
     for doc in documents:
         if isinstance(doc, dict) and (doc.get("kind"), (doc.get("metadata") or {}).get("name")) in STATE:
             doc["spec"]["template"]["spec"].setdefault("nodeSelector", {}).update(LABEL)
@@ -24,6 +28,7 @@ def pin(documents: list) -> list:
 
 
 def main() -> int:
+    """Helm post-renderer entry: reads the rendered manifests (YAML stream) on stdin, writes them back with the pins applied, returns 0. Key order is preserved."""
     documents = [d for d in yaml.safe_load_all(sys.stdin.read()) if d is not None]
     sys.stdout.write(yaml.safe_dump_all(pin(documents), sort_keys=False))
     return 0

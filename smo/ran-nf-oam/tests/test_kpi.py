@@ -13,6 +13,7 @@ T0 = datetime.datetime(2026, 10, 1, 12, 0, tzinfo=datetime.UTC)
 
 
 def _file(db_session_factory, element, counter_type, measurements):
+    """Stores a PM file for `element` whose content is the given measurements, as the file path would."""
     db = db_session_factory()
     content = json.dumps({"managedElementRef": element, "counterType": counter_type, "measurements": measurements})
     db.add(PMFile(managed_element_ref=element, counter_type=counter_type, content=content, file_size=len(content)))
@@ -21,6 +22,7 @@ def _file(db_session_factory, element, counter_type, measurements):
 
 
 def _m(cell, minute, value=None, **values):
+    """A measurement dict `minute` minutes after T0 for a cell, with a single `value` and/or several counters as keyword `values`."""
     m = {"cellId": cell, "timestamp": (T0 + datetime.timedelta(minutes=minute)).isoformat()}
     if value is not None:
         m["value"] = value
@@ -54,6 +56,8 @@ def _query(client, name, **params):
 
 
 def test_a_definition_is_stored_listed_read_replaced_and_deleted(client):
+    """The KPI definition routes round-trip: PUT creates and replaces, GET reads and lists, DELETE removes, and a deleted KPI is 404 KPI_NOT_FOUND.
+    """
     assert client.put("/kpi-definitions/ho_success", json=HO_SUCCESS).status_code == 200
     assert client.get("/kpi-definitions/ho_success").json()["counters"][0] == {"counter": "MM.HoExeAtt", "variable": "att", "aggregation": "sum"}
     assert [d["name"] for d in client.get("/kpi-definitions").json()["items"]] == ["ho_success"]
@@ -63,6 +67,7 @@ def test_a_definition_is_stored_listed_read_replaced_and_deleted(client):
 
 
 def test_counters_default_to_the_formulas_variables_summed(client):
+    """A definition without a counter table gets one counter per formula variable, of the same name, summed."""
     row = client.put("/kpi-definitions/ratio", json={"formula": "100 * ok / total"}).json()
     assert row["counters"] == [{"counter": "ok", "variable": "ok", "aggregation": "sum"}, {"counter": "total", "variable": "total", "aggregation": "sum"}]
 
@@ -77,15 +82,19 @@ def test_counters_default_to_the_formulas_variables_summed(client):
     {"formula": "a", "counters": [{"counter": "A", "variable": "a", "aggregation": "median"}]},
 ])
 def test_a_definition_that_is_not_acceptable_is_refused(client, body):
+    """A hostile formula, a syntax error, an unfed, unused or duplicated variable, a bad variable name or an unknown aggregation is 422 and stores nothing.
+    """
     assert client.put("/kpi-definitions/bad", json=body).status_code == 422
     assert client.get("/kpi-definitions/bad").status_code == 404
 
 
 def test_a_kpi_name_is_validated(client):
+    """A KPI name must start with a letter (422 otherwise)."""
     assert client.put("/kpi-definitions/1bad", json={"formula": "a"}).status_code == 422
 
 
 def test_a_kpi_is_computed_per_cell_from_the_counters_summed_over_the_period(client, pm):
+    """By default a KPI is computed per cell from each counter combined over the period, and the answer carries the counters and the sample count."""
     client.put("/kpi-definitions/ho_success", json=HO_SUCCESS)
     items = {(i["group"]["managedElementRef"], i["group"]["cellId"]): i for i in _query(client, "ho_success").json()["items"]}
     assert items[("ME-A", "1")]["value"] == 80.0 and items[("ME-A", "1")]["counters"] == {"att": 200.0, "fail": 40.0}
@@ -93,6 +102,8 @@ def test_a_kpi_is_computed_per_cell_from_the_counters_summed_over_the_period(cli
 
 
 def test_the_period_is_half_open_and_filters_apply(client, pm):
+    """The period is [from, to): a sample exactly at `to` is outside it; `cell_id` and `managed_element_ref` narrow the samples; a period with no data gives an empty list.
+    """
     client.put("/kpi-definitions/ho_success", json=HO_SUCCESS)
     early = _query(client, "ho_success", to_time=(T0 + datetime.timedelta(minutes=15)).isoformat(), cell_id="1").json()["items"]
     assert len(early) == 1 and early[0]["value"] == 90.0                                       # the sample at minute 15 is not in [t0, t0+15)
@@ -102,6 +113,8 @@ def test_the_period_is_half_open_and_filters_apply(client, pm):
 
 
 def test_a_regional_ratio_is_made_from_the_regions_summed_counters_not_the_mean_of_the_cell_ratios(client, pm):
+    """Grouping by sector group sums the counters of the group's cells first, so a ratio is the group's, not the average of its cells' ratios; cells without the attribute are 'unassigned'.
+    """
     client.put("/kpi-definitions/ho_success", json=HO_SUCCESS)
     north = {i["group"]["sectorGroup"]: i for i in _query(client, "ho_success", group_by="sectorGroup").json()["items"]}
     assert north["north"]["counters"] == {"att": 250.0, "fail": 40.0} and north["north"]["value"] == 84.0     # not (80 + 100) / 2 = 90
@@ -111,6 +124,7 @@ def test_a_regional_ratio_is_made_from_the_regions_summed_counters_not_the_mean_
 
 
 def test_group_by_element_and_all(client, pm):
+    """`element` gives one value per element and `all` one value over everything, with an empty group object."""
     client.put("/kpi-definitions/ho_success", json=HO_SUCCESS)
     by_element = {i["group"]["managedElementRef"]: i["value"] for i in _query(client, "ho_success", group_by="element").json()["items"]}
     assert by_element == {"ME-A": 84.0, "ME-B": 90.0}
@@ -119,6 +133,7 @@ def test_group_by_element_and_all(client, pm):
 
 
 def test_each_counter_is_combined_as_its_definition_says(client, pm):
+    """The avg, last, max and count aggregations of a counter give the values their names promise."""
     client.put("/kpi-definitions/prb", json={"formula": "avg_util", "counters": [{"counter": "PRB_UTILIZATION", "variable": "avg_util", "aggregation": "avg"}]})
     client.put("/kpi-definitions/prb_last", json={"formula": "u", "counters": [{"counter": "PRB_UTILIZATION", "variable": "u", "aggregation": "last"}]})
     client.put("/kpi-definitions/prb_peak", json={"formula": "u", "counters": [{"counter": "PRB_UTILIZATION", "variable": "u", "aggregation": "max"}]})
@@ -128,6 +143,7 @@ def test_each_counter_is_combined_as_its_definition_says(client, pm):
 
 
 def test_a_kpi_over_two_counter_families_reads_both(client, pm):
+    """One KPI can combine counters that come from different PM files."""
     client.put("/kpi-definitions/mix", json={"formula": "att / util", "counters": [
         {"counter": "MM.HoExeAtt", "variable": "att"}, {"counter": "PRB_UTILIZATION", "variable": "util", "aggregation": "avg"}]})
     items = {i["group"]["cellId"]: i for i in _query(client, "mix", managed_element_ref="ME-A").json()["items"]}
@@ -135,6 +151,8 @@ def test_a_kpi_over_two_counter_families_reads_both(client, pm):
 
 
 def test_no_data_and_undefined_are_told_apart(client, pm, db_session_factory):
+    """A group whose formula divides by zero says UNDEFINED, one missing a needed counter says NO_DATA, and a question with no data at all still answers with one NO_DATA item.
+    """
     client.put("/kpi-definitions/ho_success", json=HO_SUCCESS)
     _file(db_session_factory, "ME-C", "HO", [_m("9", 1, **{"MM.HoExeAtt": 0, "MM.HoFail": 0})])           # no handovers at all: 0 / 0
     _file(db_session_factory, "ME-C", "HO", [_m("8", 1, **{"MM.HoExeAtt": 5})])                           # no failure counter
@@ -146,6 +164,7 @@ def test_no_data_and_undefined_are_told_apart(client, pm, db_session_factory):
 
 
 def test_a_kpi_that_does_not_exist_and_a_bad_period(client, pm):
+    """An unknown KPI is 404, and a reversed period or an unknown `group_by` is 422."""
     assert _query(client, "nope").status_code == 404
     client.put("/kpi-definitions/ho_success", json=HO_SUCCESS)
     assert _query(client, "ho_success", to_time=(T0 - datetime.timedelta(hours=1)).isoformat()).status_code == 422
@@ -153,6 +172,7 @@ def test_a_kpi_that_does_not_exist_and_a_bad_period(client, pm):
 
 
 def test_more_files_than_the_bound_is_said(client, pm, monkeypatch):
+    """When there are more files than the scan bound the answer says `truncated` and how many files it scanned."""
     client.put("/kpi-definitions/ho_success", json=HO_SUCCESS)
     monkeypatch.setattr("app.kpi.MAX_FILES", 1)
     body = _query(client, "ho_success").json()

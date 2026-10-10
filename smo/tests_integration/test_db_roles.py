@@ -33,6 +33,9 @@ def _role(module: str) -> str:
 
 
 def test_every_module_in_the_roles_manifest_is_a_module_with_tables_and_names_real_shared_tables():
+    """The roles manifest agrees with the table-owners file: a module with a schema owns tables, its schema is named after it, and everything it
+    lists as shared or read is a real table of the right owner.
+    """
     for module, spec in ROLES.items():
         if spec["schema"] is None:          # a module with no table of its own (R1 Termination): a role, no schema
             assert not OWNERS.get(module), f"{module} owns tables, so it needs a schema"
@@ -49,6 +52,9 @@ def test_every_module_in_the_roles_manifest_is_a_module_with_tables_and_names_re
 
 
 def test_a_role_name_is_derived_from_the_module_and_statements_quote_what_they_are_given():
+    """Role names derive from the module name, the password is a quoted literal that cannot break out of the statement, the search path and revokes
+    are the module's own, and a module that reads another's table gets SELECT only.
+    """
     sys.path.insert(0, str(SMO_ROOT / "scripts"))
     import db_roles
     assert db_roles.role_name("rapp-mgmt") == "smo_rapp_mgmt" and db_roles.role_name("samples/energy-saving-rapp") == "smo_energy_saving_rapp"
@@ -65,6 +71,9 @@ def test_a_role_name_is_derived_from_the_module_and_statements_quote_what_they_a
 
 @pytest.fixture
 def database(tmp_path):
+    """A fresh database migrated to head by `scripts/migrate.py` with a directory for the role password files; yields (url, environment, password
+    directory, name) and drops the database and the roles afterwards (a role that other databases still have rights on is left).
+    """
     name = f"smo_roles_{uuid.uuid4().hex[:10]}"
     admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT")
     with admin.connect() as connection:
@@ -103,6 +112,7 @@ def _missing(engine, statement) -> bool:
 
 
 def _denied(engine, statement) -> bool:
+    """True when the statement fails with a permission error, and False when it succeeds or fails for any other reason."""
     try:
         with engine.connect() as connection:
             connection.execute(text(statement))
@@ -113,6 +123,9 @@ def _denied(engine, statement) -> bool:
 
 @needs_postgres
 def test_the_tables_are_in_the_modules_schema_and_public_holds_no_compatibility_view(database):
+    """After migration each module's tables are in its own schema, none is left (or shadowed by a view) in `public`, and the unqualified names no
+    longer work for the owner. Needs Postgres.
+    """
     url, env, _, _ = database
     owner = create_engine(url, isolation_level="AUTOCOMMIT")
     with owner.connect() as connection:
@@ -132,6 +145,9 @@ def test_the_tables_are_in_the_modules_schema_and_public_holds_no_compatibility_
 
 @needs_postgres
 def test_every_role_works_in_its_own_schema_and_is_refused_everywhere_else(database):
+    """After `db_roles.py`, each module's role can use its own tables and its granted shared tables and is refused every other module's. Needs
+    Postgres.
+    """
     url, env, password_dir, _ = database
     for module in ROLES:
         (password_dir / f"db_password_{_short(module)}").write_text(f"pw-{_short(module)}")
@@ -179,6 +195,9 @@ def test_every_role_works_in_its_own_schema_and_is_refused_everywhere_else(datab
 
 @needs_postgres
 def test_a_table_added_later_to_the_schema_is_usable_at_once_and_a_second_run_changes_nothing(database):
+    """A table added to a schema after the roles were made is usable by the role at once (default privileges), and running the script again with a
+    new password file rotates the password without changing the rights. Needs Postgres.
+    """
     url, env, password_dir, _ = database
     (password_dir / "db_password_onboarding").write_text("first")
     assert _roles(env).returncode == 0
@@ -203,6 +222,9 @@ def test_a_table_added_later_to_the_schema_is_usable_at_once_and_a_second_run_ch
 
 @needs_postgres
 def test_without_a_password_file_nothing_is_made(database):
+    """With no password files the script succeeds, says it made no roles and creates none, which is how a release without per-module roles
+    installs. Needs Postgres.
+    """
     url, env, _, _ = database
     done = _roles(env)
     assert done.returncode == 0 and "none (no password files)" in done.stdout
@@ -210,6 +232,9 @@ def test_without_a_password_file_nothing_is_made(database):
 
 @needs_postgres
 def test_the_owner_finds_every_module_table_by_its_bare_name_so_a_release_with_the_roles_off_still_runs(database):
+    """After the roles script the owner role still finds every module's tables by their bare names, so code that does not set a search path keeps
+    working with the roles off. Needs Postgres.
+    """
     url, env, _, _ = database
     assert _roles(env).returncode == 0
     engine = create_engine(url)

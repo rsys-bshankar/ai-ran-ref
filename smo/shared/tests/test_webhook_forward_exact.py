@@ -1,5 +1,8 @@
 """The exact edges of `normalise_base_url` and `forward_to_destination` (PR-GUI-8): what a changed comparison, constant or label would break. These two functions
-are in the mutation scope of the shared library (`scripts/mutation_pilot.sh`), so each assertion names a mutant it kills."""
+are in the mutation scope of the shared library (`scripts/mutation_pilot.sh`), so each assertion names a mutant it kills.
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_webhook_forward_exact.py -q
+"""
 
 import httpx
 import pytest
@@ -11,6 +14,7 @@ from test_webhook_forward import _call, _Recorder
 
 
 def test_a_base_of_exactly_300_characters_is_accepted_and_one_more_is_not():
+    """The base URL length limit is inclusive: 300 characters pass and 301 do not."""
     head = "http://rapp:8000/"
     exact = head + "a" * (300 - len(head))
     assert len(exact) == 300 and normalise_base_url(exact) == exact
@@ -18,6 +22,7 @@ def test_a_base_of_exactly_300_characters_is_accepted_and_one_more_is_not():
 
 
 def test_the_first_character_that_is_allowed_and_the_last_that_is_not():
+    """The character check refuses control characters, space and DEL, and accepts `!` (33) and `~` (126)."""
     assert normalise_base_url("http://rapp/!") == "http://rapp/!"          # 33
     assert normalise_base_url("http://rapp/~") == "http://rapp/~"          # 126
     assert normalise_base_url("http://rapp/ ") is None                     # 32
@@ -26,10 +31,13 @@ def test_the_first_character_that_is_allowed_and_the_last_that_is_not():
 
 
 def test_whitespace_around_a_base_is_refused_even_when_it_is_not_ascii():
+    """Leading or trailing whitespace makes a base unacceptable; the same URL without it is accepted."""
     assert normalise_base_url("http://rapp ") is None and normalise_base_url(" http://rapp") is None
     assert normalise_base_url("http://rapp") == "http://rapp"
 
 
+# Table: bases that each break exactly one rule (empty or partial credentials, port 0 or out of range, `..`, empty segments, empty query or fragment,
+# backslash, percent encoding).
 @pytest.mark.parametrize("value", ["http://@rapp", "http://:pw@rapp", "http://u:@rapp", "http://rapp:0/x", "http://rapp/a/../b", "http://rapp/..", "http://rapp//",
                                    "http://rapp/a//b", "http://rapp/a?", "http://rapp/#", "http://rapp/a\\b", "http://rapp/a%41", "http://rapp:99999"])
 def test_each_rule_refuses_on_its_own(value):
@@ -37,12 +45,14 @@ def test_each_rule_refuses_on_its_own(value):
 
 
 def test_a_letter_x_is_an_ordinary_character_in_a_base_and_only_slashes_are_trimmed():
+    """Only trailing slashes are trimmed: the letter x inside or at the end of a path is kept."""
     assert normalise_base_url("http://rapp/XX") == "http://rapp/XX"
     assert normalise_base_url("http://rapp/aX/") == "http://rapp/aX"
     assert normalise_base_url("http://rapp/Xa") == "http://rapp/Xa"
 
 
 def test_a_port_other_than_zero_and_dots_that_are_not_traversal_are_fine():
+    """Port 1 and 65535 and dots inside names (v1.2, a.b) are accepted; only port 0 and `..` are refused."""
     assert normalise_base_url("http://rapp:1") == "http://rapp:1"
     assert normalise_base_url("http://rapp:65535/v1.2/a.b") == "http://rapp:65535/v1.2/a.b"
     assert normalise_base_url("http://rapp/x/") == "http://rapp/x" and normalise_base_url("http://rapp") == "http://rapp"
@@ -51,12 +61,16 @@ def test_a_port_other_than_zero_and_dots_that_are_not_traversal_are_fine():
 
 @pytest.fixture
 def counted(monkeypatch):
+    """Replaces metrics.record_outbound with a recorder and yields the list of calls it received."""
     calls = []
     monkeypatch.setattr(webhook.metrics, "record_outbound", lambda *args: calls.append(args))
     return calls
 
 
 def test_a_forward_is_counted_by_outcome_with_the_duration_and_a_refusal_without_one(monkeypatch, counted):
+    """Forwarded calls are counted under the `operator-api` target with the lower-case method and an outcome class and a duration; a refused
+    destination is counted as blocked without one.
+    """
     monkeypatch.setattr(webhook.httpx, "AsyncClient", _Recorder(httpx.Response(204)))
     assert _call(method="DELETE", destination="http://rapp:8000/x").status_code == 204
     monkeypatch.setattr(webhook.httpx, "AsyncClient", _Recorder(httpx.Response(503)))
@@ -68,6 +82,7 @@ def test_a_forward_is_counted_by_outcome_with_the_duration_and_a_refusal_without
 
 
 def test_a_timeout_and_an_error_are_counted_with_their_duration(monkeypatch, counted):
+    """A timeout and a transport error are each counted with their duration and still raised."""
     monkeypatch.setattr(webhook.httpx, "AsyncClient", _Recorder(error=httpx.ReadTimeout("slow")))
     with pytest.raises(httpx.TimeoutException):
         _call(method="PUT", destination="http://rapp:8000/x")
@@ -79,6 +94,7 @@ def test_a_timeout_and_an_error_are_counted_with_their_duration(monkeypatch, cou
 
 
 def test_the_client_gets_the_timeout_and_the_mtls_arguments_for_the_destination(monkeypatch):
+    """The HTTP client is built with the given timeout and the mTLS arguments for that destination."""
     recorder = _Recorder(httpx.Response(200))
     monkeypatch.setattr(webhook.httpx, "AsyncClient", recorder)
     monkeypatch.setattr(webhook.mtls, "webhook_kwargs", lambda destination: {"verify": f"context-for-{destination}"})

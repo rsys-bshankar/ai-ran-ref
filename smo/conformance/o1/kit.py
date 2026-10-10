@@ -1,4 +1,11 @@
-"""The check registry, the context a check runs in, and the report."""
+"""The registry of conformance checks, the context a check runs in, the runner and the report of the O1 adaptor kit.
+
+`checks.py` and `emit_checks.py` register their checks here with the `@check` decorator at import time; `__main__.py` builds a `Context` and calls `run`. A check is a
+plain function that returns normally to pass, raises `Fail` (the adaptor broke the contract; the message says how) or `Skip` (the check does not apply). The runner
+turns an `httpx` transport error into a failure, so a check never needs to catch a dead adaptor itself. The registry is process-wide and ordered by import, which is the
+order of the report. A check id (`NC-2`) and its title are also listed in `conformance/README.md`; a test keeps that table in step with the registry, so renaming or
+adding a check means editing the table.
+"""
 
 import dataclasses
 import datetime
@@ -22,6 +29,7 @@ class Skip(Exception):
 
 @dataclasses.dataclass(frozen=True)
 class Check:
+    """One registered check: its id, group, title, the function that runs it and, for the emitting groups, the MnS service the adaptor must declare."""
     id: str
     group: str                       # DISC, NETCONF, RESTCONF, FM, PM, SW, HB
     title: str
@@ -31,6 +39,7 @@ class Check:
 
 @dataclasses.dataclass
 class Result:
+    """The outcome of one check in a run: status is PASS, FAIL or SKIP, `detail` says why for the last two, `seconds` is the wall time."""
     id: str
     group: str
     title: str
@@ -43,6 +52,11 @@ REGISTRY: list[Check] = []
 
 
 def check(check_id: str, group: str, title: str, service: str | None = None):
+    """Decorator that registers a function as a check, in import order, and returns the function unchanged (so a check can call another check, as DISC-2 calls DISC-1).
+
+    `service` is the MnS service (`FM`, `PM`, `FILE`, `SWM`, `HEARTBEAT`) the adaptor must list in `supportedServices` for the check to apply; `run` skips the check with
+    the reason when it does not, and also when no RAN NF OAM was given. Leave it `None` for the CM and discovery checks, which always apply.
+    """
     def register(fn):
         REGISTRY.append(Check(check_id, group, title, fn, service))
         return fn
@@ -56,6 +70,11 @@ class Context:
     def __init__(self, client: httpx.Client, protocols: set[str], declared: dict | None = None, *, netconf_path: str = "/edit-config",
                  restconf_root: str = "/restconf", capabilities_path: str = "/capabilities", oam: httpx.Client | None = None,
                  emit: httpx.Client | None = None, emit_prefix: str = "/emit", element: str | None = None):
+        """Build the context of one run. `client` is the adaptor (its base_url is the adaptor's origin); `protocols` is the set of transports to exercise.
+
+        `oam` is RAN NF OAM's client (None: the emitting groups are skipped); `emit` is the adaptor's trigger API and defaults to `client`; `element` is an already registered
+        managed element to use instead of registering one. `run_id` is eight random hex digits that make every reference this run creates new to it.
+        """
         self.client = client
         self.oam = oam                                  # RAN NF OAM (the emit groups read back what arrived there); None: those groups are skipped
         self.emit = emit or client                      # the adaptor's trigger API (default: the adaptor itself)
@@ -84,22 +103,32 @@ class Context:
             self.declared.update(body)
 
     def new_ref(self, prefix: str = "conf") -> str:
+        """A managed-object reference or id that no earlier run against the same adaptor can have used: `<prefix>-<run id>-<counter>`."""
         self._n += 1
         return f"{prefix}-{self.run_id}-{self._n}"
 
 
 def run(ctx: Context, only: set[str] | None = None) -> list[Result]:
+    """Run the registered checks (all, or those whose id or group is in `only`) and return one `Result` each, in registry order.
+
+    A NETCONF or RESTCONF check is skipped when that transport is not in `ctx.protocols`. A check that names a service is skipped when there is no RAN NF OAM to read back from
+    or when the adaptor does not declare the service. A check that raises `Fail` fails with its message; one that lets an `httpx.HTTPError` escape (no answer, timeout,
+    connection refused) fails with the error's type, so a dead adaptor fails every check instead of aborting the run. Any other exception is a bug in the kit and propagates.
+    """
     results: list[Result] = []
     for item in REGISTRY:
         if only and item.id not in only and item.group not in only:
             continue
         started = time.perf_counter()
         try:
+            # Decide whether the check applies before running it: a skipped check is reported with the reason and is never a failure, so a run against an adaptor that speaks
+            # only one transport, or without RAN NF OAM to read back from, can still exit 0.
             if item.group in ("NETCONF", "RESTCONF") and item.group.lower() not in ctx.protocols:
                 raise Skip(f"{item.group.lower()} is not part of this run")
             if item.service is not None:
                 if ctx.oam is None:
                     raise Skip(f"{item.group} reads back what RAN NF OAM received: give --oam-url")
+                # An emit group run on its own (--only FM) has not run DISC-1, so the declaration is read here; without it the service test below could not tell 'not declared' from 'not read'.
                 ctx.ensure_declared()
                 services = ctx.declared.get("supportedServices")
                 if not isinstance(services, list) or item.service not in services:
@@ -126,6 +155,7 @@ def to_json(adaptor: str, protocols: set[str], results: list[Result], oam: str |
 
 
 def to_markdown(adaptor: str, protocols: set[str], results: list[Result], oam: str | None = None) -> str:
+    """The report as Markdown: a headline with the counts and a table with one row per check. The `|` in a detail is replaced so it cannot break the table."""
     counts = summary(results)
     lines = [f"# O1 adaptor conformance: {adaptor}", "",
              f"Protocols run: {', '.join(sorted(protocols)) or 'none'}. RAN NF OAM read back from: {oam or 'not given (the FM, PM, SW and HB groups are skipped)'}. **{counts[PASS]} passed, {counts[FAIL]} failed, {counts[SKIP]} skipped.**", "",

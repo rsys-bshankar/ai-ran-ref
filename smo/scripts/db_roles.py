@@ -37,6 +37,7 @@ def short_name(module: str) -> str:
 
 
 def role_name(module: str) -> str:
+    """The database login role of a module: `smo_` plus its short name with `-` turned into `_` (`smo_energy_saving_rapp`)."""
     return "smo_" + short_name(module).replace("-", "_")
 
 
@@ -45,11 +46,17 @@ def load_manifest(path: Path = MANIFEST) -> dict[str, dict]:
 
 
 def password_file(module: str, environ=os.environ) -> Path:
+    """The path of the module's password file `db_password_<short name>` in `SMO_DB_ROLE_PASSWORD_DIR` (default `/run/secrets`)."""
     return Path(environ.get(PASSWORD_DIR_VARIABLE, "/run/secrets")) / f"db_password_{short_name(module)}"
 
 
 def statements(module: str, spec: dict, password: str | None, schemas: list[str], database: str) -> list:
-    """The SQL that makes `role_name(module)` what the module needs, as psycopg `sql` objects (identifiers and the password are quoted by the driver)."""
+    """The SQL that makes `role_name(module)` what the module needs, as psycopg `sql` objects (identifiers and the password are quoted by the driver).
+
+        Order matters: login and search path first, then every privilege on every schema is revoked, then only the module's own schema, the shared tables, the read-only
+        tables and `alembic_version` are granted back. `password` None makes the role `NOLOGIN`. `schemas` is every non-system schema of the database; `database` is
+        the name `CONNECT` is granted on.
+    """
     from psycopg import sql
     role = sql.Identifier(role_name(module))
     schema = spec.get("schema")                   # None: the module has no table of its own
@@ -86,6 +93,13 @@ def statements(module: str, spec: dict, password: str | None, schemas: list[str]
 
 
 def main(argv: list[str]) -> int:
+    """Makes or reconciles the roles of every module in the manifest that has a password file; prints one line per module and returns 0.
+
+        `--list` only prints the plan and does not connect. On a database that is not Postgres it does nothing. The whole reconciliation runs in one transaction on one
+        connection and is rolled back if any statement fails, so the roles are never left half granted. A module is skipped (and named in the output) when its password file is
+        missing or empty, or when a schema it needs does not exist yet (migrations not run). Also sets the owner's own search path to the module schemas, which is what
+        keeps the modules working when the roles are off and they all connect as the owner.
+    """
     manifest = load_manifest()
     if "--list" in argv:
         for module, spec in manifest.items():

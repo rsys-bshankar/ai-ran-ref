@@ -1,3 +1,8 @@
+/**
+ * The rApp directory (the Directory tab of the rApps page, `Rapps.tsx`): every rApp instance in one searchable, filterable and paged list, with a link to each rApp's own page and a star to pin it to the sidebar. Reads the BFF's
+ * /api/rapps (`useRappDirectory`, polled every 15 s); every signed-in role may use it. Covered by `RappPages.test.tsx`.
+ */
+
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -6,9 +11,11 @@ import { Card, DataTable, Id, StateBadge } from "../components/ui";
 
 const PAGE = 25;
 
-// PR-GUI-8 (GUI-8.4, 8.5): every rApp instance in one searchable directory. Each row opens the rApp's own page (/rapps/<instance>); the star pins it to the
-// sidebar (at most MAX_PINS per user, kept by the GUI backend). What a rApp's page shows is declared in its package, so a rApp onboarded at run time is in
-// this list and has its page without a GUI build.
+/**
+ * Every rApp instance in one searchable directory (PR-GUI-8, GUI-8.4, 8.5). Each row opens the rApp's own page (/rapps/<instance>); the star pins it to the sidebar (at most `MAX_PINS` per user, kept by the GUI backend, so the
+ * star of an unpinned row is disabled at the limit). What a rApp's page shows is declared in its package, so a rApp onboarded at run time is in this list and has its page without a GUI build.
+ * The search text is sent 250 ms after the last keystroke, and changing any filter returns to the first page.
+ */
 export function RappDirectory() {
   const [text, setText] = useState("");
   const [search, setSearch] = useState("");

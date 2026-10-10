@@ -1,4 +1,9 @@
 // @vitest-environment jsdom
+/**
+ * Component tests of the approval-policy controls of the Safeguards page (pages/Safeguards.tsx): what an rApp without or with a policy shows, an admin holding changes for approval with one or two approvers, the refused timeouts,
+ * and which buttons an operator is offered. Runs against `fakeBff` with the real permission table; jsdom. Run: `cd gui && npx vitest run src/pages/Safeguards.test.tsx`.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../auth/AuthContext";
@@ -13,6 +18,9 @@ beforeEach(() => { document.body.innerHTML = ""; window.location.hash = ""; });
 const IID = "0b9f3f1e-4b0e-4a0c-9d6f-111111111111";
 const INVOKER = "api-invoker-0a1b2c3d";
 
+/**
+ * Starts the fake BFF for a user of `role` with one rApp instance whose safeguards carry `approvalPolicy` (null: none), and the policy's PUT and DELETE routes.
+ */
 function bff(role: "viewer" | "operator" | "admin", approvalPolicy: unknown = null) {
   return fakeBff({
     "GET /me": { username: "ana", role, csrfToken: "c", local: true, totpEnrolled: true, mfaEnrolmentRequired: false },
@@ -28,6 +36,7 @@ function bff(role: "viewer" | "operator" | "admin", approvalPolicy: unknown = nu
 const open = () => mountWith(<AuthProvider><Safeguards /></AuthProvider>);
 
 describe("holding an rApp's changes for approval (AI-11.4)", () => {
+  // An rApp without a policy is said to write at once, and one with a policy shows what that policy is.
   it("says that an rApp without a policy writes at once, and what the policy of one that has it is", async () => {
     bff("admin");
     const first = await open();
@@ -40,6 +49,7 @@ describe("holding an rApp's changes for approval (AI-11.4)", () => {
     expect(second.container.textContent).toContain("Held for approval · lapses after 2 h (rejected)");
   });
 
+  // An admin can hold an rApp's changes for approval, with the timeout in minutes and what a lapsed request becomes; the PUT carries the timeout in seconds.
   it("lets an admin hold it, with the timeout in minutes and what a lapsed request becomes", async () => {
     const calls = bff("admin");
     await open();
@@ -57,6 +67,44 @@ describe("holding an rApp's changes for approval (AI-11.4)", () => {
     expect(put.body).toEqual({ timeoutSeconds: 1800, onTimeout: "REJECT" });          // who set it is pinned by the BFF
   });
 
+  // The policy dialog defaults to one approval and sends `requiredApprovals: 2` only when two is chosen, so a policy left at one sends no such key.
+  // An admin can ask for two approvers, and when the choice is left at one nothing extra is sent.
+  it("lets an admin ask for two different people to approve, and sends nothing extra when it is left at one", async () => {
+    const calls = bff("admin");
+    await open();
+    await settle();
+    await click(byText(document.body, "button", "Approval…")!);
+    let dialog = document.querySelector("[role=dialog]") as HTMLElement;
+    const needed = dialog.querySelectorAll("select")[1] as HTMLSelectElement;
+    expect(needed.value).toBe("1");                                                                 // the default is the single approval
+    needed.value = "2";
+    needed.dispatchEvent(new Event("change", { bubbles: true }));
+    await click(byText(dialog, "button", "Hold for approval")!);
+    await settle();
+    expect(calls.find((c) => c.method === "PUT")!.body).toEqual({ timeoutSeconds: 3600, onTimeout: "EXPIRE", requiredApprovals: 2 });
+    cleanup();
+    const second = bff("admin");
+    await open();
+    await settle();
+    await click(byText(document.body, "button", "Approval…")!);
+    dialog = document.querySelector("[role=dialog]") as HTMLElement;
+    await click(byText(dialog, "button", "Hold for approval")!);
+    await settle();
+    expect(second.find((c) => c.method === "PUT")!.body).toEqual({ timeoutSeconds: 3600, onTimeout: "EXPIRE" });       // no requiredApprovals key
+  });
+
+  // A policy with `requiredApprovals: 2` is described as needing two different people, and its dialog opens with two selected.
+  // A stored two-approval policy is shown as such and its dialog opens with two selected.
+  it("shows a policy that asks for two approvals, and opens its dialog with two selected", async () => {
+    bff("admin", { invokerId: INVOKER, timeoutSeconds: 3600, onTimeout: "EXPIRE", requiredApprovals: 2, setBy: "admin", updatedAt: "2026-10-09T00:00:00Z" });
+    const view = await open();
+    await settle();
+    expect(view.container.textContent).toContain("Held for approval · two different people must approve · lapses after 1 h (expires)");
+    await click(byText(document.body, "button", "Approval…")!);
+    expect(((document.querySelector("[role=dialog]") as HTMLElement).querySelectorAll("select")[1] as HTMLSelectElement).value).toBe("2");
+  });
+
+  // A timeout that is not a whole number of minutes in range is refused in the dialog, without calling the backend.
   it("refuses a timeout that is not a whole number of minutes in range, without calling", async () => {
     const calls = bff("admin");
     await open();
@@ -71,6 +119,7 @@ describe("holding an rApp's changes for approval (AI-11.4)", () => {
     expect(calls.some((c) => c.method === "PUT")).toBe(false);
   });
 
+  // "Stop holding" is offered only where a policy exists, and an operator is offered neither it nor the dialog, because that is an admin's decision.
   it("offers to stop holding only where there is a policy, and an operator is offered neither (it is an admin's decision)", async () => {
     bff("admin", { invokerId: INVOKER, timeoutSeconds: 3600, onTimeout: "EXPIRE", setBy: "admin", updatedAt: "2026-10-09T00:00:00Z" });
     const admin = await open();

@@ -16,6 +16,9 @@ ENQUEUE_IMPORT = "smo_shared.outbox"
 
 
 def _call_sites() -> set[tuple[str, str]]:
+    """Every (file, function) in a module's app that calls `post_webhook`, `get_webhook`, `delete_webhook` or an imported `enqueue`, found by
+    walking the syntax trees of `*/app/*.py` and `samples/*/app/*.py`.
+    """
     sites = set()
     for path in sorted(list(SMO_ROOT.glob("*/app/*.py")) + list(SMO_ROOT.glob("samples/*/app/*.py"))):
         tree = ast.parse(path.read_text())
@@ -50,12 +53,16 @@ def _documented() -> dict[tuple[str, str], str]:
 
 
 def test_every_call_site_has_a_row_and_every_row_a_call_site():
+    """Every call to a caller-registered destination has a row in docs/NOTIFICATIONS.md and every row still has a call site, so the document cannot
+    drift from the code.
+    """
     sites, documented = _call_sites(), _documented()
     assert sites - set(documented) == set(), f"call sites with no row in docs/NOTIFICATIONS.md: {sorted(sites - set(documented))}"
     assert set(documented) - sites == set(), f"rows with no call site: {sorted(set(documented) - sites)}"
 
 
 def test_reads_are_class_c_commands_class_b_and_only_posts_are_class_a():
+    """The class in the table follows the helper: posts and the outbox are A, deletes are B and reads are C."""
     for helper, cls in re.findall(r"^\| `[^`]+\.py` \| `[^`]+` \| `([a-z_]+)` \| ([ABC]) \|", DOC, re.M):
         expected = {"get_webhook": "C", "delete_webhook": "B", "post_webhook": "A", "enqueue": "A"}[helper]
         assert cls == expected, f"{helper} is class {expected}, the table says {cls}"

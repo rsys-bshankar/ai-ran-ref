@@ -4,7 +4,7 @@ import pytest
 
 from test_main import _make_me, client, db_session_factory  # noqa: F401  (pytest fixtures)
 
-from app.models import ElementOnboarding, OnboardingTemplate, SoftwareCampaign, ManagedObject, CMSnapshot
+from app.models import ElementOnboarding, LifecycleSubscription, OnboardingTemplate, SoftwareCampaign, ManagedObject, CMSnapshot
 from app.netconf_client import EditResult
 
 
@@ -41,6 +41,7 @@ def _history(client, ref="ME-1", **params):
 
 
 def test_a_write_records_the_values_it_replaced_and_the_values_it_wrote(client, db_session_factory, nf):
+    """Each dispatched sub-change keeps the values of the attributes it names as they were (None for one not there) and what it wrote."""
     _make_me(db_session_factory)
     job = _write(client, [{"managedElementRef": "ME-1", "managedFunctionRef": "NRCellDU=1",
                            "attributeChanges": {"administrativeState": "LOCKED", "newAttr": "x"}}]).json()
@@ -52,6 +53,7 @@ def test_a_write_records_the_values_it_replaced_and_the_values_it_wrote(client, 
 
 
 def test_a_change_the_nf_refused_keeps_the_before_image_and_no_after(client, db_session_factory, nf):
+    """A write the element refused keeps its before image and has no after image."""
     _make_me(db_session_factory)
     nf["edit_result"] = EditResult(False, "NETCONF_RPC_FAILED")
     _write(client, [{"managedElementRef": "ME-1", "managedFunctionRef": "NRCellDU=1", "attributeChanges": {"cellLocalId": "9"}}])
@@ -60,6 +62,9 @@ def test_a_change_the_nf_refused_keeps_the_before_image_and_no_after(client, db_
 
 
 def test_a_failed_before_read_does_not_stop_the_write_and_says_so(client, db_session_factory, nf):
+    """If the before-image read fails the write still goes ahead and the history says why the image is missing, so a missing image is not mistaken
+    for an empty one.
+    """
     _make_me(db_session_factory)
     nf["read_fails"] = True
     resp = _write(client, [{"managedElementRef": "ME-1", "managedFunctionRef": "NRCellDU=1", "attributeChanges": {"cellLocalId": "9"}}])
@@ -69,6 +74,7 @@ def test_a_failed_before_read_does_not_stop_the_write_and_says_so(client, db_ses
 
 
 def test_a_reader_that_raises_is_recorded_not_propagated(client, db_session_factory, nf, monkeypatch):
+    """A before-image reader that raises is recorded as the reason for the missing image and the write completes."""
     _make_me(db_session_factory)
 
     def boom(*a, **kw):
@@ -80,6 +86,7 @@ def test_a_reader_that_raises_is_recorded_not_propagated(client, db_session_fact
 
 
 def test_a_delete_keeps_the_whole_object_as_its_before_image(client, db_session_factory, nf):
+    """A delete, which names no attributes, keeps the whole object as its before image."""
     _make_me(db_session_factory)
     _write(client, [{"managedElementRef": "ME-1", "managedFunctionRef": "NRCellDU=1", "operation": "delete"}])
     item = _history(client)["items"][0]
@@ -87,6 +94,9 @@ def test_a_delete_keeps_the_whole_object_as_its_before_image(client, db_session_
 
 
 def test_history_is_newest_first_filterable_and_paged(client, db_session_factory, nf):
+    """The history is newest first, can be filtered by managed function and paged, and each write's before image is the previous write's after
+    image.
+    """
     _make_me(db_session_factory)
     for value in ("1", "2", "3"):
         _write(client, [{"managedElementRef": "ME-1", "managedFunctionRef": "NRCellDU=1", "attributeChanges": {"cellLocalId": value}}])
@@ -101,18 +111,21 @@ def test_history_is_newest_first_filterable_and_paged(client, db_session_factory
 
 
 def test_nothing_is_read_or_recorded_when_nothing_is_dispatched(client, db_session_factory, nf):
+    """A sub-change rejected before dispatch (endpoint down) reads nothing and leaves no history."""
     _make_me(db_session_factory, health="UNREACHABLE")
     assert _write(client, [{"managedElementRef": "ME-1", "attributeChanges": {"a": "1"}}]).status_code == 202
     assert nf["reads"] == 0 and _history(client)["items"] == []
 
 
 def test_a_dry_run_reads_nothing_and_records_nothing(client, db_session_factory, nf):
+    """A dry run reads nothing from the element and records nothing."""
     _make_me(db_session_factory)
     assert _write(client, [{"managedElementRef": "ME-1", "attributeChanges": {"a": "1"}}], dryRun=True).status_code == 200
     assert nf["reads"] == 0 and _history(client)["items"] == []
 
 
 def test_snapshots_can_be_switched_off(client, db_session_factory, nf, monkeypatch):
+    """With snapshots off no before image is read and no history is kept, and the worst-case time loses the extra read."""
     _make_me(db_session_factory)
     monkeypatch.setattr("app.main.CM_SNAPSHOTS", False)
     assert _write(client, [{"managedElementRef": "ME-1", "attributeChanges": {"a": "1"}}]).json()["status"] == "COMPLETED"
@@ -122,11 +135,13 @@ def test_snapshots_can_be_switched_off(client, db_session_factory, nf, monkeypat
 
 
 def test_the_worst_case_with_snapshots_adds_one_exchange():
+    """With snapshots on, the worst case of a sub-change is the dispatch worst case plus one 30-second read exchange."""
     import app.main as main
     assert main.CM_SNAPSHOTS and main.worst_case_sub_change_seconds() == main.worst_case_dispatch_seconds() + 30.0 == 95.0
 
 
 def test_a_snapshot_belongs_to_exactly_one_sub_change(client, db_session_factory, nf):
+    """Each snapshot row points at exactly the sub-change it was taken for."""
     from sqlalchemy import select
     from app.models import WriteConfigSubChange
     _make_me(db_session_factory)
@@ -156,7 +171,7 @@ def test_snapshots_insert_cleanly_where_foreign_keys_are_enforced(db_session_fac
     Base.metadata.create_all(engine, tables=[
         O1AdaptorEndpoint.__table__, ManagedEntity.__table__, Alarm.__table__, CMSchemaCache.__table__, WriteConfigJob.__table__,
         WriteConfigSubChange.__table__, CMSnapshot.__table__, VendorCapability.__table__, MsacIdentity.__table__, MsacRole.__table__,
-        MsacAccessRule.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__, ManagedObject.__table__, OnboardingTemplate.__table__, ElementOnboarding.__table__, SoftwareCampaign.__table__])
+        MsacAccessRule.__table__, IdempotencyKey.__table__, NotificationOutbox.__table__, ManagedObject.__table__, OnboardingTemplate.__table__, ElementOnboarding.__table__, LifecycleSubscription.__table__, SoftwareCampaign.__table__])
     factory = sessionmaker(bind=engine)
 
     def override():
