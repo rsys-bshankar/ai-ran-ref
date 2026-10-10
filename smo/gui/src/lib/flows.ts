@@ -1,29 +1,32 @@
-// The ten end-to-end journeys in smo/docs/call-flows, as pure functions from
-// live SMO state to step status. The Lifecycle page renders these; keeping
-// them pure keeps "is this step done?" testable without a browser.
-//
-// A step is `done` when the entity state proves it happened, `current` when it
-// is the next thing to do, `failed` when the state shows it went wrong, and
-// `todo` when it is further ahead. `blocked` marks a step an earlier failure
-// makes impossible.
-
+/** The end-to-end journeys in smo/docs/call-flows (BRIEF §4c: 01–04, 06–10, 15, 16, 19; 02 with its phases), as pure functions from
+ * live SMO state to step status. The Lifecycle page renders these; keeping
+ * them pure keeps "is this step done?" testable without a browser.
+ *
+ * A step is `done` when the entity state proves it happened, `current` when it
+ * is the next thing to do, `failed` when the state shows it went wrong, and
+ * `todo` when it is further ahead. `blocked` marks a step an earlier failure
+ * makes impossible. */
 import type {
   AnalyticsProducer, AnalyticsReport, AnalyticsSubscription, ConfigJob, FaultReport,
-  InferenceJob, Instance, Intent, IntentReport, MlmfReport, MlmfSubscription, Model, ModelLifecycle, Monitor, NfDeployment,
-  O1Endpoint, Package, PackageUsage, PerfReport, RemedialAction, Rmih, ServiceOrder, TrainingJob,
+  InferenceJob, Instance, Intent, IntentReport, InventorySubscription, LcmOperation, MlmfReport, MlmfSubscription, Model, ModelLifecycle, Monitor,
+  NfDeployment, O1Endpoint, OCloudResource, Package, PackageUsage, PerfReport, RemedialAction, Rmih, ServiceOrder, SwmJob, TrainingJob,
 } from "../api/types";
+import type { StepState } from "../kit/Timeline";
 import { MODEL_PIPELINE, RUNTIME_PIPELINE } from "./domain";
 
 export type StepStatus = "done" | "current" | "todo" | "failed" | "blocked" | "warn";
 
+/** One step of a flow, evaluated for one subject: who performs it, its status and a detail proved by live state. */
 export interface FlowStep {
   id: string;
   title: string;
   actor: string;          // who performs it (Operator, Onboarding, NFO, rApp container, ...)
   status: StepStatus;
   detail?: string;
+  phase?: string;         // flow 02's phases (Build & certify, Serve, End of life); absent elsewhere
 }
 
+/** A flow of the catalogue: its id and number, title, call-flow doc, the kind of subject it follows and the modules it crosses. */
 export interface FlowDef {
   id: string;
   number: string;
@@ -43,7 +46,15 @@ export const FLOWS: FlowDef[] = [
   { id: "08", number: "08", title: "RAN Analytics: producer → report → subscriber query", doc: "08-ran-analytics-data-production.md", subject: "analytics type", modules: ["ran-analytics", "mdaf", "sme"] },
   { id: "09", number: "09", title: "Intent registration → fulfilment reporting → admin state", doc: "09-intent-service-intent-flow.md", subject: "intent", modules: ["intent-service"] },
   { id: "10", number: "10", title: "SO SMOS multi-step order: INFRA → TRAINING → DEPLOY", doc: "10-so-smos-multi-step-infra-training-deploy.md", subject: "service order", modules: ["so-smos", "focom", "aimgf", "nfo"] },
+  { id: "15", number: "15", title: "NFO workload: instantiate → scale → heal → terminate", doc: "15-nfo-workload-lifecycle.md", subject: "NF deployment", modules: ["nfo", "focom"] },
+  { id: "16", number: "16", title: "FOCOM resource & inventory: subscribe → provision → notify → deprovision", doc: "16-focom-resource-inventory-lifecycle.md", subject: "O-Cloud resource", modules: ["focom", "nfo"] },
+  { id: "19", number: "19", title: "RAN software job: download → install → activate", doc: "19-software-management-job-lifecycle.md", subject: "software job", modules: ["ran-nf-oam"] },
 ];
+
+/** The kit's step state (`kit/Timeline`) of a flow step status: the boards and the rApp detail steppers draw through it. */
+export function toStepState(status: StepStatus): StepState {
+  return ({ done: "done", current: "now", todo: "todo", failed: "fail", blocked: "block", warn: "warn" } as const)[status];
+}
 
 /** Marks the first not-done step `current` (unless something failed), and
  * everything after a failure `blocked`. Evaluators set only done/failed/warn
@@ -59,6 +70,7 @@ export function settle(steps: FlowStep[]): FlowStep[] {
   });
 }
 
+/** How far a flow is: done (warned steps count as done), total, whether a step failed and whether every step is done. */
 export function progress(steps: FlowStep[]): { done: number; total: number; failed: boolean; complete: boolean } {
   const done = steps.filter((s) => s.status === "done" || s.status === "warn").length;
   return { done, total: steps.length, failed: steps.some((s) => s.status === "failed"), complete: done === steps.length };
@@ -71,6 +83,7 @@ const PKG_ONBOARDED = ["AVAILABLE", "PRIMING", "PRIMED", "DEPRIMING", "DEPRECATE
 
 // ---------------------------------------------------------------- 01
 
+/** Flow 01 (rApp onboarding → running instance) for a package, its newest instance and that instance's NFO deployment. */
 export function flow01(pkg: Package | undefined, instance: Instance | undefined, deployment: NfDeployment | undefined): FlowStep[] {
   if (!pkg) return settle([step("onboard", "OnboardPackage(location)", "Operator → Onboarding", false)]);
   const onboarded = PKG_ONBOARDED.includes(pkg.state);
@@ -101,6 +114,7 @@ const runtimeReached = (state: string | undefined, target: string) => {
   return RUNTIME_PIPELINE.indexOf(state as (typeof RUNTIME_PIPELINE)[number]) >= RUNTIME_PIPELINE.indexOf(target as (typeof RUNTIME_PIPELINE)[number]);
 };
 
+/** Flow 02 (AI/ML model: register → train → certify → deploy → infer → monitor) for a model, its lifecycle, jobs, MLMF subscriptions and reports. */
 export function flow02(model: Model | undefined, lifecycle: ModelLifecycle | undefined, jobs: TrainingJob[], inference: InferenceJob[], subs: MlmfSubscription[], reports: MlmfReport[]): FlowStep[] {
   if (!model) return settle([step("register", "RegisterModel(modelType, version)", "Producer → AI/ML", false)]);
   const s = lifecycle?.modelLifecycleState;
@@ -128,6 +142,7 @@ export function flow02(model: Model | undefined, lifecycle: ModelLifecycle | und
 
 // ---------------------------------------------------------------- 03
 
+/** Flow 03 (configuration write, schema-checked) for a config job, given the O1 endpoints. */
 export function flow03(endpoints: O1Endpoint[], job: ConfigJob | undefined): FlowStep[] {
   const healthy = endpoints.filter((e) => e.healthStatus === "ACTIVE");
   const subs = job?.subChanges ?? [];
@@ -149,6 +164,7 @@ export function flow03(endpoints: O1Endpoint[], job: ConfigJob | undefined): Flo
 
 // ---------------------------------------------------------------- 04
 
+/** Flow 04 (closed-loop assurance) for a monitor, its service order and remedial actions, and the number of MDAF and MLMF reports. */
 export function flow04(monitor: Monitor | undefined, order: ServiceOrder | undefined, actions: RemedialAction[], analyticsReports: number, mlmfReports: number): FlowStep[] {
   const orderDone = order ? order.steps.every((s) => s.status === "COMPLETED") : false;
   const orderFailed = order?.steps.some((s) => s.status === "FAILED");
@@ -172,6 +188,7 @@ export function flow04(monitor: Monitor | undefined, order: ServiceOrder | undef
 
 // ---------------------------------------------------------------- 06
 
+/** Flow 06 (package lifecycle and the cascade-delete guard) for a package, its usage registrations and the instances using it. */
 export function flow06(pkg: Package | undefined, usage: PackageUsage[], instanceCount: number): FlowStep[] {
   if (!pkg) return settle([step("onboard", "OnboardPackage", "Operator → Onboarding", false)]);
   const active = usage.filter((u) => u.active).length;
@@ -197,6 +214,7 @@ export function flow06(pkg: Package | undefined, usage: PackageUsage[], instance
 
 // ---------------------------------------------------------------- 07
 
+/** Flow 07 (rApp instance lifecycle: report → fault → recover → upgrade → terminate) for an instance, its performance reports and faults. */
 export function flow07(instance: Instance | undefined, perf: PerfReport[], faults: FaultReport[]): FlowStep[] {
   if (!instance) return settle([step("running", "Instance RUNNING (call flow 01)", "rApp Mgmt", false)]);
   const critical = faults.filter((f) => f.severity === "critical");
@@ -225,6 +243,7 @@ export function flow07(instance: Instance | undefined, perf: PerfReport[], fault
 
 // ---------------------------------------------------------------- 08
 
+/** Flow 08 (RAN Analytics) for an analytics type, given producers, subscriptions, reports and the SME service names of its producers. */
 export function flow08(type: string, producers: AnalyticsProducer[], subs: AnalyticsSubscription[], reports: AnalyticsReport[], smeServiceNames: string[]): FlowStep[] {
   const p = producers.filter((x) => x.analyticsType === type);
   const s = subs.filter((x) => x.analyticsType === type);
@@ -243,6 +262,7 @@ export function flow08(type: string, producers: AnalyticsProducer[], subs: Analy
 
 // ---------------------------------------------------------------- 09
 
+/** Flow 09 (intent registration → fulfilment reporting → admin state) for an intent, its handlers and reports. */
 export function flow09(handlers: Rmih[], intent: Intent | undefined, reports: IntentReport[]): FlowStep[] {
   return settle([
     step("rmih", "RegisterIntentHandlingFunction (framework-internal only)", "SO/SA SMOS → Intent Service", handlers.length > 0,
@@ -259,6 +279,7 @@ export function flow09(handlers: Rmih[], intent: Intent | undefined, reports: In
 
 // ---------------------------------------------------------------- 10
 
+/** Flow 10 (SO SMOS multi-step order) for a service order: one step per order step, fail-fast. */
 export function flow10(order: ServiceOrder | undefined): FlowStep[] {
   if (!order) return settle([step("submit", "SubmitServiceOrder(scope, steps[])", "Operator → SO SMOS", false)]);
   const steps: FlowStep[] = [step("submit", "SubmitServiceOrder(scope, steps[])", "Operator → SO SMOS", true, order.scope)];
@@ -268,4 +289,99 @@ export function flow10(order: ServiceOrder | undefined): FlowStep[] {
       detail: s.status === "FAILED" ? `FAILED${s.error ? `: ${s.error}` : ""} — later steps never attempted (fail-fast, no compensation)` : s.status });
   });
   return settle(steps);
+}
+
+// ---------------------------------------------------------------- 02 with its phases (17 runtime scale/terminate, 26 governance end of life)
+
+const PHASE_BUILD = "Build & certify";
+const PHASE_SERVE = "Serve";
+const PHASE_EOL = "End of life";
+
+/** Flow 02 as three phases (BRIEF §4c): the steps of `flow02`, tagged Build & certify or Serve, then runtime scale (call flow 17) and the end
+ * of life (call flow 26: roll back, deprecate, terminate the runtime, retire). The extra steps are optional branches: they are `done` only when
+ * the lifecycle proves it, and none of them becomes `current` until the model has entered its end of life. */
+export function flow02Phases(model: Model | undefined, lifecycle: ModelLifecycle | undefined, jobs: TrainingJob[], inference: InferenceJob[], subs: MlmfSubscription[], reports: MlmfReport[]): FlowStep[] {
+  const base = flow02(model, lifecycle, jobs, inference, subs, reports);
+  const serveFrom = base.findIndex((s) => s.id === "deploy");
+  const tagged = base.map((s, i) => ({ ...s, phase: serveFrom >= 0 && i >= serveFrom ? PHASE_SERVE : PHASE_BUILD }));
+  if (!model) return tagged;
+  const s = lifecycle?.modelLifecycleState;
+  const rs = lifecycle?.runtimeLifecycleState;
+  const scale: FlowStep = { ...step("scale", "runtime/scale → SCALING → ACTIVE (NFO scale)", "Producer → AIMgF → NFO", rs === "SCALING" ? "warn" : false,
+    rs === "SCALING" ? "scaling now" : "optional — when inference load grows"), phase: PHASE_SERVE };
+  const rollback = { ...step("rollback", "advance(ROLLBACK) PROMOTED → CERTIFIED (regression found)", "Admin → AIMgF", false, "optional — the runtime keeps serving"), phase: PHASE_EOL };
+  const eol = [
+    step("deprecate", "advance(DEPRECATE) → DEPRECATED", "Admin → AIMgF", s === "DEPRECATED" || s === "RETIRED", "no new deployments"),
+    step("terminate", "runtime/terminate → TERMINATED (NFO delete)", "Producer → AIMgF → NFO", rs === "TERMINATED" ? true : rs === "TERMINATING" ? "warn" : false,
+      rs === "TERMINATING" ? "terminating" : undefined),
+    step("retire", "advance(RETIRE) → RETIRED", "Admin → AIMgF", s === "RETIRED", "kept for audit · governance history stays"),
+  ];
+  const ending = s === "DEPRECATED" || s === "RETIRED" || rs === "TERMINATING" || rs === "TERMINATED";
+  return [...tagged, scale, rollback, ...(ending ? settle(eol) : eol).map((x) => ({ ...x, phase: PHASE_EOL }))];
+}
+
+// ---------------------------------------------------------------- 15
+
+/** NFO workload lifecycle of one NF deployment, from its state and its LCM operations (`/nfo/deployments/{id}/operations`). A runtime failure
+ * (ABNORMAL) is an expected branch, shown as a warning so Heal stays actionable; scale and heal are optional. A synchronous terminate deletes
+ * the row, so a deployment that is gone cannot be followed here. */
+export function flow15(dep: NfDeployment | undefined, operations: LcmOperation[]): FlowStep[] {
+  if (!dep) return settle([step("descriptor", "CreateDescriptor(packageId?, workloadTemplate)", "Caller → NFO", false)]);
+  const st = dep.state;
+  const ops = (type: string) => operations.filter((o) => o.operationType === type);
+  const scaled = ops("SCALE");
+  const healed = ops("HEAL");
+  const instantiated = !["INITIAL", "INSTANTIATING"].includes(st);
+  const abnormal = st === "ABNORMAL";
+  return settle([
+    step("descriptor", "CreateDescriptor(packageId?, workloadTemplate)", "Caller → NFO", !!dep.nfDeploymentDescriptorId, `descriptor ${dep.nfDeploymentDescriptorId.slice(0, 8)}`),
+    step("instantiate", "Instantiate → FOCOM inventory lookup → INSTANTIATING → RUNNING", "Caller → NFO → FOCOM", instantiated, `${dep.name} on ${dep.clusterId}`),
+    step("scale", "Scale → UPDATING → RUNNING", "Caller → NFO", st === "UPDATING" ? "warn" : instantiated,
+      st === "UPDATING" ? "updating" : scaled.length ? `${scaled.length} scale operation(s)` : "optional — not scaled"),
+    step("abnormal", "Runtime failure reported → ABNORMAL", "DMS → NFO", abnormal ? "warn" : instantiated,
+      abnormal ? `ABNORMAL${dep.abnormalReason ? `: ${dep.abnormalReason}` : ""}` : healed.length ? "recovered" : "none reported"),
+    step("heal", "Heal → RUNNING", "Operator → NFO", abnormal ? false : instantiated, healed.length ? `${healed.length} heal operation(s)` : abnormal ? undefined : "optional"),
+    step("terminate", "Terminate → TERMINATING → DELETING (DMS UNINSTALL_COMPLETE)", "Caller → NFO ← DMS", st === "TERMINATING" ? "warn" : st === "DELETING",
+      st === "TERMINATING" ? "awaiting the deployment manager (async uninstall)" : undefined),
+    step("deleted", "DMS DELETE_COMPLETE → DELETED (descriptor free again)", "DMS → NFO", false),
+  ]);
+}
+
+// ---------------------------------------------------------------- 16
+
+/** FOCOM resource and inventory lifecycle of one provisioned resource. A subscription matches when it has no resourceTypeId filter or the
+ * resource's type; notification is best effort and not recorded, so "notified" means a matching subscription existed. */
+export function flow16(resource: OCloudResource | undefined, subs: InventorySubscription[]): FlowStep[] {
+  const matching = subs.filter((x) => !x.resourceTypeId || x.resourceTypeId === resource?.resourceTypeId);
+  const subscribe = step("subscribe", "Subscribe to inventory (callback, resourceTypeId?)", "NFO → FOCOM", matching.length > 0 ? true : subs.length ? "warn" : false,
+    subs.length ? `${subs.length} subscription(s), ${matching.length} matching` : undefined);
+  if (!resource) return settle([subscribe, step("provision", "Provision resource (resourceTypeId, description, tags)", "Operator → FOCOM", false)]);
+  return settle([
+    subscribe,
+    step("provision", "Provision resource (resourceTypeId, description, tags)", "Operator → FOCOM", true, `${resource.resourceTypeId} in ${resource.resourcePoolId}`),
+    step("notify", "CREATE notified to matching subscriptions (best effort)", "FOCOM → NFO", matching.length ? true : "warn",
+      matching.length ? `${matching.length} subscription(s) match · delivery is not recorded` : "no subscription matches — nobody was notified"),
+    step("deprovision", "Deprovision → DELETE notified", "Operator → FOCOM → NFO", false, "idempotent: a second delete is still \"deprovisioned\""),
+  ]);
+}
+
+// ---------------------------------------------------------------- 19
+
+const SWM_PHASES = ["DOWNLOAD", "INSTALL", "ACTIVATE"] as const;
+
+/** RAN software job: three phases, each failing into the one terminal FAILED with `phase` frozen where it failed (no retry: a new job). */
+export function flow19(job: SwmJob | undefined): FlowStep[] {
+  const create = step("create", "Create software job (managedElementRef, ruInstanceId?) → IN_PROGRESS · DOWNLOAD", "Operator → RAN NF OAM", !!job,
+    job ? `${job.managedElementRef}${job.ruInstanceId ? ` · RU ${job.ruInstanceId}` : ""}` : undefined);
+  if (!job) return settle([create]);
+  const at = SWM_PHASES.indexOf(job.phase as (typeof SWM_PHASES)[number]);
+  const phase = (i: number, id: string, title: string, event: string) => step(id, `${title} → ${event}`, "RAN NF OAM → O1 Adaptor → ME",
+    job.status === "FAILED" && at === i ? "failed" : job.status === "COMPLETED" || at > i,
+    job.status === "FAILED" && at === i ? "PHASE_FAILED — the job is FAILED (terminal); retry with a new job from DOWNLOAD" : undefined);
+  return settle([
+    create,
+    phase(0, "download", "software-download", "DOWNLOAD_OK → phase INSTALL"),
+    phase(1, "install", "software-install", "INSTALL_OK → phase ACTIVATE"),
+    phase(2, "activate", "software-activate", "ACTIVATE_OK → COMPLETED"),
+  ]);
 }

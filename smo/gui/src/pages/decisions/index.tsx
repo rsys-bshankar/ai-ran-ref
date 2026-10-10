@@ -15,13 +15,14 @@ import { Integrity, IntegrityOf } from "./sections/Integrity";
 import { Outcome, Why } from "./sections/RecordDetail";
 import { SummaryTiles } from "./sections/SummaryTiles";
 
-/** The list page. `?job=` and `?approval=` narrow it to one job or one approval request. */
+/** The list page. `?job=` and `?approval=` narrow it to one job or one approval request; `?invoker=` starts it filtered to one rApp (the rApp detail page links here). */
 export function Decisions() {
   const [params] = useSearchParams();
   const job = params.get("job") ?? "";
   const approval = params.get("approval") ?? "";
+  const invoker = params.get("invoker") ?? "";
   const [range, setRange] = useState<Range>(job || approval ? "all" : "24h");
-  const [filter, setFilter] = useState<DecisionFilter>(() => ({ invoker: "", disposition: "", model: "", until: "", job, approval, since: sinceOf(job || approval ? "all" : "24h") }));
+  const [filter, setFilter] = useState<DecisionFilter>(() => ({ invoker, disposition: "", model: "", until: "", job, approval, since: sinceOf(job || approval ? "all" : "24h") }));
   const [selected, setSelected] = useState<DecisionRecord | null>(null);
   const query = useMemo(() => decisionFilterQuery({ ...filter, job, approval }), [filter, job, approval]);
   const onChange = (patch: Partial<DecisionFilter>) => setFilter((f) => ({ ...f, ...patch }));
