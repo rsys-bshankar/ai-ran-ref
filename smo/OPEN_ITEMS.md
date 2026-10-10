@@ -1244,6 +1244,25 @@ The console and the back-end routes it asked for are built. Left open:
 | GUI-9.5b | Asynchronous export jobs (today the decision and audit CSV exports stream within one request, bounded to 31 days and 1,000,000 rows); keyset paging of the Decisions table in the GUI (the route has it) | A month of 100k decisions/day exports without a held request | DB-4.4 |
 | GUI-9.8b | Data no module records: node utilisation (FOCOM has no CPU/memory measurement), per-cell state history of an rApp (the rApp's own data, behind its declared page), a Dashboard "needs attention" aggregate in one call | Each widget shows a value | per item |
 
+#### PR-GUI-10 — GUI defects found in review (to do after the PR-GUI-9 round)
+
+From a review of the console (October 2026), re-checked against the redesigned code: three were already fixed by the redesign (the Safeguards
+dialogs now render inside a table cell's component, not a bare `<tr>`; the Dashboard reads true counts from `/api/summary/dashboard` with no
+hard-coded module total; the flows test title matches what it asserts). Still open:
+
+| Step | What | Where now | Done when |
+|---|---|---|---|
+| GUI-10.1 | The FM subscription form and the FM and PM Unsubscribe buttons are never drawn: `POST`/`DELETE /ran-nf-oam/fm-subscriptions(/{id})` and `DELETE /ran-nf-oam/pm-subscriptions/{id}` have no BFF permission rule | `gui-bff/app/rbac.py`, `pages/alarms/sections/FmSubscriptions.tsx`, `pages/kpis/sections/PmSubscriptions.tsx` | Rules added (operator), fixture regenerated, buttons shown to operators |
+| GUI-10.2 | The package drawer says "verified (dev cert)" for any signed package, in production too | `pages/rapps/sections/PackageDrawer.tsx` | Says what Onboarding reports (verified / unverified, and the trust-store mode when served) |
+| GUI-10.3 | A blank "Regression allowed, %" in the KPI guard form is read as 0 and accepted; a whitespace-only number in a declared action is read as 0 | `lib/domain.ts` (`stagedPayload`), `lib/operatorUi.ts` | Blank and whitespace-only refused or left out, with tests |
+| GUI-10.4 | The Admin role matrix and the audit-action filter are fixed text and can drift from `gui-bff/app/rbac.py` and the audit actions the BFF writes | `pages/admin/sections/RoleMatrix.tsx`, `pages/admin/data/queries.ts` | Built from `/api/permissions` and a served list of audit actions (or a test that fails on drift) |
+| GUI-10.5 | Two exported types are both named `StepStatus` | `lib/domain.ts`, `lib/flows.ts` | One renamed |
+| GUI-10.6 | The latest artifact version is parsed from the last `:` part of `artifactLocation` | `pages/aiml/data/board.ts` (`artifactVersions`) | Read from MLMR's own version data, or parsed with a documented, tested pattern |
+| GUI-10.7 | `logout` has no `catch`: a failed `POST /logout` is an unhandled rejection | `auth/AuthContext.tsx` | Caught; the user is signed out locally and told |
+| GUI-10.8 | `Id`'s clipboard copy does not handle a rejected promise | `components/ui.tsx` | Caught, with feedback |
+| GUI-10.9 | `useHashTab`'s effect has no dependency list and re-subscribes on every render | `components/ui.tsx` | Subscribed once (stable `read`) |
+| GUI-10.10 | The toast dismiss timers are not cleared on unmount | `components/Toast.tsx` | Timers tracked and cleared |
+
 ### 5.14 Standards and compliance (`PR-STD`)
 
 | Feature | Step | What | Done when | Needs |
