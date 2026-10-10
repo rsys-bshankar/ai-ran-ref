@@ -2495,16 +2495,35 @@ def read_decision_record(decision_id: uuid.UUID, request: Request, db: Session =
 @app.get("/kpis/{name}")
 def compute_kpi(name: str, from_time: datetime.datetime, request: Request, to_time: datetime.datetime | None = None, group_by: Literal[
                 "cell", "element", "sectorGroup", "incidentZone", "all"] = "cell", managed_element_ref: str | None = None,
-                cell_id: str | None = None, db: Session = Depends(get_session)):
+                cell_id: str | None = None, region: str | None = scoping.RegionFilter, site_cluster: str | None = scoping.SiteClusterFilter,
+                db: Session = Depends(get_session)):
     """MGT-11.3/11.4/11.5: the KPI over [from_time, to_time) (to_time: now), per cell, per element, per sector group or incident zone (the cell
     guards of the registry), or over everything asked for. A ratio is computed from the group's summed counters, not from its cells' ratios.
-    `managed_element_ref` and `cell_id` narrow what is read. A group without data has a null `value` and a `reason`.
+    `managed_element_ref` and `cell_id` narrow what is read, and so do `region` and `site_cluster` (GUI-4.2: the elements of that place). A group
+    without data has a null `value` and a `reason`.
     PR-SEC-10.6: a caller with a scope claim gets the KPI over the performance files of the elements inside it only (so `all` is its elements, never the network's).
     MGT-2.6: with the MSAC switch on, a caller that is a registered Identity gets it over the elements its access rules let it `read` only."""
     definition = _kpi_or_404(db, name)
     start, end = _kpi_window(from_time, to_time)
     return kpi.compute(db, definition, start, end, group_by, managed_element_ref, cell_id, scoping.request_scope(request),
-                       _unreadable_elements(db, request, PMFile.managed_element_ref))
+                       _unreadable_elements(db, request, PMFile.managed_element_ref), region, site_cluster)
+
+
+@app.get("/kpis/{name}/series")
+def kpi_series(name: str, from_time: datetime.datetime, request: Request, to_time: datetime.datetime | None = None,
+               step_seconds: int = Query(..., ge=60, le=86_400, description="the length of one step, 1 minute to 1 day"),
+               managed_element_ref: str | None = None, cell_id: str | None = None, region: str | None = scoping.RegionFilter,
+               site_cluster: str | None = scoping.SiteClusterFilter, db: Session = Depends(get_session)):
+    """GUI-4.1: the KPI over time, for a chart: the KPI over everything asked for (as `group_by=all`) once per step of [from_time, to_time),
+    oldest first, `points` of `{at, value, samples, reason}` with `at` the step's start. A step without data has a null `value`. At most 500 steps
+    (422 otherwise: widen the step). Narrowed and limited as `GET /kpis/{name}` is: the element, cell and place filters, the scope claim and MSAC."""
+    definition = _kpi_or_404(db, name)
+    start, end = _kpi_window(from_time, to_time)
+    step = datetime.timedelta(seconds=step_seconds)
+    if -(-(end - start) // step) > kpi.MAX_POINTS:
+        raise framework_error(FrameworkError.SCHEMA_VALIDATION_FAILED, detail=f"at most {kpi.MAX_POINTS} steps: widen step_seconds or shorten the window")
+    return kpi.series(db, definition, start, end, step, managed_element_ref, cell_id, scoping.request_scope(request),
+                      _unreadable_elements(db, request, PMFile.managed_element_ref), region, site_cluster)
 
 
 def _kpi_window(from_time: datetime.datetime, to_time: datetime.datetime | None) -> tuple[datetime.datetime, datetime.datetime]:

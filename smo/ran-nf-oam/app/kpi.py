@@ -7,6 +7,9 @@ success rate is the region's successes over the region's attempts, not the avera
 
 Only stored files are read: a report that went straight to DME (`/pm-reports`) leaves nothing here. A bounded number of the newest files is read
 (`RAN_NF_OAM_KPI_MAX_FILES`); when there are more the answer says `truncated`. PM collection at scale (MGT-12) is where this stops being a scan.
+
+`series` (GUI-4.1) is the same computation over everything asked for, once per equal step of the window, from one read of the files: a chart of a
+KPI over time is the KPI of each step, so a ratio is still each step's summed counters divided, never a mean of finer ratios.
 """
 
 import datetime
@@ -23,12 +26,13 @@ from . import kpi_formula
 from smo_shared.scope import Scope
 
 from .models import KpiDefinition, ManagedEntity, PMFile
-from .scoping import scoped_to_elements
+from .scoping import narrowed_to_place, scoped_to_elements
 
 AGGREGATIONS = ("sum", "avg", "min", "max", "last", "count")
 GROUPS = ("cell", "element", "sectorGroup", "incidentZone", "all")
 MAX_FILES = int(os.environ.get("RAN_NF_OAM_KPI_MAX_FILES", "2000"))
 MAX_GROUPS = 1000
+MAX_POINTS = 500                                                       # the steps of one series (GUI-4.1): a chart is a few hundred pixels wide
 NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 VARIABLE = re.compile(r"[^A-Za-z0-9_]")
 
@@ -77,11 +81,14 @@ def _as_utc(value: datetime.datetime) -> datetime.datetime:
 
 def load_samples(db: Session, counters: set[str], start: datetime.datetime, end: datetime.datetime,
                  element: str | None = None, cell: str | None = None, scope: Scope | None = None,
-                 exclude: list[str] | None = None) -> tuple[list[Sample], int, bool]:
+                 exclude: list[str] | None = None, region: str | None = None,
+                 site_cluster: str | None = None) -> tuple[list[Sample], int, bool]:
     """(samples in [start, end) of the counters asked for, files read, whether more files than the bound were left unread). `scope` (PR-SEC-10.6) limits the files
     to those of the elements a caller with that claim may touch: a KPI over "all" is then over its elements, not the network's. `exclude` (MGT-2.6) leaves out the
-    files of those elements (the ones a caller's access rules do not let it read)."""
+    files of those elements (the ones a caller's access rules do not let it read). `region` and `site_cluster` (GUI-4.2) keep the files of the registered elements
+    of that place only; they narrow, the scope still applies."""
     stmt = scoped_to_elements(select(PMFile), scope, PMFile.managed_element_ref).order_by(PMFile.file_ready_time.desc())
+    stmt = narrowed_to_place(stmt, PMFile.managed_element_ref, region, site_cluster)
     if exclude:
         stmt = stmt.where(PMFile.managed_element_ref.not_in(exclude))
     if element:
@@ -160,27 +167,53 @@ def _group_view(group_by: str, key: tuple) -> dict:
 
 
 def compute(db: Session, definition: KpiDefinition, start: datetime.datetime, end: datetime.datetime, group_by: str = "cell",
-            element: str | None = None, cell: str | None = None, scope: Scope | None = None, exclude: list[str] | None = None) -> dict:
+            element: str | None = None, cell: str | None = None, scope: Scope | None = None, exclude: list[str] | None = None,
+            region: str | None = None, site_cluster: str | None = None) -> dict:
     """The KPI over [start, end), one item per group. A group with no samples of a needed counter, or whose formula is undefined (a division by
     zero), has `value` null and says which (`NO_DATA`, `UNDEFINED`)."""
     table = definition.counters
-    samples, scanned, truncated = load_samples(db, {c["counter"] for c in table}, start, end, element, cell, scope, exclude)
+    samples, scanned, truncated = load_samples(db, {c["counter"] for c in table}, start, end, element, cell, scope, exclude, region, site_cluster)
     grouped: dict[tuple, list[Sample]] = {}
     guards: dict = {}
     for sample in samples:
         grouped.setdefault(_group_key(db, group_by, sample, guards), []).append(sample)
     items = []
     for key in sorted(grouped)[:MAX_GROUPS]:
-        group_samples = grouped[key]
-        counters = {c["variable"]: _combine(c["aggregation"], [s for s in group_samples if s.counter == c["counter"]]) for c in table}
-        value = kpi_formula.evaluate(definition.formula, counters)
-        reason = None if value is not None else ("NO_DATA" if any(v is None for v in counters.values()) else "UNDEFINED")
-        observations = len({(smp.element, smp.cell, smp.at) for smp in group_samples})        # a measurement with several counters is one observation
-        items.append({"group": _group_view(group_by, key), "value": value, "samples": observations, "counters": counters, "reason": reason})
+        items.append({"group": _group_view(group_by, key), **_evaluate(definition, grouped[key])})
     if group_by == "all" and not items:                                # one question, one answer: "no data" rather than an empty list
         items.append({"group": {}, "value": None, "samples": 0, "counters": {c["variable"]: None for c in table}, "reason": "NO_DATA"})
     return {"kpi": definition.name, "unit": definition.unit, "from": start.isoformat(), "to": end.isoformat(), "groupBy": group_by,
             "filesScanned": scanned, "truncated": truncated or len(grouped) > MAX_GROUPS, "items": items}
+
+
+def _evaluate(definition: KpiDefinition, samples: list[Sample]) -> dict:
+    """`value`, `samples` (observations), `counters` and `reason` of the KPI over one group's samples: each counter combined as its definition says,
+    then the formula; a null value says why (`NO_DATA` when a counter has no sample, `UNDEFINED` when the formula is, a division by zero)."""
+    counters = {c["variable"]: _combine(c["aggregation"], [s for s in samples if s.counter == c["counter"]]) for c in definition.counters}
+    value = kpi_formula.evaluate(definition.formula, counters)
+    reason = None if value is not None else ("NO_DATA" if any(v is None for v in counters.values()) else "UNDEFINED")
+    observations = len({(smp.element, smp.cell, smp.at) for smp in samples})          # a measurement with several counters is one observation
+    return {"value": value, "samples": observations, "counters": counters, "reason": reason}
+
+
+def series(db: Session, definition: KpiDefinition, start: datetime.datetime, end: datetime.datetime, step: datetime.timedelta,
+           element: str | None = None, cell: str | None = None, scope: Scope | None = None, exclude: list[str] | None = None,
+           region: str | None = None, site_cluster: str | None = None) -> dict:
+    """GUI-4.1: the KPI over everything asked for, once per `step` of [start, end) (the last step may be shorter), oldest first; at most
+    `MAX_POINTS` steps (the caller checks). A step without data is a point with a null `value` and a `reason`, so a chart shows the gap."""
+    samples, scanned, truncated = load_samples(db, {c["counter"] for c in definition.counters}, start, end, element, cell, scope, exclude,
+                                               region, site_cluster)
+    buckets: dict[int, list[Sample]] = {}
+    for sample in samples:
+        buckets.setdefault(int((sample.at - start) / step), []).append(sample)
+    points = []
+    at = start
+    for index in range(-(-(end - start) // step)):                     # ceiling: a window that is not a whole number of steps keeps its tail
+        values = _evaluate(definition, buckets.get(index, []))
+        points.append({"at": at.isoformat(), "value": values["value"], "samples": values["samples"], "reason": values["reason"]})
+        at += step
+    return {"kpi": definition.name, "unit": definition.unit, "from": start.isoformat(), "to": end.isoformat(), "stepSeconds": int(step.total_seconds()),
+            "filesScanned": scanned, "truncated": truncated, "points": points}
 
 
 # MGT-11.6: the KPIs this service seeds. They are defined over the PM counters this build carries (the names its sample rApps read and its mock NF

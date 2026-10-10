@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /** Tests of the KPIs & Assurance page (pages/kpis): Overview is the default tab, its tiles show the server-computed KPIs (and "—" with the
- * reason for one that is not defined), the worst-10 list is ranked lowest first, the escalations callout carries the true count, the range
+ * reason for one that is not defined), the tiles follow the top bar's scope, the chart draws each KPI over time with its own region filter and
+ * saves and loads the user's layouts (GUI-4.1 to 4.3), the worst-10 list is ranked lowest first, the escalations callout carries the true count, the range
  * reaches the KPI calls, the MDA request form is read-only for a viewer and sends a TS 28.104 body for an operator (feature 9), a request can be cancelled,
  * MDA reports filter by kind and offer the file, and the pre-redesign tab ids (MLMF, Definitions) still work. `fetch` is stubbed by
  * `testing/bff.tsx` `fakeBff` with `auth/permissions.fixture.json`; no BFF runs. Run: `npx vitest run src/pages/kpis` from smo/gui. */
@@ -8,8 +9,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../../../auth/AuthContext";
 import fixture from "../../../auth/permissions.fixture.json";
+import { ScopeContext } from "../../../data/scope";
 import { fakeBff, mountWith, type Call } from "../../../testing/bff";
-import { byText, cleanup, click, settle, type } from "../../../testing/dom";
+import { byText, cleanup, click, pick, settle, type } from "../../../testing/dom";
 import { Kpis } from "../index";
 import { PmSubscriptions } from "../sections/PmSubscriptions";
 
@@ -45,6 +47,13 @@ function bff(role: "viewer" | "operator" | "admin", extraRules: unknown[] = []) 
     "GET /smo/aimgf/mlmf/subscriptions": page([]), "GET /smo/mlmr/models": page([]),
     "GET /smo/ran-nf-oam/kpi-definitions": page([{ name: "dl_ue_throughput", formula: "thp", unit: "Mbit/s", description: null, counters: [{ counter: "DRB.UEThpDl", variable: "thp", aggregation: "avg" }] }]),
     "GET /smo/ran-nf-oam/kpi-schedules": page([]),
+    "GET /smo/ran-nf-oam/kpis/dl_ue_throughput/series": (c: Call) => ({ kpi: "dl_ue_throughput", unit: "Mbit/s", from: "f", to: "t", stepSeconds: Number(c.query.get("step_seconds")),
+      filesScanned: 2, truncated: false, points: [{ at: "2026-10-10T10:00:00Z", value: 100, samples: 3, reason: null }, { at: "2026-10-10T10:15:00Z", value: null, samples: 0, reason: "NO_DATA" },
+        { at: "2026-10-10T10:30:00Z", value: c.query.get("region") === "east" ? 50 : 120, samples: 2, reason: null }] }),
+    "GET /smo/ran-nf-oam/managed-entities/scopes": { regions: [{ region: "east", elements: 3, siteClusters: [{ siteCluster: "metro-a", elements: 2 }] }, { region: "west", elements: 1, siteClusters: [] }] },
+    "GET /me/kpi-layouts": { max: 20, items: [{ name: "Night", updatedAt: "2026-10-10T00:00:00Z", kpis: ["dl_ue_throughput", "dl_prb_utilization"], range: "7d", region: "west", siteCluster: null }] },
+    "PUT /me/kpi-layouts/*": (c: Call) => c.body,
+    "DELETE /me/kpi-layouts/*": { status: 204 },
   });
 }
 
@@ -92,6 +101,70 @@ describe("the Overview tab", () => {
     expect(all.length).toBeGreaterThan(before);
     const hours = (Date.now() - Date.parse(all[all.length - 1].query.get("from_time")!)) / 3_600_000;
     expect(Math.round(hours)).toBe(168);
+  });
+});
+
+describe("the KPI chart (GUI-4.1 to 4.3)", () => {
+  const chart = (root: HTMLElement) => root.querySelector('[data-section="kpis.chart"]') as HTMLElement;
+  const seriesCalls = (calls: Call[], name = "dl_ue_throughput") => calls.filter((c) => c.path === `/smo/ran-nf-oam/kpis/${name}/series`);
+
+  // The chart reads the series in the range's step and draws the steps with data; the caption counts the step without.
+  it("draws a KPI over time", async () => {
+    const calls = bff("viewer");
+    const { container } = await open();
+    expect(chart(container).querySelector('[data-kpi="dl_ue_throughput"] svg')).not.toBeNull();
+    expect(chart(container).textContent).toContain("3 steps of 15 min, 1 without data");
+    expect(seriesCalls(calls).at(-1)!.query.get("step_seconds")).toBe("900");
+  });
+
+  // The chart's own region and site cluster reach the series call; the tiles keep reading the whole network.
+  it("narrows the chart to a region and a site cluster", async () => {
+    const calls = bff("viewer");
+    const { container } = await open();
+    await pick(chart(container).querySelector('select[aria-label="Chart region"]') as HTMLSelectElement, "east");
+    await settle(4);
+    await pick(chart(container).querySelector('select[aria-label="Chart site cluster"]') as HTMLSelectElement, "metro-a");
+    await settle(4);
+    const last = seriesCalls(calls).at(-1)!;
+    expect([last.query.get("region"), last.query.get("site_cluster")]).toEqual(["east", "metro-a"]);
+    expect(calls.filter((c) => c.path === "/smo/ran-nf-oam/kpis/dl_prb_utilization").every((c) => !c.query.has("region"))).toBe(true);
+  });
+
+  // The top bar's scope reaches the tiles and is where the chart starts.
+  it("follows the top bar's scope", async () => {
+    const calls = bff("viewer");
+    await mountWith(<ScopeContext.Provider value={{ scope: { region: "west", cluster: null }, setScope: () => {} }}><AuthProvider><Kpis /></AuthProvider></ScopeContext.Provider>);
+    await settle(8);
+    expect(calls.find((c) => c.path === "/smo/ran-nf-oam/kpis/dl_prb_utilization")!.query.get("region")).toBe("west");
+    expect(seriesCalls(calls).at(-1)!.query.get("region")).toBe("west");
+  });
+
+  // Saving sends the KPIs charted, the range and the place under the name typed.
+  it("saves the layout", async () => {
+    const calls = bff("viewer");
+    const { container } = await open();
+    await pick(chart(container).querySelector('select[aria-label="Chart region"]') as HTMLSelectElement, "east");
+    await type(chart(container).querySelector('input[aria-label="Layout name"]') as HTMLInputElement, "Morning check");
+    await click(byText(chart(container), "button", "Save layout")!);
+    await settle(4);
+    const put = calls.find((c) => c.method === "PUT")!;
+    expect(put.path).toBe("/me/kpi-layouts/Morning%20check");
+    expect(put.body).toEqual({ kpis: ["dl_ue_throughput"], range: "24h", region: "east", siteCluster: null });
+  });
+
+  // Loading a saved layout puts back its KPIs, its range (the Overview's, so the tiles follow) and its region; it can be deleted.
+  it("loads and deletes a saved layout", async () => {
+    const calls = bff("viewer");
+    const { container } = await open();
+    await pick(chart(container).querySelector('select[aria-label="Layout"]') as HTMLSelectElement, "Night");
+    await settle(6);
+    expect([...chart(container).querySelectorAll("[data-kpi]")].map((e) => e.getAttribute("data-kpi"))).toEqual(["dl_ue_throughput", "dl_prb_utilization"]);
+    expect(seriesCalls(calls).at(-1)!.query.get("step_seconds")).toBe("3600");
+    expect(seriesCalls(calls).at(-1)!.query.get("region")).toBe("west");
+    expect(chart(container).querySelector('[data-kpi="dl_prb_utilization"]')!.textContent).toContain("not defined");
+    await click(byText(chart(container), "button", "Delete layout")!);
+    await settle(4);
+    expect(calls.some((c) => c.method === "DELETE" && c.path === "/me/kpi-layouts/Night")).toBe(true);
   });
 });
 

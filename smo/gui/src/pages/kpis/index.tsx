@@ -1,7 +1,7 @@
 /** The KPIs & Assurance page (route /kpis, BRIEF §4 KPIs & Assurance, handoff `Kpis.dc.html`, SCALE.md "KPIs & Assurance"): network
  * performance, the monitors that watch it, and what was done when a threshold broke. Layout only: the tabs (in the URL hash; Overview is the new
- * default and the pre-redesign ids `rapp`, `pm`, `definitions`, `mlmf`, `analytics`, `assurance`, `ocloud` still work), the Overview's time range,
- * and the sections each tab places. Each section owns its data through `data/queries.ts`; only the visible tab's sections mount. README.md. */
+ * default and the pre-redesign ids `rapp`, `pm`, `definitions`, `mlmf`, `analytics`, `assurance`, `ocloud` still work), the Overview's time range
+ * (the tiles', the worst list's and the chart's; a saved chart layout sets it), and the sections each tab places. Each section owns its data through `data/queries.ts`; only the visible tab's sections mount. README.md. */
 import { useState } from "react";
 
 import { Can, PageHeader, Tabs, useHashTab } from "../../components/ui";
@@ -11,6 +11,7 @@ import { Mlmf } from "../aiml";
 import { MONITORS, PRODUCERS, type Range } from "./data/queries";
 import { AnalyticsReports, AnalyticsSubscriptions, Producers } from "./sections/AnalyticsLegacy";
 import { Escalations } from "./sections/Escalations";
+import { KpiChart } from "./sections/KpiChart";
 import { KpiDefinitions } from "./sections/KpiDefinitions";
 import { KpiTiles } from "./sections/KpiTiles";
 import { MdaFunctions, MdaReports, MdaRequests } from "./sections/MdaLists";
@@ -43,6 +44,7 @@ export function Kpis() {
       {tab === "overview" && (
         <div className="stack">
           <SectionBoundary id="kpis.tiles"><KpiTiles range={range} /></SectionBoundary>
+          <SectionBoundary id="kpis.chart"><KpiChart range={range} onRange={setRange} /></SectionBoundary>
           <div className="grid g-main-side">
             <SectionBoundary id="kpis.monitors"><Monitors compact /></SectionBoundary>
             <div className="stack">
