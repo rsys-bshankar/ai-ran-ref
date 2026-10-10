@@ -108,6 +108,9 @@ def _mapping(value: Any, where: str, required: tuple[str, ...], optional: tuple[
 
 
 def _text(value: Any, where: str, limit: int, *, empty: bool = False) -> str:
+    """Checks `value` is a string within `limit` characters, without control characters, and non-blank unless `empty=True`; returns it, else fails at
+    `where`.
+    """
     if not isinstance(value, str) or (not value.strip() and not empty):
         _fail(where, "must be a non-empty string")
     if len(value) > limit:
@@ -136,6 +139,7 @@ def _one_of(value: Any, where: str, allowed: tuple) -> Any:
 
 
 def _list(value: Any, where: str, low: int, high: int) -> list:
+    """Checks `value` is a list with between `low` and `high` entries (inclusive); returns it, else fails at `where`."""
     if not isinstance(value, list):
         _fail(where, "must be a list")
     if not low <= len(value) <= high:
@@ -144,6 +148,8 @@ def _list(value: Any, where: str, low: int, high: int) -> list:
 
 
 def _scalar(value: Any, where: str) -> Any:
+    """Checks `value` is a string (as `_text`, empty allowed, at most MAX_VALUE characters), a number or a boolean; returns it, else fails at `where`.
+    """
     if isinstance(value, str):
         return _text(value, where, MAX_VALUE, empty=True)
     if isinstance(value, bool) or isinstance(value, (int, float)):
@@ -233,6 +239,11 @@ def _format(value: Any, where: str) -> str:
 
 
 def _input(value: Any, where: str) -> dict:
+    """Validates one action input (name, label, type; `required`, `options`, `min`, `max`, `maxLength` where the type allows them) and returns it.
+
+    `options` is for `enum` only and must have no duplicates; `min`/`max` are for `integer`/`number` only and must not cross; `maxLength` is for
+    `string` only.
+    """
     out = _mapping(value, where, ("name", "label", "type"), ("required", "options", "min", "max", "maxLength"))
     if not _NAME.fullmatch(str(out["name"])):
         _fail(f"{where}.name", "must be a plain name (letters, digits, '_')")
@@ -264,6 +275,7 @@ def _input(value: Any, where: str) -> dict:
 
 
 def _when(value: Any, where: str) -> dict:
+    """Validates a row action's `when` condition: a field path (no `[]`) and exactly one of `exists`, `equals`, `notEquals`. Returns it."""
     out = _mapping(value, where, ("path",), ("exists", "equals", "notEquals"))
     _field_path(out["path"], f"{where}.path", allow_list=False)
     chosen = [k for k in ("exists", "equals", "notEquals") if k in out]
@@ -277,6 +289,12 @@ def _when(value: Any, where: str) -> dict:
 
 
 def _action(value: Any, where: str, *, row: bool, seen: set[str], row_fields: set[str] | None = None) -> dict:
+    """Validates one action (a button that calls the rApp) and returns it with `inputs` normalised to a list.
+
+    `seen` collects action ids so they are unique across the whole declaration. The method must be a change (not GET); the path may use
+    `{row.<field>}` only for a row action (`row=True`, with `row_fields` naming what the row offers); `body` names fixed values that are not also
+    inputs; a DELETE carries neither inputs nor body; `when` is allowed on row actions only.
+    """
     out = _mapping(value, where, ("id", "label", "method", "path", "success"),
                    ("confirm", "tone", "inputs", "body") + (("when",) if row else ()))
     if not _ID.fullmatch(str(out["id"])):
@@ -317,6 +335,9 @@ def _action(value: Any, where: str, *, row: bool, seen: set[str], row_fields: se
 
 
 def _columns(columns: Any, where: str) -> list:
+    """Validates a list of table columns (1 to MAX_COLUMNS) and returns them. `y` is for the `sparkline` format only, and a `sparkline` column must
+    have it.
+    """
     out: list = []
     for i, column in enumerate(_list(columns, where, 1, MAX_COLUMNS)):
         w = f"{where}[{i}]"
@@ -338,6 +359,10 @@ def _columns(columns: Any, where: str) -> list:
 
 
 def _table(panel: dict, where: str, seen: set[str]) -> dict:
+    """Validates a `table` panel and returns it: its `rowKey`, `rows`, columns, row actions and `rowDetail`.
+
+    The fields a row action or detail may reference as `{row.<field>}` are the `rowKey` and the columns' paths (those without `[]`).
+    """
     out = _mapping(panel, where, ("id", "title", "kind", "source", "rowKey", "columns"), ("rows", "rowActions", "empty", "rowDetail"))
     out["rows"] = _field_path(out.get("rows", ""), f"{where}.rows", allow_empty=True, allow_list=False)
     _field_path(out["rowKey"], f"{where}.rowKey", allow_list=False)
@@ -359,6 +384,9 @@ def _key_values(panel: dict, where: str, seen: set[str]) -> dict:
 
 
 def _items(items: Any, where: str) -> list:
+    """Validates the label/path rows of a `keyValues` panel or block (1 to MAX_ITEMS) and returns them. The `sparkline` format is refused: it is a
+    table-column format.
+    """
     result = []
     for i, item in enumerate(_list(items, where, 1, MAX_ITEMS)):
         w = f"{where}[{i}]"
@@ -375,6 +403,11 @@ def _items(items: Any, where: str) -> list:
 
 
 def _kpis(panel: dict, where: str, seen: set[str]) -> dict:
+    """Validates a `kpis` panel and returns it. Each tile has exactly one of `path` (a number in the panel's source) or `kpi` (the name of a KPI the
+    instance reports).
+
+    A tile with a `path` needs the panel `source`; a panel whose tiles are all KPI names must not have one (it would never be read).
+    """
     out = _mapping(panel, where, ("id", "title", "kind", "tiles"), ("source",))
     all_named = True
     for i, tile in enumerate(_list(out["tiles"], f"{where}.tiles", 1, MAX_TILES)):
@@ -407,6 +440,7 @@ def _chart(panel: dict, where: str, seen: set[str]) -> dict:
 
 
 def _chart_fields(out: dict, where: str) -> None:
+    """Checks the fields a chart panel and a chart block share (`type`, `points`, `x`, `y`, optional `seriesBy` and `unit`); fails at `where`."""
     _one_of(out["type"], f"{where}.type", CHART_TYPES)
     _field_path(out["points"], f"{where}.points", allow_list=False)
     for key in ("x", "y") + (("seriesBy",) if "seriesBy" in out else ()):
@@ -593,6 +627,7 @@ _S_INPUT = {
 
 
 def _s_action(row: bool) -> dict:
+    """The JSON Schema of one action; with `row=True` it also allows the row-only `when` condition."""
     properties = {
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,39}$"}, "label": _s_text(MAX_LABEL), "method": {"enum": list(ACTION_METHODS)},
         "path": _S_ROUTE, "success": _s_text(MAX_SUCCESS), "confirm": _s_text(MAX_CONFIRM), "tone": {"enum": list(TONES)},

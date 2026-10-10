@@ -151,6 +151,7 @@ def rapp_may_change(module: str, method: str, path: str) -> bool:
 
 
 def enforcement_mode() -> str:
+    """Returns `enforce` or `audit` from `SMO_ROLE_ENFORCEMENT`; unset or any other value gives `enforce`, so a typo never weakens the policy."""
     mode = os.environ.get("SMO_ROLE_ENFORCEMENT", "enforce").strip().lower()
     return mode if mode in ("enforce", "audit") else "enforce"      # a typo must not switch protection off
 
@@ -167,6 +168,10 @@ def role_of(request) -> str | None:
 
 
 def enrollment_secret_valid(presented: str | None, expected: str) -> bool:
+    """True when `presented` equals the `expected` enrollment secret; False when either is empty.
+
+    Compared with `hmac.compare_digest` (constant time), so response timing does not reveal how much of a guess was right.
+    """
     if not presented or not expected:
         return False
     return hmac.compare_digest(presented.encode(), expected.encode())

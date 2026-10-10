@@ -71,6 +71,14 @@ def _now() -> datetime.datetime:
 
 
 class IdempotencyKey(Base):
+    """One row per (module, caller, key): the reservation made when a command with an `Idempotency-Key` starts and, once it succeeds, the stored
+    answer.
+
+    `scope` is the invoker id (`invoker.invoker_id`), or "anonymous" without one, so keys of different callers never meet. `request_hash`
+    fingerprints method, path and payload; `state` is IN_PROGRESS or COMPLETED; `response_status`/`response_body` are filled only on COMPLETED.
+    `created_at` is the start time of the reservation, and is also what a takeover of an abandoned key rewrites. Purged after
+    IDEMPOTENCY_KEY_TTL_SECONDS.
+    """
     __tablename__ = "idempotency_key"
 
     module: Mapped[str] = mapped_column(String, primary_key=True)
@@ -84,6 +92,11 @@ class IdempotencyKey(Base):
 
 
 def request_hash(method: str, path: str, payload) -> str:
+    """SHA-256 (hex) of the method, path and payload together, with keys sorted so the same request always hashes the same.
+
+    `default=str` makes an unserialisable value (for example a datetime) hash by its text rather than fail. The key is bound to this hash, so
+    reusing a key for any other request is detected.
+    """
     canonical = json.dumps({"method": method, "path": path, "payload": payload}, sort_keys=True, default=str)
     return hashlib.sha256(canonical.encode()).hexdigest()
 
@@ -103,6 +116,7 @@ def _begin(db: Session, module: str, scope: str, key: str, req_hash: str) -> JSO
     for _ in range(2):  # the second pass only happens when the row vanished between the insert race and the re-read
         row = db.get(IdempotencyKey, (module, scope, key))
         if row is None:
+            # Expired records are purged here, when a new key is reserved, rather than by a separate job.
             db.execute(delete(IdempotencyKey).where(
                 IdempotencyKey.created_at < _now() - datetime.timedelta(seconds=_seconds("IDEMPOTENCY_KEY_TTL_SECONDS", 86400))))
             db.add(IdempotencyKey(module=module, scope=scope, key=key, request_hash=req_hash, state=IN_PROGRESS))
@@ -119,6 +133,8 @@ def _begin(db: Session, module: str, scope: str, key: str, req_hash: str) -> JSO
             return _replay(row)
         started = as_utc(row.created_at)
         if _now() - started > datetime.timedelta(seconds=_seconds("IDEMPOTENCY_IN_PROGRESS_SECONDS", 300)):
+            # Takeover of a reservation abandoned by a crashed replica: an UPDATE guarded by the created_at that was read, so when several replicas
+            # try at once only one changes a row and the others see rowcount 0.
             taken = db.execute(update(IdempotencyKey).where(*_pk(module, scope, key), IdempotencyKey.created_at == row.created_at)
                                .values(created_at=_now()))
             db.commit()
@@ -138,6 +154,11 @@ def _release(db: Session, module: str, scope: str, key: str) -> None:
 
 
 def _complete(db: Session, module: str, scope: str, key: str, status_code: int, result) -> None:
+    """Stores the route's successful answer on the reservation and commits, marking it COMPLETED.
+
+    A `Response` result is stored with its own status and JSON-decoded body (an empty body is stored as null); anything else is stored as
+    `jsonable_encoder(result)` with the route's declared `status_code`.
+    """
     if isinstance(result, Response):
         status_code, body = result.status_code, (json.loads(bytes(result.body)) if result.body else None)
     else:
@@ -148,6 +169,14 @@ def _complete(db: Session, module: str, scope: str, key: str, status_code: int, 
 
 
 def run_idempotent(request: Request, db: Session, module: str, status_code: int, payload, run):
+    """Runs `run()` (the route body) at most once per (module, caller, Idempotency-Key); the engine under `@idempotent`.
+
+    Without the header, just runs it. With an invalid key (empty, over 255 characters, non-printable) answers 422 IDEMPOTENCY_KEY_INVALID. Otherwise
+    reserves the key (`_begin`): a stored answer comes back as a replay, a key used for another request is 422 IDEMPOTENCY_KEY_REUSED, one still
+    running is 409 IDEMPOTENCY_KEY_IN_PROGRESS. When `run()` raises anything, the reservation is released and the error propagates, so the client
+    can repeat; when it returns, the answer is stored. Commits on `db` before and after the route runs (see the known limit in the module
+    description).
+    """
     key = request.headers.get(HEADER_NAME)
     if key is None:
         return run()
@@ -160,6 +189,8 @@ def run_idempotent(request: Request, db: Session, module: str, status_code: int,
         return replay
     try:
         result = run()
+    # BaseException, not Exception, so the reservation is released for every way the route can end abnormally (cancellation and exit signals
+    # included); otherwise the key would stay IN_PROGRESS until the takeover timeout.
     except BaseException:
         _release(db, module, scope, key)
         raise

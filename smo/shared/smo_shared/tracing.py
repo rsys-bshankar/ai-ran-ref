@@ -53,6 +53,11 @@ _TRACEPARENT = re.compile(r"^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-
 
 
 class TraceContext(NamedTuple):
+    """A W3C trace position: `trace_id` and `span_id` (lower-case hex), the `flags` byte (bit 0 is sampled) and the `tracestate` string passed on
+    unchanged.
+
+    Held in a context variable per request; never shared between requests.
+    """
     trace_id: str            # 32 lower-case hex
     span_id: str             # 16 lower-case hex: the span the next hop is a child of
     flags: str               # 2 hex; bit 0 is "sampled"
@@ -85,6 +90,7 @@ def get_trace_context() -> TraceContext | None:
 
 
 def get_trace_id() -> str | None:
+    """The 32-hex trace id of the request being handled, or None when it belongs to no trace. Used by the log formatter and the access log."""
     context = _current_trace.get()
     return context.trace_id if context else None
 
@@ -141,6 +147,11 @@ def configure_tracing(service: str | None = None) -> bool:
 
 
 def _remote_parent(context: TraceContext) -> Any:
+    """Wraps an inbound `TraceContext` as an OpenTelemetry context whose current span is a non-recording remote parent, so a new span becomes its
+    child.
+
+    Only called when spans are on (`enabled()`), because it needs the OpenTelemetry API.
+    """
     span_context = otel_trace.SpanContext(
         trace_id=int(context.trace_id, 16), span_id=int(context.span_id, 16), is_remote=True,
         trace_flags=otel_trace.TraceFlags(int(context.flags, 16)),
@@ -161,6 +172,8 @@ def span(name: str, kind: str = "internal", attributes: Mapping[str, Any] | None
         name, context=_remote_parent(parent) if parent else None,
         kind=getattr(otel_trace.SpanKind, kind.upper()), attributes=dict(attributes or {}))
     span_context = otel_span.get_span_context()
+    # Without an SDK provider the API hands back a no-op span with all-zero ids; those must not become the propagated position, so this call behaves
+    # as if spans were off.
     if not span_context.is_valid:      # no SDK provider: the API's no-op span has no ids to propagate
         otel_span.end()
         yield None

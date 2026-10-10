@@ -42,6 +42,9 @@ def _now() -> datetime.datetime:
 
 
 class PeriodicRun(Base):
+    """One row per periodic task name (table `periodic_run`): `last_run_at` is when a replica last claimed it, or 1970-01-01 (`_NEVER`) when it has
+    never run or its claim was given back.
+    """
     __tablename__ = "periodic_run"
 
     name: Mapped[str] = mapped_column(String, primary_key=True)
@@ -55,6 +58,12 @@ def _lock_key(name: str) -> int:
 
 @contextlib.contextmanager
 def advisory_lock(name: str, engine=None) -> Iterator[bool]:
+    """Context manager yielding True when this caller holds the Postgres advisory lock for `name`, False when another session does; released on exit,
+    or by the server if the process dies.
+
+    The lock lives on its own autocommit connection for the length of the block. On any database other than Postgres it yields True without locking.
+    `engine` defaults to the process's own.
+    """
     if engine is None:
         from .db import engine as default_engine  # resolved at call time, so importing this module opens nothing
         engine = default_engine
@@ -71,6 +80,11 @@ def advisory_lock(name: str, engine=None) -> Iterator[bool]:
 
 
 def _claim(session_factory, name: str, interval: datetime.timedelta, now: datetime.datetime) -> bool:
+    """Tries to take this interval's run of task `name`; True when this call won it.
+
+    The first-ever caller inserts the row (a concurrent insert loses harmlessly on the primary key); then one atomic UPDATE moves `last_run_at` to
+    `now` only if it is at least `interval` old, so of any number of replicas calling at once exactly one matches a row.
+    """
     with session_factory() as db:
         db.add(PeriodicRun(name=name, last_run_at=_NEVER))
         try:
@@ -100,6 +114,8 @@ def run_once_per_interval(name: str, interval_seconds: float, fn: Callable[[], N
         return False
     try:
         with advisory_lock(name, engine) as held:
+            # The claim is already taken but an earlier run still holds the advisory lock (it ran longer than the interval): hand the claim back so a
+            # later tick can run, and do not start fn a second time.
             if not held:                     # an earlier run is still going on another replica
                 _give_back(session_factory, name, claimed_at)
                 return False

@@ -79,6 +79,8 @@ def run_checks(checks: Sequence[Check], timeout: float | None = None) -> dict[st
     return results
 
 
+# Response model of `GET /version` (published in the OpenAPI documents, so no docstring). Every field is a string; `unknown` stands for a value the
+# image was built without.
 class VersionReport(BaseModel):
     module: str
     version: str
@@ -96,6 +98,8 @@ def version_report(default_module: str = "unknown") -> dict[str, str]:
             "builtAt": os.environ.get("SMO_BUILT_AT") or "unknown"}
 
 
+# Body model of the 503 answer of `GET /ready` (published in the OpenAPI documents, so no docstring): `status` is `ready` or `not-ready`, `checks`
+# maps each check's function name to `ok`, an exception class name or `timeout`.
 class ReadinessReport(BaseModel):
     status: str
     checks: dict[str, str]

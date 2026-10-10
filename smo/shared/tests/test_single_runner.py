@@ -1,5 +1,8 @@
 """smo_shared.single_runner — one firing per interval across replicas (PR-ST-8). Runs on file SQLite and, with
-`SMO_TEST_POSTGRES_URL` (CI's `migration-postgres` job), on real Postgres, where the advisory lock is tested too."""
+`SMO_TEST_POSTGRES_URL` (CI's `migration-postgres` job), on real Postgres, where the advisory lock is tested too.
+
+Run with: cd smo/shared && PYTHONPATH=. python -m pytest tests/test_single_runner.py -q
+"""
 
 import datetime
 import os
@@ -16,11 +19,15 @@ T0 = datetime.datetime(2026, 1, 1, 12, 0, tzinfo=datetime.UTC)
 
 
 def at(seconds: float) -> datetime.datetime:
+    """Helper: the test epoch T0 plus `seconds`."""
     return T0 + datetime.timedelta(seconds=seconds)
 
 
 @pytest.fixture(params=["sqlite", "postgres"])
 def engine(request, tmp_path):
+    """A database with only the periodic_run table, on file SQLite and, when SMO_TEST_POSTGRES_URL is set, on Postgres too (skipped otherwise); dropped
+    afterwards.
+    """
     if request.param == "postgres":
         if not os.environ.get("SMO_TEST_POSTGRES_URL"):
             pytest.skip("SMO_TEST_POSTGRES_URL not set")
@@ -36,6 +43,7 @@ def engine(request, tmp_path):
 
 @pytest.fixture
 def run(engine):
+    """Returns `go(name, interval, fn, now)`, which calls run_once_per_interval on the test engine with a fixed clock."""
     factory = sessionmaker(bind=engine)
 
     def go(name, interval, fn, now):
@@ -44,6 +52,7 @@ def run(engine):
 
 
 class Counter:
+    """A callable that counts its calls, safe to call from several threads."""
     def __init__(self):
         self.calls = 0
         self.lock = threading.Lock()
@@ -54,6 +63,7 @@ class Counter:
 
 
 def test_the_first_call_runs_and_a_repeat_inside_the_interval_does_not(run):
+    """The first call runs the task and repeats inside the interval do not."""
     task = Counter()
     assert run("collect", 60, task, at(0)) is True
     assert run("collect", 60, task, at(30)) is False
@@ -62,6 +72,7 @@ def test_the_first_call_runs_and_a_repeat_inside_the_interval_does_not(run):
 
 
 def test_it_runs_again_once_the_interval_has_passed(run):
+    """The task runs again exactly when the interval has passed since the last run."""
     task = Counter()
     run("collect", 60, task, at(0))
     assert run("collect", 60, task, at(60)) is True
@@ -71,6 +82,7 @@ def test_it_runs_again_once_the_interval_has_passed(run):
 
 
 def test_tasks_are_independent_and_keep_their_own_interval(run):
+    """Each task name has its own claim and its own interval."""
     a, b = Counter(), Counter()
     run("a", 60, a, at(0))
     run("b", 10, b, at(0))
@@ -79,6 +91,7 @@ def test_tasks_are_independent_and_keep_their_own_interval(run):
 
 
 def test_a_failed_run_gives_the_interval_back_so_the_next_tick_retries(run, engine):
+    """When the task raises, the error propagates and the claim is given back, so the next call may run instead of waiting out the interval."""
     task = Counter()
 
     def boom():
@@ -91,6 +104,7 @@ def test_a_failed_run_gives_the_interval_back_so_the_next_tick_retries(run, engi
 
 
 def test_several_replicas_calling_at_once_run_the_task_once(run):
+    """Six threads calling at the same instant produce exactly one run: the atomic claim has one winner."""
     task = Counter()
     replicas = 6
     barrier = threading.Barrier(replicas, timeout=30)
@@ -110,6 +124,7 @@ def test_several_replicas_calling_at_once_run_the_task_once(run):
 
 
 def test_the_state_is_one_row_per_task(run, engine):
+    """The shared state is one periodic_run row per task name."""
     run("a", 60, Counter(), at(0))
     run("a", 60, Counter(), at(100))
     run("b", 60, Counter(), at(0))
@@ -122,6 +137,7 @@ def test_the_state_is_one_row_per_task(run, engine):
 
 @pytest.fixture
 def postgres():
+    """A Postgres engine from SMO_TEST_POSTGRES_URL; skips the test when it is not set."""
     if not os.environ.get("SMO_TEST_POSTGRES_URL"):
         pytest.skip("SMO_TEST_POSTGRES_URL not set")
     engine = create_engine(os.environ["SMO_TEST_POSTGRES_URL"], future=True)
@@ -130,6 +146,7 @@ def postgres():
 
 
 def test_two_sessions_cannot_hold_the_same_lock_and_it_is_free_afterwards(postgres):
+    """Needs Postgres: a second session cannot take a held advisory lock, a different name is a different lock, and the lock is free once released."""
     with advisory_lock("t8-lock", postgres) as first:
         with advisory_lock("t8-lock", postgres) as second:
             assert (first, second) == (True, False)
@@ -140,6 +157,7 @@ def test_two_sessions_cannot_hold_the_same_lock_and_it_is_free_afterwards(postgr
 
 
 def test_a_holder_that_dies_frees_the_lock_without_releasing_it(postgres):
+    """Needs Postgres: when the holder's connection is dropped the server frees the lock, which is the lease against crashed holders."""
     connection = postgres.connect().execution_options(isolation_level="AUTOCOMMIT")
     from sqlalchemy import text
 
@@ -154,6 +172,9 @@ def test_a_holder_that_dies_frees_the_lock_without_releasing_it(postgres):
 
 
 def test_a_run_longer_than_the_interval_is_not_started_again_elsewhere(run, engine):
+    """Needs Postgres: while a run is still going past its interval, another replica's call does not start a second run and gives its claim back; once
+    finished the task can run again.
+    """
     if engine.dialect.name != "postgresql":
         pytest.skip("the advisory lock is Postgres-only")
     started, release = threading.Event(), threading.Event()
