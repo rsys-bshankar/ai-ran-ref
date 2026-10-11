@@ -191,6 +191,10 @@ RULES: list[Rule] = [
           json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}", "msacRole": "admin" if u.role == Role.ADMIN else None}),
     _rule("POST", "/ran-nf-oam/config-jobs/{id}/(continue|halt|abort)", O,
           json_overrides=lambda u: {"requestedBy": f"smo-gui:{u.username}"}),
+    # MGT-4.3: approving or rejecting a job held for its change window is an operator's decision, like an rApp's action (AI-11); who decided is the signed-in
+    # user (RAN NF OAM also reads it from X-R1-Acting-User and refuses the requester)
+    _rule("POST", "/ran-nf-oam/config-jobs/{id}/(approve|reject)", O,
+          json_overrides=lambda u: {"decidedBy": f"smo-gui:{u.username}"}),
     # GUI-9.7: re-running a job's KPI check only reads PM and records the verdict on the job: operator, like driving the job
     _rule("POST", "/ran-nf-oam/config-jobs/{id}/kpi-check", O),
     # KPI definitions and their schedules are platform configuration (internal-only at R1): admin

@@ -2519,3 +2519,31 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
   physics). Alarm counts per node past the cut (an alarm whose node and root are both beyond `max_nodes` is not on the page; focusing the
   element shows it). Opening a node's own attributes from the tree (the element page's Managed objects tab does, one click on). Neighbour
   relations drawn on the containment tree (they are between cells of different elements; the neighbour graph shows them).
+
+### MGT-4.1, 4.2, 4.3 / GUI-7.1 — change windows for CM jobs, approved in the Approvals inbox
+
+- **What.** A CM job can be asked with a change window (`changeWindow {start?, end?}`) or only for approval (`requireApproval: true`). It is then made
+  `PENDING_APPROVAL` with every change `PENDING`, and nothing is sent until someone other than its requester approves it. Approved inside its
+  window, or with none, it runs at once; approved before the window it waits `SCHEDULED`; refused, or withdrawn before it starts, it ends
+  `REJECTED` with every change `REJECTED` `APPROVAL_REJECTED`. The console has a **Change windows** tab in the Approvals inbox (jobs waiting,
+  then approved ones waiting for their window, with Start and Withdraw) and a "Hold for approval" option in the new config job form.
+- **Schema (MGT-4.1).** Revision `0041`: `scheduled_at`, `window_end`, `decided_by`, `decided_at`, `decision_reason` on `write_config_job`, all
+  nullable, a CHECK that a window closes after it opens, and the status check widened to the three new states (`test_status_checks.py` keeps it
+  equal to `JobState`). Expand only: the previous release's code never writes them.
+- **States (MGT-4.2).** `PENDING` → `PENDING_APPROVAL` (`REQUEST_APPROVAL`) → `PROCESSING` (`APPROVE`) or `SCHEDULED` (`APPROVE_FOR_WINDOW`) →
+  `PROCESSING` (`START`); `REJECT` from either waiting state. A waiting job takes no dispatch, aggregate or halt event, so the wave sweep, the KPI
+  guard sweep (finished jobs only) and the rollback planner (applied changes only) leave it alone.
+- **Who decides (MGT-4.3)** is the rule of the rApp approvals (`AI-11`, `SEC-15.8`): behind the gateway the decider is `X-R1-Acting-User`, a
+  body `decidedBy` must match it, an rApp never decides (403), and the requester cannot approve (403 `APPROVAL_SELF_DECISION`, case and space
+  ignored as `_same_person` does). The requester may withdraw its own job. The console's rule pins `decidedBy` to the signed-in user (operator).
+- **Windows.** A window must have a bound and close after it opens (422), and one already over is refused when asked. Approving after the close
+  is 409 `CHANGE_WINDOW_CLOSED`; starting a scheduled job before its window is 409 `CHANGE_WINDOW_NOT_OPEN` unless forced. A held job's
+  `schema_validated_at` is stamped again when it starts, because the KPI guard measures its observation window from there, not from when the
+  job was asked. A dry run ignores the hold; a rollback is never held (it undoes now). An rApp request that a person already approved (`AI-11`)
+  is not asked a second time: that approval is recorded as the job's, and its window still holds it.
+- **Tests.** RAN NF OAM `test_change_windows.py` (8) and two FSM cases; BFF the rule, the decider override and the `configJobs.PENDING_APPROVAL`
+  count on the nav, approvals and configuration pages; GUI the inbox tab (count, list, approve, start, nothing for a viewer) and `windowPayload`.
+  Postgres: migrate to 0041, the models check, the migration and status-check tests.
+- **Not taken.** Starting a scheduled job by itself at the window and expiring one after it (`MGT-4.4`, `4.5`): the wave sweep has no
+  cross-replica claim, and a job must start once however many workers run, which is the job runner's (`MSG-4.2`). Two approvers for a change window
+  (the rApp approvals' opt-in): one approver other than the requester is what MGT-4.3 asks. Recurring windows: a window is one interval.

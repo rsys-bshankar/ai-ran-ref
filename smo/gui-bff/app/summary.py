@@ -87,7 +87,10 @@ STOPPED = {"rappsStopped": Count("/rapp-mgmt/kill-all", field="stopped")}     # 
 PACKAGES = _states("/onboarding/packages", "state", ("ONBOARDING", "AVAILABLE", "PRIMED", "DEPRECATED", "FAILED"), "packages")
 DEPLOYMENTS = _states("/nfo/deployments", "state", ("INSTANTIATING", "RUNNING", "UPDATING", "TERMINATING", "ABNORMAL"), "deployments")
 INTENTS = _states("/intent-service/intents", "admin_state", ("ACTIVATED", "DEACTIVATED"), "intents")
-CONFIG_JOBS = _states("/ran-nf-oam/config-jobs", "status", ("PENDING", "PROCESSING", "HALTED", "COMPLETED", "PARTIAL_SUCCESS", "FAILED"), "configJobs")
+CONFIG_JOBS = _states("/ran-nf-oam/config-jobs", "status", ("PENDING", "PENDING_APPROVAL", "SCHEDULED", "PROCESSING", "HALTED", "COMPLETED",
+                                                           "PARTIAL_SUCCESS", "FAILED", "REJECTED"), "configJobs")
+# MGT-4 / GUI-7.1: the CM jobs held for a change-window approval, the Approvals inbox's third kind of request
+CHANGE_WINDOWS = {"configJobs.PENDING_APPROVAL": CONFIG_JOBS["configJobs.PENDING_APPROVAL"]}
 CAMPAIGNS = _states("/ran-nf-oam/software-campaigns", "status",
                     ("PENDING", "RUNNING", "HALTED", "COMPLETED", "ABORTED", "ROLLING_BACK", "ROLLED_BACK", "ROLLBACK_FAILED"), "campaigns")
 DECISIONS_24H = {f"decisions24h.{d}": Count("/ran-nf-oam/decision-records", (("disposition", d),), since_hours=24)
@@ -100,13 +103,13 @@ ELEMENTS = {"elements.total": Count("/ran-nf-oam/managed-entities")}
 
 # The counts each page asks for, by the page's name in the URL. "nav" is the sidebar's badges, asked on every page, so it is kept small.
 PAGES: dict[str, dict[str, Count]] = {
-    "nav": {"alarms.critical": ALARMS["alarms.critical"], "alarms.major": ALARMS["alarms.major"], **APPROVALS, **MODEL_GATES,
+    "nav": {"alarms.critical": ALARMS["alarms.critical"], "alarms.major": ALARMS["alarms.major"], **APPROVALS, **MODEL_GATES, **CHANGE_WINDOWS,
             "configJobs.HALTED": CONFIG_JOBS["configJobs.HALTED"], "campaigns.HALTED": CAMPAIGNS["campaigns.HALTED"]},
     "dashboard": {**ALARMS, **APPROVALS, **INSTANCES, **PACKAGES, **DEPLOYMENTS, **INTENTS, **DECISIONS_24H, **ESCALATIONS, **BREACHES, **MODELS,
                   **ELEMENTS, **STOPPED},
     "alarms": ALARMS,
     "rapps": {**INSTANCES, **PACKAGES, **STOPPED},
-    "approvals": {**APPROVALS, **MODEL_GATES},
+    "approvals": {**APPROVALS, **MODEL_GATES, **CHANGE_WINDOWS},
     "decisions": DECISIONS_24H,
     "infrastructure": {**DEPLOYMENTS, **ELEMENTS},
     "configuration": CONFIG_JOBS,
