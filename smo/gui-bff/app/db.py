@@ -193,6 +193,21 @@ class UserPreference(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
 
 
+class KpiLayout(Base):
+    """A KPI dashboard layout a user saved on the KPIs page (GUI-4.3): which KPIs are charted, over what range and place, under a name of the user's,
+    at most `MAX_KPI_LAYOUTS` per user. `value` is JSON text validated by app/kpi_layouts.py before it is stored. Kept here so a layout follows the
+    user to any browser; a new table, made by `create_all`."""
+    __tablename__ = "gui_kpi_layout"
+
+    username: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(String, nullable=False)          # JSON text
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+
+
+MAX_KPI_LAYOUTS = 20
+
+
 class ExportJob(Base):
     """An asynchronous CSV export (GUI-9.5b, app/exports.py): who asked (`username`), what (`kind` `decisions` or `audit`, and the filters in
     `params`), where it is (`state` QUEUED, RUNNING, DONE, FAILED; EXPIRED is shown for a job past `expires_at` and such rows are purged on the
@@ -614,4 +629,44 @@ class Database:
         """Forget the user's preferences (they are back on the defaults); used when the user is deleted."""
         with self.session() as s:
             s.execute(delete(UserPreference).where(UserPreference.username == username))
+            s.commit()
+
+    # ------------------------------------------------------------ saved KPI dashboard layouts (GUI-4.3)
+
+    def kpi_layouts(self, username: str) -> list[tuple[str, str, datetime.datetime]]:
+        """(name, JSON value, updated at) of each layout the user saved, by name."""
+        with self.session() as s:
+            rows = s.execute(select(KpiLayout.name, KpiLayout.value, KpiLayout.updated_at).where(KpiLayout.username == username).order_by(KpiLayout.name))
+            return [(r.name, r.value, r.updated_at) for r in rows]
+
+    def save_kpi_layout(self, username: str, name: str, value: str) -> str:
+        """`saved` (a new layout, or one of that name replaced) or `full` (a new name when the user already has `MAX_KPI_LAYOUTS`). Of two new
+        layouts at once that would pass the limit, the one that finds itself over it takes its row back."""
+        with self.session() as s:
+            row = s.get(KpiLayout, (username, name))
+            if row is not None:
+                row.value, row.updated_at = value, _now()
+                s.commit()
+                return "saved"
+            if cast(int, s.scalar(select(func.count()).select_from(KpiLayout).where(KpiLayout.username == username))) >= MAX_KPI_LAYOUTS:
+                return "full"
+            s.add(KpiLayout(username=username, name=name, value=value))
+            try:
+                s.commit()
+            except IntegrityError:          # the same name saved by another request a moment earlier: replace it
+                s.rollback()
+                s.execute(update(KpiLayout).where(KpiLayout.username == username, KpiLayout.name == name).values(value=value, updated_at=_now()))
+                s.commit()
+                return "saved"
+            if cast(int, s.scalar(select(func.count()).select_from(KpiLayout).where(KpiLayout.username == username))) > MAX_KPI_LAYOUTS:
+                s.execute(delete(KpiLayout).where(KpiLayout.username == username, KpiLayout.name == name))
+                s.commit()
+                return "full"
+            return "saved"
+
+    def remove_kpi_layout(self, username: str, name: str | None = None) -> None:
+        """Deletes the user's layout `name`, or every layout of the user when `name` is None (the account is deleted); a no-op when there is none."""
+        with self.session() as s:
+            stmt = delete(KpiLayout).where(KpiLayout.username == username)
+            s.execute(stmt if name is None else stmt.where(KpiLayout.name == name))
             s.commit()

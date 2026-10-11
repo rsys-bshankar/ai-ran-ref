@@ -3,14 +3,18 @@
  * (OpenAPI `GET` parameters only) and the time windows of the KPI computations. Sections call the hooks here, never `useSmo` with a raw path.
  *
  * The Overview's tiles compute standard KPIs on the server (`GET /ran-nf-oam/kpis/{name}?from_time&group_by=all`, MGT-11): one call per tile,
- * since there is no batch KPI route. A KPI that is not defined answers 404 and its tile shows "—". */
+ * since there is no batch KPI route. A KPI that is not defined answers 404 and its tile shows "—". The tiles and the worst list follow the top bar's
+ * scope (`region`, `site_cluster`, GUI-4.2). The chart (GUI-4.1) reads one series per KPI (`GET /ran-nf-oam/kpis/{name}/series`), and the user's
+ * saved layouts (GUI-4.3) are the BFF's own `/api/me/kpi-layouts`. */
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { smo, type ApiError, type Query } from "../../../api/client";
+import { api, smo, type ApiError, type Query } from "../../../api/client";
+import { useToast } from "../../../components/Toast";
+import { summaryScopeQuery, useScope, type Scope } from "../../../data/scope";
 import { POLL, useSmo, useSmoPage } from "../../../api/hooks";
 import type { AnalyticsProducer, CoordinationGroup, DmeType, InstanceSummary, KpiDef, KpiScheduleRow, Monitor, O1Endpoint, PerfReport, RemedialAction, ServiceOrder } from "../../../api/types";
-import type { KpiResult } from "./types";
+import type { KpiResult, KpiSeries } from "./types";
 
 /** KPI definitions (RAN NF OAM). */
 export const KPI_DEFINITIONS = "/ran-nf-oam/kpi-definitions";
@@ -63,15 +67,59 @@ export function windowStart(range: Range, now = Date.now()): string {
   return new Date(t - (t % 60_000)).toISOString();
 }
 
-/** One KPI computed over the range, `group_by`: "all" (one value) or "element" (one per managed element). */
+/** One KPI computed over the range, `group_by`: "all" (one value) or "element" (one per managed element), over the top bar's scope. */
 export function useKpi(name: string, range: Range, groupBy: "all" | "element" = "all") {
   const from = useMemo(() => windowStart(range), [range]);
+  const scope = useScope();
   const path = `/ran-nf-oam/kpis/${name}`;
-  const q: Query = { from_time: from, group_by: groupBy };
+  const q: Query = { from_time: from, group_by: groupBy, ...summaryScopeQuery(scope) };
   // Not `useSmo`: it unwraps any `{items: [...]}` body to the bare list, and a KPI result is such a body with its unit and window around it.
   return useQuery<KpiResult, ApiError>({
     queryKey: ["smo", path, "kpi", q], queryFn: ({ signal }) => smo<KpiResult>(path, { query: q, signal }),
     refetchInterval: POLL.inventory, retry: false,
+  });
+}
+
+/** The step of a chart per range (GUI-4.1): 60 points for an hour, 96 for a day, 168 for a week (the server allows 500). */
+export const RANGE_STEP_SECONDS: Record<Range, number> = { "1h": 60, "24h": 900, "7d": 3600 };
+
+/** One KPI over time, one point per step of the range, over everything in `place` (a region and site cluster, or the whole network). */
+export function useKpiSeries(name: string, range: Range, place: Scope) {
+  const from = useMemo(() => windowStart(range), [range]);
+  const path = `/ran-nf-oam/kpis/${name}/series`;
+  const q: Query = { from_time: from, step_seconds: RANGE_STEP_SECONDS[range], ...summaryScopeQuery(place) };
+  return useQuery<KpiSeries, ApiError>({
+    queryKey: ["smo", path, "series", q], queryFn: ({ signal }) => smo<KpiSeries>(path, { query: q, signal }),
+    refetchInterval: POLL.inventory, retry: false,
+  });
+}
+
+/** The user's saved KPI layouts (GUI-4.3; gui-bff/app/kpi_layouts.py). */
+export const KPI_LAYOUTS = "/me/kpi-layouts";
+/** At most this many KPIs on one chart layout (kpi_layouts.py MAX_CHARTED). */
+export const MAX_CHARTED = 8;
+
+/** A saved layout: the KPIs charted, the range, and the place (null: the whole network the user may read). */
+export interface KpiLayout { name: string; updatedAt: string; kpis: string[]; range: Range; region: string | null; siteCluster: string | null }
+
+/** The signed-in user's saved layouts, by name. */
+export function useKpiLayouts() {
+  return useQuery<{ max: number; items: KpiLayout[] }, ApiError>({
+    queryKey: ["bff", "kpiLayouts"], queryFn: ({ signal }) => api(KPI_LAYOUTS, { signal }), staleTime: 30_000, retry: false,
+  });
+}
+
+/** Saves (PUT) or deletes (layout null) a layout of the signed-in user; a toast says what happened (409: the user is at the limit). */
+export function useKpiLayoutWrite() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<unknown, ApiError, { name: string; layout: Omit<KpiLayout, "name" | "updatedAt"> | null }>({
+    mutationFn: ({ name, layout }) => api(`${KPI_LAYOUTS}/${encodeURIComponent(name)}`, layout ? { method: "PUT", json: layout } : { method: "DELETE" }),
+    onSuccess: (_d, { name, layout }) => {
+      toast.push({ tone: "success", text: layout ? `Layout "${name}" saved` : `Layout "${name}" deleted` });
+      void qc.invalidateQueries({ queryKey: ["bff", "kpiLayouts"] });
+    },
+    onError: (err) => toast.push({ tone: "error", text: err.status === 409 ? "At most 20 layouts can be saved: delete one first" : `Saving the layout failed — ${err.message}` }),
   });
 }
 

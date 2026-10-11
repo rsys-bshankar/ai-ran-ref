@@ -10799,7 +10799,7 @@
     },
     "/kpis/{name}": {
       "get": {
-        "description": "MGT-11.3/11.4/11.5: the KPI over [from_time, to_time) (to_time: now), per cell, per element, per sector group or incident zone (the cell\nguards of the registry), or over everything asked for. A ratio is computed from the group's summed counters, not from its cells' ratios.\n`managed_element_ref` and `cell_id` narrow what is read. A group without data has a null `value` and a `reason`.\nPR-SEC-10.6: a caller with a scope claim gets the KPI over the performance files of the elements inside it only (so `all` is its elements, never the network's).\nMGT-2.6: with the MSAC switch on, a caller that is a registered Identity gets it over the elements its access rules let it `read` only.",
+        "description": "MGT-11.3/11.4/11.5: the KPI over [from_time, to_time) (to_time: now), per cell, per element, per sector group or incident zone (the cell\nguards of the registry), or over everything asked for. A ratio is computed from the group's summed counters, not from its cells' ratios.\n`managed_element_ref` and `cell_id` narrow what is read, and so do `region` and `site_cluster` (GUI-4.2: the elements of that place). A group\nwithout data has a null `value` and a `reason`.\nPR-SEC-10.6: a caller with a scope claim gets the KPI over the performance files of the elements inside it only (so `all` is its elements, never the network's).\nMGT-2.6: with the MSAC switch on, a caller that is a registered Identity gets it over the elements its access rules let it `read` only.",
         "operationId": "compute_kpi_kpis__name__get",
         "parameters": [
           {
@@ -10885,6 +10885,46 @@
                 }
               ],
               "title": "Cell Id"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
             }
           }
         ],
@@ -11203,6 +11243,246 @@
           }
         },
         "summary": "Publish Kpi"
+      }
+    },
+    "/kpis/{name}/series": {
+      "get": {
+        "description": "GUI-4.1: the KPI over time, for a chart: the KPI over everything asked for (as `group_by=all`) once per step of [from_time, to_time),\noldest first, `points` of `{at, value, samples, reason}` with `at` the step's start. A step without data has a null `value`. At most 500 steps\n(422 otherwise: widen the step). Narrowed and limited as `GET /kpis/{name}` is: the element, cell and place filters, the scope claim and MSAC.",
+        "operationId": "kpi_series_kpis__name__series_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from_time",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "From Time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_time",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Time"
+            }
+          },
+          {
+            "description": "the length of one step, 1 minute to 1 day",
+            "in": "query",
+            "name": "step_seconds",
+            "required": true,
+            "schema": {
+              "description": "the length of one step, 1 minute to 1 day",
+              "maximum": 86400,
+              "minimum": 60,
+              "title": "Step Seconds",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Element Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cell_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cell Id"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Kpi Series"
       }
     },
     "/lifecycle-subscriptions": {
