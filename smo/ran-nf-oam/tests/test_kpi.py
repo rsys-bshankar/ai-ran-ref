@@ -177,3 +177,49 @@ def test_more_files_than_the_bound_is_said(client, pm, monkeypatch):
     monkeypatch.setattr("app.kpi.MAX_FILES", 1)
     body = _query(client, "ho_success").json()
     assert body["truncated"] is True and body["filesScanned"] == 1
+
+
+def _series(client, name, **params):
+    """GET /kpis/{name}/series over [T0, T0 + 1 h) in 10-minute steps unless `params` say otherwise."""
+    base = {"from_time": T0.isoformat(), "to_time": (T0 + datetime.timedelta(hours=1)).isoformat(), "step_seconds": 600}
+    return client.get(f"/kpis/{name}/series", params={**base, **params})
+
+
+def test_a_series_is_the_kpi_of_each_step_with_the_empty_steps_kept(client, pm):
+    """GUI-4.1: one point per step, oldest first; each step's ratio is made from that step's summed counters, and a step without data stays as a null point."""
+    client.put("/kpi-definitions/ho_success", json=HO_SUCCESS)
+    body = _series(client, "ho_success").json()
+    assert body["stepSeconds"] == 600 and body["unit"] == "%" and len(body["points"]) == 6
+    first, second = body["points"][0], body["points"][1]
+    assert first["at"] == T0.isoformat() and first["samples"] == 3 and first["value"] == 100 * (350 - 30) / 350   # minutes 0 and 5: three cells
+    assert second["value"] == 70.0 and second["samples"] == 1                                                     # minute 15: cell 1 alone
+    assert [p["reason"] for p in body["points"][2:]] == ["NO_DATA"] * 4 and all(p["value"] is None for p in body["points"][2:])
+
+
+# A window that is not a whole number of steps keeps its tail as a shorter last step.
+def test_a_series_keeps_a_short_last_step(client, pm):
+    """A 25-minute window in 10-minute steps has three points, the last starting at minute 20."""
+    client.put("/kpi-definitions/ho_success", json=HO_SUCCESS)
+    points = _series(client, "ho_success", to_time=(T0 + datetime.timedelta(minutes=25)).isoformat()).json()["points"]
+    assert [p["at"] for p in points][-1] == (T0 + datetime.timedelta(minutes=20)).isoformat() and len(points) == 3
+
+
+def test_a_series_refuses_too_many_steps_a_bad_step_and_an_unknown_kpi(client, pm):
+    """More than 500 steps, a step under a minute and an unknown KPI are refused before anything is read."""
+    client.put("/kpi-definitions/ho_success", json=HO_SUCCESS)
+    assert _series(client, "ho_success", step_seconds=60, to_time=(T0 + datetime.timedelta(hours=9)).isoformat()).status_code == 422
+    assert _series(client, "ho_success", step_seconds=30).status_code == 422
+    assert _series(client, "nope").status_code == 404
+
+
+def test_the_region_filter_narrows_the_kpi_and_its_series(client, pm, db_session_factory):
+    """GUI-4.2: `region` keeps the files of the elements registered in that region, on the KPI and on its series; a region with no element gives no data."""
+    db = db_session_factory()
+    db.get(ManagedEntity, "ME-B").region = "east"
+    db.commit()
+    db.close()
+    client.put("/kpi-definitions/ho_success", json=HO_SUCCESS)
+    [east] = _query(client, "ho_success", group_by="all", region="east").json()["items"]
+    assert east["counters"] == {"att": 200.0, "fail": 20.0} and east["value"] == 90.0
+    assert _series(client, "ho_success", region="east").json()["points"][0]["value"] == 90.0
+    assert _query(client, "ho_success", group_by="all", region="west").json()["items"][0]["reason"] == "NO_DATA"

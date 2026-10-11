@@ -26,6 +26,7 @@ Routes (all under /api, which nginx forwards here unchanged, except /.well-known
   *    /api/rapps/{instance}/operator/...  a call to the rApp's operator API, only for the routes that declaration lists; changes audited
   GET|PUT|DELETE /api/me/pins   the rApps the user pinned to the sidebar (at most 5)
   GET|PUT /api/me/preferences   the user's console preferences: theme, text size, accent, start page, rows per page… (preferences.py)
+  GET /api/me/kpi-layouts, PUT|DELETE /api/me/kpi-layouts/{name}   the user's saved KPI dashboard layouts (kpi_layouts.py, GUI-4.3)
   GET  /api/summary/{page}      the true counts behind one console page's tiles and badges, cached 5 s and shared, optionally scoped to a region / site cluster (summary.py, GUI-9.3)
   GET  /api/summary/attention   the Dashboard's "Needs your attention" groups in one call (summary.py, GUI-9.8b)
   GET  /api/events              Server-Sent Events: the summary counts of up to four pages (or the attention groups), pushed when they change (events.py, GUI-9.1)
@@ -61,7 +62,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from .config import Settings, settings as default_settings
-from . import events, exports, preferences, rapps, search, source, summary, totp
+from . import events, exports, kpi_layouts, preferences, rapps, search, source, summary, totp
 from .db import AuditEntry, Database, GuiUser, LoginFailure
 from .oidc import LOGIN_TTL_SECONDS, MAX_PENDING_LOGINS, OidcClient, OidcConfig, OidcError
 from .rbac import MODULES, RULES, Role, Rule, User, decide
@@ -1006,6 +1007,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
     # ------------------------------------------------------------ console preferences and summary counts (GUI redesign)
 
     preferences.install(app, current_session=current_session)
+    kpi_layouts.install(app, current_session=current_session, problem=_problem)
     summary.install(app, current_session=current_session, problem=_problem)
     events.install(app, current_session=current_session, problem=_problem)       # GUI-9.1: needs summary's cached computation
     search.install(app, current_session=current_session, problem=_problem)       # GUI-9.2: needs rapps' directory
@@ -1124,6 +1126,7 @@ def create_app(cfg: Settings = default_settings, db: Database | None = None, gat
         app.state.db.reset_totp(username)       # the one-time-code secret, recovery codes and open challenges go with the account (docs/PRIVACY.md)
         app.state.db.remove_all_pins(username)  # so do the rApps the user pinned to the sidebar
         app.state.db.remove_preferences(username)  # and the console preferences
+        app.state.db.remove_kpi_layout(username)   # and the saved KPI layouts
         audit("USER_DELETED", session.user, detail=username)
         return Response(status_code=204)
 

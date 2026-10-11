@@ -2473,3 +2473,33 @@ The third of four changes that close the security review of October 2026 (`OPEN_
   deleting comments; recording changes made by a bulk SQL UPDATE (none touches the ack state or the severity; one that did would bypass the
   listener, which the module's docstring says).
 
+### GUI-4.1, 4.2, 4.3 — KPIs over time, a region filter and saved layouts
+
+- **What.** The KPIs page's Overview gains a **KPIs over time** box (`pages/kpis/sections/KpiChart.tsx`, section `kpis.chart`) under the tiles:
+  one line chart per KPI (up to eight, added from the KPI definitions and taken off with ×), over the Overview's range; a region and site cluster
+  of its own; and the user's saved layouts (load, save as, delete). A loaded layout sets its KPIs, its place and the Overview's range, so the
+  tiles follow it too.
+- **The series is computed where the KPI is (GUI-4.1).** RAN NF OAM's `GET /kpis/{name}/series` (`kpi.series`) reads the files once, puts each
+  sample in its step and evaluates the definition per step (`_evaluate`, now shared with `compute`), so a step's ratio is that step's summed
+  counters divided, as the window's is, never a mean of finer ratios. A step without data is a point with a null value and its reason, so the
+  chart can say how many steps were empty instead of drawing zero. A window that is not a whole number of steps keeps its tail as a shorter
+  last step. The step is 1 minute to a day and the series at most 500 steps (`MAX_POINTS`, 422 otherwise); the GUI asks for 60, 96 or 168
+  (`RANGE_STEP_SECONDS`). The scope claim, MSAC and the file bound apply as on `GET /kpis/{name}`; `test_scope_reads.py` classifies the route.
+- **The region filter (GUI-4.2)** is the place filter the lists already have (`scoping.narrowed_to_place` on `pm_file.managed_element_ref`),
+  on both KPI routes: it keeps the files of the elements registered in that region and site cluster, and narrows only. The chart's place starts
+  at the top bar's scope and follows it when it changes; set in the box it applies to the charts alone. The tiles and the worst list (`useKpi`)
+  now pass the top bar's scope, which the KPI route did not take before.
+- **Saved layouts (GUI-4.3)** are the GUI backend's, like the preferences and pins: `gui_kpi_layout` (username, name, JSON value), at most 20
+  per user, `GET /api/me/kpi-layouts` and `PUT`/`DELETE /api/me/kpi-layouts/{name}` (`app/kpi_layouts.py`), only the caller's own, deleted
+  with the account. A layout is validated before it is stored (`extra="forbid"`, 1 to 8 distinct KPI names of RAN NF OAM's name shape, since
+  the page puts each into a request path, a range of the Overview's three, a bounded region and cluster). A layout names KPIs and grants
+  nothing: each chart is read through the proxy with the user's own role and scope.
+- **Tests.** RAN NF OAM `tests/test_kpi.py`: the points per step and the empty steps, the short last step, the refusals, the region filter on
+  both routes. BFF `tests/test_preferences_summary.py`: round trip per user, the shape refusals, the name and the limit, delete, CSRF, the
+  deleted user. GUI `Kpis.test.tsx`: the chart and its step, the chart's own region and cluster reaching the series call and not the tiles,
+  the top bar's scope reaching both, saving and loading (KPIs, range, region) and deleting a layout.
+- **Not taken.** A layout shared between users or set as a team default (a layout is a person's view; sharing one is a link away once the
+  page puts the layout in the URL). Layouts of the other pages' boxes (only the KPI chart has a choice of content). A batch series route for
+  several KPIs at once (one call per chart, at most eight, each cached a minute; the Overview's first load still reads one series). Drawing a
+  gap in the line where steps are empty (the line joins the steps with data and the caption counts the empty ones). A per-region comparison
+  in one chart (a `group_by` on the series): one place per box keeps a step's value a single number.

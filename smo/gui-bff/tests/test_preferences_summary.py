@@ -1,4 +1,4 @@
-"""The console preferences (`GET`/`PUT /api/me/preferences`, app/preferences.py) and the summary counts (`GET /api/summary/{page}`, app/summary.py).
+"""The console preferences (`GET`/`PUT /api/me/preferences`, app/preferences.py), the saved KPI layouts (`/api/me/kpi-layouts`, app/kpi_layouts.py) and the summary counts (`GET /api/summary/{page}`, app/summary.py).
 
 R1 Termination and SME are faked by test_main.py's FakeSmo, extended here with list routes that answer a paged envelope whose `total` depends on the
 filter, so the BFF's real gateway client runs unmodified. Run: `PYTHONPATH=.:../shared python -m pytest tests/test_preferences_summary.py -q`.
@@ -106,6 +106,58 @@ def test_deleting_a_user_forgets_their_preferences(app):
     app.state.db.save_preferences("kim", '{"theme": "light"}')
     assert admin.delete("/api/admin/users/kim").status_code == 204
     assert app.state.db.preferences("kim") is None
+
+
+# ------------------------------------------------------------------ saved KPI layouts (GUI-4.3)
+
+LAYOUT = {"kpis": ["dl_ue_throughput", "handover_success_rate"], "range": "7d", "region": "east"}
+
+
+def test_a_saved_kpi_layout_comes_back_to_its_user_only(app):
+    """A saved layout is listed for its user with its fields and time; saving the same name replaces it; another user sees none."""
+    viewer = login(app, "viewer")
+    assert viewer.put("/api/me/kpi-layouts/Morning check", json=LAYOUT).status_code == 200
+    assert viewer.put("/api/me/kpi-layouts/Morning check", json={**LAYOUT, "range": "1h"}).status_code == 200
+    body = viewer.get("/api/me/kpi-layouts").json()
+    [layout] = body["items"]
+    assert body["max"] == 20 and layout["name"] == "Morning check" and layout["range"] == "1h" and layout["kpis"] == LAYOUT["kpis"]
+    assert layout["region"] == "east" and layout["siteCluster"] is None and layout["updatedAt"]
+    assert login(app, "operator").get("/api/me/kpi-layouts").json()["items"] == []
+
+
+@pytest.mark.parametrize("bad", [{"kpis": []}, {"kpis": ["a"] * 9}, {"kpis": ["x", "x"]}, {"kpis": ["../alarms"]}, {"kpis": ["x"], "range": "1y"},
+                                 {"kpis": ["x"], "region": ""}, {"kpis": ["x"], "colour": "red"}])
+# The page puts each KPI name into a request path, so a name that is not a KPI name's shape is refused like every other bad field.
+def test_a_kpi_layout_outside_its_shape_is_refused(app, bad):
+    """No KPI, more than eight, a repeat, a name that is not a KPI name, a range outside its set, an empty region or an unknown field: 422."""
+    assert login(app, "viewer").put("/api/me/kpi-layouts/mine", json=bad).status_code == 422
+
+
+def test_a_kpi_layout_name_is_checked_and_the_number_is_bounded(app):
+    """A name with a character outside its set or that is too long is 422; the 21st new name is 409 KPI_LAYOUT_LIMIT, while replacing an existing one still works."""
+    viewer = login(app, "viewer")
+    assert viewer.put("/api/me/kpi-layouts/<script>", json=LAYOUT).json()["title"] == "INVALID_LAYOUT_NAME"
+    assert viewer.put(f"/api/me/kpi-layouts/{'x' * 61}", json=LAYOUT).status_code == 422
+    for i in range(20):
+        assert viewer.put(f"/api/me/kpi-layouts/l{i}", json=LAYOUT).status_code == 200
+    full = viewer.put("/api/me/kpi-layouts/one-more", json=LAYOUT)
+    assert full.status_code == 409 and full.json()["title"] == "KPI_LAYOUT_LIMIT"
+    assert viewer.put("/api/me/kpi-layouts/l0", json=LAYOUT).status_code == 200
+
+
+def test_a_kpi_layout_is_deleted_needs_the_csrf_token_and_goes_with_the_user(app):
+    """DELETE removes a layout (and is 204 again); a change without the CSRF token is 403; deleting the account deletes its layouts."""
+    admin = login(app, "admin")
+    assert admin.put("/api/me/kpi-layouts/a", json=LAYOUT).status_code == 200
+    assert admin.delete("/api/me/kpi-layouts/a").status_code == 204 and admin.delete("/api/me/kpi-layouts/a").status_code == 204
+    assert admin.get("/api/me/kpi-layouts").json()["items"] == []
+    bare = login(app, "viewer")
+    del bare.headers["X-CSRF-Token"]
+    assert bare.put("/api/me/kpi-layouts/a", json=LAYOUT).status_code == 403
+    assert admin.post("/api/admin/users", json={"username": "kim", "password": "a-long-password", "role": "viewer"}).status_code == 201
+    app.state.db.save_kpi_layout("kim", "a", '{"kpis": ["x"]}')
+    assert admin.delete("/api/admin/users/kim").status_code == 204
+    assert app.state.db.kpi_layouts("kim") == []
 
 
 # ------------------------------------------------------------------ summary counts
