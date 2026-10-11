@@ -374,7 +374,7 @@ def test_an_approval_request_and_a_decision_record_are_read_by_their_owner_only(
 
 ABOUT_ELEMENTS = {
     "/alarms", "/cell-guards", "/config-jobs", "/config-jobs/{job_id}", "/element-onboarding", "/element-onboarding/{managed_element_ref}", "/files", "/fm-subscriptions",
-    "/kpis/{name}", "/kpis/{name}/series", "/managed-entities", "/managed-entities/{managed_element_ref}", "/managed-entities/{managed_element_ref}/config",
+    "/kpis/{name}", "/kpis/{name}/series", "/topology/graph", "/managed-entities", "/managed-entities/{managed_element_ref}", "/managed-entities/{managed_element_ref}/config",
     "/managed-entities/{managed_element_ref}/config-history", "/managed-entities/{managed_element_ref}/config-history/diff", "/managed-objects/{dn}",
     "/managed-objects/{dn}/children", "/managed-objects/{dn}/subtree", "/o1-adaptor-endpoints", "/o1-adaptor-endpoints/{endpoint_id}/host-keys", "/pm-files/{file_id}/file",
     "/pm-subscriptions", "/software-campaigns", "/software-campaigns/{campaign_id}", "/software-campaigns/{campaign_id}/report", "/software-management-jobs",
@@ -445,6 +445,7 @@ def _nothing(response, name):
             "/alarms/counts": body.get("groups") == [], "/alarms/stats": body.get("open") == 0 and body.get("acked") == 0,
             "/managed-entities/health": body.get("groups") == [], "/managed-entities/scopes": body.get("regions") == [],
             "/topology/links/counts": body.get("total") == 0,
+            "/topology/graph": body.get("nodes") == [] and body.get("total") == 0,
             "/kpis/{name}/series": bool(body.get("points")) and all(p["samples"] == 0 for p in body["points"])}.get(name, False)
 
 

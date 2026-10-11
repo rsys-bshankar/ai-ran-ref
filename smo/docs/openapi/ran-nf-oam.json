@@ -23495,6 +23495,193 @@
         "summary": "Export Topology"
       }
     },
+    "/topology/graph": {
+      "get": {
+        "description": "PR-GUI-3 (GUI-3.1, GUI-3.3): the containment tree as `{nodes, edges, total, truncated}` for the console's viewer: each node is a managed\nobject (as `GET /managed-objects/{dn}`) with `alarms` (its open alarms per severity) and `worst`; `edges` are `{child, parent}` links between\nnodes in the answer. At most `max_nodes` nodes (default 500, most 2000) in DN order, so an element's subtree stays together. `managed_element_ref`,\n`region` and `site_cluster` narrow it. PR-SEC-10.9 and MGT-2.6: only the nodes (and so the alarms) of the elements the caller may read.",
+        "operationId": "topology_graph_topology_graph_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "managed_element_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Managed Element Ref"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this region (`managed_entity.region`, ADR 0005). Narrows only: the caller's scope claim still applies.",
+              "title": "Region"
+            }
+          },
+          {
+            "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+            "in": "query",
+            "name": "site_cluster",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep the rows tied to a managed element of this site cluster (`managed_entity.site_cluster`). Narrows only.",
+              "title": "Site Cluster"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_nodes",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Max Nodes",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Topology Graph"
+      }
+    },
     "/topology/links": {
       "get": {
         "description": "PR-MGT-10.2: the neighbour relations declared in the cell guards, each with its link type (`topology.py`): both cells on one element\n(`INTRA_ELEMENT`), on different elements (`INTER_ELEMENT`), a cell id several elements claim (`AMBIGUOUS`) or none does (`EXTERNAL`), and whether\nthe other side declares the relation back (`reciprocal`). `managed_element_ref` keeps the links with that element at either end.\n\nPR-GUI-9.4: `reciprocal` keeps the reciprocal (`true`) or the one-sided (`false`) relations. With neither `limit` nor `offset` the answer is\n`{\"items\": [...]}`, every link, as it always was; with either, it is the standard page envelope `{items, total, limit, offset}` (`limit`\ndefaults to 100).\n\nPR-GUI-9.3: `region` and `site_cluster` keep the links with an element of that place at either end (an `EXTERNAL` or `AMBIGUOUS` link has no\nb-side element, so only its a-side counts).\n\nPR-SEC-10.9: a caller with a scope claim gets the links among the elements inside it. The elements outside are not part of its world, so a neighbour that is declared\non one of them is `EXTERNAL` for it (and `AMBIGUOUS` and `reciprocal` are worked out among its elements only): the answer never names an element it may not touch.\nMGT-2.6: the same for the elements its access rules do not let it read.",
