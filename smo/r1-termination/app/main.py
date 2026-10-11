@@ -391,6 +391,7 @@ async def _proxy(full_path: str, request: Request):
     forwarded_headers = {k: v for k, v in request.headers.items()
                           if k.lower() not in ("host", CORRELATION_ID_HEADER.lower(), INVOKER_ID_HEADER.lower(), roles.ROLE_HEADER.lower(),
                                                ON_BEHALF_OF_HEADER.lower(), ACTING_USER_HEADER.lower(), authz_scope.SCOPE_HEADER.lower(), authz_scope.ON_BEHALF_SCOPE_HEADER.lower(),
+                                               authz_scope.ACTING_USER_SCOPE_HEADER.lower(),
                                                tracing.TRACEPARENT, tracing.TRACESTATE)}
     forwarded_headers[roles.ROLE_HEADER] = role              # PR-SEC-14: never a value the caller sent (dropped above)
     forwarded_headers[CORRELATION_ID_HEADER] = get_correlation_id()
@@ -410,6 +411,11 @@ async def _proxy(full_path: str, request: Request):
     acting_user = request.headers.get(ACTING_USER_HEADER)
     if acting_user and role == roles.ROLE_INTERNAL:
         forwarded_headers[ACTING_USER_HEADER] = acting_user
+        # GUI-5: that person's scope claim goes with them, on the same terms (an `internal` caller, and only beside the person it is for); a module narrows the
+        # console's own claim by it (smo_shared/scope.py `scope_of`), so it can only take away
+        acting_scope = request.headers.get(authz_scope.ACTING_USER_SCOPE_HEADER)
+        if acting_scope:
+            forwarded_headers[authz_scope.ACTING_USER_SCOPE_HEADER] = acting_scope
     try:
         # PR-OBS-3: the caller's traceparent is replaced by this hop's own (the gateway's CLIENT span when spans are on, else the caller's unchanged)
         with tracing.span(f"{request.method} {prefix}", "client", {"http.request.method": request.method, "smo.target": prefix,

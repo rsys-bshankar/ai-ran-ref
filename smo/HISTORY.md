@@ -2547,3 +2547,35 @@ Found by the security review of October 2026 (registered as `OPEN_ITEMS.md` `PR-
 - **Not taken.** Starting a scheduled job by itself at the window and expiring one after it (`MGT-4.4`, `4.5`): the wave sweep has no
   cross-replica claim, and a job must start once however many workers run, which is the job runner's (`MSG-4.2`). Two approvers for a change window
   (the rApp approvals' opt-in): one approver other than the requester is what MGT-4.3 asks. Recurring windows: a window is one interval.
+
+### GUI-5.1, 5.2 — a console user's region/tenant scope, enforced by the modules
+
+- **What.** A console user may carry a scope claim (`{"regions": [...], "tenants": [...]}`), and everything the console shows or does for them is narrowed to it
+  by the module that owns the data, as for a scoped rApp (`SEC-10`). Without a claim a user is unscoped, as every user was. Design:
+  `docs/adr/0005-tenant-region-authorization.md` section 11.
+- **The claim in the session (GUI-5.1).** `gui_user.scope` (compact JSON, added by `_add_missing_columns`; NULL: unscoped), read with the role on every request,
+  so a change applies on the next one with no session to end. An admin sets it on the Users tab (`scope` on create and on `PATCH`, null removes it, 422
+  `INVALID_SCOPE`); `GET /api/me` and the user list show it. With `GUI_OIDC_SCOPE_CLAIM` set the token's claim is the scope at every sign-in, as the role is, and
+  one that breaks the rules refuses the sign-in `invalid_scope` and ends the person's earlier sessions. The rules are smo_shared/scope.py's, repeated in
+  `app/scoping.py` because the image does not install smo_shared, and held to the same answers by a parametrized test.
+- **How it reaches the module (GUI-5.2).** The BFF is one `internal` invoker for every user, so the claim cannot be SME's. It goes beside the person the BFF
+  already names (`X-R1-Acting-User`, `SEC-15.8`) in a new header, `X-R1-Acting-User-Scope`, on every proxied call and every rApp operator call. R1 Termination
+  drops it from every inbound request and forwards it only from an `internal` caller and only with the acting user. `scope_of` reads it in that case and
+  narrows the caller's own claim by it (`narrowed`, per axis the values both list), so a person never widens what the console itself may do. It is
+  deliberately not `X-R1-On-Behalf-Scope`: that comes with `X-R1-On-Behalf-Of`, which makes a request the rApp's for job ownership and the safeguards, and a
+  person sees every job as an operator does. Every module that already called `scope_of` (RAN NF OAM, DME, SME) narrows with no change of its own.
+- **What the BFF computes for many users** used to be shared by everyone; now each is asked with the claim and cached under it: the summary counts and the
+  Dashboard panels and attention groups (`shared_headers`: the claim with a shared person `smo-gui:shared-read`, since a module believes a person's claim only
+  beside a person; an unscoped user's counts are asked exactly as before), the event stream (a topic's hub key carries the claim; the browser's events name
+  only the topic it asked for; a stream whose user's claim changed ends at the next ping and reconnects), the typeahead (cache key and the sources' calls), and
+  a background export (read as the person who asked, with their claim as it is when the export runs; an account deleted since gets a claim that permits
+  nothing).
+- **GUI.** The Users tab has a Scope column and dialog (regions and tenants, comma-separated; blank removes the limit) and a scope field on Add user; the top
+  bar shows "Your access: ..." beside the scope picker for a limited user. The picker itself needed nothing: the region list it reads is narrowed by the module.
+- **Tests.** Shared `test_scope.py` (the person's claim, believed only from an internal caller naming a person, narrowing the console's own; `narrowed` per
+  axis), R1 `test_scope.py` (forwarded beside the acting user, dropped without one or from an rApp), RAN NF OAM `test_console_scope.py` (a person's list holds
+  their elements only; a write outside is SCOPE_DENIED), BFF `test_scope_claims.py` (22), GUI the Users scope column and dialog, the top-bar badge and the
+  two helpers. The mutation pilot over smo_shared (scope.py among its modules) kills every mutant.
+- **Not taken.** Narrowing the BFF's own data (audit log, users, exports list, preferences) by the claim: an admin's console is the place users and roles are
+  managed. Scoping the modules that have nothing to match (rApp Management, AIMgF, MLMR, DME's types), as for an rApp (ADR section 9). A claim per group mapped
+  from the identity provider's groups (one claim in the token is what an identity provider can already compute).

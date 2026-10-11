@@ -8,7 +8,9 @@
 
 // local / totpEnrolled / mfaEnrolmentRequired: PR-SEC-7 (a user of the identity provider is not local and has no one-time code here;
 // mfaEnrolmentRequired is true for a local admin who must enrol one before anything else, GUI_ADMIN_MFA_REQUIRED)
-export interface Me { username: string; role: "viewer" | "operator" | "admin"; csrfToken?: string; local?: boolean; totpEnrolled?: boolean; mfaEnrolmentRequired?: boolean }
+/** GUI-5: a console user's region/tenant scope as the BFF shows it: the claim, null when unscoped, "INVALID" for a stored claim that no longer reads (it permits nothing). */
+export type UserScope = AuthzScope | "INVALID" | null;
+export interface Me { username: string; role: "viewer" | "operator" | "admin"; csrfToken?: string; local?: boolean; totpEnrolled?: boolean; mfaEnrolmentRequired?: boolean; scope?: UserScope }
 /** `GET /api/me/totp`: whether one-time codes are available and set up for the signed-in user, and the state of the recovery codes. */
 export interface TotpStatus {
   available: boolean; enrolled: boolean; pending: boolean; recoveryCodesLeft: number; reason?: string;
@@ -282,6 +284,8 @@ export interface GuiUser {
   username: string; role: "viewer" | "operator" | "admin"; active: boolean; createdAt: string; breakGlass?: boolean; totpEnrolled?: boolean;
   // GUI-9.8: the user's newest audit row and newest successful sign-in (null: none; absent on an older BFF)
   lastActiveAt?: string | null; lastSignInAt?: string | null;
+  // GUI-5: the user's region/tenant scope (absent on an older BFF)
+  scope?: UserScope;
 }
 export interface AuditEntry { id: number; at: string; username: string | null; role: string | null; action: string; method: string | null; path: string | null; statusCode: number | null; detail: string | null }
 

@@ -8,7 +8,7 @@
  * and the bounds written here are the ones they enforce. Covered by `domain.test.ts`.
  */
 
-import type { Alarm, ConfigJob, KpiCounterSpec, KpiGuardResult, ModuleStatus, RollbackPreview } from "../api/types";
+import type { Alarm, AuthzScope, ConfigJob, KpiCounterSpec, KpiGuardResult, ModuleStatus, RollbackPreview } from "../api/types";
 
 // ---------------------------------------------------------------- AI/ML model FSMs
 // aimgf/app/statemachine.py — Wave 2 split ModelLifecycle (a model's own
@@ -268,6 +268,19 @@ export function describeScope(scope: { regions?: string[] | null; tenants?: stri
   if (scope?.regions?.length) parts.push(`regions ${scope.regions.join(", ")}`);
   if (scope?.tenants?.length) parts.push(`tenants ${scope.tenants.join(", ")}`);
   return parts.length ? parts.join(" · ") : "Unscoped (every managed element)";
+}
+
+/** GUI-5: a console user's scope in words: "Whole network" when unscoped, the regions and tenants, or that a damaged claim permits nothing. */
+export function describeUserScope(scope: AuthzScope | "INVALID" | null | undefined): string {
+  if (scope === "INVALID") return "Invalid claim: sees nothing";
+  return scope && (scope.regions?.length || scope.tenants?.length) ? describeScope(scope) : "Whole network";
+}
+
+/** GUI-5: the `scope` of a user from the admin's two comma- or line-separated fields: null (unscoped) when both are empty. */
+export function userScopeFromFields(regions: string, tenants: string): AuthzScope | null {
+  const r = splitList(regions), t = splitList(tenants);
+  if (!r.length && !t.length) return null;
+  return { ...(r.length ? { regions: r } : {}), ...(t.length ? { tenants: t } : {}) };
 }
 
 /** Where a managed element is and whom it belongs to, for a table cell: "eu-west / acme"; a part that is not set shows as "—"; "—" when neither is. */
