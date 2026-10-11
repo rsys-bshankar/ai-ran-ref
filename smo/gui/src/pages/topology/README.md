@@ -13,9 +13,11 @@ The Dashboard's "Open topology" link lands here. Every element in a graph node, 
 | topology.graph | sections/NeighbourGraph.tsx | the focused element, its cells and first-ring neighbours (≤ 200 nodes, dashed = not reciprocal); picker with server-search suggestions | `/topology/links?managed_element_ref`, `/managed-entities/{me}`, `/managed-entities?search=&limit=20` (from 2 characters, 200 ms after typing) | 60 s | 2 when focused + 1 per pause in typing |
 | topology.check | sections/RelationCheck.tsx | how DN A stands to DN B in the containment tree | `/topology/relation?a&b` | on Check | 0 on load |
 | topology.element | sections/ElementSummary.tsx | vendor, type, region/tenant, cells, sector groups, incident zones, non-NORMAL guards, links | `/managed-entities/{me}` (shared with the graph) | 60 s | 0 extra |
+| topology.containment | sections/ContainmentGraph.tsx | the managed-object containment tree, folded at the element roots (open to the leaves for a focused element), each node coloured by its worst open alarm and a folded node by the worst below it; a node's name opens its element's Managed objects tab (GUI-3) | `/topology/graph?max_nodes=500[&managed_element_ref]` (scoped by the top bar) | 15 s | 1 call |
 | topology.problems | sections/ProblemRelations.tsx | relations that need attention (not reciprocal between elements or within one / external / ambiguous), server-paged, everywhere or around the focused element, with the fix and a link to the cell guards | `/topology/links?reciprocal=false&link_type=INTER_ELEMENT\|INTRA_ELEMENT` or `?link_type=EXTERNAL\|AMBIGUOUS`, `&managed_element_ref&limit&offset` | 60 s | 1 call/page |
 
-Pure rules (fix hint, graph layout and the 200-node cap; counting a list for the graph) are in `data/graph.ts`.
+Pure rules (fix hint, graph layout and the 200-node cap; counting a list for the graph) are in `data/graph.ts`; the containment tree's (building
+it, the worst alarm of a subtree, the visible rows and their 400-row cap) in `data/containment.ts`.
 
 ## Known limits
 
@@ -26,7 +28,10 @@ Pure rules (fix hint, graph layout and the 200-node cap; counting a list for the
 - The focus picker suggests up to 20 elements whose ref or name contains the text; it still takes any exact ref typed.
 - The mockup's "Cells in scope … DUs · metro-a" is shown as "cells with guards" (only a cell with a guard is known to the registry) and the
   total of managed elements; the region comes from the top bar's scope picker (below), not from a picker on this page.
-- Alarm badges on cells (the mockup's "cell-7 LOS") are not shown: no route joins alarms to cells per element in one call.
+- Alarm badges on the neighbour graph's cells (the mockup's "cell-7 LOS") are not shown there; the containment tree below carries the alarm
+  overlay (each cell's open alarms, placed by its `managedFunctionRef`).
+- The containment tree asks for the first 500 objects in DN order; a larger network is cut (the box says so): focus one element, or narrow the
+  scope. An alarm whose node and element root are both past the cut is not on the page.
 - The graph shows only relations declared in cell guards (`neighbourRefs`); TEIV RAN-domain relations (Xn, F1) are not modelled by the backend.
 - **Scope** (GUI-9.3): the link list and its counts (either end in the scope), the cell guards and the element list follow the top bar's scope; the TEIV export (`/topology`) and a relation (`/topology/relation`) are network-wide.
 

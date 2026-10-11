@@ -57,6 +57,7 @@ from smo_shared import audit
 from .models import Alarm, AlarmComment, AlarmHistory, ApprovalSubscription, RAppActionApproval, RAppApprovalPolicy, RAppDecisionRecord, RAppKill, RAppLimit, SafeguardRefusal, SafeguardSubscription, CMSchemaCache, CMSnapshot, FileSubscription, KpiDefinition, KpiSchedule, VendorCapability, FMSubscription, ManagedEntity, ManagedObject, O1AdaptorEndpoint, O1AdaptorHostKey, PMFile, PMSubscription, SoftwareManagementJob, WriteConfigJob, WriteConfigSubChange
 from . import alarm_history  # noqa: F401  (MGT-8.2: registers the ORM listeners that write every alarm change to alarm_history)
 from . import alarm_query
+from . import topology_graph as topology_graph_view
 from . import fleet
 from . import msac
 from . import scoping
@@ -680,6 +681,18 @@ def export_topology(request: Request, managed_element_ref: str | None = None, db
                  "sourceIds": [o.dn, o.parent_dn]} for o in objects if o.parent_dn in present]
     relationships = [{f"{TEIV_RAN_PREFIX}:MANAGEDOBJECT_CHILD_OF_MANAGEDOBJECT": child_of}] if child_of else []
     return {"entities": entities, "relationships": relationships}
+
+
+@app.get("/topology/graph")
+def topology_graph(request: Request, managed_element_ref: str | None = None, region: str | None = scoping.RegionFilter,
+                   site_cluster: str | None = scoping.SiteClusterFilter,
+                   max_nodes: int = Query(default=topology_graph_view.DEFAULT_GRAPH_NODES, ge=1, le=topology_graph_view.MAX_GRAPH_NODES),
+                   db: Session = Depends(get_session)):
+    """PR-GUI-3 (GUI-3.1, GUI-3.3): the containment tree as `{nodes, edges, total, truncated}` for the console's viewer: each node is a managed
+    object (as `GET /managed-objects/{dn}`) with `alarms` (its open alarms per severity) and `worst`; `edges` are `{child, parent}` links between
+    nodes in the answer. At most `max_nodes` nodes (default 500, most 2000) in DN order, so an element's subtree stays together. `managed_element_ref`,
+    `region` and `site_cluster` narrow it. PR-SEC-10.9 and MGT-2.6: only the nodes (and so the alarms) of the elements the caller may read."""
+    return topology_graph_view.graph(db, _tree_filter(db, request), managed_element_ref, region, site_cluster, max_nodes)
 
 
 def _links_in_place(db: Session, links: list[dict], region: str | None, site_cluster: str | None) -> list[dict]:

@@ -2503,3 +2503,33 @@ The third of four changes that close the security review of October 2026 (`OPEN_
   several KPIs at once (one call per chart, at most eight, each cached a minute; the Overview's first load still reads one series). Drawing a
   gap in the line where steps are empty (the line joins the steps with data and the caption counts the empty ones). A per-region comparison
   in one chart (a `group_by` on the series): one place per box keeps a step's value a single number.
+
+### GUI-3.1, 3.2, 3.3, 3.4 — the containment tree on the Topology page, with an alarm overlay
+
+- **What.** The Topology page gains a **Containment tree** box (`pages/topology/sections/ContainmentGraph.tsx`, section
+  `topology.containment`) under the neighbour graph: RAN NF OAM's managed-object tree (PR-SB-6) as an indented tree, each node coloured by its
+  open alarms. The neighbour-relation graph of the redesign is unchanged beside it: the two answer different questions (what a cell is next
+  to, what an element is made of).
+- **The graph route (GUI-3.1).** `GET /topology/graph` (`app/topology_graph.py`) answers `{nodes, edges, total, truncated}`: the tree's nodes
+  in DN order, so an element's subtree stays together when the answer is cut, at most `max_nodes` (default 500, most 2000), and the parent
+  links among them. `GET /topology` (the TEIV export) already held the tree, but in a wire shape made for TEIV, with no alarms and no cap;
+  the console's route is smaller and joins the alarms. The scope claim and MSAC limit the nodes as on the export (`_tree_filter`), and the
+  alarms are only those of the elements in the answer; `test_scope_reads.py` classifies the route. `managed_element_ref`, `region` and
+  `site_cluster` narrow it, and the GUI adds it to `SCOPED_ROUTES` so the top bar's scope does.
+- **The overlay (GUI-3.3)** is computed on the server, in one grouped query (element, function, severity) over the open alarms of the
+  answer's elements: an alarm is placed on the node its `managed_function_ref` names below its element (`mo_tree.target_dn`, the rule the
+  write routes use), or on the element's root when the tree has no such node, so an alarm the tree does not model still shows on its element.
+  Cleared alarms are not counted. Each node carries its count per severity and the worst; the viewer colours a folded node by the worst in
+  its subtree (`data/containment.ts` buildTree), so a critical cell shows on its element before anything is unfolded.
+- **The viewer (GUI-3.2)** is an SVG tree: an elbow from each node's parent, a fold arrow on nodes with children (keyboard: Enter or Space),
+  the coloured dot and `class=id`, with the node's alarms in words. The network view starts folded at the element roots; a focused element
+  (`?me=`, the page's existing focus) starts open to its leaves. At most 400 unfolded rows are drawn and the box says how many more there are.
+  It polls with the other lists (15 s), so the overlay follows new and cleared alarms.
+- **The drill-down (GUI-3.4)**: a node's name opens its element's page on the Managed objects tab (`elementHref(me, "mo")`), where the tree
+  of that element can be walked further and its attributes read.
+- **Tests.** RAN NF OAM `tests/test_topology_graph.py` (4): nodes and edges, the placement of alarms, the narrowing and the cap. GUI
+  `Topology.test.tsx` (5): the roots folded with the worst below, unfolding, the focused element, the drill-down, and the pure rules.
+- **Not taken.** A force-directed or radial layout (a containment tree is a hierarchy; an indented tree reads at any depth and needs no
+  physics). Alarm counts per node past the cut (an alarm whose node and root are both beyond `max_nodes` is not on the page; focusing the
+  element shows it). Opening a node's own attributes from the tree (the element page's Managed objects tab does, one click on). Neighbour
+  relations drawn on the containment tree (they are between cells of different elements; the neighbour graph shows them).

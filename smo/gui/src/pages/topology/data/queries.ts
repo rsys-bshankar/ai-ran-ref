@@ -2,8 +2,10 @@
  * Sections call these hooks, never `useSmo` with a raw path. The module is RAN NF OAM (smo/docs/openapi/ran-nf-oam.json):
  * `/topology/links` (the neighbour relations declared in the cell guards; filters `managed_element_ref`, `link_type`, `reciprocal`, paged
  * with `limit`/`offset`), `/topology/links/counts` (the counts without the list), `/topology/relation` (how two DNs stand in the containment
- * tree), `/topology` (the TEIV export), `/managed-entities` (with `search`) and `/cell-guards`. */
+ * tree), `/topology` (the TEIV export), `/topology/graph` (the containment tree with each node's open alarms, GUI-3), `/managed-entities`
+ * (with `search`) and `/cell-guards`. */
 import { POLL, useSmo, useSmoPage } from "../../../api/hooks";
+import type { ContainmentGraph } from "./containment";
 import type { CellLink, ManagedEntity } from "../../element/data/types";
 import { useUrlParam } from "../../element/data/url";
 
@@ -72,4 +74,15 @@ export function useTopologyParams() {
   const [raw, setRaw] = useUrlParam("problem");
   const problem: ProblemKind = raw === "external" || raw === "ambiguous" ? raw : "oneway";
   return { me, problem, setMe, setProblem: (v: ProblemKind) => setRaw(v === "oneway" ? null : v) };
+}
+
+/** The containment graph route (scoped by the top bar's region and site cluster, `data/scope.ts` SCOPED_ROUTES). */
+export const GRAPH_PATH = `${BASE}/topology/graph`;
+/** The most nodes the viewer asks for: the whole tree of a small network, or of one element. */
+export const GRAPH_NODES = 500;
+
+/** The containment tree with each node's open alarms (GUI-3.1, 3.3): one element's when `me` is focused, else the network's (in the scope),
+ * first `GRAPH_NODES` nodes in DN order. Polled like the alarm counts, so the overlay follows new alarms. */
+export function useContainment(me: string | null) {
+  return useSmo<ContainmentGraph>(GRAPH_PATH, { max_nodes: GRAPH_NODES, managed_element_ref: me ?? undefined }, { refetchInterval: POLL.lists });
 }
