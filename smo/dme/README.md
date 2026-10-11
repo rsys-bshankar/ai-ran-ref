@@ -9,7 +9,7 @@
 | Depends on (over R1) | RAN NF OAM (`POST /ran-nf-oam/config-jobs`, action path only); caller-registered callback URLs (producers, type subscribers, offer termination) |
 | Called by | rApps and the SDK `data` namespace; MDAF (checks `input_sources` against `GET /dme/data-jobs/{id}`); RAN NF OAM (registers PM types, ingests records into jobs); SA SMOS O1-CM handler (`POST /dme/actions`); rApp Management (producer deregistration); GUI BFF |
 | Database tables | `dme_producer`, `dme_type`, `dme_producer_type`, `dme_type_subscription`, `dme_delivery_schema`, `data_job`, `data_offer`, `data_record`, `dme_action_record` |
-| Unit tests | 112 passed (`tests/`, SQLite, standalone) |
+| Unit tests | 118 passed (`tests/`, SQLite, standalone) |
 | Status | Done. `dme_delivery_schema` is defined but unused (see 2.8) |
 
 ## 1. High-level design (HLD)
@@ -306,7 +306,7 @@ cd smo/dme && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | | Action mediation: forward and record, RAN NF OAM refusal surfaced, empty changes, unknown action, list filter, replayed `actionId` ignored | 6 |
 | | Health probe | 1 |
 | `tests/test_delivery_health.py` | `GUI-9.8` delivery health: no interval means no verdict, LATE two intervals after the last delivery and on time again after the next, a job that never delivered turns LATE, PUT declares or drops the interval, the `late` list filter both ways, a non-positive interval is 422 | 6 |
-| | Total | 112 |
+| | Total | 118 |
 
 ### 3.3 What is not covered here
 

@@ -404,7 +404,7 @@ NFO, MLMR and the webhook are faked in-process; the database is SQLite.
 | `tests/test_steps_and_feature_groups.py` | training steps (start, forward progress, no going back, suspended and ended runs, how a run ended, a finished run, validation); feature-group DME job (created with the group, none without `enableDme`, a refusal means no group, duplicate name first, delete terminates it, delete without a job) | 13 |
 | `tests/test_statemachine.py` | both FSMs (full pipeline, no shortcuts, retrain re-entry, rollback, reject, terminal states, state counts), inference FSM, retrain propagation policies, `ADVANCEABLE_EVENTS`, `TRAINABLE_STATES` | 25 |
 
-The totals are counted as test functions (212); the suite reports 252 passed because some tests are parametrised.
+The totals are counted as test functions (213); the suite reports 253 passed because some tests are parametrised.
 
 ### 3.3 What is not covered here
 
