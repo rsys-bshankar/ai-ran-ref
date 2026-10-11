@@ -174,7 +174,11 @@ export interface O1Endpoint {
   // PR-SEC-10.2: where the element is and whom it belongs to; null or absent: not set (such an element is for unscoped callers only).
   region?: string | null; tenant?: string | null;
 }
-export interface ConfigJobSummary { jobId: string; requestedBy: string; scope: string; status: string; msacRole: string | null }
+/** MGT-4: the change window a job was asked for and the approval it waited for (all null for a job that never waited). */
+export interface ChangeWindowFields {
+  scheduledAt?: string | null; windowEnd?: string | null; decidedBy?: string | null; decidedAt?: string | null; decisionReason?: string | null;
+}
+export interface ConfigJobSummary extends ChangeWindowFields { jobId: string; requestedBy: string; scope: string; status: string; msacRole: string | null; createdAt?: string | null }
 /**
  * The KPI guard of a config job: the KPI to watch, the baseline and observation windows in minutes, the regression threshold and its direction, the minimum sample count and whether a regression rolls the job back.
  */
@@ -199,7 +203,7 @@ export interface ConfigSubChange {
 /**
  * A CM write job in full: status, the wave plan and progress, why it is halted, its KPI guard and result, and its sub-changes. Most fields are optional because the list rows and older builds send fewer.
  */
-export interface ConfigJob {
+export interface ConfigJob extends ChangeWindowFields {
   jobId: string; status: string; requestedBy?: string; rollbackOf?: string | null; rollbackForced?: boolean;
   waveSize?: number | null; waveCount?: number; currentWave?: number; wavePauseSeconds?: number; onGateFailure?: string; gateMaxNewAlarms?: number;
   haltedReason?: string | null; haltedDetail?: string | null; nextWaveAt?: string | null;

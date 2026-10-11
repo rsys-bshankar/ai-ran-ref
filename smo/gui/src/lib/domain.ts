@@ -404,6 +404,21 @@ export function parseCounters(text: string): { ok: true; value: KpiCounterSpec[]
 export interface StagedForm { waveSize: string; wavePauseSeconds: string; gateMaxNewAlarms: string; onGateFailure: "halt" | "revert" }
 export interface GuardForm { kpi: string; baselineMinutes: string; observationMinutes: string; maxRegressionPercent: string; direction: "higher" | "lower"; revert: boolean }
 
+/** MGT-4: the change-window part of a new config job, as the form holds it: whether the job waits for approval and the window's local bounds
+ * (`<input type="datetime-local">` values, blank for none). */
+export interface WindowForm { held: boolean; start: string; end: string }
+
+/** The `changeWindow` / `requireApproval` fields of `POST /config-jobs` from the form: nothing when the job is not held, `requireApproval` when it is
+ * held with no bound, else the window with each bound as an ISO time (the browser's local time converted). An end not after the start is an error. */
+export function windowPayload(form: WindowForm): { ok: true; body: Record<string, unknown> } | { ok: false; error: string } {
+  if (!form.held) return { ok: true, body: {} };
+  const iso = (v: string) => (v.trim() ? new Date(v).toISOString() : null);
+  const start = iso(form.start), end = iso(form.end);
+  if (!start && !end) return { ok: true, body: { requireApproval: true } };
+  if (start && end && Date.parse(end) <= Date.parse(start)) return { ok: false, error: "The window must end after it starts" };
+  return { ok: true, body: { changeWindow: { ...(start ? { start } : {}), ...(end ? { end } : {}) } } };
+}
+
 /** The optional staged-rollout and KPI-guard fields of POST /config-jobs from the form; blank staged fields are left out so a plain job stays plain. */
 export function stagedPayload(staged: StagedForm, guard: GuardForm | null): { ok: true; body: Record<string, unknown> } | { ok: false; error: string } {
   const body: Record<string, unknown> = {};

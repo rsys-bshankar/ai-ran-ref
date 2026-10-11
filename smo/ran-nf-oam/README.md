@@ -159,7 +159,7 @@ Cross-module references are bare strings or UUIDs; none exist here.
 
 **`cm_schema_cache`** (PK `schema_name` + `revision`): `location`, `type` (`YANG` / `OPENAPI_NRM` / `DESCRIPTOR`), `descriptor` JSON, `cached_at`. Bundled descriptors live in files, not in this table.
 
-**`write_config_job`** (PK `job_id`): `requested_by`, `scope` (the `accessScope` value), `schema_validated_at`, `status`, `conflict_resolution` (unused), `msac_role`.
+**`write_config_job`** (PK `job_id`): `requested_by`, `scope` (the `accessScope` value), `schema_validated_at` (when the checks passed and the job was let run; stamped again when a held job starts, since the KPI guard measures from it), `status`, `conflict_resolution` (unused), `msac_role`. `MGT-4.1`/`4.3` (revision `0041`): `scheduled_at` and `window_end` (the change window, either NULL open-ended; a CHECK keeps the close after the opening) and `decided_by`, `decided_at`, `decision_reason` (the approval or rejection of a held job), all nullable.
 
 **`write_config_sub_change`** (PK `id`, FK `job_id`): `managed_element_ref`, `managed_function_ref`, `attribute_changes` JSON, `operation` (default `merge`), `status` (`PENDING` / `APPLIED` / `REJECTED`), `rejection_reason`, `attempts`.
 
@@ -204,8 +204,16 @@ The Postgres schema (`migrations/001_init.sql`) adds CHECK constraints that the 
 | `PROCESSING` | `AGGREGATE_ALL_APPLIED` | `COMPLETED` |
 | `PROCESSING` | `AGGREGATE_ALL_REJECTED` | `FAILED` |
 | `PROCESSING` | `AGGREGATE_MIXED` | `PARTIAL_SUCCESS` |
+| `PROCESSING` | `HALT` | `HALTED` (`MGT-5`: between waves) |
+| `HALTED` | `RESUME` | `PROCESSING` |
+| `HALTED` | `AGGREGATE_*` | `COMPLETED` / `FAILED` / `PARTIAL_SUCCESS` (an abort, the end of a revert) |
+| `PENDING` | `REQUEST_APPROVAL` | `PENDING_APPROVAL` (`MGT-4.2`: asked with a change window or `requireApproval`) |
+| `PENDING_APPROVAL` | `APPROVE` | `PROCESSING` (approved inside the window, or without one) |
+| `PENDING_APPROVAL` | `APPROVE_FOR_WINDOW` | `SCHEDULED` (approved before the window opens) |
+| `SCHEDULED` | `START` | `PROCESSING` (`POST .../continue` in the window; by itself at the window is `MGT-4.4`) |
+| `PENDING_APPROVAL`, `SCHEDULED` | `REJECT` | `REJECTED` (refused or withdrawn; nothing was sent) |
 
-`aggregate_event` maps sub-change statuses to the aggregate event: some applied and some rejected = mixed; all applied = all-applied; otherwise (including no sub-changes) = all-rejected. In the HTTP flow the pre-check runs before the job exists, so `PRECHECK_FAIL` is only exercised in unit tests. `COMPLETED`, `FAILED` and `PARTIAL_SUCCESS` are terminal. Any other transition raises `IllegalTransition`.
+`aggregate_event` maps sub-change statuses to the aggregate event: some applied and some rejected = mixed; all applied = all-applied; otherwise (including no sub-changes) = all-rejected. In the HTTP flow the pre-check runs before the job exists, so `PRECHECK_FAIL` is only exercised in unit tests. `COMPLETED`, `FAILED`, `PARTIAL_SUCCESS` and `REJECTED` are terminal. Any other transition raises `IllegalTransition`.
 
 **`SoftwareManagementJob`** (status only; phase is separate data advanced with the events)
 
@@ -298,7 +306,10 @@ All routes are under `/ran-nf-oam` through R1. Lists return `{items, total, limi
 |---|---|---|
 | POST | `/config-jobs` | `WriteConfigurationChanges` (202 `{jobId, status}`). Body: `requestedBy`, `accessScope` (`scope` is a deprecated alias; both, if sent, must agree), `changes[]` (`managedElementRef`, `managedFunctionRef?`, `className?`, `attributeChanges?`, `operation?`), `msacRole?`, `dryRun?` (true: run every check, send and store nothing, answer 200 `{dryRun, status: VALIDATED | WOULD_REJECT_SOME, changes[]: {…, verdict: PASS | WOULD_REJECT, reason}}`). 403 `SCOPE_DENIED` (any element outside the caller's scope claim, `PR-SEC-10.4`), 403 `MSAC_ACCESS_DENIED`, 409 `O1_SERVICE_NOT_SUPPORTED`, 422 `SCHEMA_VALIDATION_FAILED` |
 | GET | `/config-jobs/{job_id}` | Job with `subChanges` (`operation`, `status`, `rejectionReason`, `attempts`). 404 for a job that touched an element outside the caller's scope claim (`PR-SEC-10`) |
-| GET | `/config-jobs` | List; filters `status`, `region`, `site_cluster` (`GUI-9.3`: a job with at least one target element in the place) |
+| GET | `/config-jobs` | List (each item also has `createdAt` and the change-window fields below); filters `status`, `region`, `site_cluster` (`GUI-9.3`: a job with at least one target element in the place) |
+| POST | `/config-jobs` (`changeWindow`, `requireApproval`) | `changeWindow {start?, end?}` (at least one; naive times are UTC; it must end after it starts and not be over already: 422) or `requireApproval: true` (`MGT-4.1`/`4.2`): the job is made `PENDING_APPROVAL`, every change `PENDING`, and nothing is sent until someone other than the requester approves it. A dry run ignores both; a rollback is never held. An rApp request a person already approved (`AI-11`) is not asked again: that approval is the job's, and its window still holds it |
+| POST | `/config-jobs/{id}/approve` | `MGT-4.3`: body `{reason?}` (`decidedBy` deprecated, as on `rapp-approvals`); the decider is `X-R1-Acting-User` behind the gateway. Inside the window (or without one) the job runs now; before it opens it becomes `SCHEDULED`; after it closed 409 `CHANGE_WINDOW_CLOSED`. 403 `APPROVAL_SELF_DECISION` for the requester (case and space do not make another person), 403 `ROLE_NOT_PERMITTED` for an rApp, 404/403 as the other job actions, 409 `APPROVAL_NOT_PENDING` in any other state. Answers the job summary with `scheduledAt`, `windowEnd`, `decidedBy`, `decidedAt`, `decisionReason` |
+| POST | `/config-jobs/{id}/reject` | `MGT-4.3`: refuse a `PENDING_APPROVAL` job or withdraw a `SCHEDULED` one (the requester may withdraw its own; an rApp may not decide): `REJECTED`, every change `REJECTED` `APPROVAL_REJECTED`, nothing sent; 409 in any other state |
 
 **Alarms and subscriptions**
 
@@ -460,6 +471,8 @@ ProblemDetails are returned as `{"detail": {"type": "about:blank", "title": <cod
 | `APPROVAL_NOT_FOUND`, `APPROVAL_POLICY_NOT_FOUND`, `APPROVAL_SUBSCRIPTION_NOT_FOUND`, `DECISION_RECORD_NOT_FOUND` | 404 | An unknown approval request, approval policy, approval subscription or decision record |
 | `ONBOARDING_TEMPLATE_NOT_FOUND`, `ELEMENT_ONBOARDING_NOT_FOUND`, `SOFTWARE_CAMPAIGN_NOT_FOUND`, `LIFECYCLE_SUBSCRIPTION_NOT_FOUND` | 404 | An unknown template, an element with no onboarding row, an unknown campaign (or one with an element outside the caller's scope), an unknown lifecycle subscription. Defined in `app/lifecycle.py`, not in the shared error list |
 | `WAVE_PAUSE_NOT_ELAPSED` | 409 | `POST /config-jobs/{id}/continue` or `POST /software-campaigns/{id}/continue` while the pause between waves runs, without `force` |
+| `CHANGE_WINDOW_NOT_OPEN` | 409 | `POST /config-jobs/{id}/continue` on a `SCHEDULED` job before its window opens, without `force` (`MGT-4.3`) |
+| `CHANGE_WINDOW_CLOSED` | 409 | approving or starting a job after its change window closed (`MGT-4.3`; expiring such a job by itself is `MGT-4.5`) |
 | `ROLLBACK_NOT_POSSIBLE` | 422 | A config job rollback with nothing to undo; a campaign rollback while one of its software jobs still runs |
 | `APPROVAL_NOT_PENDING` | 409 | The request was already decided, or lapsed (the detail says which, and why) |
 | `APPROVAL_SELF_DECISION` | 403 | The requester of an action tried to decide it |
@@ -665,7 +678,8 @@ cd smo/ran-nf-oam && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_cm_history.py` | Before / after images (applied, refused, failed or raising reader, delete), history order, filter and paging, nothing for a blocked change or a dry run, the off switch | 11 |
 | `tests/test_netconf_client.py` | RPC builders (`operation`, `function-ref`), `<ok/>` handling, failure reasons, `get-config` parsing | 12 |
 | `tests/test_restconf_client.py` | Data-resource URL and key encoding, `yang-data+json` bodies, `operation` -> method mapping (PATCH / PUT / POST on the parent / DELETE), `remove` tolerating `data-missing`, error-reply vs transient failure reasons, GET read-back parsing | 22 |
-| `tests/test_statemachine.py` | The three FSMs, aggregation, forbidden transitions (e.g. `ACTIVE` -> `UNREACHABLE`) | 10 |
+| `tests/test_statemachine.py` | The three FSMs, aggregation, forbidden transitions (e.g. `ACTIVE` -> `UNREACHABLE`), the change-window states of a job and what a held job cannot take (`MGT-4.2`) | 12 |
+| `tests/test_change_windows.py` | `MGT-4.1`-`4.3` (8): a held job sends nothing and lists by state; another person's approval runs it now and is recorded; the requester (any case) and an rApp cannot approve; approved early it is `SCHEDULED`, `continue` refuses before the window unless forced, then runs it; a closed window is refused when asked and when approving; a held job's run time (the KPI guard's anchor) is set when it starts; reject and withdraw end `REJECTED` with nothing sent, a second decision is 409; a window that ends before it starts, or has no bound, is 422 and a dry run ignores the hold | 8 |
 | `tests/test_scope.py` | `PR-SEC-10` (46): region and tenant at registration and edit; an unscoped caller unchanged; every row of the semantic table; the whole job refused for one element outside, a dry run, an unregistered element answered as an out-of-scope one, the scope checked before the schema; the refusal recorded and announced; a write through DME held to the rApp's scope; a damaged claim; rollback; the approval path (made, parked with the claim, refused when the element moved); configuration, history, diff and element reads; job, alarm, PM/FM, file, KPI, endpoint and cell-guard views | 46 |
 | `tests/test_approvals.py` | `AI-11`: an rApp without a policy writes at once; with one it is parked (nothing dispatched, no job), only that rApp, also when an SMO module writes for it; dry runs and the checks before parking; replay of a parked request; approve makes the job and closes the request, reject writes nothing, decided once, 404/409/403 (an rApp never decides, the requester cannot), queue filters and paging (`total=false`), safeguards checked again at approval and a refused request closed `REFUSED`; the timeout (default `EXPIRE`, `REJECT`, enforced on read, list, decide, the sweep route and the worker task, bounds, no auto-approve); the notice to approvers through the outbox | 29 |
 | `tests/test_two_person_approval.py` | Two-person approval (opt-in): the policy field and its bounds, a parked request keeps the number it was parked under, the first approval is recorded and writes nothing, the same person (any spelling) and the requester (any spelling, or as the rApp) never count, the second approval makes the job, the decision record names both approvers and still verifies in the chain (and a struck-out approver is a `MISMATCH`), one rejection ends it, a lapse after one approval, a refusal at the second approval (with and without a record of its own) keeps both approvals, the notice, the list; a request that needs one approval reads as before |
@@ -685,7 +699,7 @@ cd smo/ran-nf-oam && PYTHONPATH=.:../shared python -m pytest tests/ -q
 | `tests/test_campaigns.py` | `MGT-15`: one wave, waves and the automatic next wave, selectors, refused requests, dry run, idempotency, the gate (failed job, alarms and their limit), continue past a failed gate, pause (409, force, the sweep), operator halt and abort, rollback (automatic, operator, a failed revert retried, nothing to undo, a running job), the report, scope, a concurrent campaign write | 32 |
 | `tests/test_topology_graph.py` | `GUI-3.1`, `GUI-3.3` (4): the nodes and parent links of the tree; open alarms on the node their function names, on the root otherwise, cleared ones left out, the worst named; narrowed by element and region, capped with `truncated` and only the edges among the nodes returned, `max_nodes` bounds; a DN-keyed element's alarm on its own root | 4 |
 | `tests/test_lifecycle_followups.py` | `MGT-14.7`, `MGT-15.6`, `MGT-15.7`: the subscription (made, narrowed, refused destination or event, removed), a failed onboarding announced to those who want it and to nobody else (also a required baseline, an unexpected error without its text, no subscriber: no outbox row), a halted campaign (failed gate, operator halt; not the routine pause), a failed rollback, the timeout (not yet, a silent job failed in its phase, a late report refused, with the rollback policy, a revert that never reports, a sweep that loses a race, a campaign without a timeout untouched), a reverse rollback (wave order, a failed revert stops it and a retry goes on, waves with nothing to undo skipped, the default still at once) | 22 |
-| **Total** | | **1056** |
+| **Total** | | **1066** |
 
 ### 3.3 What is not covered here
 
