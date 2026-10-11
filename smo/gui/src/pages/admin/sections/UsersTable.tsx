@@ -51,7 +51,7 @@ export function UsersTable() {
         { header: "Sign-in", render: (u) => isSsoUser(u) ? <Badge tone="info">SSO</Badge> : <Badge tone="mute">Local</Badge> },
         { header: "Status", render: (u) => <StateBadge state={u.active ? "ACTIVE" : "DISABLED"} /> },
         { header: "Scope", render: (u) => (
-          <button type="button" className="btn ghost small" aria-label={`Scope of ${u.username}`} title="The regions and tenants this user sees" onClick={() => setScoping(u)}>
+          <button type="button" className="btn ghost small" aria-label={`${describeUserScope(u.scope)}: scope of ${u.username}`} title="The regions and tenants this user sees" onClick={() => setScoping(u)}>
             {u.scope === "INVALID" ? <span className="t-bad">{describeUserScope(u.scope)}</span> : describeUserScope(u.scope)}
           </button>
         ) },

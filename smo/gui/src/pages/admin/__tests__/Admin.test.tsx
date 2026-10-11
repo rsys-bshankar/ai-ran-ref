@@ -162,7 +162,7 @@ describe("drawn from the BFF (GUI-10.4)", () => {
     const rows = Array.from(container.querySelectorAll("[data-section='admin.users'] tbody tr"));
     expect(rows[0].textContent).toContain("Whole network");
     expect(rows[1].textContent).toContain("regions eu-west · tenants acme");
-    await click(container.querySelector<HTMLElement>("button[aria-label='Scope of oidc:jane.doe']")!);
+    await click(container.querySelector<HTMLElement>("button[aria-label$=': scope of oidc:jane.doe']")!);
     const dialog = document.querySelector("[role=dialog]") as HTMLElement;
     const [regions, tenants] = Array.from(dialog.querySelectorAll("input"));
     expect(regions.value).toBe("eu-west");

@@ -16,6 +16,7 @@ from app import scoping
 from app.db import GuiUser
 from test_main import PASSWORDS, app, cfg, db, login, smo  # noqa: F401  (pytest fixtures and the sign-in helper)
 from test_oidc import idp, make_app, make_cfg, sign_in, failure  # noqa: F401  (the fake identity provider and its helpers)
+from test_exports_scope import sign_in as sign_in_for_export, wait as wait_for_export
 
 EU = {"regions": ["eu-west"]}
 EU_HEADER = '{"regions":["eu-west"]}'
@@ -119,10 +120,12 @@ def test_a_users_event_topics_are_their_own_and_the_claim_stays_on_the_server(ap
 def test_an_export_reads_with_the_askers_claim(app, db, smo):  # noqa: F811
     """An alarm export written in the background asks every page as the person who asked, with their claim."""
     _scoped(db, "operator", EU)
-    operator = login(app, "operator")
     smo.next_response = None
-    made = operator.post("/api/exports", json={"kind": "alarms", "since": "2026-10-01T00:00:00Z", "until": "2026-10-02T00:00:00Z"})
-    assert made.status_code in (201, 202), made.text
+    with TestClient(app) as operator:  # the event loop lives for the whole test, so the export task runs to its end
+        sign_in_for_export(operator, "operator")
+        made = operator.post("/api/exports", json={"kind": "alarms", "since": "2026-10-01T00:00:00Z", "until": "2026-10-02T00:00:00Z"})
+        assert made.status_code in (201, 202), made.text
+        wait_for_export(operator, made.json()["id"])
     pages = [r for r in smo.proxied if r.url.path == "/ran-nf-oam/alarms"]
     assert pages and pages[0].headers.get("x-r1-acting-user") == "smo-gui:operator" and pages[0].headers.get("x-r1-acting-user-scope") == EU_HEADER
 
