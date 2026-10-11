@@ -50,11 +50,12 @@ GUI_RMIO_ID = "smo-gui"
 
 @dataclass(frozen=True)
 class User:
-    """The signed-in identity as the rules need it: the user name and the role read from the user table on this request. The `smo-gui:<username>` string the rules
+    """The signed-in identity as the rules need it: the user name, the role and the scope claim read from the user table on this request. The `smo-gui:<username>` string the rules
     write into forwarded requests is built from `username`.
     """
     username: str
     role: Role
+    scope: str | None = None          # GUI-5: the user's region/tenant claim as stored (app/scoping.py, compact JSON); None: unscoped
 
 
 Overrides = Callable[[User], dict]
